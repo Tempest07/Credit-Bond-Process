@@ -5,9 +5,11 @@ import {
   findIssuer,
   formatNumber,
   generateOpinion,
+  mergeImportedIssuers,
   parseProjectBrief,
   upsertIssuer,
 } from "./core.js";
+import { parseHistoryText } from "./history-parser.js";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -41,6 +43,7 @@ let state = loadLocalState();
 let project = parseProjectBrief("");
 let selectedIssuerId = "";
 let cloudAvailable = false;
+let pendingHistoryImport = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -200,6 +203,75 @@ function bindDatabase() {
     clearIssuerForm();
     regenerate();
   });
+
+  $("#historyDocxInput").addEventListener("change", parseHistoryDocument);
+  $("#cancelHistoryImportButton").addEventListener("click", clearHistoryImport);
+  $("#confirmHistoryImportButton").addEventListener("click", () => {
+    if (!pendingHistoryImport) return;
+    state = mergeImportedIssuers(state, pendingHistoryImport.issuers);
+    persistState();
+    renderIssuerOptions();
+    renderIssuerList();
+    regenerate();
+    showToast(`已导入并归并 ${pendingHistoryImport.issuers.length} 个主体。`);
+    clearHistoryImport();
+  });
+}
+
+async function parseHistoryDocument() {
+  const file = $("#historyDocxInput").files[0];
+  if (!file) return;
+  if (!window.mammoth) {
+    showToast("Word 解析组件未加载。");
+    return;
+  }
+
+  $("#historyImportPanel").hidden = false;
+  $("#historyStats").innerHTML = '<div class="empty">正在本地解析历史 Word 文档...</div>';
+  $("#historyReviewList").innerHTML = "";
+
+  try {
+    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    pendingHistoryImport = parseHistoryText(result.value);
+    renderHistoryImport();
+  } catch (error) {
+    pendingHistoryImport = null;
+    $("#historyStats").innerHTML = `<div class="empty">解析失败：${escapeHtml(error.message)}</div>`;
+  } finally {
+    $("#historyDocxInput").value = "";
+  }
+}
+
+function renderHistoryImport() {
+  const result = pendingHistoryImport;
+  const stats = [
+    [result.paragraphCount, "非空段落"],
+    [result.standardRecordCount, "普通信用债意见"],
+    [result.issuers.length, "可归并主体"],
+    [result.absRecordCount, "ABS意见（排除）"],
+    [result.reviewRecords.length, "需人工复核"],
+  ];
+  $("#historyStats").innerHTML = stats.map(([value, label]) => `
+    <div class="history-stat"><strong>${value}</strong><span>${label}</span></div>
+  `).join("");
+
+  const reviews = result.reviewRecords.slice(0, 30);
+  $("#historyReviewList").innerHTML = reviews.length
+    ? reviews.map((record) => `
+      <div class="review-item">
+        <strong>${escapeHtml(record.shortName || record.issuerLegalName || "未识别记录")}</strong>
+        <span>${escapeHtml((record.warnings || []).join("；"))}</span>
+      </div>
+    `).join("")
+    : '<div class="empty">没有需要人工复核的记录。</div>';
+}
+
+function clearHistoryImport() {
+  pendingHistoryImport = null;
+  $("#historyImportPanel").hidden = true;
+  $("#historyStats").innerHTML = "";
+  $("#historyReviewList").innerHTML = "";
+  $("#historyDocxInput").value = "";
 }
 
 function readIssuerForm() {

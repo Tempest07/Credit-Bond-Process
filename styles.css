@@ -90,6 +90,18 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .issuer-item span { color: var(--muted); font-size: 10px; }
 .empty { padding: 34px 10px; color: var(--muted); text-align: center; font-size: 12px; }
 .form-actions { justify-content: flex-end; margin-top: 24px; }
+.history-import-panel { margin-top: 16px; padding: 18px; }
+.history-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.history-stat { padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-soft); }
+.history-stat strong, .history-stat span { display: block; }
+.history-stat strong { margin-bottom: 4px; font-size: 19px; }
+.history-stat span { color: var(--muted); font-size: 10px; }
+.history-review { margin-top: 18px; }
+.history-review h3 { margin: 0 0 9px; }
+.review-item { padding: 10px 11px; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.65; }
+.review-item strong { margin-right: 8px; }
+.review-item span { color: var(--warning); }
+.history-note { margin: 15px 0 0; color: var(--muted); font-size: 10px; line-height: 1.7; }
 
 .rules-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
 .rule-card { min-height: 180px; padding: 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); box-shadow: var(--shadow); }
@@ -115,6 +127,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .top-actions { flex-wrap: wrap; justify-content: flex-end; }
   .view { padding: 14px; }
   .field-grid, .rules-grid { grid-template-columns: 1fr; }
+  .history-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .span-2 { grid-column: span 1; }
   .result-actions { align-items: flex-end; flex-direction: column; }
 }

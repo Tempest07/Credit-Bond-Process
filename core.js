@@ -19,13 +19,18 @@ export function normalizeText(value = "") {
 }
 
 export function durationToDays(value = "") {
-  const text = String(value).trim().toUpperCase();
+  const text = String(value).trim().toUpperCase().replace(/期$/, "");
   let match = text.match(/^(\d+(?:\.\d+)?)\s*(D|天)$/i);
   if (match) return Math.round(Number(match[1]));
   match = text.match(/^(\d+(?:\.\d+)?)\s*(M|月)$/i);
   if (match) return Math.round(Number(match[1]) * 30);
-  match = text.match(/^(\d+(?:\.\d+)?)\s*(Y|年)$/i);
-  if (match) return Math.round(Number(match[1]) * 365);
+  match = text.match(/^([\d.+/]+)\s*(Y|年)$/i);
+  if (match) {
+    const longestYears = Math.max(...match[1].split("/").map((part) =>
+      part.split("+").reduce((sum, value) => sum + Number(value), 0),
+    ));
+    return Number.isFinite(longestYears) ? Math.round(longestYears * 365) : null;
+  }
   return null;
 }
 
@@ -94,8 +99,14 @@ function parseFirstLine(line, result) {
   const shortName = line.match(/^(\S+)/);
   if (shortName) result.shortName = shortName[1];
 
-  const status = line.match(/(非我行主承|联席|牵头)/);
-  if (status) result.sponsorStatus = status[1];
+  const status = line.match(/(我行牵头、独立主承|我行牵头主承|我行主承|非我行主承|我行联席主承|联席主承|牵头主承|联席|牵头)/);
+  if (status) {
+    result.sponsorStatus = status[1].includes("联席")
+      ? "联席"
+      : status[1] === "非我行主承"
+        ? "非我行主承"
+        : "牵头";
+  }
 
   if (status) {
     const branch = line.slice(status.index + status[1].length).trim();
@@ -104,7 +115,7 @@ function parseFirstLine(line, result) {
 }
 
 function parseSecondLine(line, result) {
-  const duration = line.match(/(?:^|\s)(\d+(?:\.\d+)?\s*(?:D|M|Y|天|月|年))(?:\s|$)/i);
+  const duration = line.match(/(?:^|\s)(\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*(?:\/\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*)*\s*(?:D|M|Y|天|月|年)(?:期)?)(?:\s|$)/i);
   if (duration) {
     result.durationText = duration[1].replace(/\s+/g, "").toUpperCase();
     result.durationDays = durationToDays(result.durationText);
@@ -113,7 +124,7 @@ function parseSecondLine(line, result) {
   const scale = line.match(/规模\s*(\d+(?:\.\d+)?)\s*亿/);
   if (scale) result.issueScale = Number(scale[1]);
 
-  const hidden = line.match(/隐含\s*([A-Z]+(?:\(\d+\))?)/i);
+  const hidden = line.match(/隐含\s*([A-Z]+[+-]?(?:\(\d+\))?)/i);
   if (hidden) result.hiddenRating = hidden[1].toUpperCase();
 
   const ratingSegment = line
@@ -166,7 +177,10 @@ export function buildBondFullName(shortName, legalName) {
 export function calculateSuggestion(project, issuer) {
   const warnings = [];
   const credit = issuer?.credit || {};
-  const approvedRatio = numberOrNull(credit.approvedRatio);
+  const offeringType = inferOfferingType(project);
+  const approvedRatio = offeringType === "私募" && Number.isFinite(numberOrNull(credit.privateRatio))
+    ? numberOrNull(credit.privateRatio)
+    : numberOrNull(credit.approvedRatio);
   let suggestedRatio = approvedRatio;
   const caps = [];
 
@@ -198,6 +212,7 @@ export function calculateSuggestion(project, issuer) {
       : null;
 
   return {
+    offeringType,
     approvedRatio,
     suggestedRatio,
     investmentAmount,
@@ -298,8 +313,10 @@ export function normalizeIssuer(input) {
     credit: {
       approvalLevel: String(input.credit?.approvalLevel || "").trim(),
       approvedAmount: numberOrNull(input.credit?.approvedAmount),
+      privateAmount: numberOrNull(input.credit?.privateAmount),
       offeringType: String(input.credit?.offeringType || "").trim(),
       approvedRatio: numberOrNull(input.credit?.approvedRatio),
+      privateRatio: numberOrNull(input.credit?.privateRatio),
       investmentTermText: String(input.credit?.investmentTermText || "").trim(),
       investmentTermDays: durationToDays(input.credit?.investmentTermText) ?? numberOrNull(input.credit?.investmentTermDays),
       rawText: String(input.credit?.rawText || "").trim(),
@@ -345,7 +362,7 @@ export function mergeImportedIssuers(state, importedIssuers = []) {
     const existing = next.issuers[existingIndex];
     const existingRank = numberOrNull(existing.credit?.sourceRank);
     const incomingRank = numberOrNull(incoming.credit?.sourceRank);
-    if (existingRank === null || (incomingRank !== null && incomingRank < existingRank)) {
+    if (existingRank !== null && incomingRank !== null && incomingRank < existingRank) {
       next.issuers[existingIndex] = { ...incoming, id: existing.id };
     }
   }
@@ -363,6 +380,14 @@ function chineseNumber(value) {
   const rest = value % 100;
   if (!rest) return hundreds;
   return `${hundreds}${rest < 10 ? "零" : ""}${chineseNumber(rest)}`;
+}
+
+export function inferOfferingType(project) {
+  const fullName = String(project?.fullName || "");
+  const shortName = String(project?.shortName || "").toUpperCase();
+  if (fullName.includes("非公开") || /PPN\d*/.test(shortName)) return "私募";
+  if (fullName.includes("公开") || /(SCP|CP|MTN)\d*/.test(shortName)) return "公募";
+  return "";
 }
 
 function daysToTermText(days) {

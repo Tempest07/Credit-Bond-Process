@@ -114,7 +114,10 @@
           <section class="panel issuer-list-panel">
             <div class="panel-head">
               <div><span class="step">DB</span><h2>主体列表</h2></div>
-              <button class="button subtle" id="newIssuerButton">新增主体</button>
+              <div class="result-actions">
+                <label class="button subtle file-button">导入历史 Word<input id="historyDocxInput" type="file" accept=".docx"></label>
+                <button class="button subtle" id="newIssuerButton">新增主体</button>
+              </div>
             </div>
             <input class="search-input" id="issuerSearch" type="search" placeholder="搜索主体或简称">
             <div class="issuer-list" id="issuerList"></div>
@@ -152,6 +155,22 @@
             </form>
           </section>
         </div>
+
+        <section class="panel history-import-panel" id="historyImportPanel" hidden>
+          <div class="panel-head">
+            <div><span class="step">WORD</span><h2>历史流程解析预览</h2></div>
+            <div class="result-actions">
+              <button class="button subtle" id="cancelHistoryImportButton">取消</button>
+              <button class="button primary" id="confirmHistoryImportButton">导入主体与最新授信</button>
+            </div>
+          </div>
+          <div class="history-stats" id="historyStats"></div>
+          <div class="history-review">
+            <h3>需要人工复核的记录</h3>
+            <div id="historyReviewList"></div>
+          </div>
+          <p class="history-note">解析遵循“文档越靠前越新”。ABS 仅统计，不导入普通信用债主体库；授信包含占位符时，会优先寻找该主体更靠后的完整授信。</p>
+        </section>
       </section>
 
       <section class="view" data-view="rules">
@@ -174,6 +193,7 @@
   </div>
 
   <div class="toast" id="toast" hidden></div>
+  <script src="./vendor/mammoth.browser.min.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import {
   buildBondFullName,
   calculateSuggestion,
   determineApprover,
+  durationToDays,
   generateOpinion,
   mergeImportedIssuers,
   parseProjectBrief,
@@ -68,6 +69,14 @@ test("caps overdue AA and AA(2) bonds", () => {
   const base = { ...parseProjectBrief(sample), durationDays: 1460 };
   assert.equal(calculateSuggestion({ ...base, hiddenRating: "AA" }, issuer).suggestedRatio, 15);
   assert.equal(calculateSuggestion({ ...base, hiddenRating: "AA(2)" }, issuer).suggestedRatio, 10);
+});
+
+test("uses the longest possible term for option and dual-tranche durations", () => {
+  assert.equal(durationToDays("3+2年期"), 5 * 365);
+  assert.equal(durationToDays("3+2/5+2年期"), 7 * 365);
+  const parsed = parseProjectBrief("26广城04 非我行主承 广州分行\n3+2/5+2年期 规模19亿 AAA(中诚信国际)/隐含AAA-\n询价区间1.5-2.5 上交所 中信证券");
+  assert.equal(parsed.durationDays, 7 * 365);
+  assert.equal(parsed.hiddenRating, "AAA-");
 });
 
 test("applies approval thresholds and real estate override", () => {
