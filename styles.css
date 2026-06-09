@@ -90,12 +90,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .issuer-item span { color: var(--muted); font-size: 10px; }
 .empty { padding: 34px 10px; color: var(--muted); text-align: center; font-size: 12px; }
 .form-actions { justify-content: flex-end; margin-top: 24px; }
-.history-import-panel { margin-top: 16px; padding: 18px; }
+.history-import-panel { margin-bottom: 16px; padding: 18px; scroll-margin-top: 16px; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .history-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .history-stat { padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-soft); }
 .history-stat strong, .history-stat span { display: block; }
 .history-stat strong { margin-bottom: 4px; font-size: 19px; }
 .history-stat span { color: var(--muted); font-size: 10px; }
+.history-status { grid-column: 1 / -1; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-soft); color: var(--accent); font-size: 12px; }
+.history-status.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
+.file-button.busy { opacity: .72; cursor: wait; }
+.file-button.unavailable { opacity: .58; cursor: not-allowed; }
 .history-review { margin-top: 18px; }
 .history-review h3 { margin: 0 0 9px; }
 .review-item { padding: 10px 11px; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.65; }

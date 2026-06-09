@@ -58,6 +58,7 @@ async function initialize() {
   bindNavigation();
   bindGenerator();
   bindDatabase();
+  initializeHistoryImport();
   bindDataActions();
   renderIssuerOptions();
   renderIssuerList();
@@ -218,28 +219,72 @@ function bindDatabase() {
   });
 }
 
+function initializeHistoryImport() {
+  const isReady = typeof window.mammoth?.extractRawText === "function";
+  $("#historyDocxInput").disabled = !isReady;
+  $("#historyImportButton").classList.toggle("unavailable", !isReady);
+  $("#historyImportButton").title = isReady
+    ? "选择历史流程 Word 文档并在浏览器本地解析"
+    : "Word 解析组件加载失败，请刷新页面后重试";
+  $("#historyImportButtonText").textContent = isReady ? "导入历史 Word" : "Word 组件加载失败";
+}
+
 async function parseHistoryDocument() {
-  const file = $("#historyDocxInput").files[0];
+  const input = $("#historyDocxInput");
+  const file = input.files[0];
   if (!file) return;
-  if (!window.mammoth) {
-    showToast("Word 解析组件未加载。");
+
+  if (!file.name.toLowerCase().endsWith(".docx")) {
+    showToast("请选择 .docx 格式的 Word 文档。");
+    input.value = "";
     return;
   }
 
-  $("#historyImportPanel").hidden = false;
-  $("#historyStats").innerHTML = '<div class="empty">正在本地解析历史 Word 文档...</div>';
+  const panel = $("#historyImportPanel");
+  panel.hidden = false;
+  setHistoryImportBusy(true);
+  setHistoryImportStatus(`已选择“${file.name}”，正在读取文档...`);
   $("#historyReviewList").innerHTML = "";
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast("已选择 Word 文档，正在本地解析。");
+
+  // Let the browser render the progress state before parsing the document.
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   try {
-    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    if (!window.mammoth?.extractRawText) throw new Error("Word 解析组件未加载，请刷新页面后重试");
+    const arrayBuffer = await file.arrayBuffer();
+    setHistoryImportStatus("正在提取 Word 文本并识别流程意见...");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const result = await window.mammoth.extractRawText({ arrayBuffer });
     pendingHistoryImport = parseHistoryText(result.value);
     renderHistoryImport();
+    showToast(`解析完成：识别 ${pendingHistoryImport.issuers.length} 个主体。`);
   } catch (error) {
     pendingHistoryImport = null;
-    $("#historyStats").innerHTML = `<div class="empty">解析失败：${escapeHtml(error.message)}</div>`;
+    setHistoryImportStatus(`解析失败：${error?.message || "未知错误"}`, true);
+    showToast("Word 解析失败，请查看页面中的错误提示。");
   } finally {
-    $("#historyDocxInput").value = "";
+    input.value = "";
+    setHistoryImportBusy(false);
   }
+}
+
+function setHistoryImportStatus(message, isError = false) {
+  $("#historyStats").innerHTML = `<div class="history-status ${isError ? "error" : ""}">${escapeHtml(message)}</div>`;
+}
+
+function setHistoryImportBusy(isBusy) {
+  $("#historyDocxInput").disabled = isBusy || typeof window.mammoth?.extractRawText !== "function";
+  $("#historyImportButton").classList.toggle("busy", isBusy);
+  $("#historyImportButtonText").textContent = isBusy
+    ? "正在解析 Word..."
+    : typeof window.mammoth?.extractRawText === "function"
+      ? "导入历史 Word"
+      : "Word 组件加载失败";
+  $("#confirmHistoryImportButton").disabled = isBusy;
+  $("#cancelHistoryImportButton").disabled = isBusy;
 }
 
 function renderHistoryImport() {
@@ -272,6 +317,7 @@ function clearHistoryImport() {
   $("#historyStats").innerHTML = "";
   $("#historyReviewList").innerHTML = "";
   $("#historyDocxInput").value = "";
+  setHistoryImportBusy(false);
 }
 
 function readIssuerForm() {
