@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f9">
+  <title>信用债流程生成器 - Tempest07</title>
+  <meta name="description" content="解析项目简表并生成信用债投资流程意见">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="https://tempest07-gateway.weiqian-yu.workers.dev/">
+        <span class="brand-mark">T7</span>
+        <span><strong>Tempest07</strong><small>Credit Workflow</small></span>
+      </a>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view-target="generator">流程生成</button>
+        <button class="nav-item" data-view-target="database">主体与授信库</button>
+        <button class="nav-item" data-view-target="rules">规则说明</button>
+      </nav>
+
+      <div class="sidebar-card">
+        <span>数据状态</span>
+        <strong id="syncStatus">正在载入</strong>
+        <small id="syncDetail">优先连接 Cloudflare D1</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Credit Bond Process</p>
+          <h1 id="pageTitle">流程生成</h1>
+        </div>
+        <div class="top-actions">
+          <button class="button subtle" id="exportDataButton">导出资料库</button>
+          <label class="button subtle file-button">导入资料库<input id="importDataInput" type="file" accept=".json"></label>
+          <button class="button" id="saveCloudButton">同步资料库</button>
+        </div>
+      </header>
+
+      <section class="view active" data-view="generator">
+        <div class="generator-grid">
+          <section class="panel input-panel">
+            <div class="panel-head">
+              <div><span class="step">01</span><h2>粘贴项目简表</h2></div>
+              <button class="text-button" id="sampleButton">载入示例</button>
+            </div>
+            <textarea id="briefInput" class="brief-input" spellcheck="false" placeholder="粘贴项目简表，例如：
+26粤交投SCP002 非我行主承 广州分行
+270D 规模7亿 AAA(中诚信国际)/隐含AAA
+询价区间1.25-1.45 银行间 中信银行"></textarea>
+            <button class="button primary wide" id="parseButton">解析并生成</button>
+
+            <div class="warning-box" id="warningBox" hidden>
+              <strong>提交前需要确认</strong>
+              <ul id="warningList"></ul>
+            </div>
+          </section>
+
+          <section class="panel fields-panel">
+            <div class="panel-head">
+              <div><span class="step">02</span><h2>确认结构化字段</h2></div>
+              <span class="pill" id="matchedIssuerPill">未匹配主体</span>
+            </div>
+
+            <div class="field-grid">
+              <label>债券简称<input data-project-field="shortName"></label>
+              <label>主承身份
+                <select data-project-field="sponsorStatus">
+                  <option value="">待选择</option>
+                  <option>非我行主承</option>
+                  <option>联席</option>
+                  <option>牵头</option>
+                </select>
+              </label>
+              <label>申报分行<input data-project-field="branch"></label>
+              <label>债券期限<input data-project-field="durationText" placeholder="如 270D、3Y"></label>
+              <label>发行规模（亿元）<input data-project-field="issueScale" type="number" step="0.0001"></label>
+              <label>主体评级<input data-project-field="subjectRating"></label>
+              <label>评级机构<input data-project-field="ratingAgency"></label>
+              <label>隐含评级<input data-project-field="hiddenRating"></label>
+              <label>询价下限（%）<input data-project-field="inquiryLow" type="number" step="0.0001"></label>
+              <label>询价上限（%）<input data-project-field="inquiryHigh" type="number" step="0.0001"></label>
+              <label>发行场所<input data-project-field="venue"></label>
+              <label>牵头主承销商<input data-project-field="leadUnderwriter"></label>
+              <label class="span-2">匹配主体
+                <select id="issuerSelect"><option value="">未匹配主体</option></select>
+              </label>
+              <label class="span-2">债券全称（可覆盖自动生成结果）<input data-project-field="fullName"></label>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel result-panel">
+          <div class="panel-head">
+            <div><span class="step">03</span><h2>流程意见</h2></div>
+            <div class="result-actions">
+              <span class="pill accent" id="suggestionSummary">等待生成</span>
+              <button class="button subtle" id="copyButton">复制流程意见</button>
+            </div>
+          </div>
+          <textarea id="opinionOutput" class="opinion-output" spellcheck="false" placeholder="解析后将在这里生成流程意见。"></textarea>
+          <div class="rule-trace" id="ruleTrace"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="database">
+        <div class="database-grid">
+          <section class="panel issuer-list-panel">
+            <div class="panel-head">
+              <div><span class="step">DB</span><h2>主体列表</h2></div>
+              <button class="button subtle" id="newIssuerButton">新增主体</button>
+            </div>
+            <input class="search-input" id="issuerSearch" type="search" placeholder="搜索主体或简称">
+            <div class="issuer-list" id="issuerList"></div>
+          </section>
+
+          <section class="panel issuer-form-panel">
+            <div class="panel-head">
+              <div><span class="step">EDIT</span><h2 id="issuerFormTitle">新增主体与最新授信</h2></div>
+              <span class="pill">新记录覆盖旧授信</span>
+            </div>
+            <form id="issuerForm">
+              <input id="issuerId" type="hidden">
+              <div class="field-grid">
+                <label class="span-2">主体正式名称<input id="legalName" required></label>
+                <label class="span-2">常用简称（逗号或换行分隔）<textarea id="aliases" rows="3"></textarea></label>
+                <label>默认申报分行<input id="defaultBranch"></label>
+                <label class="checkbox-label"><input id="isRealEstate" type="checkbox">房地产主体</label>
+              </div>
+
+              <h3>最新授信信息</h3>
+              <div class="field-grid">
+                <label>审批层级<input id="approvalLevel" placeholder="总行或分行"></label>
+                <label>批复金额（亿元）<input id="approvedAmount" type="number" step="0.0001"></label>
+                <label>发行类型<select id="offeringType"><option value="">待选择</option><option>公募</option><option>私募</option></select></label>
+                <label>批复投资比例（%）<input id="approvedRatio" type="number" step="0.01"></label>
+                <label>投资期限<input id="investmentTermText" placeholder="如 3年、18个月"></label>
+                <label>来源顺序<input id="sourceRank" type="number" placeholder="Word中越小越新"></label>
+                <label class="span-2">授信原文<input id="creditRawText" placeholder="如：总行批20亿，公募，30%，3年"></label>
+              </div>
+
+              <div class="form-actions">
+                <button class="button danger" id="deleteIssuerButton" type="button" hidden>删除主体</button>
+                <button class="button primary" type="submit">保存最新资料</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" data-view="rules">
+        <div class="rules-grid">
+          <article class="rule-card"><span>比例规则 01</span><h2>授信比例为默认值</h2><p>建议投资比例默认采用主体最新授信记录中的批复比例。</p></article>
+          <article class="rule-card"><span>比例规则 02</span><h2>兴业主承最高 20%</h2><p>主承身份为“牵头”或“联席”时，建议投资比例不得超过最终发行规模的20%。</p></article>
+          <article class="rule-card"><span>比例规则 03</span><h2>AA 超授信期限最高 15%</h2><p>隐含评级为AA，且债券期限超过授信投资期限时，建议投资比例不得超过15%。</p></article>
+          <article class="rule-card"><span>比例规则 04</span><h2>AA(2) 超授信期限最高 10%</h2><p>隐含评级为AA(2)，且债券期限超过授信投资期限时，建议投资比例不得超过10%。</p></article>
+          <article class="rule-card"><span>金额规则</span><h2>发行规模 × 建议比例</h2><p>申请与建议投资金额暂按发行规模乘以最终建议比例自动计算，并允许在流程意见中手工修改。</p></article>
+          <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>房地产债由林总终批；AAA投资金额超过8亿由金处、超过10亿由周总终批；其他评级超过3.2亿由金处、超过4亿由周总终批。</p></article>
+          <article class="rule-card"><span>主承表述</span><h2>牵头与联席自动改写</h2><p>牵头时主承销商写兴业银行；联席时写“牵头主承销商、兴业银行”。</p></article>
+          <article class="rule-card"><span>待补字段</span><h2>一级投标利率始终留空</h2><p>自动生成时使用【待填写】标记，不根据估值或指导价猜测。</p></article>
+        </div>
+        <section class="panel word-note">
+          <h2>Word 历史流程导入</h2>
+          <p>已预留“越靠近文档开始越新”的覆盖规则。收到真实 Word 文档后，将增加批量解析器：按文档顺序提取主体简称、正式名称与授信原文；同一主体只保留最靠前的一条有效授信。</p>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

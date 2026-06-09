@@ -1,0 +1,64 @@
+# Credit Bond Process
+
+信用债投资流程意见生成器。粘贴固定格式的项目简表后，页面会解析债券信息、匹配主体最新授信、应用投资比例与终批规则，并生成可编辑的流程意见。
+
+## 当前能力
+
+- 解析债券简称、主承身份、分行、期限、规模、评级、询价区间、发行场所、牵头主承、估值和指导价
+- 根据简称匹配主体与最新授信
+- 自动生成常见银行间债券全称：SCP、CP、MTN、PPN
+- 计算建议投资比例与金额
+- 自动判断处室、金处、周总或房地产债林总终批
+- 一级投标利率固定留作待填写
+- 支持浏览器本地资料库与 Cloudflare D1 同步
+- 支持 JSON 导入导出备份
+
+## 规则
+
+1. 建议投资比例默认使用最新授信批复比例。
+2. 兴业银行牵头或联席主承时，比例最高为20%。
+3. 隐含评级AA且期限超过授信投资期限时，比例最高为15%。
+4. 隐含评级AA(2)且期限超过授信投资期限时，比例最高为10%。
+5. 投资金额等于发行规模乘以建议比例。
+6. 房地产债由林总终批。
+7. 隐含评级AAA：投资金额超过8亿由金处终批，超过10亿由周总终批。
+8. 其他隐含评级：投资金额超过3.2亿由金处终批，超过4亿由周总终批。
+9. 同一主体的新授信覆盖旧授信；Word批量导入时，文档越靠前的记录越新。
+
+## Cloudflare Pages
+
+1. 创建 GitHub 仓库 `Tempest07/Credit-Bond-Process` 并推送本目录。
+2. 创建 Cloudflare Pages 项目，连接该仓库。
+3. Framework preset 选择 `None`，Build command 留空，Build output directory 填写 `.`。
+4. 创建 D1 数据库 `credit-bond-process`。
+5. 在 Pages 项目的 Settings / Bindings 中添加 D1 binding：
+   - Variable name：`DB`
+   - D1 database：`credit-bond-process`
+6. 重新部署 Pages。
+
+Pages Function 会在首次访问时自动创建所需表，也可以手动执行 `schema.sql`。
+
+## Gateway
+
+在现有 `tempest07-gateway` Worker 的 `ROUTES` 数组中增加：
+
+```js
+{
+  prefix: "/credit-bond-process",
+  origin: "https://credit-bond-process.pages.dev"
+}
+```
+
+统一入口：
+
+```text
+https://tempest07-gateway.weiqian-yu.workers.dev/credit-bond-process/
+```
+
+## 安全要求
+
+资料库可能包含授信信息。正式启用 D1 前，应使用 Cloudflare Access 保护 Gateway 路径和 Pages 项目，避免公开读取或覆盖数据。直接访问 `*.pages.dev` 时，前端会跳转至 Gateway，但这不能替代真正的访问控制。
+
+## Word 历史流程导入
+
+Word 导入解析器将在取得真实文档后实现。解析时将按照文档顺序设置 `sourceRank`，数值越小代表越新；同一主体仅保留最靠前的最新授信。
