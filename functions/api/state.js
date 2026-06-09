@@ -1,6 +1,8 @@
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export async function onRequestGet(context) {
+  const denied = authorize(context);
+  if (denied) return denied;
   try {
     await ensureSchema(context.env.DB);
     const row = await context.env.DB.prepare("SELECT data, updated_at FROM app_state WHERE id = 1").first();
@@ -14,6 +16,8 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPut(context) {
+  const denied = authorize(context);
+  if (denied) return denied;
   const declaredLength = Number(context.request.headers.get("Content-Length") || 0);
   if (declaredLength > MAX_BODY_BYTES) return json({ error: "提交的数据过大" }, 413);
 
@@ -66,6 +70,14 @@ function validateState(data) {
     issuers: data.issuers,
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };
+}
+
+function authorize(context) {
+  const password = context.env.APP_PASSWORD;
+  if (!password) return json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503);
+  const authorization = context.request.headers.get("Authorization") || "";
+  if (authorization !== `Bearer ${password}`) return json({ error: "Unauthorized" }, 401);
+  return null;
 }
 
 function apiHeaders() {

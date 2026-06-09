@@ -10,6 +10,7 @@ import {
 } from "./core.js";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
+const TOKEN_KEY = "credit-bond-process-api-token";
 const API_URL = "./api/state";
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
@@ -284,6 +285,14 @@ function bindDataActions() {
     showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 尚未配置，资料仍已保存在本机。");
   });
 
+  $("#setPasswordButton").addEventListener("click", async () => {
+    const value = prompt("请输入 Cloudflare Pages Secret 中配置的 APP_PASSWORD：", "");
+    if (value === null) return;
+    if (value.trim()) sessionStorage.setItem(TOKEN_KEY, value.trim());
+    else sessionStorage.removeItem(TOKEN_KEY);
+    await loadCloudState();
+  });
+
   $("#exportDataButton").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const link = document.createElement("a");
@@ -314,9 +323,14 @@ function bindDataActions() {
 }
 
 async function loadCloudState() {
+  if (!getApiToken()) {
+    cloudAvailable = false;
+    setSyncStatus("本机模式", "设置云端口令后连接 D1");
+    return;
+  }
   setSyncStatus("正在连接", "尝试读取 Cloudflare D1");
   try {
-    const response = await fetch(API_URL, { cache: "no-store" });
+    const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const remote = await response.json();
     if (remote.data?.issuers) {
@@ -337,10 +351,14 @@ async function loadCloudState() {
 
 async function saveCloudState() {
   persistLocal();
+  if (!getApiToken()) {
+    setSyncStatus("本机模式", "请先设置云端口令");
+    return false;
+  }
   try {
     const response = await fetch(API_URL, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ data: state }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -376,6 +394,14 @@ function persistLocal() {
 function setSyncStatus(status, detail) {
   $("#syncStatus").textContent = status;
   $("#syncDetail").textContent = detail;
+}
+
+function getApiToken() {
+  return sessionStorage.getItem(TOKEN_KEY) || "";
+}
+
+function authHeaders() {
+  return { Authorization: `Bearer ${getApiToken()}` };
 }
 
 function showToast(message) {
