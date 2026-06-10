@@ -22,3 +22,28 @@ test("rejects an incorrect API password", async () => {
   });
   assert.equal(response.status, 401);
 });
+
+test("accepts and preserves project ledger records", async () => {
+  let saved = null;
+  const DB = {
+    prepare(sql) {
+      return {
+        bind(data) {
+          if (sql.includes("INSERT INTO app_state")) saved = JSON.parse(data);
+          return this;
+        },
+        async run() {},
+      };
+    },
+  };
+  const response = await onRequestPut({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/state", {
+      method: "PUT",
+      headers: { Authorization: "Bearer correct" },
+      body: JSON.stringify({ data: { version: 2, issuers: [], projects: [{ id: "p1", shortName: "26测试01" }] } }),
+    }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(saved.projects[0].shortName, "26测试01");
+});
