@@ -1,7 +1,6 @@
 import {
   DEFAULT_STATE,
   buildBondFullName,
-  buildUnderwriter,
   durationParts,
   durationToDays,
   findIssuer,
@@ -13,7 +12,9 @@ import {
   upsertIssuer,
 } from "./core.js";
 import {
-  buildBidResultSummary,
+  applyIssuanceAdvertisement,
+  buildAwardResultText,
+  buildBidPositionText,
   createProjectRecord,
   dashboardCounts,
   deriveProjectStatus,
@@ -92,12 +93,15 @@ async function initialize() {
 
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
-      $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === button.dataset.viewTarget));
-      $("#pageTitle").textContent = button.textContent;
-    });
+    button.addEventListener("click", () => switchView(button.dataset.viewTarget));
   });
+}
+
+function switchView(viewName) {
+  const button = $(`.nav-item[data-view-target="${viewName}"]`);
+  $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
+  $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
+  if (button) $("#pageTitle").textContent = button.textContent;
 }
 
 function bindGenerator() {
@@ -150,17 +154,29 @@ function saveCurrentProject() {
     return;
   }
   const existing = (state.projects || []).find((item) => item.shortName === project.shortName && item.status !== "已结束");
-  const created = createProjectRecord({ ...project, leadUnderwriter: buildUnderwriter(project) }, issuer, generated, { id: existing?.id });
+  const suggestedRatios = generated.suggestion.trancheSuggestions.map((item) => item.suggestedRatio);
+  const created = createProjectRecord({
+    ...project,
+    leadUnderwriter: project.sponsorStatus === "牵头" ? "兴业银行" : project.leadUnderwriter,
+    suggestedRatios,
+  }, issuer, generated, { id: existing?.id });
   const record = existing
     ? {
         ...created,
         status: existing.status,
         cutoffAt: existing.cutoffAt,
         notes: existing.notes,
-        tranches: existing.tranches?.length === created.tranches.length ? existing.tranches : created.tranches,
-        comprehensivePricing: existing.comprehensivePricing,
-        afterTaxRevenue: existing.afterTaxRevenue,
-        ftpCost: existing.ftpCost,
+        resultAdvertisement: existing.resultAdvertisement,
+        tranches: existing.tranches?.length === created.tranches.length
+          ? created.tranches.map((tranche, index) => ({
+              ...existing.tranches[index],
+              shortName: tranche.shortName,
+              durationText: tranche.durationText,
+              inquiryLow: tranche.inquiryLow,
+              inquiryHigh: tranche.inquiryHigh,
+              suggestedRatio: tranche.suggestedRatio,
+            }))
+          : created.tranches,
         createdAt: existing.createdAt,
       }
     : created;
@@ -168,6 +184,7 @@ function saveCurrentProject() {
   selectedProjectId = record.id;
   persistState();
   renderProjectWorkspace();
+  switchView("ledger");
   showToast(existing ? "已更新现有项目台账。" : "已保存至项目台账。");
 }
 
@@ -175,11 +192,14 @@ function bindLedger() {
   $("#projectSearch").addEventListener("input", renderProjectList);
   $("#projectStatusFilter").addEventListener("change", renderProjectList);
   $("#newProjectButton").addEventListener("click", () => {
-    const record = normalizeProjectRecord({ shortName: "新项目" });
-    state = upsertProject(state, record);
-    selectedProjectId = record.id;
-    persistState();
-    renderProjectWorkspace();
+    project = parseProjectBrief("");
+    selectedIssuerId = "";
+    $("#briefInput").value = "";
+    fillProjectFields();
+    renderIssuerOptions();
+    regenerate();
+    switchView("generator");
+    $("#briefInput").focus();
   });
   $$("[data-ledger-filter]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -193,13 +213,45 @@ function bindLedger() {
     draft.tranches.push(normalizeProjectRecord({ shortName: "新品种" }).tranches[0]);
     fillProjectForm(draft);
   });
-  $("#projectAfterTaxRevenue").addEventListener("input", updateNetIncomePreview);
-  $("#projectFtpCost").addEventListener("input", updateNetIncomePreview);
-  $("#projectForm").addEventListener("input", updateResultSummaryPreview);
-  $("#projectForm").addEventListener("change", updateResultSummaryPreview);
+  $("#projectForm").addEventListener("input", updateProjectPreviews);
+  $("#projectForm").addEventListener("change", updateProjectPreviews);
+  $("#copyBidPositionButton").addEventListener("click", async () => {
+    await navigator.clipboard.writeText($("#projectBidPosition").value);
+    showToast("投标标位已复制。");
+  });
   $("#copyResultSummaryButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#projectResultSummary").value);
-    showToast("结果摘要已复制。");
+    showToast("中标汇报已复制。");
+  });
+  $("#parseAdvertisementButton").addEventListener("click", () => {
+    const draft = readProjectForm();
+    const advertisement = $("#projectResultAdvertisement").value;
+    if (!advertisement.trim()) {
+      showToast("请先粘贴发行结果广告。");
+      return;
+    }
+    const parsed = applyIssuanceAdvertisement(draft, advertisement);
+    fillProjectForm(parsed);
+    showToast("已识别票面、期限、代码和缴款日期，请复核中标信息。");
+  });
+  $("#editProjectOpinionButton").addEventListener("click", () => {
+    const record = readProjectForm();
+    project = {
+      ...parseProjectBrief(record.sourceText),
+      shortName: record.shortName,
+      branch: record.branch,
+      venue: record.venue,
+      leadUnderwriter: record.leadUnderwriter,
+      sponsorStatus: record.sponsorStatus,
+      sourceText: record.sourceText,
+    };
+    selectedIssuerId = record.issuerId || "";
+    $("#briefInput").value = record.sourceText;
+    fillProjectFields();
+    renderIssuerOptions();
+    regenerate();
+    $("#opinionOutput").value = record.opinion;
+    switchView("generator");
   });
   $("#projectForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -301,6 +353,8 @@ function renderDashboard() {
   $("#dashboardAwaitingResult").textContent = counts.awaitingResult;
   $("#dashboardWon").textContent = counts.won;
   $("#dashboardNotWon").textContent = counts.notWon;
+  $("#dashboardPaymentToday").textContent = counts.paymentToday;
+  $("#dashboardDuePayment").textContent = counts.duePayment;
 }
 
 function renderProjectList() {
@@ -313,8 +367,10 @@ function renderProjectList() {
       if (ledgerFilter === "dueToday" && !(item.status === "待投标" && item.cutoffAt?.slice(0, 10) === today)) return false;
       if (ledgerFilter === "toBid" && item.status !== "待投标") return false;
       if (ledgerFilter === "awaitingResult" && item.status !== "已投标待结果") return false;
-      if (ledgerFilter === "won" && !["部分中标", "已中标"].includes(item.status)) return false;
+      if (ledgerFilter === "won" && !["部分中标", "已中标", "待缴款", "已缴款"].includes(item.status)) return false;
       if (ledgerFilter === "notWon" && item.status !== "未中标") return false;
+      if (ledgerFilter === "paymentToday" && !(item.status === "待缴款" && item.tranches?.some((tranche) => tranche.paymentDate === today && !tranche.paymentCompleted))) return false;
+      if (ledgerFilter === "duePayment" && item.status !== "待缴款") return false;
       return `${item.shortName} ${item.issuerName} ${item.branch} ${item.leadUnderwriter}`.toLowerCase().includes(query);
     })
     .sort(compareProjects);
@@ -326,7 +382,7 @@ function renderProjectList() {
           <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
           <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
         </span>
-        <span class="project-item-meta"><span>${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span><span>${escapeHtml(formatCutoff(item.cutoffAt))}</span></span>
+        <span class="project-item-meta"><span>${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span><span>${escapeHtml(formatProjectSchedule(item))}</span></span>
         <span class="project-item-meta"><span>${escapeHtml((item.tranches || []).map((tranche) => tranche.durationText).filter(Boolean).join("/") || "期限待补")}</span><span>${escapeHtml(item.leadUnderwriter || "主承待补")}</span></span>
       </button>
     `).join("")
@@ -356,15 +412,14 @@ function fillProjectForm(input) {
   $("#projectBranch").value = record.branch;
   $("#projectVenue").value = record.venue;
   $("#projectLeadUnderwriter").value = record.leadUnderwriter;
+  $("#projectSponsorStatus").value = record.sponsorStatus;
   $("#projectCutoffAt").value = record.cutoffAt;
   $("#projectNotes").value = record.notes;
-  $("#projectComprehensivePricing").checked = record.comprehensivePricing;
-  $("#projectPricingUnit").value = record.pricingUnit;
-  $("#projectAfterTaxRevenue").value = record.afterTaxRevenue ?? "";
-  $("#projectFtpCost").value = record.ftpCost ?? "";
-  $("#projectNetIncome").value = record.netIncome ?? "";
+  $("#projectSourceText").value = record.sourceText;
   $("#projectOpinion").value = record.opinion;
-  $("#projectResultSummary").value = buildBidResultSummary(record);
+  $("#projectResultAdvertisement").value = record.resultAdvertisement;
+  $("#projectBidPosition").value = buildBidPositionText(record);
+  $("#projectResultSummary").value = buildAwardResultText(record);
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = record.status;
   renderTranches(record.tranches);
@@ -381,10 +436,15 @@ function renderTranches(tranches) {
       <div class="tranche-grid">
         <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
         <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
+        <label>建议比例上限（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
         <label>询价下限（%）<input data-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
         <label>询价上限（%）<input data-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
         <label>投标利率（%）<input data-tranche-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(tranche.bidRate ?? "")}"></label>
         <label>投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
+      </div>
+
+      <div class="tranche-subheading"><strong>表内中标结果</strong></div>
+      <div class="tranche-grid">
         <label>截标结果
           <select data-tranche-field="resultStatus">
             <option ${tranche.resultStatus === "待出结果" ? "selected" : ""}>待出结果</option>
@@ -392,8 +452,54 @@ function renderTranches(tranches) {
             <option ${tranche.resultStatus === "未中标" ? "selected" : ""}>未中标</option>
           </select>
         </label>
-        <label>中标利率（%）<input data-tranche-field="winningRate" type="number" step="0.0001" value="${escapeAttribute(tranche.winningRate ?? "")}"></label>
-        <label>中标量（亿元）<input data-tranche-field="winningAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.winningAmount ?? "")}"></label>
+        <label>票面 / 中标利率（%）<input data-tranche-field="winningRate" type="number" step="0.0001" value="${escapeAttribute(tranche.winningRate ?? "")}"></label>
+        <label>表内中标量（万元）<input data-tranche-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(tranche.winningAmountWan ?? "")}"></label>
+        <label>综合定价
+          <select data-tranche-field="pricingMode">
+            <option ${tranche.pricingMode === "未综" ? "selected" : ""}>未综</option>
+            <option ${tranche.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
+          </select>
+        </label>
+        <label>综合定价至（%）<input data-tranche-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(tranche.pricingRate ?? "")}"></label>
+        <label>营收（BP）<input data-tranche-field="revenueBp" type="number" step="0.0001" value="${escapeAttribute(tranche.revenueBp ?? "")}"></label>
+      </div>
+
+      <div class="tranche-subheading">
+        <strong>委外投标与中标</strong>
+        <button class="text-button" type="button" data-add-outsourced="${index}">增加委外标位</button>
+      </div>
+      <div class="outsourced-list">
+        ${(tranche.outsourcedBids || []).map((outsourced, outsourcedIndex) => `
+          <div class="outsourced-card" data-outsourced-index="${outsourcedIndex}">
+            <div class="outsourced-card-head">
+              <strong>委外 ${outsourcedIndex + 1}</strong>
+              <button class="text-button" type="button" data-remove-outsourced="${index}:${outsourcedIndex}">移除</button>
+            </div>
+            <div class="tranche-grid">
+              <label>委外机构<input data-outsourced-field="managerName" value="${escapeAttribute(outsourced.managerName)}"></label>
+              <label>投标利率（%）<input data-outsourced-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidRate ?? "")}"></label>
+              <label>投标量（亿元）<input data-outsourced-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidAmount ?? "")}"></label>
+              <label>中标量（万元）<input data-outsourced-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(outsourced.winningAmountWan ?? "")}"></label>
+              <label>综合定价
+                <select data-outsourced-field="pricingMode">
+                  <option ${outsourced.pricingMode === "未综" ? "selected" : ""}>未综</option>
+                  <option ${outsourced.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
+                </select>
+              </label>
+              <label>综合定价至（%）<input data-outsourced-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.pricingRate ?? "")}"></label>
+            </div>
+          </div>
+        `).join("") || '<div class="empty compact">暂无委外标位。</div>'}
+      </div>
+
+      <div class="tranche-subheading"><strong>发行结果与缴款</strong></div>
+      <div class="tranche-grid">
+        <label>债券代码<input data-tranche-field="securityCode" value="${escapeAttribute(tranche.securityCode)}"></label>
+        <label>发行规模（亿元）<input data-tranche-field="issueScale" type="number" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}"></label>
+        <label>全场倍数<input data-tranche-field="fullMarketMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.fullMarketMultiple ?? "")}"></label>
+        <label>缴款日期<input data-tranche-field="paymentDate" type="date" value="${escapeAttribute(tranche.paymentDate)}"></label>
+        <label class="span-3">回拨 / 结果备注<input data-tranche-field="allocationNote" value="${escapeAttribute(tranche.allocationNote)}"></label>
+        <label class="checkbox-label compact-checkbox"><input data-tranche-field="paymentCompleted" type="checkbox" ${tranche.paymentCompleted ? "checked" : ""}>已完成缴款</label>
       </div>
     </section>
   `).join("");
@@ -405,6 +511,29 @@ function renderTranches(tranches) {
       fillProjectForm(draft);
     });
   });
+  $$("[data-add-outsourced]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const draft = readProjectForm();
+      draft.tranches[Number(button.dataset.addOutsourced)].outsourcedBids.push({
+        id: crypto.randomUUID(),
+        managerName: "",
+        bidRate: null,
+        bidAmount: null,
+        winningAmountWan: null,
+        pricingMode: "未综",
+        pricingRate: null,
+      });
+      fillProjectForm(draft);
+    });
+  });
+  $$("[data-remove-outsourced]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [trancheIndex, outsourcedIndex] = button.dataset.removeOutsourced.split(":").map(Number);
+      const draft = readProjectForm();
+      draft.tranches[trancheIndex].outsourcedBids.splice(outsourcedIndex, 1);
+      fillProjectForm(draft);
+    });
+  });
 }
 
 function readProjectForm() {
@@ -412,9 +541,22 @@ function readProjectForm() {
   const tranches = $$("[data-tranche-index]").map((card) => {
     const values = {};
     card.querySelectorAll("[data-tranche-field]").forEach((input) => {
-      values[input.dataset.trancheField] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+      values[input.dataset.trancheField] = input.type === "checkbox"
+        ? input.checked
+        : input.type === "number"
+          ? numberOrNull(input.value)
+          : input.value.trim();
     });
-    values.id = existing.tranches?.[Number(card.dataset.trancheIndex)]?.id;
+    const trancheIndex = Number(card.dataset.trancheIndex);
+    values.id = existing.tranches?.[trancheIndex]?.id;
+    values.outsourcedBids = [...card.querySelectorAll("[data-outsourced-index]")].map((outsourcedCard) => {
+      const outsourced = {};
+      outsourcedCard.querySelectorAll("[data-outsourced-field]").forEach((input) => {
+        outsourced[input.dataset.outsourcedField] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+      });
+      outsourced.id = existing.tranches?.[trancheIndex]?.outsourcedBids?.[Number(outsourcedCard.dataset.outsourcedIndex)]?.id;
+      return outsourced;
+    });
     return values;
   });
   return normalizeProjectRecord({
@@ -426,27 +568,21 @@ function readProjectForm() {
     branch: $("#projectBranch").value,
     venue: $("#projectVenue").value,
     leadUnderwriter: $("#projectLeadUnderwriter").value,
+    sponsorStatus: $("#projectSponsorStatus").value,
     cutoffAt: $("#projectCutoffAt").value,
     notes: $("#projectNotes").value,
-    comprehensivePricing: $("#projectComprehensivePricing").checked,
-    pricingUnit: $("#projectPricingUnit").value,
-    afterTaxRevenue: numberOrNull($("#projectAfterTaxRevenue").value),
-    ftpCost: numberOrNull($("#projectFtpCost").value),
+    sourceText: $("#projectSourceText").value,
     opinion: $("#projectOpinion").value,
+    resultAdvertisement: $("#projectResultAdvertisement").value,
     tranches,
   });
 }
 
-function updateNetIncomePreview() {
-  const revenue = numberOrNull($("#projectAfterTaxRevenue").value);
-  const ftp = numberOrNull($("#projectFtpCost").value);
-  $("#projectNetIncome").value = Number.isFinite(revenue) && Number.isFinite(ftp) ? formatNumber(revenue - ftp) : "";
-}
-
-function updateResultSummaryPreview() {
+function updateProjectPreviews() {
   if ($("#projectForm").hidden) return;
-  updateNetIncomePreview();
-  $("#projectResultSummary").value = buildBidResultSummary(readProjectForm());
+  const draft = readProjectForm();
+  $("#projectBidPosition").value = buildBidPositionText(draft);
+  $("#projectResultSummary").value = buildAwardResultText(draft);
 }
 
 function compareProjects(left, right) {
@@ -459,6 +595,14 @@ function compareProjects(left, right) {
 function formatCutoff(value) {
   if (!value) return "截标时间待补";
   return value.replace("T", " ");
+}
+
+function formatProjectSchedule(projectValue) {
+  const pendingPayments = (projectValue.tranches || [])
+    .filter((tranche) => tranche.paymentDate && !tranche.paymentCompleted)
+    .map((tranche) => tranche.paymentDate)
+    .sort();
+  return pendingPayments.length ? `缴款 ${pendingPayments[0]}` : formatCutoff(projectValue.cutoffAt);
 }
 
 function statusBadgeClass(status) {

@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  buildBidResultSummary,
+  applyIssuanceAdvertisement,
+  buildAwardResultText,
+  buildBidPositionText,
   createProjectRecord,
   dashboardCounts,
   deriveProjectStatus,
   normalizeProjectRecord,
+  parseIssuanceAdvertisement,
   upsertProject,
 } from "../lifecycle.js";
 
@@ -17,6 +20,7 @@ test("creates a project ledger record with one tranche per bond variety", () => 
     durationText: "3/5年期",
     durationParts: ["3年", "5年"],
     inquiryRanges: [{ low: 1.3, high: 2.3 }, { low: 1.5, high: 2.5 }],
+    suggestedRatios: [20, 15],
     branch: "广州分行",
     venue: "上交所",
     leadUnderwriter: "中信证券",
@@ -27,9 +31,10 @@ test("creates a project ledger record with one tranche per bond variety", () => 
   assert.equal(record.tranches.length, 2);
   assert.deepEqual(record.tranches.map((item) => item.shortName), ["26广越05", "26广越06"]);
   assert.deepEqual(record.tranches.map((item) => item.durationText), ["3年", "5年"]);
+  assert.deepEqual(record.tranches.map((item) => item.suggestedRatio), [20, 15]);
 });
 
-test("derives bidding and award statuses from tranche records", () => {
+test("derives bidding, award and payment statuses from tranche records", () => {
   const base = normalizeProjectRecord({
     shortName: "26测试MTN001A/B",
     tranches: [{ shortName: "A", bidRate: 1.8, bidAmount: 1 }, { shortName: "B", bidRate: 2, bidAmount: 1 }],
@@ -43,41 +48,145 @@ test("derives bidding and award statuses from tranche records", () => {
     ...base,
     tranches: base.tranches.map((item) => ({ ...item, resultStatus: "未中标" })),
   }), "未中标");
+  assert.equal(deriveProjectStatus({
+    ...base,
+    tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12" }],
+  }), "待缴款");
+  assert.equal(deriveProjectStatus({
+    ...base,
+    tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12", paymentCompleted: true }],
+  }), "已缴款");
+  assert.equal(deriveProjectStatus(normalizeProjectRecord({
+    shortName: "委外中标项目",
+    tranches: [{
+      shortName: "委外中标项目",
+      resultStatus: "未中标",
+      paymentDate: "2026-06-12",
+      outsourcedBids: [{ managerName: "委外一号", winningAmountWan: 5000 }],
+    }],
+  })), "待缴款");
 });
 
-test("calculates dashboard counts and comprehensive pricing result summary", () => {
+test("calculates dashboard counts including payment reminders", () => {
   const today = new Date("2026-06-10T09:00:00");
   const projects = [
     normalizeProjectRecord({ shortName: "A", status: "待投标", cutoffAt: "2026-06-10T15:00" }),
     normalizeProjectRecord({ shortName: "B", status: "已投标待结果" }),
-    normalizeProjectRecord({ shortName: "C", status: "已中标" }),
+    normalizeProjectRecord({ shortName: "C", status: "待缴款", tranches: [{ shortName: "C", paymentDate: "2026-06-10" }] }),
+    normalizeProjectRecord({ shortName: "D", status: "已缴款" }),
   ];
   assert.deepEqual(dashboardCounts(projects, today), {
-    all: 3,
+    all: 4,
     dueToday: 1,
     toBid: 1,
     awaitingResult: 1,
-    won: 1,
+    won: 2,
     notWon: 0,
+    duePayment: 1,
+    paymentToday: 1,
   });
+});
 
-  const project = normalizeProjectRecord({
-    shortName: "26测试01",
-    comprehensivePricing: true,
-    afterTaxRevenue: 1.2,
-    ftpCost: 0.7,
+test("builds own and outsourced bid positions for interbank, exchange and dual projects", () => {
+  const nonLead = normalizeProjectRecord({
+    shortName: "26测试MTN001",
+    venue: "银行间",
+    sponsorStatus: "非我行主承",
+    leadUnderwriter: "中信银行",
     tranches: [{
-      shortName: "26测试01",
-      bidRate: 1.8,
-      bidAmount: 2,
-      resultStatus: "中标",
-      winningRate: 1.85,
-      winningAmount: 1,
+      shortName: "26测试MTN001",
+      suggestedRatio: 30,
+      bidRate: 1.6,
+      bidAmount: 3,
+      outsourcedBids: [{ managerName: "委外一号", bidRate: 1.62, bidAmount: 1 }],
     }],
   });
-  assert.equal(project.netIncome, 0.5);
-  assert.match(buildBidResultSummary(project), /中标1亿元，中标利率1.85%/);
-  assert.match(buildBidResultSummary(project), /扣除FTP后收益0.5万元/);
+  assert.equal(
+    buildBidPositionText(nonLead),
+    "【参团+投标】26测试MTN001，1.60%投3亿，不超30%，主承中信银行\n【委外投标：委外一号】26测试MTN001，1.62%投1亿，不超30%",
+  );
+
+  const lead = normalizeProjectRecord({
+    shortName: "26测试SCP001",
+    venue: "银行间",
+    sponsorStatus: "牵头",
+    tranches: [{ shortName: "26测试SCP001", suggestedRatio: 20, bidRate: 1.5, bidAmount: 2 }],
+  });
+  assert.equal(buildBidPositionText(lead), "【投标】26测试SCP001，1.50%投2亿，不超20%");
+
+  const exchange = normalizeProjectRecord({
+    shortName: "26测试01",
+    venue: "上交所",
+    sponsorStatus: "非我行主承",
+    tranches: [{ shortName: "26测试01", suggestedRatio: 30, bidRate: 1.7, bidAmount: 2 }],
+  });
+  assert.equal(buildBidPositionText(exchange), "【投标】26测试01，1.70%投2亿，不超30%");
+
+  const dual = normalizeProjectRecord({
+    shortName: "26测试MTN002A/B",
+    venue: "银行间",
+    sponsorStatus: "联席",
+    tranches: [
+      { shortName: "26测试MTN002A", durationText: "2年", suggestedRatio: 20, bidRate: 1.6, bidAmount: 2 },
+      { shortName: "26测试MTN002B", durationText: "5年", suggestedRatio: 15, bidRate: 1.8, bidAmount: 1 },
+    ],
+  });
+  assert.equal(
+    buildBidPositionText(dual),
+    "【投标】26测试MTN002A，2年期，1.60%投2亿，不超2年期的20%\n【投标】26测试MTN002B，5年期，1.80%投1亿，不超5年期的15%",
+  );
+});
+
+test("parses issuance advertisements and infers payment month", () => {
+  const exchangeAd = `【26常通01  245383.SH】簿记结果
+发行规模：7亿元
+债券期限：5年
+全场倍数：4.7倍
+票面利率：1.84%
+缴款日期：6月12日
+---------------------
+【26常通02  245384.SH】全部回拨至品种一`;
+  const parsedExchange = parseIssuanceAdvertisement(exchangeAd, new Date("2026-06-11T09:00:00"));
+  assert.equal(parsedExchange.items[0].shortName, "26常通01");
+  assert.equal(parsedExchange.items[0].securityCode, "245383.SH");
+  assert.equal(parsedExchange.items[0].durationText, "5年");
+  assert.equal(parsedExchange.items[0].issueScale, 7);
+  assert.equal(parsedExchange.items[0].fullMarketMultiple, 4.7);
+  assert.equal(parsedExchange.items[0].couponRate, 1.84);
+  assert.equal(parsedExchange.items[0].paymentDate, "2026-06-12");
+  assert.equal(parsedExchange.items[1].allocationNote, "全部回拨至品种一");
+
+  const interbankAd = "【发行结果】26远东租赁SCP005，代码：012681422，期限179天，规模10亿，票面1.45%，11日缴款，感谢各位金主支持！";
+  const currentMonth = parseIssuanceAdvertisement(interbankAd, new Date("2026-06-11T09:00:00")).items[0];
+  const nextMonth = parseIssuanceAdvertisement(interbankAd, new Date("2026-06-12T09:00:00")).items[0];
+  assert.equal(currentMonth.shortName, "26远东租赁SCP005");
+  assert.equal(currentMonth.securityCode, "012681422");
+  assert.equal(currentMonth.durationText, "179天");
+  assert.equal(currentMonth.paymentDate, "2026-06-11");
+  assert.equal(nextMonth.paymentDate, "2026-07-11");
+});
+
+test("applies advertisements and builds own and outsourced award report", () => {
+  const ad = "【发行结果】26测试SCP001，代码：012681422，期限179天，规模10亿，票面1.45%，11日缴款";
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26测试SCP001",
+    tranches: [{
+      shortName: "26测试SCP001",
+      resultStatus: "中标",
+      winningAmountWan: 12000,
+      pricingMode: "综合定价",
+      pricingRate: 1.48,
+      revenueBp: 3.5,
+      outsourcedBids: [{ managerName: "委外一号", winningAmountWan: 5000, pricingMode: "未综", revenueBp: 99 }],
+    }],
+  }), ad, new Date("2026-06-11T09:00:00"));
+
+  assert.equal(project.tranches[0].winningRate, 1.45);
+  assert.equal(project.tranches[0].paymentDate, "2026-06-11");
+  assert.equal(
+    buildAwardResultText(project),
+    `${ad}\n\n表内中标12000万，综合定价至1.48%，营收3.5BP\n委外一号委外中标5000万，未综`,
+  );
 });
 
 test("upserts project records without affecting issuers", () => {
