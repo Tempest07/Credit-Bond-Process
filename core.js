@@ -95,6 +95,28 @@ export function parseProjectBrief(rawText) {
   return result;
 }
 
+export function splitProjectBriefs(rawText) {
+  const lines = normalizeText(rawText).split("\n");
+  const blocks = [];
+  let current = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const isHeader = /(?:非我行主承|我行牵头、独立主承|我行牵头主承|我行主承|我行联席主承|联席主承|牵头主承|联席|牵头)/.test(line)
+      && line.includes("分行")
+      && /\S+\s+/.test(line);
+    if (isHeader && current.length) {
+      blocks.push(current.join("\n"));
+      current = [];
+    }
+    current.push(line);
+  }
+
+  if (current.length) blocks.push(current.join("\n"));
+  return blocks.filter((block) => block.trim());
+}
+
 function parseFirstLine(line, result) {
   const shortName = line.match(/^(\S+)/);
   if (shortName) result.shortName = shortName[1];

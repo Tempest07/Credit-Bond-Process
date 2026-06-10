@@ -9,6 +9,7 @@ import {
   generateOpinion,
   mergeImportedIssuers,
   parseProjectBrief,
+  splitProjectBriefs,
 } from "../core.js";
 
 const issuer = {
@@ -77,6 +78,19 @@ test("uses the longest possible term for option and dual-tranche durations", () 
   const parsed = parseProjectBrief("26广城04 非我行主承 广州分行\n3+2/5+2年期 规模19亿 AAA(中诚信国际)/隐含AAA-\n询价区间1.5-2.5 上交所 中信证券");
   assert.equal(parsed.durationDays, 7 * 365);
   assert.equal(parsed.hiddenRating, "AAA-");
+});
+
+test("splits multiple project briefs by their project headers", () => {
+  const blocks = splitProjectBriefs(`${sample}
+
+26神木国资MTN001 非我行主承 西安分行
+3+2年期 规模15亿 AAA(中证鹏元)/隐含AA(2)
+询价区间1.5-2.5 银行间 广发证券
+
+26神木国资MTN001 市场估值约1.90`);
+  assert.equal(blocks.length, 2);
+  assert.match(blocks[0], /26粤交投SCP002/);
+  assert.match(blocks[1], /26神木国资MTN001/);
 });
 
 test("applies approval thresholds and real estate override", () => {

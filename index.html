@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债流程生成器 - Tempest07</title>
   <meta name="description" content="解析项目简表并生成信用债投资流程意见">
-  <link rel="stylesheet" href="./styles.css?v=20260610-word-import">
+  <link rel="stylesheet" href="./styles.css?v=20260610-workflows">
 </head>
 <body>
   <div class="app-shell">
@@ -18,6 +18,7 @@
 
       <nav class="nav">
         <button class="nav-item active" data-view-target="generator">流程生成</button>
+        <button class="nav-item" data-view-target="batch">批量撰写</button>
         <button class="nav-item" data-view-target="database">主体与授信库</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
       </nav>
@@ -65,7 +66,10 @@
           <section class="panel fields-panel">
             <div class="panel-head">
               <div><span class="step">02</span><h2>确认结构化字段</h2></div>
-              <span class="pill" id="matchedIssuerPill">未匹配主体</span>
+              <div class="result-actions">
+                <span class="pill" id="matchedIssuerPill">未匹配主体</span>
+                <button class="button subtle" id="quickIssuerButton">录入/更新主体授信</button>
+              </div>
             </div>
 
             <div class="field-grid">
@@ -96,6 +100,34 @@
           </section>
         </div>
 
+        <section class="panel quick-issuer-panel" id="quickIssuerPanel" hidden>
+          <div class="panel-head">
+            <div><span class="step">DB+</span><h2>将当前项目录入主体授信库</h2></div>
+            <span class="pill">保存后立即重新生成流程意见</span>
+          </div>
+          <form id="quickIssuerForm">
+            <input id="quickIssuerId" type="hidden">
+            <div class="field-grid">
+              <label class="span-2">主体正式名称<input id="quickLegalName" required placeholder="例如：广州交通投资集团有限公司"></label>
+              <label class="span-2">常用简称<input id="quickAliases" placeholder="自动带入债券简称衍生简称，可用逗号分隔"></label>
+              <label>默认申报分行<input id="quickDefaultBranch"></label>
+              <label class="checkbox-label"><input id="quickIsRealEstate" type="checkbox">房地产主体</label>
+              <label>审批层级<input id="quickApprovalLevel" placeholder="总行或分行"></label>
+              <label>公募/通用批复金额（亿元）<input id="quickApprovedAmount" type="number" step="0.0001"></label>
+              <label>私募批复金额（亿元）<input id="quickPrivateAmount" type="number" step="0.0001"></label>
+              <label>发行类型<select id="quickOfferingType"><option value="">待选择</option><option>公募</option><option>私募</option><option>公私募</option></select></label>
+              <label>公募/通用投资比例（%）<input id="quickApprovedRatio" type="number" step="0.01"></label>
+              <label>私募投资比例（%）<input id="quickPrivateRatio" type="number" step="0.01"></label>
+              <label>投资期限<input id="quickInvestmentTermText" placeholder="如 3年、18个月"></label>
+              <label class="span-2">授信原文<input id="quickCreditRawText" placeholder="填写原文后会自动识别金额、比例和期限"></label>
+            </div>
+            <div class="form-actions">
+              <button class="button subtle" id="cancelQuickIssuerButton" type="button">取消</button>
+              <button class="button primary" type="submit">保存并用于当前项目</button>
+            </div>
+          </form>
+        </section>
+
         <section class="panel result-panel">
           <div class="panel-head">
             <div><span class="step">03</span><h2>流程意见</h2></div>
@@ -109,6 +141,23 @@
         </section>
       </section>
 
+      <section class="view" data-view="batch">
+        <section class="panel batch-input-panel">
+          <div class="panel-head">
+            <div><span class="step">BATCH</span><h2>一次粘贴多笔项目简表</h2></div>
+            <span class="pill">按每笔项目简表首行自动分组</span>
+          </div>
+          <textarea id="batchInput" class="batch-input" spellcheck="false" placeholder="连续粘贴多笔项目简表。每笔以“债券简称 + 主承身份 + 分行”首行开始，无需手动添加特殊分隔符。"></textarea>
+          <div class="batch-actions">
+            <button class="button primary" id="batchParseButton">批量解析并生成</button>
+            <button class="button subtle" id="batchSaveIssuersButton" disabled>批量录入已填写主体授信</button>
+            <button class="button subtle" id="batchCopyAllButton" disabled>复制全部流程意见</button>
+            <span class="pill" id="batchSummary">等待解析</span>
+          </div>
+        </section>
+        <div class="batch-results" id="batchResults"></div>
+      </section>
+
       <section class="view" data-view="database">
         <section class="panel history-import-panel" id="historyImportPanel" aria-live="polite" hidden>
           <div class="panel-head">
@@ -120,10 +169,10 @@
           </div>
           <div class="history-stats" id="historyStats"></div>
           <div class="history-review">
-            <h3>需要人工复核的记录</h3>
+            <h3>需要人工复核的记录（可直接修改后导入）</h3>
             <div id="historyReviewList"></div>
           </div>
-          <p class="history-note">解析遵循“文档越靠前越新”。ABS 仅统计，不导入普通信用债主体库；授信包含占位符时，会优先寻找该主体更靠后的完整授信。</p>
+          <p class="history-note">勾选“纳入本次导入”并修正字段后，修改内容会覆盖该条自动识别结果。未勾选的异常记录不会导入。解析遵循“文档越靠前越新”；ABS 仅统计，不导入普通信用债主体库。</p>
         </section>
 
         <div class="database-grid">
@@ -159,9 +208,11 @@
               <h3>最新授信信息</h3>
               <div class="field-grid">
                 <label>审批层级<input id="approvalLevel" placeholder="总行或分行"></label>
-                <label>批复金额（亿元）<input id="approvedAmount" type="number" step="0.0001"></label>
-                <label>发行类型<select id="offeringType"><option value="">待选择</option><option>公募</option><option>私募</option></select></label>
-                <label>批复投资比例（%）<input id="approvedRatio" type="number" step="0.01"></label>
+                <label>公募/通用批复金额（亿元）<input id="approvedAmount" type="number" step="0.0001"></label>
+                <label>私募批复金额（亿元）<input id="privateAmount" type="number" step="0.0001"></label>
+                <label>发行类型<select id="offeringType"><option value="">待选择</option><option>公募</option><option>私募</option><option>公私募</option></select></label>
+                <label>公募/通用投资比例（%）<input id="approvedRatio" type="number" step="0.01"></label>
+                <label>私募投资比例（%）<input id="privateRatio" type="number" step="0.01"></label>
                 <label>投资期限<input id="investmentTermText" placeholder="如 3年、18个月"></label>
                 <label>来源顺序<input id="sourceRank" type="number" placeholder="Word中越小越新"></label>
                 <label class="span-2">授信原文<input id="creditRawText" placeholder="如：总行批20亿，公募，30%，3年"></label>
@@ -188,8 +239,8 @@
           <article class="rule-card"><span>待补字段</span><h2>一级投标利率始终留空</h2><p>自动生成时使用【待填写】标记，不根据估值或指导价猜测。</p></article>
         </div>
         <section class="panel word-note">
-          <h2>Word 历史流程导入</h2>
-          <p>已预留“越靠近文档开始越新”的覆盖规则。收到真实 Word 文档后，将增加批量解析器：按文档顺序提取主体简称、正式名称与授信原文；同一主体只保留最靠前的一条有效授信。</p>
+          <h2>资料库维护与批量撰写</h2>
+          <p>历史 Word 可继续用于一次性迁移旧资料；异常记录可在导入前直接修正。日常新增主体和最新授信可从单笔或批量撰写页直接录入，无需继续维护原 Word 文档。</p>
         </section>
       </section>
     </main>
@@ -197,6 +248,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260610-word-import"></script>
+  <script type="module" src="./app.js?v=20260610-workflows"></script>
 </body>
 </html>

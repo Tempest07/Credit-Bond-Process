@@ -7,9 +7,15 @@ import {
   generateOpinion,
   mergeImportedIssuers,
   parseProjectBrief,
+  splitProjectBriefs,
   upsertIssuer,
 } from "./core.js";
-import { parseHistoryText } from "./history-parser.js";
+import {
+  deriveIssuerAlias,
+  extractIssuerLegalName,
+  parseCreditText,
+  parseHistoryText,
+} from "./history-parser.js";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -44,6 +50,7 @@ let project = parseProjectBrief("");
 let selectedIssuerId = "";
 let cloudAvailable = false;
 let pendingHistoryImport = null;
+let batchItems = [];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -57,6 +64,8 @@ initialize();
 async function initialize() {
   bindNavigation();
   bindGenerator();
+  bindQuickIssuer();
+  bindBatch();
   bindDatabase();
   initializeHistoryImport();
   bindDataActions();
@@ -172,9 +181,232 @@ function renderRuleTrace(generated, issuer) {
   ).join("");
 }
 
+function bindQuickIssuer() {
+  $("#quickIssuerButton").addEventListener("click", openQuickIssuerPanel);
+  $("#cancelQuickIssuerButton").addEventListener("click", () => {
+    $("#quickIssuerPanel").hidden = true;
+  });
+  $("#quickCreditRawText").addEventListener("change", () => {
+    fillCreditInputs("quick", parseCreditText($("#quickCreditRawText").value), false);
+  });
+  $("#quickIssuerForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    try {
+      const issuer = readIssuerInput("quick");
+      const existing = state.issuers.find((candidate) => candidate.legalName === issuer.legalName);
+      if (existing) issuer.id = existing.id;
+      state = upsertIssuer(state, issuer);
+      selectedIssuerId = issuer.id;
+      persistState();
+      renderIssuerOptions();
+      renderIssuerList();
+      regenerate();
+      if (batchItems.length) renderBatchResults();
+      $("#quickIssuerPanel").hidden = true;
+      showToast(`已录入“${issuer.legalName}”并用于当前项目。`);
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+}
+
+function openQuickIssuerPanel() {
+  const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
+  const draft = createIssuerDraft(project, issuer);
+  fillIssuerInput("quick", draft);
+  const panel = $("#quickIssuerPanel");
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function bindBatch() {
+  $("#batchParseButton").addEventListener("click", parseBatchInput);
+  $("#batchCopyAllButton").addEventListener("click", async () => {
+    const opinions = $$("[data-batch-opinion]").map((textarea) => textarea.value.trim()).filter(Boolean);
+    if (!opinions.length) return;
+    await navigator.clipboard.writeText(opinions.join("\n\n"));
+    showToast(`已复制 ${opinions.length} 笔流程意见。`);
+  });
+  $("#batchSaveIssuersButton").addEventListener("click", saveBatchIssuers);
+}
+
+function parseBatchInput() {
+  const blocks = splitProjectBriefs($("#batchInput").value);
+  batchItems = blocks.map((sourceText) => {
+    const parsedProject = parseProjectBrief(sourceText);
+    const issuer = findIssuer(parsedProject.shortName, state.issuers);
+    return {
+      sourceText,
+      project: parsedProject,
+      selectedIssuerId: issuer?.id || "",
+      draft: createIssuerDraft(parsedProject, issuer),
+    };
+  });
+  renderBatchResults();
+  if (!blocks.length) showToast("未识别到可批量处理的项目简表。");
+}
+
+function renderBatchResults() {
+  const container = $("#batchResults");
+  if (!batchItems.length) {
+    container.innerHTML = '<div class="panel empty">粘贴多笔项目简表后，点击“批量解析并生成”。</div>';
+    $("#batchSummary").textContent = "等待解析";
+    $("#batchCopyAllButton").disabled = true;
+    $("#batchSaveIssuersButton").disabled = true;
+    return;
+  }
+
+  let matchedCount = 0;
+  let warningCount = 0;
+  container.innerHTML = batchItems.map((item, index) => {
+    const issuer = state.issuers.find((candidate) => candidate.id === item.selectedIssuerId) || null;
+    const generated = generateOpinion(item.project, issuer);
+    item.generated = generated;
+    if (issuer) matchedCount += 1;
+    const draft = item.draft || createIssuerDraft(item.project, issuer);
+    item.draft = draft;
+    const options = [
+      '<option value="">未匹配主体</option>',
+      ...[...state.issuers]
+        .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"))
+        .map((candidate) => `<option value="${escapeAttribute(candidate.id)}" ${candidate.id === item.selectedIssuerId ? "selected" : ""}>${escapeHtml(candidate.legalName)}</option>`),
+    ].join("");
+    const warnings = [...new Set(generated.warnings.filter((warning) =>
+      warning && !warning.startsWith("一级投标利率按规则留空"),
+    ))];
+    if (warnings.length) warningCount += 1;
+
+    return `
+      <section class="panel batch-card" data-batch-card="${index}">
+        <div class="panel-head">
+          <div><span class="step">${index + 1}</span><h2>${escapeHtml(item.project.shortName || `第 ${index + 1} 笔`)}</h2></div>
+          <div class="result-actions">
+            <span class="pill ${issuer ? "accent" : ""}">${issuer ? escapeHtml(issuer.legalName) : "未匹配主体"}</span>
+            <button class="button subtle" data-batch-copy="${index}">复制本笔</button>
+          </div>
+        </div>
+        <div class="batch-card-grid">
+          <div>
+            <textarea class="batch-source" readonly>${escapeHtml(item.sourceText)}</textarea>
+            <label class="batch-issuer-select">匹配主体<select data-batch-select="${index}">${options}</select></label>
+            ${warnings.length ? `<div class="warning-box"><strong>需要确认</strong><ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></div>` : ""}
+          </div>
+          <textarea class="batch-opinion" data-batch-opinion="${index}">${escapeHtml(generated.opinion)}</textarea>
+        </div>
+        ${renderBatchIssuerEditor(draft, index, !issuer)}
+      </section>
+    `;
+  }).join("");
+
+  $("#batchSummary").textContent = `${batchItems.length} 笔 / 已匹配 ${matchedCount} 笔 / ${warningCount} 笔需确认`;
+  $("#batchCopyAllButton").disabled = false;
+  $("#batchSaveIssuersButton").disabled = false;
+
+  $$("[data-batch-select]").forEach((select) => {
+    select.addEventListener("change", () => {
+      captureBatchDrafts();
+      const index = Number(select.dataset.batchSelect);
+      const issuer = state.issuers.find((candidate) => candidate.id === select.value) || null;
+      batchItems[index].selectedIssuerId = select.value;
+      batchItems[index].draft = createIssuerDraft(batchItems[index].project, issuer);
+      renderBatchResults();
+    });
+  });
+  $$("[data-batch-copy]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const textarea = $(`[data-batch-opinion="${button.dataset.batchCopy}"]`);
+      await navigator.clipboard.writeText(textarea.value);
+      showToast("本笔流程意见已复制。");
+    });
+  });
+}
+
+function renderBatchIssuerEditor(draft, index, shouldOpen) {
+  return `
+    <details class="batch-issuer-editor" ${shouldOpen ? "open" : ""}>
+      <summary>资料库录入（新主体或授信变化时填写）</summary>
+      <div class="batch-issuer-grid">
+        <label class="full review-toggle"><input type="checkbox" data-batch-index="${index}" data-batch-field="include" ${draft.include ? "checked" : ""}>录入/更新此主体授信</label>
+        <label class="wide">主体正式名称<input data-batch-index="${index}" data-batch-field="legalName" value="${escapeAttribute(draft.legalName)}"></label>
+        <label class="wide">常用简称<input data-batch-index="${index}" data-batch-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
+        <label>默认分行<input data-batch-index="${index}" data-batch-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
+        <label>审批层级<input data-batch-index="${index}" data-batch-field="approvalLevel" value="${escapeAttribute(draft.approvalLevel)}"></label>
+        <label>公募/通用金额<input type="number" step="0.0001" data-batch-index="${index}" data-batch-field="approvedAmount" value="${escapeAttribute(draft.approvedAmount)}"></label>
+        <label>私募金额<input type="number" step="0.0001" data-batch-index="${index}" data-batch-field="privateAmount" value="${escapeAttribute(draft.privateAmount)}"></label>
+        <label>发行类型<select data-batch-index="${index}" data-batch-field="offeringType">${offeringTypeOptions(draft.offeringType)}</select></label>
+        <label>公募/通用比例（%）<input type="number" step="0.01" data-batch-index="${index}" data-batch-field="approvedRatio" value="${escapeAttribute(draft.approvedRatio)}"></label>
+        <label>私募比例（%）<input type="number" step="0.01" data-batch-index="${index}" data-batch-field="privateRatio" value="${escapeAttribute(draft.privateRatio)}"></label>
+        <label>投资期限<input data-batch-index="${index}" data-batch-field="investmentTermText" value="${escapeAttribute(draft.investmentTermText)}"></label>
+        <label class="full">授信原文<input data-batch-index="${index}" data-batch-field="rawText" value="${escapeAttribute(draft.rawText)}" placeholder="填写后会自动识别金额、比例和期限"></label>
+        <label class="full review-toggle"><input type="checkbox" data-batch-index="${index}" data-batch-field="isRealEstate" ${draft.isRealEstate ? "checked" : ""}>房地产主体</label>
+      </div>
+    </details>
+  `;
+}
+
+function captureBatchDrafts() {
+  batchItems.forEach((item, index) => {
+    const card = $(`[data-batch-card="${index}"]`);
+    if (!card) return;
+    item.draft = readDataFieldIssuerDraft(card, "batchField", item.draft);
+  });
+}
+
+function saveBatchIssuers() {
+  captureBatchDrafts();
+  let savedCount = 0;
+  let skippedCount = 0;
+  for (const item of batchItems) {
+    if (!item.draft?.include) continue;
+    if (!item.draft.legalName.trim()) {
+      skippedCount += 1;
+      continue;
+    }
+    try {
+      const issuer = issuerFromDraft(item.draft);
+      const existing = state.issuers.find((candidate) => candidate.legalName === issuer.legalName);
+      if (existing) issuer.id = existing.id;
+      state = upsertIssuer(state, issuer);
+      const saved = state.issuers.find((candidate) => candidate.id === issuer.id)
+        || state.issuers.find((candidate) => candidate.legalName === issuer.legalName);
+      item.selectedIssuerId = saved?.id || "";
+      item.draft = createIssuerDraft(item.project, saved);
+      savedCount += 1;
+    } catch {
+      // Invalid drafts remain visible for manual correction.
+      skippedCount += 1;
+    }
+  }
+  if (!savedCount) {
+    showToast("没有可录入的资料；请勾选并填写主体正式名称。");
+    return;
+  }
+  persistState();
+  renderIssuerOptions();
+  renderIssuerList();
+  renderBatchResults();
+  showToast(`已批量录入或更新 ${savedCount} 个主体${skippedCount ? `，另有 ${skippedCount} 个待补充` : ""}。`);
+}
+
 function bindDatabase() {
   $("#newIssuerButton").addEventListener("click", clearIssuerForm);
   $("#issuerSearch").addEventListener("input", renderIssuerList);
+  $("#creditRawText").addEventListener("change", () => {
+    const credit = parseCreditText($("#creditRawText").value);
+    const fields = {
+      approvalLevel: credit.approvalLevel,
+      approvedAmount: credit.approvedAmount,
+      privateAmount: credit.privateAmount,
+      offeringType: credit.offeringType,
+      approvedRatio: credit.approvedRatio,
+      privateRatio: credit.privateRatio,
+      investmentTermText: credit.investmentTermText,
+    };
+    Object.entries(fields).forEach(([id, value]) => {
+      const input = $(`#${id}`);
+      if (input && value !== null && value !== undefined && !input.value) input.value = value;
+    });
+  });
   $("#issuerForm").addEventListener("submit", (event) => {
     event.preventDefault();
     try {
@@ -186,6 +418,7 @@ function bindDatabase() {
       renderIssuerList();
       fillIssuerForm(state.issuers.find((item) => item.id === issuer.id));
       regenerate();
+      if (batchItems.length) renderBatchResults();
       showToast("主体与最新授信已保存。");
     } catch (error) {
       showToast(error.message);
@@ -209,12 +442,24 @@ function bindDatabase() {
   $("#cancelHistoryImportButton").addEventListener("click", clearHistoryImport);
   $("#confirmHistoryImportButton").addEventListener("click", () => {
     if (!pendingHistoryImport) return;
-    state = mergeImportedIssuers(state, pendingHistoryImport.issuers);
+    const imported = collectHistoryImportIssuers();
+    state = mergeImportedIssuers(state, imported.baseIssuers);
+    for (const reviewed of imported.reviewedIssuers.sort((left, right) =>
+      Number(right.credit?.sourceRank ?? -1) - Number(left.credit?.sourceRank ?? -1),
+    )) {
+      const existing = state.issuers.find((issuer) => issuer.legalName === reviewed.legalName);
+      state = upsertIssuer(state, {
+        ...reviewed,
+        id: existing?.id || reviewed.id,
+        credit: { ...reviewed.credit, sourceRank: null },
+      });
+    }
     persistState();
     renderIssuerOptions();
     renderIssuerList();
     regenerate();
-    showToast(`已导入并归并 ${pendingHistoryImport.issuers.length} 个主体。`);
+    if (batchItems.length) renderBatchResults();
+    showToast(`已导入并归并 ${imported.baseIssuers.length + imported.reviewedIssuers.length} 个主体。`);
     clearHistoryImport();
   });
 }
@@ -300,15 +545,60 @@ function renderHistoryImport() {
     <div class="history-stat"><strong>${value}</strong><span>${label}</span></div>
   `).join("");
 
-  const reviews = result.reviewRecords.slice(0, 30);
+  const reviews = result.reviewRecords.slice(0, 100);
   $("#historyReviewList").innerHTML = reviews.length
-    ? reviews.map((record) => `
-      <div class="review-item">
-        <strong>${escapeHtml(record.shortName || record.issuerLegalName || "未识别记录")}</strong>
-        <span>${escapeHtml((record.warnings || []).join("；"))}</span>
-      </div>
-    `).join("")
+    ? reviews.map((record, index) => renderHistoryReviewEditor(record, index)).join("")
     : '<div class="empty">没有需要人工复核的记录。</div>';
+}
+
+function renderHistoryReviewEditor(record, index) {
+  const draft = createHistoryReviewDraft(record);
+  return `
+    <div class="review-item" data-review-card="${index}">
+      <div class="review-item-head">
+        <div>
+          <strong>${escapeHtml(record.shortName || record.issuerLegalName || "未识别记录")}</strong>
+          <span>${escapeHtml((record.warnings || []).join("；"))}</span>
+        </div>
+        <label class="review-toggle"><input type="checkbox" data-review-field="include">纳入本次导入</label>
+      </div>
+      <div class="review-grid">
+        <label class="wide">主体正式名称<input data-review-field="legalName" value="${escapeAttribute(draft.legalName)}"></label>
+        <label class="wide">常用简称<input data-review-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
+        <label>默认分行<input data-review-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
+        <label>审批层级<input data-review-field="approvalLevel" value="${escapeAttribute(draft.approvalLevel)}"></label>
+        <label>公募/通用金额<input type="number" step="0.0001" data-review-field="approvedAmount" value="${escapeAttribute(draft.approvedAmount)}"></label>
+        <label>私募金额<input type="number" step="0.0001" data-review-field="privateAmount" value="${escapeAttribute(draft.privateAmount)}"></label>
+        <label>发行类型<select data-review-field="offeringType">${offeringTypeOptions(draft.offeringType)}</select></label>
+        <label>公募/通用比例（%）<input type="number" step="0.01" data-review-field="approvedRatio" value="${escapeAttribute(draft.approvedRatio)}"></label>
+        <label>私募比例（%）<input type="number" step="0.01" data-review-field="privateRatio" value="${escapeAttribute(draft.privateRatio)}"></label>
+        <label>投资期限<input data-review-field="investmentTermText" value="${escapeAttribute(draft.investmentTermText)}"></label>
+        <label class="full">授信原文<input data-review-field="rawText" value="${escapeAttribute(draft.rawText)}"></label>
+        <label class="full review-toggle"><input type="checkbox" data-review-field="isRealEstate" ${draft.isRealEstate ? "checked" : ""}>房地产主体</label>
+      </div>
+      <details class="review-source">
+        <summary>查看原始流程意见</summary>
+        <p>${escapeHtml(record.opinion || record.fullName || "无可用原文")}</p>
+      </details>
+    </div>
+  `;
+}
+
+function collectHistoryImportIssuers() {
+  const reviewLegalNames = new Set(
+    pendingHistoryImport.reviewRecords.map((record) => record.issuerLegalName).filter(Boolean),
+  );
+  const baseIssuers = pendingHistoryImport.issuers.filter((issuer) => !reviewLegalNames.has(issuer.legalName));
+  const reviewedIssuers = $$("[data-review-card]").flatMap((card, index) => {
+    const draft = readDataFieldIssuerDraft(card, "reviewField", createHistoryReviewDraft(pendingHistoryImport.reviewRecords[index]));
+    if (!draft.include || !draft.legalName.trim()) return [];
+    try {
+      return [issuerFromDraft(draft)];
+    } catch {
+      return [];
+    }
+  });
+  return { baseIssuers, reviewedIssuers };
 }
 
 function clearHistoryImport() {
@@ -320,24 +610,164 @@ function clearHistoryImport() {
   setHistoryImportBusy(false);
 }
 
-function readIssuerForm() {
+function createIssuerDraft(projectValue, issuer = null) {
+  const derivedAliases = [deriveIssuerAlias(projectValue?.shortName), projectValue?.shortName].filter(Boolean);
+  const credit = issuer?.credit || {};
   return {
-    id: $("#issuerId").value || crypto.randomUUID(),
-    legalName: $("#legalName").value,
-    aliases: $("#aliases").value.split(/[,，\n]/).map((value) => value.trim()).filter(Boolean),
-    defaultBranch: $("#defaultBranch").value,
-    isRealEstate: $("#isRealEstate").checked,
+    id: issuer?.id || "",
+    include: !issuer,
+    legalName: issuer?.legalName || extractIssuerLegalName(projectValue?.fullName || ""),
+    aliases: (issuer?.aliases?.length ? issuer.aliases : derivedAliases).join("，"),
+    defaultBranch: issuer?.defaultBranch || projectValue?.branch || "",
+    isRealEstate: Boolean(issuer?.isRealEstate),
+    approvalLevel: credit.approvalLevel || "",
+    approvedAmount: credit.approvedAmount ?? "",
+    privateAmount: credit.privateAmount ?? "",
+    offeringType: credit.offeringType || "",
+    approvedRatio: credit.approvedRatio ?? "",
+    privateRatio: credit.privateRatio ?? "",
+    investmentTermText: credit.investmentTermText || "",
+    rawText: credit.rawText || "",
+    sourceRank: credit.sourceRank ?? null,
+  };
+}
+
+function createHistoryReviewDraft(record) {
+  const credit = record.credit || {};
+  return {
+    id: "",
+    include: false,
+    legalName: record.issuerLegalName || "",
+    aliases: [record.alias, record.shortName].filter(Boolean).join("，"),
+    defaultBranch: record.branch || "",
+    isRealEstate: Boolean(record.isRealEstate),
+    approvalLevel: credit.approvalLevel || "",
+    approvedAmount: credit.approvedAmount ?? "",
+    privateAmount: credit.privateAmount ?? "",
+    offeringType: credit.offeringType || "",
+    approvedRatio: credit.approvedRatio ?? "",
+    privateRatio: credit.privateRatio ?? "",
+    investmentTermText: credit.investmentTermText || "",
+    rawText: credit.rawText || "",
+    sourceRank: credit.sourceRank ?? record.sourceRank ?? null,
+  };
+}
+
+function readDataFieldIssuerDraft(container, datasetName, fallback = {}) {
+  const attribute = datasetName === "batchField" ? "data-batch-field" : "data-review-field";
+  const draft = { ...fallback };
+  container.querySelectorAll(`[${attribute}]`).forEach((input) => {
+    const field = input.getAttribute(attribute);
+    draft[field] = input.type === "checkbox" ? input.checked : input.value;
+  });
+  return draft;
+}
+
+function issuerFromDraft(draft) {
+  const parsed = parseCreditText(draft.rawText || "", draft.sourceRank ?? null);
+  const chooseNumber = (value, parsedValue) => numberOrNull(value) ?? parsedValue ?? null;
+  const investmentTermText = String(draft.investmentTermText || parsed.investmentTermText || "").trim();
+  return {
+    id: draft.id || crypto.randomUUID(),
+    legalName: String(draft.legalName || "").trim(),
+    aliases: String(draft.aliases || "").split(/[,，\n]/).map((value) => value.trim()).filter(Boolean),
+    defaultBranch: String(draft.defaultBranch || "").trim(),
+    isRealEstate: Boolean(draft.isRealEstate),
     credit: {
-      approvalLevel: $("#approvalLevel").value,
-      approvedAmount: $("#approvedAmount").value,
-      offeringType: $("#offeringType").value,
-      approvedRatio: $("#approvedRatio").value,
-      investmentTermText: $("#investmentTermText").value,
-      rawText: $("#creditRawText").value,
-      sourceRank: $("#sourceRank").value,
+      approvalLevel: String(draft.approvalLevel || parsed.approvalLevel || "").trim(),
+      approvedAmount: chooseNumber(draft.approvedAmount, parsed.approvedAmount),
+      privateAmount: chooseNumber(draft.privateAmount, parsed.privateAmount),
+      offeringType: String(draft.offeringType || parsed.offeringType || "").trim(),
+      approvedRatio: chooseNumber(draft.approvedRatio, parsed.approvedRatio),
+      privateRatio: chooseNumber(draft.privateRatio, parsed.privateRatio),
+      investmentTermText,
+      rawText: String(draft.rawText || "").trim(),
+      sourceRank: draft.sourceRank ?? null,
       updatedAt: new Date().toISOString(),
     },
   };
+}
+
+function offeringTypeOptions(selected = "") {
+  return ["", "公募", "私募", "公私募"].map((value) =>
+    `<option value="${value}" ${value === selected ? "selected" : ""}>${value || "待选择"}</option>`,
+  ).join("");
+}
+
+function fillIssuerInput(prefix, draft) {
+  const fields = {
+    IssuerId: draft.id,
+    LegalName: draft.legalName,
+    Aliases: draft.aliases,
+    DefaultBranch: draft.defaultBranch,
+    ApprovalLevel: draft.approvalLevel,
+    ApprovedAmount: draft.approvedAmount,
+    PrivateAmount: draft.privateAmount,
+    OfferingType: draft.offeringType,
+    ApprovedRatio: draft.approvedRatio,
+    PrivateRatio: draft.privateRatio,
+    InvestmentTermText: draft.investmentTermText,
+    CreditRawText: draft.rawText,
+  };
+  Object.entries(fields).forEach(([suffix, value]) => {
+    const input = $(`#${prefix}${suffix}`);
+    if (input) input.value = value ?? "";
+  });
+  $(`#${prefix}IsRealEstate`).checked = Boolean(draft.isRealEstate);
+}
+
+function fillCreditInputs(prefix, credit, onlyEmpty = true) {
+  const fields = {
+    ApprovalLevel: credit.approvalLevel,
+    ApprovedAmount: credit.approvedAmount,
+    PrivateAmount: credit.privateAmount,
+    OfferingType: credit.offeringType,
+    ApprovedRatio: credit.approvedRatio,
+    PrivateRatio: credit.privateRatio,
+    InvestmentTermText: credit.investmentTermText,
+  };
+  Object.entries(fields).forEach(([suffix, value]) => {
+    const input = $(`#${prefix}${suffix}`);
+    if (input && value !== null && value !== undefined && (!onlyEmpty || !input.value)) input.value = value;
+  });
+}
+
+function readIssuerInput(prefix) {
+  return issuerFromDraft({
+    id: $(`#${prefix}IssuerId`).value,
+    legalName: $(`#${prefix}LegalName`).value,
+    aliases: $(`#${prefix}Aliases`).value,
+    defaultBranch: $(`#${prefix}DefaultBranch`).value,
+    isRealEstate: $(`#${prefix}IsRealEstate`).checked,
+    approvalLevel: $(`#${prefix}ApprovalLevel`).value,
+    approvedAmount: $(`#${prefix}ApprovedAmount`).value,
+    privateAmount: $(`#${prefix}PrivateAmount`).value,
+    offeringType: $(`#${prefix}OfferingType`).value,
+    approvedRatio: $(`#${prefix}ApprovedRatio`).value,
+    privateRatio: $(`#${prefix}PrivateRatio`).value,
+    investmentTermText: $(`#${prefix}InvestmentTermText`).value,
+    rawText: $(`#${prefix}CreditRawText`).value,
+    sourceRank: null,
+  });
+}
+
+function readIssuerForm() {
+  return issuerFromDraft({
+    id: $("#issuerId").value,
+    legalName: $("#legalName").value,
+    aliases: $("#aliases").value,
+    defaultBranch: $("#defaultBranch").value,
+    isRealEstate: $("#isRealEstate").checked,
+    approvalLevel: $("#approvalLevel").value,
+    approvedAmount: $("#approvedAmount").value,
+    privateAmount: $("#privateAmount").value,
+    offeringType: $("#offeringType").value,
+    approvedRatio: $("#approvedRatio").value,
+    privateRatio: $("#privateRatio").value,
+    investmentTermText: $("#investmentTermText").value,
+    rawText: $("#creditRawText").value,
+    sourceRank: numberOrNull($("#sourceRank").value),
+  });
 }
 
 function renderIssuerList() {
@@ -387,8 +817,10 @@ function fillIssuerForm(issuer) {
   $("#isRealEstate").checked = Boolean(issuer.isRealEstate);
   $("#approvalLevel").value = issuer.credit?.approvalLevel || "";
   $("#approvedAmount").value = issuer.credit?.approvedAmount ?? "";
+  $("#privateAmount").value = issuer.credit?.privateAmount ?? "";
   $("#offeringType").value = issuer.credit?.offeringType || "";
   $("#approvedRatio").value = issuer.credit?.approvedRatio ?? "";
+  $("#privateRatio").value = issuer.credit?.privateRatio ?? "";
   $("#investmentTermText").value = issuer.credit?.investmentTermText || "";
   $("#sourceRank").value = issuer.credit?.sourceRank ?? "";
   $("#creditRawText").value = issuer.credit?.rawText || "";
@@ -465,6 +897,7 @@ async function loadCloudState() {
   }
   renderIssuerOptions();
   renderIssuerList();
+  if (batchItems.length) renderBatchResults();
 }
 
 async function saveCloudState() {
