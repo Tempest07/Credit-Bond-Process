@@ -7,7 +7,7 @@ export async function onRequestGet(context) {
     await ensureSchema(context.env.DB);
     const row = await context.env.DB.prepare("SELECT data, updated_at FROM app_state WHERE id = 1").first();
     return json({
-      data: row?.data ? JSON.parse(row.data) : { version: 1, issuers: [], updatedAt: null },
+      data: row?.data ? JSON.parse(row.data) : { version: 2, issuers: [], projects: [], updatedAt: null },
       updatedAt: row?.updated_at || null,
     });
   } catch (error) {
@@ -65,9 +65,12 @@ function validateState(data) {
     throw new Error("资料库必须包含 issuers 数组");
   }
   if (data.issuers.length > 10000) throw new Error("主体数量不能超过10000");
+  if (data.projects !== undefined && !Array.isArray(data.projects)) throw new Error("项目台账必须为 projects 数组");
+  if ((data.projects || []).length > 10000) throw new Error("项目数量不能超过10000");
   return {
-    version: 1,
+    version: 2,
     issuers: data.issuers,
+    projects: data.projects || [],
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };
 }

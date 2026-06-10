@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债流程生成器 - Tempest07</title>
   <meta name="description" content="解析项目简表并生成信用债投资流程意见">
-  <link rel="stylesheet" href="./styles.css?v=20260610-dual-tranche">
+  <link rel="stylesheet" href="./styles.css?v=20260610-project-ledger">
 </head>
 <body>
   <div class="app-shell">
@@ -18,6 +18,7 @@
 
       <nav class="nav">
         <button class="nav-item active" data-view-target="generator">流程生成</button>
+        <button class="nav-item" data-view-target="ledger">项目看板</button>
         <button class="nav-item" data-view-target="batch">批量撰写</button>
         <button class="nav-item" data-view-target="database">主体与授信库</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
@@ -143,12 +144,101 @@
             <div><span class="step">03</span><h2>流程意见</h2></div>
             <div class="result-actions">
               <span class="pill accent" id="suggestionSummary">等待生成</span>
+              <button class="button primary" id="saveProjectButton">保存为项目</button>
               <button class="button subtle" id="copyButton">复制流程意见</button>
             </div>
           </div>
           <textarea id="opinionOutput" class="opinion-output" spellcheck="false" placeholder="解析后将在这里生成流程意见。"></textarea>
           <div class="rule-trace" id="ruleTrace"></div>
         </section>
+      </section>
+
+      <section class="view" data-view="ledger">
+        <div class="dashboard-grid" id="dashboardGrid">
+          <button class="dashboard-card active" data-ledger-filter="all"><span>全部项目</span><strong id="dashboardAll">0</strong><small>当前台账</small></button>
+          <button class="dashboard-card urgent" data-ledger-filter="dueToday"><span>今日待投标</span><strong id="dashboardDueToday">0</strong><small>按截标日期</small></button>
+          <button class="dashboard-card" data-ledger-filter="toBid"><span>待投标</span><strong id="dashboardToBid">0</strong><small>尚未录入标位</small></button>
+          <button class="dashboard-card" data-ledger-filter="awaitingResult"><span>等待结果</span><strong id="dashboardAwaitingResult">0</strong><small>已投标待截标</small></button>
+          <button class="dashboard-card success" data-ledger-filter="won"><span>中标项目</span><strong id="dashboardWon">0</strong><small>含部分中标</small></button>
+          <button class="dashboard-card muted" data-ledger-filter="notWon"><span>未中标</span><strong id="dashboardNotWon">0</strong><small>近期结果</small></button>
+        </div>
+
+        <div class="ledger-grid">
+          <section class="panel project-list-panel">
+            <div class="panel-head">
+              <div><span class="step">LEDGER</span><h2>项目台账</h2></div>
+              <button class="button subtle" id="newProjectButton">新建空白项目</button>
+            </div>
+            <div class="project-list-tools">
+              <input class="search-input" id="projectSearch" type="search" placeholder="搜索简称、主体、分行或主承">
+              <select id="projectStatusFilter">
+                <option value="">全部状态</option>
+                <option>待投标</option>
+                <option>已投标待结果</option>
+                <option>部分中标</option>
+                <option>已中标</option>
+                <option>未中标</option>
+                <option>已结束</option>
+              </select>
+            </div>
+            <div class="project-list" id="projectList"></div>
+          </section>
+
+          <section class="panel project-detail-panel">
+            <div id="projectEmpty" class="empty project-empty">从左侧选择项目，或在“流程生成”页保存为项目。</div>
+            <form id="projectForm" hidden>
+              <input id="projectId" type="hidden">
+              <div class="panel-head">
+                <div><span class="step">PROJECT</span><h2 id="projectFormTitle">项目详情</h2></div>
+                <span class="pill" id="projectStatusPill">待投标</span>
+              </div>
+              <div class="field-grid">
+                <label>项目简称<input id="projectShortName" required></label>
+                <label>项目状态
+                  <select id="projectStatus">
+                    <option>待投标</option>
+                    <option>已投标待结果</option>
+                    <option>部分中标</option>
+                    <option>已中标</option>
+                    <option>未中标</option>
+                    <option>已结束</option>
+                  </select>
+                </label>
+                <label>主体名称<input id="projectIssuerName"></label>
+                <label>申报分行<input id="projectBranch"></label>
+                <label>发行场所<input id="projectVenue"></label>
+                <label>主承销商<input id="projectLeadUnderwriter"></label>
+                <label class="span-2">截标时间<input id="projectCutoffAt" type="datetime-local"></label>
+                <label class="span-2">项目备注<textarea id="projectNotes" rows="2"></textarea></label>
+              </div>
+
+              <div class="section-heading">
+                <div><span class="step">BID</span><h3>投标与中标结果</h3></div>
+                <button class="button subtle" id="addTrancheButton" type="button">增加品种</button>
+              </div>
+              <div class="tranche-list" id="trancheList"></div>
+
+              <div class="section-heading">
+                <div><span class="step">REPORT</span><h3>自动结果摘要</h3></div>
+                <button class="button subtle" id="copyResultSummaryButton" type="button">复制结果摘要</button>
+              </div>
+              <textarea id="projectResultSummary" class="result-summary" rows="4" readonly></textarea>
+
+              <div class="section-heading"><div><span class="step">P&L</span><h3>综合定价结果</h3></div></div>
+              <div class="field-grid">
+                <label class="checkbox-label"><input id="projectComprehensivePricing" type="checkbox">综合定价</label>
+                <label>扣税后营收<input id="projectAfterTaxRevenue" type="number" step="0.000001"></label>
+                <label>FTP<input id="projectFtpCost" type="number" step="0.000001"></label>
+                <label>扣除 FTP 后收益<input id="projectNetIncome" readonly></label>
+                <label class="span-2">流程意见<textarea id="projectOpinion" rows="6"></textarea></label>
+              </div>
+              <div class="form-actions">
+                <button class="button danger" id="deleteProjectButton" type="button">删除项目</button>
+                <button class="button primary" type="submit">保存项目与结果</button>
+              </div>
+            </form>
+          </section>
+        </div>
       </section>
 
       <section class="view" data-view="batch">
@@ -260,6 +350,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260610-dual-tranche"></script>
+  <script type="module" src="./app.js?v=20260610-project-ledger"></script>
 </body>
 </html>

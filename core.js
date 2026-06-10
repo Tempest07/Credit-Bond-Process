@@ -1,6 +1,7 @@
 export const DEFAULT_STATE = {
-  version: 1,
+  version: 2,
   issuers: [],
+  projects: [],
   updatedAt: null,
 };
 

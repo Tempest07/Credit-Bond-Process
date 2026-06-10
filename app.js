@@ -1,6 +1,7 @@
 import {
   DEFAULT_STATE,
   buildBondFullName,
+  buildUnderwriter,
   durationParts,
   durationToDays,
   findIssuer,
@@ -11,6 +12,15 @@ import {
   splitProjectBriefs,
   upsertIssuer,
 } from "./core.js";
+import {
+  buildBidResultSummary,
+  createProjectRecord,
+  dashboardCounts,
+  deriveProjectStatus,
+  normalizeProjectRecord,
+  removeProject,
+  upsertProject,
+} from "./lifecycle.js";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
@@ -52,6 +62,8 @@ let selectedIssuerId = "";
 let cloudAvailable = false;
 let pendingHistoryImport = null;
 let batchItems = [];
+let selectedProjectId = "";
+let ledgerFilter = "all";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -65,6 +77,7 @@ initialize();
 async function initialize() {
   bindNavigation();
   bindGenerator();
+  bindLedger();
   bindQuickIssuer();
   bindBatch();
   bindDatabase();
@@ -72,6 +85,7 @@ async function initialize() {
   bindDataActions();
   renderIssuerOptions();
   renderIssuerList();
+  renderProjectWorkspace();
   clearIssuerForm();
   await loadCloudState();
 }
@@ -124,6 +138,89 @@ function bindGenerator() {
     if (!value) return;
     await navigator.clipboard.writeText(value);
     showToast("流程意见已复制。");
+  });
+  $("#saveProjectButton").addEventListener("click", saveCurrentProject);
+}
+
+function saveCurrentProject() {
+  const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
+  const generated = { ...generateOpinion(project, issuer), opinion: $("#opinionOutput").value };
+  if (!project.shortName) {
+    showToast("请先解析项目简表，再保存为项目。");
+    return;
+  }
+  const existing = (state.projects || []).find((item) => item.shortName === project.shortName && item.status !== "已结束");
+  const created = createProjectRecord({ ...project, leadUnderwriter: buildUnderwriter(project) }, issuer, generated, { id: existing?.id });
+  const record = existing
+    ? {
+        ...created,
+        status: existing.status,
+        cutoffAt: existing.cutoffAt,
+        notes: existing.notes,
+        tranches: existing.tranches?.length === created.tranches.length ? existing.tranches : created.tranches,
+        comprehensivePricing: existing.comprehensivePricing,
+        afterTaxRevenue: existing.afterTaxRevenue,
+        ftpCost: existing.ftpCost,
+        createdAt: existing.createdAt,
+      }
+    : created;
+  state = upsertProject(state, record);
+  selectedProjectId = record.id;
+  persistState();
+  renderProjectWorkspace();
+  showToast(existing ? "已更新现有项目台账。" : "已保存至项目台账。");
+}
+
+function bindLedger() {
+  $("#projectSearch").addEventListener("input", renderProjectList);
+  $("#projectStatusFilter").addEventListener("change", renderProjectList);
+  $("#newProjectButton").addEventListener("click", () => {
+    const record = normalizeProjectRecord({ shortName: "新项目" });
+    state = upsertProject(state, record);
+    selectedProjectId = record.id;
+    persistState();
+    renderProjectWorkspace();
+  });
+  $$("[data-ledger-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      ledgerFilter = button.dataset.ledgerFilter;
+      $$("[data-ledger-filter]").forEach((item) => item.classList.toggle("active", item === button));
+      renderProjectList();
+    });
+  });
+  $("#addTrancheButton").addEventListener("click", () => {
+    const draft = readProjectForm();
+    draft.tranches.push(normalizeProjectRecord({ shortName: "新品种" }).tranches[0]);
+    fillProjectForm(draft);
+  });
+  $("#projectAfterTaxRevenue").addEventListener("input", updateNetIncomePreview);
+  $("#projectFtpCost").addEventListener("input", updateNetIncomePreview);
+  $("#projectForm").addEventListener("input", updateResultSummaryPreview);
+  $("#projectForm").addEventListener("change", updateResultSummaryPreview);
+  $("#copyResultSummaryButton").addEventListener("click", async () => {
+    await navigator.clipboard.writeText($("#projectResultSummary").value);
+    showToast("结果摘要已复制。");
+  });
+  $("#projectForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const draft = readProjectForm();
+    const derivedStatus = deriveProjectStatus(draft);
+    if (draft.status !== "已结束" && (derivedStatus !== "待投标" || draft.status === "待投标")) {
+      draft.status = derivedStatus;
+    }
+    state = upsertProject(state, draft);
+    selectedProjectId = draft.id;
+    persistState();
+    renderProjectWorkspace();
+    showToast("项目、投标与中标结果已保存。");
+  });
+  $("#deleteProjectButton").addEventListener("click", () => {
+    if (!selectedProjectId || !confirm("确定删除当前项目台账吗？")) return;
+    state = removeProject(state, selectedProjectId);
+    selectedProjectId = "";
+    persistState();
+    renderProjectWorkspace();
+    showToast("项目已删除。");
   });
 }
 
@@ -186,6 +283,191 @@ function renderRuleTrace(generated, issuer) {
   $("#ruleTrace").innerHTML = items.map((item, index) =>
     `<span class="trace-item ${index ? "active" : ""}">${escapeHtml(item)}</span>`,
   ).join("");
+}
+
+function renderProjectWorkspace() {
+  renderDashboard();
+  renderProjectList();
+  const selected = (state.projects || []).find((item) => item.id === selectedProjectId);
+  if (selected) fillProjectForm(selected);
+  else clearProjectForm();
+}
+
+function renderDashboard() {
+  const counts = dashboardCounts(state.projects || []);
+  $("#dashboardAll").textContent = counts.all;
+  $("#dashboardDueToday").textContent = counts.dueToday;
+  $("#dashboardToBid").textContent = counts.toBid;
+  $("#dashboardAwaitingResult").textContent = counts.awaitingResult;
+  $("#dashboardWon").textContent = counts.won;
+  $("#dashboardNotWon").textContent = counts.notWon;
+}
+
+function renderProjectList() {
+  const query = $("#projectSearch").value.trim().toLowerCase();
+  const statusFilter = $("#projectStatusFilter").value;
+  const today = localDate(new Date());
+  const projects = (state.projects || [])
+    .filter((item) => {
+      if (statusFilter && item.status !== statusFilter) return false;
+      if (ledgerFilter === "dueToday" && !(item.status === "待投标" && item.cutoffAt?.slice(0, 10) === today)) return false;
+      if (ledgerFilter === "toBid" && item.status !== "待投标") return false;
+      if (ledgerFilter === "awaitingResult" && item.status !== "已投标待结果") return false;
+      if (ledgerFilter === "won" && !["部分中标", "已中标"].includes(item.status)) return false;
+      if (ledgerFilter === "notWon" && item.status !== "未中标") return false;
+      return `${item.shortName} ${item.issuerName} ${item.branch} ${item.leadUnderwriter}`.toLowerCase().includes(query);
+    })
+    .sort(compareProjects);
+
+  $("#projectList").innerHTML = projects.length
+    ? projects.map((item) => `
+      <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}">
+        <span class="project-item-head">
+          <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
+          <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
+        </span>
+        <span class="project-item-meta"><span>${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span><span>${escapeHtml(formatCutoff(item.cutoffAt))}</span></span>
+        <span class="project-item-meta"><span>${escapeHtml((item.tranches || []).map((tranche) => tranche.durationText).filter(Boolean).join("/") || "期限待补")}</span><span>${escapeHtml(item.leadUnderwriter || "主承待补")}</span></span>
+      </button>
+    `).join("")
+    : '<div class="empty">当前筛选下暂无项目。</div>';
+
+  $$("[data-project-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedProjectId = button.dataset.projectId;
+      renderProjectWorkspace();
+    });
+  });
+}
+
+function clearProjectForm() {
+  $("#projectEmpty").hidden = false;
+  $("#projectForm").hidden = true;
+}
+
+function fillProjectForm(input) {
+  const record = normalizeProjectRecord(input);
+  $("#projectEmpty").hidden = true;
+  $("#projectForm").hidden = false;
+  $("#projectId").value = record.id;
+  $("#projectShortName").value = record.shortName;
+  $("#projectStatus").value = record.status;
+  $("#projectIssuerName").value = record.issuerName;
+  $("#projectBranch").value = record.branch;
+  $("#projectVenue").value = record.venue;
+  $("#projectLeadUnderwriter").value = record.leadUnderwriter;
+  $("#projectCutoffAt").value = record.cutoffAt;
+  $("#projectNotes").value = record.notes;
+  $("#projectComprehensivePricing").checked = record.comprehensivePricing;
+  $("#projectAfterTaxRevenue").value = record.afterTaxRevenue ?? "";
+  $("#projectFtpCost").value = record.ftpCost ?? "";
+  $("#projectNetIncome").value = record.netIncome ?? "";
+  $("#projectOpinion").value = record.opinion;
+  $("#projectResultSummary").value = buildBidResultSummary(record);
+  $("#projectFormTitle").textContent = record.shortName || "项目详情";
+  $("#projectStatusPill").textContent = record.status;
+  renderTranches(record.tranches);
+  renderProjectList();
+}
+
+function renderTranches(tranches) {
+  $("#trancheList").innerHTML = tranches.map((tranche, index) => `
+    <section class="tranche-card" data-tranche-index="${index}">
+      <div class="tranche-card-head">
+        <strong>品种 ${index + 1}</strong>
+        <button class="text-button" type="button" data-remove-tranche="${index}" ${tranches.length <= 1 ? "hidden" : ""}>移除品种</button>
+      </div>
+      <div class="tranche-grid">
+        <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
+        <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
+        <label>询价下限（%）<input data-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
+        <label>询价上限（%）<input data-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
+        <label>投标利率（%）<input data-tranche-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(tranche.bidRate ?? "")}"></label>
+        <label>投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
+        <label>截标结果
+          <select data-tranche-field="resultStatus">
+            <option ${tranche.resultStatus === "待出结果" ? "selected" : ""}>待出结果</option>
+            <option ${tranche.resultStatus === "中标" ? "selected" : ""}>中标</option>
+            <option ${tranche.resultStatus === "未中标" ? "selected" : ""}>未中标</option>
+          </select>
+        </label>
+        <label>中标利率（%）<input data-tranche-field="winningRate" type="number" step="0.0001" value="${escapeAttribute(tranche.winningRate ?? "")}"></label>
+        <label>中标量（亿元）<input data-tranche-field="winningAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.winningAmount ?? "")}"></label>
+      </div>
+    </section>
+  `).join("");
+
+  $$("[data-remove-tranche]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const draft = readProjectForm();
+      draft.tranches.splice(Number(button.dataset.removeTranche), 1);
+      fillProjectForm(draft);
+    });
+  });
+}
+
+function readProjectForm() {
+  const existing = (state.projects || []).find((item) => item.id === $("#projectId").value) || {};
+  const tranches = $$("[data-tranche-index]").map((card) => {
+    const values = {};
+    card.querySelectorAll("[data-tranche-field]").forEach((input) => {
+      values[input.dataset.trancheField] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+    });
+    values.id = existing.tranches?.[Number(card.dataset.trancheIndex)]?.id;
+    return values;
+  });
+  return normalizeProjectRecord({
+    ...existing,
+    id: $("#projectId").value,
+    shortName: $("#projectShortName").value,
+    status: $("#projectStatus").value,
+    issuerName: $("#projectIssuerName").value,
+    branch: $("#projectBranch").value,
+    venue: $("#projectVenue").value,
+    leadUnderwriter: $("#projectLeadUnderwriter").value,
+    cutoffAt: $("#projectCutoffAt").value,
+    notes: $("#projectNotes").value,
+    comprehensivePricing: $("#projectComprehensivePricing").checked,
+    afterTaxRevenue: numberOrNull($("#projectAfterTaxRevenue").value),
+    ftpCost: numberOrNull($("#projectFtpCost").value),
+    opinion: $("#projectOpinion").value,
+    tranches,
+  });
+}
+
+function updateNetIncomePreview() {
+  const revenue = numberOrNull($("#projectAfterTaxRevenue").value);
+  const ftp = numberOrNull($("#projectFtpCost").value);
+  $("#projectNetIncome").value = Number.isFinite(revenue) && Number.isFinite(ftp) ? formatNumber(revenue - ftp) : "";
+}
+
+function updateResultSummaryPreview() {
+  if ($("#projectForm").hidden) return;
+  updateNetIncomePreview();
+  $("#projectResultSummary").value = buildBidResultSummary(readProjectForm());
+}
+
+function compareProjects(left, right) {
+  const leftCutoff = Date.parse(left.cutoffAt || "") || Number.MAX_SAFE_INTEGER;
+  const rightCutoff = Date.parse(right.cutoffAt || "") || Number.MAX_SAFE_INTEGER;
+  if (leftCutoff !== rightCutoff) return leftCutoff - rightCutoff;
+  return Date.parse(right.updatedAt || 0) - Date.parse(left.updatedAt || 0);
+}
+
+function formatCutoff(value) {
+  if (!value) return "截标时间待补";
+  return value.replace("T", " ");
+}
+
+function statusBadgeClass(status) {
+  if (["待投标", "已投标待结果"].includes(status)) return "warning";
+  if (["未中标", "已结束"].includes(status)) return "muted";
+  return "";
+}
+
+function localDate(value) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function bindQuickIssuer() {
@@ -944,8 +1226,9 @@ function bindDataActions() {
       persistState();
       renderIssuerOptions();
       renderIssuerList();
+      renderProjectWorkspace();
       regenerate();
-      showToast(`已导入 ${state.issuers.length} 个主体。`);
+      showToast(`已导入 ${state.issuers.length} 个主体和 ${(state.projects || []).length} 个项目。`);
     } catch (error) {
       showToast(`导入失败：${error.message}`);
     } finally {
@@ -968,17 +1251,18 @@ async function loadCloudState() {
     if (remote.data?.issuers) {
       const remoteTime = Date.parse(remote.data.updatedAt || 0);
       const localTime = Date.parse(state.updatedAt || 0);
-      if (remoteTime >= localTime) state = remote.data;
+      if (remoteTime >= localTime) state = { ...DEFAULT_STATE, ...remote.data };
     }
     cloudAvailable = true;
     persistLocal();
-    setSyncStatus("D1 已连接", `${state.issuers.length} 个主体`);
+    setSyncStatus("D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
   } catch {
     cloudAvailable = false;
     setSyncStatus("本机模式", `${state.issuers.length} 个主体，D1 尚未配置`);
   }
   renderIssuerOptions();
   renderIssuerList();
+  renderProjectWorkspace();
   if (batchItems.length) renderBatchResults();
 }
 
@@ -996,7 +1280,7 @@ async function saveCloudState() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     cloudAvailable = true;
-    setSyncStatus("D1 已同步", `${state.issuers.length} 个主体`);
+    setSyncStatus("D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
     return true;
   } catch {
     cloudAvailable = false;
@@ -1014,7 +1298,7 @@ function persistState() {
 function loadLocalState() {
   try {
     const value = JSON.parse(localStorage.getItem(LOCAL_KEY));
-    return value?.issuers ? { ...DEFAULT_STATE, ...value } : structuredClone(DEFAULT_STATE);
+    return value?.issuers ? { ...DEFAULT_STATE, ...value, projects: value.projects || [] } : structuredClone(DEFAULT_STATE);
   } catch {
     return structuredClone(DEFAULT_STATE);
   }
