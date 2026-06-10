@@ -1,6 +1,7 @@
 import {
   DEFAULT_STATE,
   buildBondFullName,
+  durationParts,
   durationToDays,
   findIssuer,
   formatNumber,
@@ -107,8 +108,13 @@ function bindGenerator() {
     input.addEventListener("input", () => {
       const field = input.dataset.projectField;
       project[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
-      if (field === "durationText") project.durationDays = durationToDays(project.durationText);
+      if (field === "durationText") {
+        project.durationDays = durationToDays(project.durationText);
+        project.durationParts = durationParts(project.durationText);
+      }
+      if (field.startsWith("inquiry")) rebuildInquiryRanges(project);
       if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
+      if (field === "exchangeIssueNumber") applyExchangeIssueNumberChoice(project, project.exchangeIssueNumber, true);
       regenerate();
     });
   });
@@ -155,7 +161,7 @@ function regenerate() {
 
   const suggestion = generated.suggestion;
   $("#suggestionSummary").textContent = Number.isFinite(suggestion.investmentAmount)
-    ? `建议 ${formatNumber(suggestion.suggestedRatio)}% / ${formatNumber(suggestion.investmentAmount)}亿元`
+    ? `${suggestion.trancheSuggestions.length > 1 ? "建议合计" : "建议"} ${formatSuggestionRatios(suggestion)} / ${formatNumber(suggestion.investmentAmount)}亿元`
     : "建议比例待补充";
 
   renderWarnings(generated.warnings);
@@ -291,6 +297,7 @@ function renderBatchResults() {
             <textarea class="batch-source" readonly>${escapeHtml(item.sourceText)}</textarea>
             <label class="batch-issuer-select">匹配主体<select data-batch-select="${index}">${options}</select></label>
             <label class="batch-issuer-select">发行方式<select data-batch-offering="${index}">${projectOfferingTypeOptions(item.project.offeringType)}</select></label>
+            ${isExchangeProject(item.project) ? `<label class="batch-issuer-select">交易所发行期次<input type="number" min="1" step="1" data-batch-issue="${index}" value="${escapeAttribute(item.project.exchangeIssueNumber ?? "")}" placeholder="例如：3"></label>` : ""}
             ${warnings.length ? `<div class="warning-box"><strong>需要确认</strong><ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></div>` : ""}
           </div>
           <textarea class="batch-opinion" data-batch-opinion="${index}">${escapeHtml(generated.opinion)}</textarea>
@@ -319,6 +326,14 @@ function renderBatchResults() {
       captureBatchDrafts();
       const index = Number(select.dataset.batchOffering);
       applyOfferingTypeChoice(batchItems[index].project, select.value);
+      renderBatchResults();
+    });
+  });
+  $$("[data-batch-issue]").forEach((input) => {
+    input.addEventListener("change", () => {
+      captureBatchDrafts();
+      const index = Number(input.dataset.batchIssue);
+      applyExchangeIssueNumberChoice(batchItems[index].project, numberOrNull(input.value));
       renderBatchResults();
     });
   });
@@ -722,10 +737,43 @@ function applyOfferingTypeChoice(projectValue, offeringType, updateSingleInput =
   if (!offeringType && ["上交所", "深交所", "北交所"].includes(projectValue.venue)) {
     projectValue.warnings.push("交易所债券无法仅凭简称可靠判断公开或非公开发行，请在简表中注明“公开/非公开”或手工选择发行方式。");
   }
-  if (projectValue.fullName?.includes("面向专业投资者")) {
-    projectValue.fullName = "";
-    if (updateSingleInput) $('[data-project-field="fullName"]').value = "";
+  clearGeneratedExchangeFullName(projectValue, updateSingleInput);
+}
+
+function applyExchangeIssueNumberChoice(projectValue, issueNumber, updateSingleInput = false) {
+  projectValue.exchangeIssueNumber = issueNumber;
+  projectValue.warnings = (projectValue.warnings || []).filter((warning) =>
+    !warning.startsWith("交易所债券简称尾号不等于发行期次"),
+  );
+  if (!Number.isInteger(issueNumber) && isExchangeProject(projectValue)) {
+    projectValue.warnings.push("交易所债券简称尾号不等于发行期次，请在简表中注明“第几期”或手工填写交易所发行期次。");
   }
+  clearGeneratedExchangeFullName(projectValue, updateSingleInput);
+}
+
+function clearGeneratedExchangeFullName(projectValue, updateSingleInput) {
+  if (!projectValue.fullName?.includes("面向专业投资者")) return;
+  projectValue.fullName = "";
+  if (updateSingleInput) $('[data-project-field="fullName"]').value = "";
+}
+
+function rebuildInquiryRanges(projectValue) {
+  projectValue.inquiryRanges = [];
+  if (Number.isFinite(projectValue.inquiryLow) && Number.isFinite(projectValue.inquiryHigh)) {
+    projectValue.inquiryRanges.push({ low: projectValue.inquiryLow, high: projectValue.inquiryHigh });
+  }
+  if (Number.isFinite(projectValue.inquiryLow2) && Number.isFinite(projectValue.inquiryHigh2)) {
+    projectValue.inquiryRanges.push({ low: projectValue.inquiryLow2, high: projectValue.inquiryHigh2 });
+  }
+}
+
+function formatSuggestionRatios(suggestion) {
+  const ratios = [...new Set(suggestion.trancheSuggestions.map((item) => item.suggestedRatio).filter(Number.isFinite))];
+  return ratios.map((ratio) => `${formatNumber(ratio)}%`).join("/") || "比例待补";
+}
+
+function isExchangeProject(projectValue) {
+  return ["上交所", "深交所", "北交所"].includes(projectValue?.venue);
 }
 
 function fillIssuerInput(prefix, draft) {

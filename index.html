@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债流程生成器 - Tempest07</title>
   <meta name="description" content="解析项目简表并生成信用债投资流程意见">
-  <link rel="stylesheet" href="./styles.css?v=20260610-workflows">
+  <link rel="stylesheet" href="./styles.css?v=20260610-dual-tranche">
 </head>
 <body>
   <div class="app-shell">
@@ -90,6 +90,8 @@
               <label>隐含评级<input data-project-field="hiddenRating"></label>
               <label>询价下限（%）<input data-project-field="inquiryLow" type="number" step="0.0001"></label>
               <label>询价上限（%）<input data-project-field="inquiryHigh" type="number" step="0.0001"></label>
+              <label>第二品种询价下限（%）<input data-project-field="inquiryLow2" type="number" step="0.0001"></label>
+              <label>第二品种询价上限（%）<input data-project-field="inquiryHigh2" type="number" step="0.0001"></label>
               <label>发行场所<input data-project-field="venue"></label>
               <label>发行方式
                 <select data-project-field="offeringType">
@@ -98,6 +100,7 @@
                   <option value="私募">非公开发行 / 私募</option>
                 </select>
               </label>
+              <label>交易所发行期次<input data-project-field="exchangeIssueNumber" type="number" min="1" step="1" placeholder="例如：第三期填 3"></label>
               <label>牵头主承销商<input data-project-field="leadUnderwriter"></label>
               <label class="span-2">匹配主体
                 <select id="issuerSelect"><option value="">未匹配主体</option></select>
@@ -243,7 +246,8 @@
           <article class="rule-card"><span>金额规则</span><h2>发行规模 × 建议比例</h2><p>申请与建议投资金额暂按发行规模乘以最终建议比例自动计算，并允许在流程意见中手工修改。</p></article>
           <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>房地产债由林总终批；AAA投资金额超过8亿由金处、超过10亿由周总终批；其他评级超过3.2亿由金处、超过4亿由周总终批。</p></article>
           <article class="rule-card"><span>主承表述</span><h2>牵头与联席自动改写</h2><p>牵头时主承销商写兴业银行；联席时写“牵头主承销商、兴业银行”。</p></article>
-          <article class="rule-card"><span>交易所债券</span><h2>发行方式需确认</h2><p>简表可在任意位置注明“公开/非公开”或“公募/私募”。G/F 尾仅作带提示的辅助推断；纯数字尾无法可靠判断。</p></article>
+          <article class="rule-card"><span>交易所债券</span><h2>发行方式与期次需确认</h2><p>简称尾号不等于发行期次。简表需注明公开/非公开及“第几期”，也可在结构化字段中手工确认。</p></article>
+          <article class="rule-card"><span>双品种互拨</span><h2>一条意见分别列示</h2><p>自动合并 A/B 或相邻交易所简称，规模按合计、期限按双向互拨表述，询价和比例按两个期限分别列示。</p></article>
           <article class="rule-card"><span>待补字段</span><h2>一级投标利率始终留空</h2><p>自动生成时使用【待填写】标记，不根据估值或指导价猜测。</p></article>
         </div>
         <section class="panel word-note">
@@ -256,6 +260,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260610-exchange-bonds"></script>
+  <script type="module" src="./app.js?v=20260610-dual-tranche"></script>
 </body>
 </html>

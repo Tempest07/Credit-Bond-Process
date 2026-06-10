@@ -55,23 +55,31 @@ test("builds standard interbank bond full name", () => {
 
 test("builds exchange bond full names when offering type is known", () => {
   assert.equal(
-    buildBondFullName("26国创G2", "昆山国创投资集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    buildBondFullName("26国创G2", "昆山国创投资集团有限公司", { venue: "上交所", offeringType: "公募", exchangeIssueNumber: 2 }),
     "昆山国创投资集团有限公司2026年面向专业投资者公开发行公司债券(第二期)",
   );
   assert.equal(
-    buildBondFullName("26吴发F2", "江苏省吴中经济技术发展集团有限公司", { venue: "上交所", offeringType: "私募" }),
+    buildBondFullName("26吴发F2", "江苏省吴中经济技术发展集团有限公司", { venue: "上交所", offeringType: "私募", exchangeIssueNumber: 2 }),
     "江苏省吴中经济技术发展集团有限公司2026年面向专业投资者非公开发行公司债券(第二期)",
   );
   assert.equal(
-    buildBondFullName("26苏轨04", "苏州市轨道交通集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    buildBondFullName("26苏轨04", "苏州市轨道交通集团有限公司", { venue: "上交所", offeringType: "公募", exchangeIssueNumber: 4 }),
     "苏州市轨道交通集团有限公司2026年面向专业投资者公开发行公司债券(第四期)",
   );
   assert.equal(
-    buildBondFullName("26发展01", "山东发展投资控股集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    buildBondFullName("26发展01", "山东发展投资控股集团有限公司", { venue: "上交所", offeringType: "公募", exchangeIssueNumber: 1 }),
     "山东发展投资控股集团有限公司2026年面向专业投资者公开发行公司债券(第一期)",
   );
   assert.equal(
-    buildBondFullName("26示例K1", "示例有限公司", { venue: "上交所", offeringType: "公募" }),
+    buildBondFullName("26广越05/06", "广州越秀集团股份有限公司", { venue: "上交所", offeringType: "公募", exchangeIssueNumber: 3 }),
+    "广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券(第三期)",
+  );
+  assert.equal(
+    buildBondFullName("26苏轨04", "苏州市轨道交通集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    "",
+  );
+  assert.equal(
+    buildBondFullName("26示例K1", "示例有限公司", { venue: "上交所", offeringType: "公募", exchangeIssueNumber: 1 }),
     "",
   );
 });
@@ -126,6 +134,59 @@ test("uses the longest possible term for option and dual-tranche durations", () 
   assert.equal(parsed.hiddenRating, "AAA-");
 });
 
+test("parses and generates interbank dual-tranche mutual-allocation projects", () => {
+  const project = parseProjectBrief(`26越秀交通MTN003A
+26越秀交通MTN003B 非我行主承 广州分行
+2/5年期 规模12亿 AAA(中诚信国际)/隐含AAA-
+询价区间1.4-1.9/1.5-2.0 银行间 中信银行
+
+26越秀交通MTN003A/B 市场估值约1.65/1.83
+如需综合定价，指导价约1.68/1.85`);
+  assert.equal(project.shortName, "26越秀交通MTN003A/B");
+  assert.deepEqual(project.durationParts, ["2年", "5年"]);
+  assert.deepEqual(project.inquiryRanges, [{ low: 1.4, high: 1.9 }, { low: 1.5, high: 2 }]);
+  assert.deepEqual(project.valuations, [1.65, 1.83]);
+  assert.equal(buildBondFullName(project.shortName, "广州越秀集团股份有限公司", project), "广州越秀集团股份有限公司2026年度第三期中期票据");
+
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "广州越秀集团股份有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1825, rawText: "总行批40亿，公募，30%，5年" },
+  });
+  assert.match(generated.opinion, /预计发行规模合计12亿元，发行期限2年\/5年（双向互拨）/);
+  assert.match(generated.opinion, /预计利率区间为2年期1.4%-1.9%\/5年期1.5%-2%/);
+  assert.match(generated.opinion, /拟申请投资金额合计不超过3.6亿元/);
+});
+
+test("requires explicit exchange issue number and generates dual-tranche exchange opinion", () => {
+  const withoutIssue = parseProjectBrief("26广越05\n26广越06 非我行主承 广州分行\n3/5年期 规模20亿 AAA(中诚信国际)/隐含AAA 公开\n询价区间1.3-2.3/1.5-2.5 上交所 中信证券");
+  assert.equal(withoutIssue.exchangeIssueNumber, null);
+  assert.match(withoutIssue.warnings.join(""), /简称尾号不等于发行期次/);
+
+  const project = parseProjectBrief("26广越05\n26广越06 非我行主承 广州分行\n3/5年期 规模20亿 AAA(中诚信国际)/隐含AAA 公开 第3期\n询价区间1.3-2.3/1.5-2.5 上交所 中信证券");
+  assert.equal(project.shortName, "26广越05/06");
+  assert.equal(project.exchangeIssueNumber, 3);
+  assert.equal(parseProjectBrief("26广越05 非我行主承 广州分行\n3年期 规模10亿 AAA(中诚信国际)/隐含AAA 公开 第三期\n询价区间1.3-2.3 上交所 中信证券").exchangeIssueNumber, 3);
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "广州越秀集团股份有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1825, rawText: "总行批40亿，公募，30%，5年" },
+  });
+  assert.match(generated.opinion, /广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券\(第三期\)/);
+  assert.match(generated.opinion, /建议投资金额合计不超过6亿元、投资比例不超过各期限最终发行规模的30%/);
+});
+
+test("lists different suggested ratios for dual-tranche term caps", () => {
+  const project = parseProjectBrief("26测试MTN001A\n26测试MTN001B 非我行主承 广州分行\n3/5年期 规模10亿 AAA(联合资信)/隐含AA\n询价区间1.5-2.5/1.8-2.8 银行间 中信银行");
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "测试集团有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1095 },
+  });
+  assert.deepEqual(generated.suggestion.trancheSuggestions.map((item) => item.suggestedRatio), [30, 15]);
+  assert.match(generated.opinion, /投资比例不超过3年期最终发行规模的30%和5年期最终发行规模的15%/);
+});
+
 test("splits multiple project briefs by their project headers", () => {
   const blocks = splitProjectBriefs(`${sample}
 
@@ -137,6 +198,17 @@ test("splits multiple project briefs by their project headers", () => {
   assert.equal(blocks.length, 2);
   assert.match(blocks[0], /26粤交投SCP002/);
   assert.match(blocks[1], /26神木国资MTN001/);
+});
+
+test("keeps the leading short name with a dual-tranche block during batch splitting", () => {
+  const blocks = splitProjectBriefs(`${sample}
+
+26越秀交通MTN003A
+26越秀交通MTN003B 非我行主承 广州分行
+2/5年期 规模12亿 AAA(中诚信国际)/隐含AAA-
+询价区间1.4-1.9/1.5-2.0 银行间 中信银行`);
+  assert.equal(blocks.length, 2);
+  assert.match(blocks[1], /^26越秀交通MTN003A\n26越秀交通MTN003B/);
 });
 
 test("applies approval thresholds and real estate override", () => {

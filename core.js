@@ -34,27 +34,46 @@ export function durationToDays(value = "") {
   return null;
 }
 
+export function durationParts(value = "") {
+  const text = String(value).trim().toUpperCase().replace(/期$/, "");
+  const unit = text.match(/(D|M|Y|天|月|年)$/i)?.[1] || "";
+  if (!unit) return [];
+  return text
+    .slice(0, -unit.length)
+    .split("/")
+    .map((part) => `${part}${unit}`)
+    .filter((part) => Number.isFinite(durationToDays(part)));
+}
+
 export function parseProjectBrief(rawText) {
   const text = normalizeText(rawText);
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const result = {
     shortName: "",
+    shortNames: [],
     sponsorStatus: "",
     branch: "",
     durationText: "",
     durationDays: null,
+    durationParts: [],
     issueScale: null,
     subjectRating: "",
     ratingAgency: "",
     hiddenRating: "",
     inquiryLow: null,
     inquiryHigh: null,
+    inquiryLow2: null,
+    inquiryHigh2: null,
+    inquiryRanges: [],
     venue: "",
     leadUnderwriter: "",
     offeringType: "",
     offeringTypeSource: "",
+    exchangeIssueNumber: null,
     valuation: null,
+    valuations: [],
     guidancePrice: null,
+    guidancePrices: [],
     sourceText: text,
     warnings: [],
   };
@@ -64,22 +83,35 @@ export function parseProjectBrief(rawText) {
     return result;
   }
 
-  parseFirstLine(lines[0], result);
-  if (lines[1]) parseSecondLine(lines[1], result);
-  if (lines[2]) parseThirdLine(lines[2], result);
-  parseOfferingType(text, result);
+  const headerIndex = lines.findIndex(isProjectHeader);
+  const effectiveHeaderIndex = headerIndex >= 0 ? headerIndex : 0;
+  parseFirstLine(lines[effectiveHeaderIndex], result);
+  result.shortNames = collectShortNames(lines, effectiveHeaderIndex);
+  result.shortName = combineShortNames(result.shortNames) || result.shortName;
 
-  for (const line of lines.slice(3)) {
-    const valuation = line.match(/市场估值(?:约)?\s*(\d+(?:\.\d+)?)/);
-    if (valuation) {
+  const detailLines = lines.slice(effectiveHeaderIndex + 1);
+  const termsLine = detailLines.find((line) => /规模\s*/.test(line) || /隐含\s*/.test(line));
+  const inquiryLine = detailLines.find((line) => /询价区间/.test(line) || /(银行间|上交所|深交所|北交所)/.test(line));
+  if (termsLine) parseSecondLine(termsLine, result);
+  if (inquiryLine) parseThirdLine(inquiryLine, result);
+  parseOfferingType(text, result);
+  result.exchangeIssueNumber = parseExplicitIssueNumber(text);
+
+  for (const line of lines) {
+    const valuations = parseNumberListAfter(line, /市场估值(?:约)?\s*/);
+    if (valuations.length) {
       const repeatedShortName = line.split(/\s+/)[0];
-      if (result.shortName && repeatedShortName !== result.shortName) {
+      if (result.shortName && !result.shortNames.includes(repeatedShortName) && repeatedShortName !== result.shortName) {
         result.warnings.push(`估值行简称“${repeatedShortName}”与首行简称不一致。`);
       }
-      result.valuation = Number(valuation[1]);
+      result.valuations = valuations;
+      result.valuation = valuations[0];
     }
-    const guidance = line.match(/指导价(?:约)?\s*(\d+(?:\.\d+)?)/);
-    if (guidance) result.guidancePrice = Number(guidance[1]);
+    const guidancePrices = parseNumberListAfter(line, /指导价(?:约)?\s*/);
+    if (guidancePrices.length) {
+      result.guidancePrices = guidancePrices;
+      result.guidancePrice = guidancePrices[0];
+    }
   }
 
   if (!result.shortName) result.warnings.push("未识别债券简称。");
@@ -91,6 +123,9 @@ export function parseProjectBrief(rawText) {
   if (!Number.isFinite(result.inquiryLow) || !Number.isFinite(result.inquiryHigh)) {
     result.warnings.push("未完整识别询价区间。");
   }
+  if (isDualTranche(result) && result.inquiryRanges.length < 2) {
+    result.warnings.push("已识别为双品种互拨，但未完整识别两个询价区间。");
+  }
   if (!result.leadUnderwriter && result.sponsorStatus !== "牵头") {
     result.warnings.push("未识别牵头主承销商。");
   }
@@ -99,6 +134,9 @@ export function parseProjectBrief(rawText) {
   }
   if (result.offeringTypeSource === "short-name") {
     result.warnings.push(`发行方式根据简称尾部“${exchangeSeriesMarker(result.shortName)}”推断为${result.offeringType}，请确认。`);
+  }
+  if (isExchangeVenue(result.venue) && !Number.isInteger(result.exchangeIssueNumber)) {
+    result.warnings.push("交易所债券简称尾号不等于发行期次，请在简表中注明“第几期”或手工填写交易所发行期次。");
   }
 
   return result;
@@ -112,18 +150,74 @@ export function splitProjectBriefs(rawText) {
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
-    const isHeader = /(?:非我行主承|我行牵头、独立主承|我行牵头主承|我行主承|我行联席主承|联席主承|牵头主承|联席|牵头)/.test(line)
-      && line.includes("分行")
-      && /\S+\s+/.test(line);
+    const isHeader = isProjectHeader(line);
     if (isHeader && current.length) {
-      blocks.push(current.join("\n"));
-      current = [];
+      const pendingShortNames = [];
+      while (current.length && isStandaloneShortName(current[current.length - 1])) {
+        pendingShortNames.unshift(current.pop());
+      }
+      if (current.length) blocks.push(current.join("\n"));
+      current = pendingShortNames;
     }
     current.push(line);
   }
 
   if (current.length) blocks.push(current.join("\n"));
   return blocks.filter((block) => block.trim());
+}
+
+function isProjectHeader(line) {
+  return /(?:非我行主承|我行牵头、独立主承|我行牵头主承|我行主承|我行联席主承|联席主承|牵头主承|联席|牵头)/.test(line)
+    && line.includes("分行")
+    && /\S+\s+/.test(line);
+}
+
+function isStandaloneShortName(line) {
+  return /^\d{2}\S+$/.test(String(line || "").trim());
+}
+
+function collectShortNames(lines, headerIndex) {
+  const names = lines
+    .slice(0, headerIndex)
+    .filter(isStandaloneShortName)
+    .map((line) => line.trim());
+  const headerName = lines[headerIndex]?.match(/^(\S+)/)?.[1];
+  if (headerName) names.push(headerName);
+  return [...new Set(names)];
+}
+
+function combineShortNames(names) {
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  const first = names[0];
+  const second = names[1];
+  const letterPair = first.match(/^(.*)([A-Z])$/i);
+  if (letterPair && second === `${letterPair[1]}${nextLetter(letterPair[2])}`) {
+    return `${first}/${second.slice(-1)}`;
+  }
+  const firstNumber = first.match(/^(.*?)(\d+)$/);
+  const secondNumber = second.match(/^(.*?)(\d+)$/);
+  if (firstNumber && secondNumber && firstNumber[1] === secondNumber[1]) {
+    return `${firstNumber[1]}${firstNumber[2]}/${secondNumber[2]}`;
+  }
+  return names.join("/");
+}
+
+function nextLetter(value) {
+  return String.fromCharCode(String(value).toUpperCase().charCodeAt(0) + 1);
+}
+
+function parseNumberListAfter(line, prefixPattern) {
+  const match = String(line || "").match(prefixPattern);
+  if (!match) return [];
+  return [...String(line).slice(match.index + match[0].length).matchAll(/\d+(?:\.\d+)?/g)].map((item) => Number(item[0]));
+}
+
+function parseExplicitIssueNumber(text) {
+  const match = String(text || "").match(/第\s*([一二三四五六七八九十百零〇\d]+)\s*期/);
+  if (!match) return null;
+  if (/^\d+$/.test(match[1])) return Number(match[1]);
+  return chineseTextToNumber(match[1]);
 }
 
 function parseFirstLine(line, result) {
@@ -152,10 +246,13 @@ function parseSecondLine(line, result) {
   if (duration) {
     result.durationText = duration[1].replace(/\s+/g, "").toUpperCase();
     result.durationDays = durationToDays(result.durationText);
+    result.durationParts = durationParts(result.durationText);
   }
 
-  const scale = line.match(/规模\s*(\d+(?:\.\d+)?)\s*亿/);
-  if (scale) result.issueScale = Number(scale[1]);
+  const scale = line.match(/规模(?:合计)?\s*(\d+(?:\.\d+)?(?:\s*\+\s*\d+(?:\.\d+)?)*)\s*亿/);
+  if (scale) {
+    result.issueScale = scale[1].split("+").reduce((sum, value) => sum + Number(value.trim()), 0);
+  }
 
   const hidden = line.match(/隐含\s*([A-Z]+[+-]?(?:\(\d+\))?)/i);
   if (hidden) result.hiddenRating = hidden[1].toUpperCase();
@@ -173,10 +270,16 @@ function parseSecondLine(line, result) {
 }
 
 function parseThirdLine(line, result) {
-  const inquiry = line.match(/询价区间\s*(\d+(?:\.\d+)?)\s*[-—~至]\s*(\d+(?:\.\d+)?)/);
-  if (inquiry) {
-    result.inquiryLow = Number(inquiry[1]);
-    result.inquiryHigh = Number(inquiry[2]);
+  const inquiryIndex = line.search(/询价区间/);
+  const inquiryText = inquiryIndex >= 0 ? line.slice(inquiryIndex + 4) : line;
+  const inquiryRanges = [...inquiryText.matchAll(/(\d+(?:\.\d+)?)\s*[-—~至]\s*(\d+(?:\.\d+)?)/g)]
+    .map((match) => ({ low: Number(match[1]), high: Number(match[2]) }));
+  if (inquiryRanges.length) {
+    result.inquiryRanges = inquiryRanges;
+    result.inquiryLow = inquiryRanges[0].low;
+    result.inquiryHigh = inquiryRanges[0].high;
+    result.inquiryLow2 = inquiryRanges[1]?.low ?? null;
+    result.inquiryHigh2 = inquiryRanges[1]?.high ?? null;
   }
 
   const venue = line.match(/(银行间|上交所|深交所|北交所)/);
@@ -223,7 +326,7 @@ export function findIssuer(shortName, issuers = []) {
 
 export function buildBondFullName(shortName, legalName, project = {}) {
   if (!shortName || !legalName) return "";
-  const match = shortName.match(/^(\d{2}).*?(SCP|CP|MTN|PPN)(\d{3})$/i);
+  const match = shortName.match(/^(\d{2}).*?(SCP|CP|MTN|PPN)(\d{3})(?:[A-Z](?:\/[A-Z])?)?$/i);
   if (match) {
     const year = 2000 + Number(match[1]);
     const type = BOND_TYPES[match[2].toUpperCase()];
@@ -232,14 +335,15 @@ export function buildBondFullName(shortName, legalName, project = {}) {
   }
 
   if (!isExchangeVenue(project.venue)) return "";
-  const exchangeMatch = shortName.match(/^(\d{2}).*?([GF]?)(\d{1,2})$/i);
+  const exchangeMatch = shortName.match(/^(\d{2})/);
   const seriesMarker = exchangeSeriesMarker(shortName);
   const offeringType = inferOfferingType(project);
-  if (!exchangeMatch || (seriesMarker && !["G", "F"].includes(seriesMarker)) || !offeringType || shortName.includes("/")) return "";
+  const issueNumber = numberOrNull(project.exchangeIssueNumber);
+  if (!exchangeMatch || (seriesMarker && !["G", "F"].includes(seriesMarker)) || !offeringType || !Number.isInteger(issueNumber) || issueNumber < 1) return "";
   const year = 2000 + Number(exchangeMatch[1]);
-  const issueNumber = chineseNumber(Number(exchangeMatch[3]));
+  const issueNumberText = chineseNumber(issueNumber);
   const issuance = offeringType === "私募" ? "非公开" : "公开";
-  return `${legalName}${year}年面向专业投资者${issuance}发行公司债券(第${issueNumber}期)`;
+  return `${legalName}${year}年面向专业投资者${issuance}发行公司债券(第${issueNumberText}期)`;
 }
 
 export function calculateSuggestion(project, issuer) {
@@ -252,31 +356,44 @@ export function calculateSuggestion(project, issuer) {
     : offeringType === "私募" && Number.isFinite(numberOrNull(credit.privateRatio))
       ? numberOrNull(credit.privateRatio)
       : numberOrNull(credit.approvedRatio);
-  let suggestedRatio = approvedRatio;
-  const caps = [];
+  const commonCaps = [];
 
   if (["牵头", "联席"].includes(project.sponsorStatus)) {
-    caps.push({ value: 20, reason: "兴业银行参与主承，投资比例上限为20%" });
+    commonCaps.push({ value: 20, reason: "兴业银行参与主承，投资比例上限为20%" });
   }
 
-  const exceedsCreditTerm =
-    Number.isFinite(project.durationDays) &&
-    Number.isFinite(numberOrNull(credit.investmentTermDays)) &&
-    project.durationDays > Number(credit.investmentTermDays);
+  const parts = projectDurationParts(project);
+  const trancheSuggestions = parts.map((durationText, index) => {
+    const caps = [...commonCaps];
+    const durationDays = parts.length === 1 && Number.isFinite(project.durationDays)
+      ? project.durationDays
+      : durationToDays(durationText);
+    const exceedsCreditTerm =
+      Number.isFinite(durationDays) &&
+      Number.isFinite(numberOrNull(credit.investmentTermDays)) &&
+      durationDays > Number(credit.investmentTermDays);
 
-  if (exceedsCreditTerm && project.hiddenRating === "AA") {
-    caps.push({ value: 15, reason: "隐含评级AA且债券期限超过授信投资期限，投资比例上限为15%" });
-  }
-  if (exceedsCreditTerm && project.hiddenRating === "AA(2)") {
-    caps.push({ value: 10, reason: "隐含评级AA(2)且债券期限超过授信投资期限，投资比例上限为10%" });
-  }
+    if (exceedsCreditTerm && project.hiddenRating === "AA") {
+      caps.push({ value: 15, reason: `${formatDuration(durationText)}超过授信投资期限，隐含评级AA投资比例上限为15%` });
+    }
+    if (exceedsCreditTerm && project.hiddenRating === "AA(2)") {
+      caps.push({ value: 10, reason: `${formatDuration(durationText)}超过授信投资期限，隐含评级AA(2)投资比例上限为10%` });
+    }
 
-  if (suggestedRatio === null) {
+    let ratio = approvedRatio;
+    if (Number.isFinite(ratio)) {
+      for (const cap of caps) ratio = Math.min(ratio, cap.value);
+    }
+    return { index, durationText, durationDays, suggestedRatio: ratio, caps };
+  });
+  const caps = uniqueCaps(trancheSuggestions.flatMap((item) => item.caps));
+  const suggestedRatios = trancheSuggestions.map((item) => item.suggestedRatio).filter(Number.isFinite);
+  const suggestedRatio = suggestedRatios.length ? Math.max(...suggestedRatios) : null;
+
+  if (!Number.isFinite(suggestedRatio)) {
     warnings.push(exchangeOfferingUnknown
       ? "交易所债券发行方式未确认，暂不计算投资比例和金额。"
       : "主体资料中缺少授信投资比例，无法计算建议比例和投资金额。");
-  } else {
-    for (const cap of caps) suggestedRatio = Math.min(suggestedRatio, cap.value);
   }
 
   const investmentAmount =
@@ -290,6 +407,7 @@ export function calculateSuggestion(project, issuer) {
     suggestedRatio,
     investmentAmount,
     caps,
+    trancheSuggestions,
     warnings,
   };
 }
@@ -342,18 +460,20 @@ export function generateOpinion(project, issuer) {
   const rating = project.subjectRating
     ? `${project.subjectRating}${project.ratingAgency ? `(${project.ratingAgency})` : ""}`
     : "【待补充主体评级】";
-  const issueScale = Number.isFinite(project.issueScale) ? `${formatNumber(project.issueScale)}亿元` : "【待补充发行规模】";
-  const duration = formatDuration(project.durationText) || "【待补充发行期限】";
-  const inquiry = Number.isFinite(project.inquiryLow) && Number.isFinite(project.inquiryHigh)
-    ? `${formatNumber(project.inquiryLow)}%-${formatNumber(project.inquiryHigh)}%`
-    : "【待补充询价区间】";
+  const dualTranche = isDualTranche(project);
+  const issueScale = Number.isFinite(project.issueScale)
+    ? `${dualTranche ? "合计" : ""}${formatNumber(project.issueScale)}亿元`
+    : "【待补充发行规模】";
+  const duration = formatProjectDuration(project);
+  const inquiry = formatProjectInquiry(project);
   const amount = Number.isFinite(suggestion.investmentAmount)
     ? `${formatNumber(suggestion.investmentAmount)}亿元`
     : "【待补充投资金额】";
-  const ratio = Number.isFinite(suggestion.suggestedRatio)
-    ? `${formatNumber(suggestion.suggestedRatio)}%`
-    : "【待补充投资比例】";
+  const ratio = formatSuggestionRatio(suggestion, dualTranche);
   const bidRate = "【待填写】";
+  const bidRateSentence = dualTranche
+    ? suggestion.trancheSuggestions.map((item) => `${formatDuration(item.durationText)}期一级投标利率不低于${bidRate}%`).join("、")
+    : `一级投标利率不低于${bidRate}%`;
   const creditSentence = formatCreditSentence(issuer);
   const approver = determineApprover(project.hiddenRating, suggestion.investmentAmount, Boolean(issuer?.isRealEstate));
 
@@ -361,8 +481,12 @@ export function generateOpinion(project, issuer) {
     `${branch}申请与资金营运中心一二级联动投资${fullName || "【待补充债券全称】"}。`,
     `预计发行规模${issueScale}，发行期限${duration}，主体信用评级为${rating}，主承销商为${underwriter}，预计利率区间为${inquiry}。`,
     `授信方面，${creditSentence}。`,
-    `${branch}拟申请投资金额不超过${amount}、一级投标利率不低于${bidRate}%。`,
-    `建议投资金额不超过${amount}、投资比例不超过最终发行规模的${ratio}、一级投标利率不低于${bidRate}%。`,
+    dualTranche
+      ? `${branch}拟申请投资金额合计不超过${amount}。`
+      : `${branch}拟申请投资金额不超过${amount}、${bidRateSentence}。`,
+    dualTranche
+      ? `建议投资金额合计不超过${amount}、${ratio}、${bidRateSentence}。`
+      : `建议投资金额不超过${amount}、投资比例不超过最终发行规模的${ratio}、${bidRateSentence}。`,
     "本流程可用于一级、二级市场投资。",
     "以上妥否，请领导审核。",
     approver,
@@ -455,6 +579,28 @@ function chineseNumber(value) {
   return `${hundreds}${rest < 10 ? "零" : ""}${chineseNumber(rest)}`;
 }
 
+function chineseTextToNumber(value) {
+  const digits = { 零: 0, 〇: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  if (!/[十百]/.test(value)) {
+    const number = [...value].reduce((result, character) => result * 10 + digits[character], 0);
+    return Number.isFinite(number) ? number : null;
+  }
+  let total = 0;
+  let current = 0;
+  for (const character of value) {
+    if (character === "百") {
+      total += (current || 1) * 100;
+      current = 0;
+    } else if (character === "十") {
+      total += (current || 1) * 10;
+      current = 0;
+    } else {
+      current = digits[character] ?? current;
+    }
+  }
+  return total + current;
+}
+
 export function inferOfferingType(project) {
   if (["公募", "私募"].includes(project?.offeringType)) return project.offeringType;
   const fullName = String(project?.fullName || "");
@@ -470,6 +616,71 @@ function isExchangeVenue(venue) {
 
 function exchangeSeriesMarker(shortName) {
   return String(shortName || "").match(/[A-Z](?=\d+$)/i)?.[0]?.toUpperCase() || "";
+}
+
+function projectDurationParts(project) {
+  const parts = Array.isArray(project?.durationParts) && project.durationParts.length
+    ? project.durationParts
+    : durationParts(project?.durationText);
+  return parts.length ? parts : [String(project?.durationText || "")];
+}
+
+function isDualTranche(project) {
+  return projectDurationParts(project).filter(Boolean).length > 1
+    || (project?.shortNames || []).length > 1
+    || (project?.inquiryRanges || []).length > 1;
+}
+
+function uniqueCaps(caps) {
+  return [...new Map(caps.map((cap) => [`${cap.value}:${cap.reason}`, cap])).values()];
+}
+
+function formatProjectDuration(project) {
+  const parts = projectDurationParts(project).filter(Boolean);
+  if (!parts.length) return "【待补充发行期限】";
+  if (isDualTranche(project)) return `${parts.map(formatDuration).join("/")}（双向互拨）`;
+  return formatDuration(parts[0]);
+}
+
+function projectInquiryRanges(project) {
+  if (Array.isArray(project?.inquiryRanges) && project.inquiryRanges.length) return project.inquiryRanges;
+  const ranges = [];
+  if (Number.isFinite(project?.inquiryLow) && Number.isFinite(project?.inquiryHigh)) {
+    ranges.push({ low: project.inquiryLow, high: project.inquiryHigh });
+  }
+  if (Number.isFinite(project?.inquiryLow2) && Number.isFinite(project?.inquiryHigh2)) {
+    ranges.push({ low: project.inquiryLow2, high: project.inquiryHigh2 });
+  }
+  return ranges;
+}
+
+function formatProjectInquiry(project) {
+  const ranges = projectInquiryRanges(project);
+  if (!ranges.length) return "【待补充询价区间】";
+  if (!isDualTranche(project)) return formatInquiryRange(ranges[0]);
+  const parts = projectDurationParts(project);
+  return ranges.map((range, index) =>
+    `${parts[index] ? `${formatDuration(parts[index])}期` : `品种${chineseNumber(index + 1)}`}${formatInquiryRange(range)}`,
+  ).join("/");
+}
+
+function formatInquiryRange(range) {
+  return `${formatNumber(range.low)}%-${formatNumber(range.high)}%`;
+}
+
+function formatSuggestionRatio(suggestion, dualTranche) {
+  if (!dualTranche) {
+    return Number.isFinite(suggestion.suggestedRatio)
+      ? `${formatNumber(suggestion.suggestedRatio)}%`
+      : "【待补充投资比例】";
+  }
+  const items = suggestion.trancheSuggestions.filter((item) => item.durationText);
+  const ratios = [...new Set(items.map((item) => item.suggestedRatio).filter(Number.isFinite))];
+  if (!ratios.length) return "投资比例不超过各期限最终发行规模的【待补充投资比例】";
+  if (ratios.length === 1) return `投资比例不超过各期限最终发行规模的${formatNumber(ratios[0])}%`;
+  return `投资比例不超过${items.map((item) =>
+    `${formatDuration(item.durationText)}期最终发行规模的${Number.isFinite(item.suggestedRatio) ? `${formatNumber(item.suggestedRatio)}%` : "【待补充投资比例】"}`,
+  ).join("和")}`;
 }
 
 function daysToTermText(days) {
