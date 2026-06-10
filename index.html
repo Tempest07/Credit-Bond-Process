@@ -91,6 +91,13 @@
               <label>询价下限（%）<input data-project-field="inquiryLow" type="number" step="0.0001"></label>
               <label>询价上限（%）<input data-project-field="inquiryHigh" type="number" step="0.0001"></label>
               <label>发行场所<input data-project-field="venue"></label>
+              <label>发行方式
+                <select data-project-field="offeringType">
+                  <option value="">待确认</option>
+                  <option value="公募">公开发行 / 公募</option>
+                  <option value="私募">非公开发行 / 私募</option>
+                </select>
+              </label>
               <label>牵头主承销商<input data-project-field="leadUnderwriter"></label>
               <label class="span-2">匹配主体
                 <select id="issuerSelect"><option value="">未匹配主体</option></select>
@@ -236,6 +243,7 @@
           <article class="rule-card"><span>金额规则</span><h2>发行规模 × 建议比例</h2><p>申请与建议投资金额暂按发行规模乘以最终建议比例自动计算，并允许在流程意见中手工修改。</p></article>
           <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>房地产债由林总终批；AAA投资金额超过8亿由金处、超过10亿由周总终批；其他评级超过3.2亿由金处、超过4亿由周总终批。</p></article>
           <article class="rule-card"><span>主承表述</span><h2>牵头与联席自动改写</h2><p>牵头时主承销商写兴业银行；联席时写“牵头主承销商、兴业银行”。</p></article>
+          <article class="rule-card"><span>交易所债券</span><h2>发行方式需确认</h2><p>简表可在任意位置注明“公开/非公开”或“公募/私募”。G/F 尾仅作带提示的辅助推断；纯数字尾无法可靠判断。</p></article>
           <article class="rule-card"><span>待补字段</span><h2>一级投标利率始终留空</h2><p>自动生成时使用【待填写】标记，不根据估值或指导价猜测。</p></article>
         </div>
         <section class="panel word-note">
@@ -248,6 +256,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260610-workflows"></script>
+  <script type="module" src="./app.js?v=20260610-exchange-bonds"></script>
 </body>
 </html>

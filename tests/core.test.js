@@ -53,6 +53,52 @@ test("builds standard interbank bond full name", () => {
   );
 });
 
+test("builds exchange bond full names when offering type is known", () => {
+  assert.equal(
+    buildBondFullName("26国创G2", "昆山国创投资集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    "昆山国创投资集团有限公司2026年面向专业投资者公开发行公司债券(第二期)",
+  );
+  assert.equal(
+    buildBondFullName("26吴发F2", "江苏省吴中经济技术发展集团有限公司", { venue: "上交所", offeringType: "私募" }),
+    "江苏省吴中经济技术发展集团有限公司2026年面向专业投资者非公开发行公司债券(第二期)",
+  );
+  assert.equal(
+    buildBondFullName("26苏轨04", "苏州市轨道交通集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    "苏州市轨道交通集团有限公司2026年面向专业投资者公开发行公司债券(第四期)",
+  );
+  assert.equal(
+    buildBondFullName("26发展01", "山东发展投资控股集团有限公司", { venue: "上交所", offeringType: "公募" }),
+    "山东发展投资控股集团有限公司2026年面向专业投资者公开发行公司债券(第一期)",
+  );
+  assert.equal(
+    buildBondFullName("26示例K1", "示例有限公司", { venue: "上交所", offeringType: "公募" }),
+    "",
+  );
+});
+
+test("parses explicit exchange offering type and only weakly infers G or F series", () => {
+  const explicit = parseProjectBrief("26发展01 非我行主承 济南分行\n3年期 规模10亿 AAA(联合资信)/隐含AAA 公开\n询价区间1.5-2.5 上交所 中信证券");
+  assert.equal(explicit.offeringType, "公募");
+  assert.equal(explicit.offeringTypeSource, "explicit");
+  assert.equal(explicit.leadUnderwriter, "中信证券");
+
+  const inferred = parseProjectBrief("26吴发F2 非我行主承 苏州分行\n3年期 规模5亿 AAA(联合资信)/隐含AA+\n询价区间1.8-2.8 上交所 东吴证券");
+  assert.equal(inferred.offeringType, "私募");
+  assert.equal(inferred.offeringTypeSource, "short-name");
+  assert.match(inferred.warnings.join(""), /请确认/);
+
+  const unknown = parseProjectBrief("26苏轨04 非我行主承 苏州分行\n3年期 规模5亿 AAA(联合资信)/隐含AAA\n询价区间1.8-2.8 上交所 中信证券");
+  assert.equal(unknown.offeringType, "");
+  assert.match(unknown.warnings.join(""), /无法仅凭简称可靠判断/);
+  assert.equal(calculateSuggestion(unknown, issuer).suggestedRatio, null);
+
+  const privateExchange = parseProjectBrief("26吴发F2 非我行主承 苏州分行\n3年期 规模5亿 AAA(联合资信)/隐含AA+ 非公开\n询价区间1.8-2.8 上交所 东吴证券");
+  assert.equal(calculateSuggestion(privateExchange, {
+    ...issuer,
+    credit: { ...issuer.credit, approvedRatio: 30, privateRatio: 20 },
+  }).suggestedRatio, 20);
+});
+
 test("uses approved ratio for non-bank-led sample", () => {
   const suggestion = calculateSuggestion(parseProjectBrief(sample), issuer);
   assert.equal(suggestion.suggestedRatio, 30);

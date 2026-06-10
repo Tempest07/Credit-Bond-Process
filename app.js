@@ -108,6 +108,7 @@ function bindGenerator() {
       const field = input.dataset.projectField;
       project[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
       if (field === "durationText") project.durationDays = durationToDays(project.durationText);
+      if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
       regenerate();
     });
   });
@@ -139,7 +140,7 @@ function fillProjectFields() {
 function regenerate() {
   const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
   if (!project.fullName && issuer) {
-    const fullName = buildBondFullName(project.shortName, issuer.legalName);
+    const fullName = buildBondFullName(project.shortName, issuer.legalName, project);
     const input = $('[data-project-field="fullName"]');
     if (fullName && input.value !== fullName) {
       project.fullName = fullName;
@@ -289,6 +290,7 @@ function renderBatchResults() {
           <div>
             <textarea class="batch-source" readonly>${escapeHtml(item.sourceText)}</textarea>
             <label class="batch-issuer-select">匹配主体<select data-batch-select="${index}">${options}</select></label>
+            <label class="batch-issuer-select">发行方式<select data-batch-offering="${index}">${projectOfferingTypeOptions(item.project.offeringType)}</select></label>
             ${warnings.length ? `<div class="warning-box"><strong>需要确认</strong><ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></div>` : ""}
           </div>
           <textarea class="batch-opinion" data-batch-opinion="${index}">${escapeHtml(generated.opinion)}</textarea>
@@ -309,6 +311,14 @@ function renderBatchResults() {
       const issuer = state.issuers.find((candidate) => candidate.id === select.value) || null;
       batchItems[index].selectedIssuerId = select.value;
       batchItems[index].draft = createIssuerDraft(batchItems[index].project, issuer);
+      renderBatchResults();
+    });
+  });
+  $$("[data-batch-offering]").forEach((select) => {
+    select.addEventListener("change", () => {
+      captureBatchDrafts();
+      const index = Number(select.dataset.batchOffering);
+      applyOfferingTypeChoice(batchItems[index].project, select.value);
       renderBatchResults();
     });
   });
@@ -689,9 +699,33 @@ function issuerFromDraft(draft) {
 }
 
 function offeringTypeOptions(selected = "") {
+  const labels = { "": "待选择", "公募": "公开发行 / 公募", "私募": "非公开发行 / 私募", "公私募": "公私募" };
   return ["", "公募", "私募", "公私募"].map((value) =>
-    `<option value="${value}" ${value === selected ? "selected" : ""}>${value || "待选择"}</option>`,
+    `<option value="${value}" ${value === selected ? "selected" : ""}>${labels[value]}</option>`,
   ).join("");
+}
+
+function projectOfferingTypeOptions(selected = "") {
+  const labels = { "": "待确认", "公募": "公开发行 / 公募", "私募": "非公开发行 / 私募" };
+  return ["", "公募", "私募"].map((value) =>
+    `<option value="${value}" ${value === selected ? "selected" : ""}>${labels[value]}</option>`,
+  ).join("");
+}
+
+function applyOfferingTypeChoice(projectValue, offeringType, updateSingleInput = false) {
+  projectValue.offeringType = offeringType;
+  projectValue.offeringTypeSource = offeringType ? "manual" : "";
+  projectValue.warnings = (projectValue.warnings || []).filter((warning) =>
+    !warning.includes("无法仅凭简称可靠判断公开或非公开发行")
+    && !warning.startsWith("发行方式根据简称尾部"),
+  );
+  if (!offeringType && ["上交所", "深交所", "北交所"].includes(projectValue.venue)) {
+    projectValue.warnings.push("交易所债券无法仅凭简称可靠判断公开或非公开发行，请在简表中注明“公开/非公开”或手工选择发行方式。");
+  }
+  if (projectValue.fullName?.includes("面向专业投资者")) {
+    projectValue.fullName = "";
+    if (updateSingleInput) $('[data-project-field="fullName"]').value = "";
+  }
 }
 
 function fillIssuerInput(prefix, draft) {

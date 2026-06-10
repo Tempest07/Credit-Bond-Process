@@ -51,6 +51,8 @@ export function parseProjectBrief(rawText) {
     inquiryHigh: null,
     venue: "",
     leadUnderwriter: "",
+    offeringType: "",
+    offeringTypeSource: "",
     valuation: null,
     guidancePrice: null,
     sourceText: text,
@@ -65,6 +67,7 @@ export function parseProjectBrief(rawText) {
   parseFirstLine(lines[0], result);
   if (lines[1]) parseSecondLine(lines[1], result);
   if (lines[2]) parseThirdLine(lines[2], result);
+  parseOfferingType(text, result);
 
   for (const line of lines.slice(3)) {
     const valuation = line.match(/市场估值(?:约)?\s*(\d+(?:\.\d+)?)/);
@@ -90,6 +93,12 @@ export function parseProjectBrief(rawText) {
   }
   if (!result.leadUnderwriter && result.sponsorStatus !== "牵头") {
     result.warnings.push("未识别牵头主承销商。");
+  }
+  if (isExchangeVenue(result.venue) && !result.offeringType) {
+    result.warnings.push("交易所债券无法仅凭简称可靠判断公开或非公开发行，请在简表中注明“公开/非公开”或手工选择发行方式。");
+  }
+  if (result.offeringTypeSource === "short-name") {
+    result.warnings.push(`发行方式根据简称尾部“${exchangeSeriesMarker(result.shortName)}”推断为${result.offeringType}，请确认。`);
   }
 
   return result;
@@ -131,7 +140,9 @@ function parseFirstLine(line, result) {
   }
 
   if (status) {
-    const branch = line.slice(status.index + status[1].length).trim();
+    const branch = line.slice(status.index + status[1].length)
+      .replace(/(?:非公开|公开|公募|私募)/g, "")
+      .trim();
     if (branch) result.branch = branch;
   }
 }
@@ -171,7 +182,31 @@ function parseThirdLine(line, result) {
   const venue = line.match(/(银行间|上交所|深交所|北交所)/);
   if (venue) {
     result.venue = venue[1];
-    result.leadUnderwriter = line.slice(venue.index + venue[1].length).trim();
+    result.leadUnderwriter = line.slice(venue.index + venue[1].length)
+      .replace(/(?:非公开|公开|公募|私募)/g, "")
+      .trim();
+  }
+}
+
+function parseOfferingType(text, result) {
+  if (/(?:非公开|私募)/.test(text)) {
+    result.offeringType = "私募";
+    result.offeringTypeSource = "explicit";
+    return;
+  }
+  if (/公开发行/.test(text) || /(?:^|[\s/，,])(?:公开|公募)(?:$|[\s/，,])/.test(text)) {
+    result.offeringType = "公募";
+    result.offeringTypeSource = "explicit";
+    return;
+  }
+  if (!isExchangeVenue(result.venue)) return;
+  const marker = exchangeSeriesMarker(result.shortName);
+  if (marker === "G") {
+    result.offeringType = "公募";
+    result.offeringTypeSource = "short-name";
+  } else if (marker === "F") {
+    result.offeringType = "私募";
+    result.offeringTypeSource = "short-name";
   }
 }
 
@@ -186,23 +221,37 @@ export function findIssuer(shortName, issuers = []) {
     .sort((left, right) => right.alias.length - left.alias.length)[0]?.issuer || null;
 }
 
-export function buildBondFullName(shortName, legalName) {
+export function buildBondFullName(shortName, legalName, project = {}) {
   if (!shortName || !legalName) return "";
   const match = shortName.match(/^(\d{2}).*?(SCP|CP|MTN|PPN)(\d{3})$/i);
-  if (!match) return "";
-  const year = 2000 + Number(match[1]);
-  const type = BOND_TYPES[match[2].toUpperCase()];
-  const issueNumber = chineseNumber(Number(match[3]));
-  return `${legalName}${year}年度第${issueNumber}期${type}`;
+  if (match) {
+    const year = 2000 + Number(match[1]);
+    const type = BOND_TYPES[match[2].toUpperCase()];
+    const issueNumber = chineseNumber(Number(match[3]));
+    return `${legalName}${year}年度第${issueNumber}期${type}`;
+  }
+
+  if (!isExchangeVenue(project.venue)) return "";
+  const exchangeMatch = shortName.match(/^(\d{2}).*?([GF]?)(\d{1,2})$/i);
+  const seriesMarker = exchangeSeriesMarker(shortName);
+  const offeringType = inferOfferingType(project);
+  if (!exchangeMatch || (seriesMarker && !["G", "F"].includes(seriesMarker)) || !offeringType || shortName.includes("/")) return "";
+  const year = 2000 + Number(exchangeMatch[1]);
+  const issueNumber = chineseNumber(Number(exchangeMatch[3]));
+  const issuance = offeringType === "私募" ? "非公开" : "公开";
+  return `${legalName}${year}年面向专业投资者${issuance}发行公司债券(第${issueNumber}期)`;
 }
 
 export function calculateSuggestion(project, issuer) {
   const warnings = [];
   const credit = issuer?.credit || {};
   const offeringType = inferOfferingType(project);
-  const approvedRatio = offeringType === "私募" && Number.isFinite(numberOrNull(credit.privateRatio))
-    ? numberOrNull(credit.privateRatio)
-    : numberOrNull(credit.approvedRatio);
+  const exchangeOfferingUnknown = isExchangeVenue(project.venue) && !offeringType;
+  const approvedRatio = exchangeOfferingUnknown
+    ? null
+    : offeringType === "私募" && Number.isFinite(numberOrNull(credit.privateRatio))
+      ? numberOrNull(credit.privateRatio)
+      : numberOrNull(credit.approvedRatio);
   let suggestedRatio = approvedRatio;
   const caps = [];
 
@@ -223,7 +272,9 @@ export function calculateSuggestion(project, issuer) {
   }
 
   if (suggestedRatio === null) {
-    warnings.push("主体资料中缺少授信投资比例，无法计算建议比例和投资金额。");
+    warnings.push(exchangeOfferingUnknown
+      ? "交易所债券发行方式未确认，暂不计算投资比例和金额。"
+      : "主体资料中缺少授信投资比例，无法计算建议比例和投资金额。");
   } else {
     for (const cap of caps) suggestedRatio = Math.min(suggestedRatio, cap.value);
   }
@@ -285,7 +336,7 @@ export function formatCreditSentence(issuer) {
 
 export function generateOpinion(project, issuer) {
   const suggestion = calculateSuggestion(project, issuer);
-  const fullName = project.fullName || buildBondFullName(project.shortName, issuer?.legalName);
+  const fullName = project.fullName || buildBondFullName(project.shortName, issuer?.legalName, project);
   const branch = project.branch || issuer?.defaultBranch || "【待补充分行】";
   const underwriter = buildUnderwriter(project);
   const rating = project.subjectRating
@@ -405,11 +456,20 @@ function chineseNumber(value) {
 }
 
 export function inferOfferingType(project) {
+  if (["公募", "私募"].includes(project?.offeringType)) return project.offeringType;
   const fullName = String(project?.fullName || "");
   const shortName = String(project?.shortName || "").toUpperCase();
   if (fullName.includes("非公开") || /PPN\d*/.test(shortName)) return "私募";
   if (fullName.includes("公开") || /(SCP|CP|MTN)\d*/.test(shortName)) return "公募";
   return "";
+}
+
+function isExchangeVenue(venue) {
+  return ["上交所", "深交所", "北交所"].includes(String(venue || ""));
+}
+
+function exchangeSeriesMarker(shortName) {
+  return String(shortName || "").match(/[A-Z](?=\d+$)/i)?.[0]?.toUpperCase() || "";
 }
 
 function daysToTermText(days) {
