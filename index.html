@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-quick-outputs">
+  <link rel="stylesheet" href="./styles.css?v=20260611-compact-filters">
 </head>
 <body>
   <div class="app-shell">
@@ -154,16 +154,21 @@
       </section>
 
       <section class="view active" data-view="ledger">
-        <div class="dashboard-grid" id="dashboardGrid">
-          <button class="dashboard-card active" data-ledger-filter="all"><span>全部项目</span><strong id="dashboardAll">0</strong><small>当前台账</small></button>
+        <div class="dashboard-grid dashboard-priority" id="dashboardGrid">
           <button class="dashboard-card urgent" data-ledger-filter="dueToday"><span>今日待投标</span><strong id="dashboardDueToday">0</strong><small>按截标日期</small></button>
-          <button class="dashboard-card" data-ledger-filter="toBid"><span>待投标</span><strong id="dashboardToBid">0</strong><small>尚未录入标位</small></button>
           <button class="dashboard-card" data-ledger-filter="awaitingResult"><span>等待结果</span><strong id="dashboardAwaitingResult">0</strong><small>已投标待截标</small></button>
-          <button class="dashboard-card success" data-ledger-filter="won"><span>中标项目</span><strong id="dashboardWon">0</strong><small>含部分中标</small></button>
-          <button class="dashboard-card muted" data-ledger-filter="notWon"><span>未中标</span><strong id="dashboardNotWon">0</strong><small>近期结果</small></button>
           <button class="dashboard-card urgent" data-ledger-filter="paymentToday"><span>今日缴款</span><strong id="dashboardPaymentToday">0</strong><small>需要处理</small></button>
-          <button class="dashboard-card" data-ledger-filter="duePayment"><span>待缴款</span><strong id="dashboardDuePayment">0</strong><small>未来缴款任务</small></button>
         </div>
+        <details class="ledger-filter-details" id="ledgerFilterDetails">
+          <summary><span>更多筛选</span><strong id="ledgerFilterLabel">全部项目</strong></summary>
+          <div class="dashboard-grid dashboard-more">
+            <button class="dashboard-card active" data-ledger-filter="all"><span>全部项目</span><strong id="dashboardAll">0</strong><small>当前台账</small></button>
+            <button class="dashboard-card" data-ledger-filter="toBid"><span>待投标</span><strong id="dashboardToBid">0</strong><small>尚未录入标位</small></button>
+            <button class="dashboard-card success" data-ledger-filter="won"><span>中标项目</span><strong id="dashboardWon">0</strong><small>含部分中标</small></button>
+            <button class="dashboard-card muted" data-ledger-filter="notWon"><span>未中标</span><strong id="dashboardNotWon">0</strong><small>近期结果</small></button>
+            <button class="dashboard-card" data-ledger-filter="duePayment"><span>待缴款</span><strong id="dashboardDuePayment">0</strong><small>未来缴款任务</small></button>
+          </div>
+        </details>
 
         <div class="ledger-grid">
           <section class="panel project-list-panel">
@@ -378,6 +383,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-quick-outputs"></script>
+  <script type="module" src="./app.js?v=20260611-compact-filters"></script>
 </body>
 </html>

@@ -140,7 +140,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .batch-issuer-grid .wide { grid-column: span 2; }
 .batch-issuer-grid .full { grid-column: 1 / -1; }
 
-.dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; }
+.dashboard-priority { grid-template-columns: repeat(3, minmax(150px, 1fr)); margin-bottom: 10px; }
+.dashboard-more { grid-template-columns: repeat(5, minmax(110px, 1fr)); padding-top: 10px; }
 .dashboard-card { display: grid; gap: 5px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--panel); box-shadow: var(--shadow); text-align: left; }
 .dashboard-card:hover, .dashboard-card.active { border-color: var(--accent); }
 .dashboard-card span, .dashboard-card small { color: var(--muted); font-size: 10px; }
@@ -148,6 +150,13 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .dashboard-card.urgent strong { color: var(--warning); }
 .dashboard-card.success strong { color: var(--accent); }
 .dashboard-card.muted strong { color: var(--muted); }
+.ledger-filter-details { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.55); }
+.ledger-filter-details summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 700; list-style-position: inside; }
+.ledger-filter-details summary strong { margin-left: auto; color: var(--accent); font-size: 10px; }
+.ledger-filter-details[open] { padding: 0 10px 10px; background: var(--panel); }
+.ledger-filter-details[open] summary { margin: 0 -10px; padding-right: 22px; padding-left: 22px; border-bottom: 1px solid var(--line); }
+.dashboard-more .dashboard-card { padding: 10px; box-shadow: none; }
+.dashboard-more .dashboard-card strong { font-size: 18px; }
 .ledger-grid { display: grid; grid-template-columns: minmax(310px, .72fr) minmax(620px, 1.28fr); gap: 16px; }
 .project-list-panel, .project-detail-panel { min-height: 680px; padding: 18px; }
 .project-list-tools { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
@@ -201,7 +210,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 @media (max-width: 1120px) {
   .generator-grid, .database-grid, .batch-card-grid, .ledger-grid { grid-template-columns: 1fr; }
-  .dashboard-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tranche-grid .span-3 { grid-column: span 2; }
@@ -219,7 +228,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .field-grid, .rules-grid { grid-template-columns: 1fr; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: 1fr; }
   .tranche-grid .span-3 { grid-column: span 1; }
-  .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-list-tools { grid-template-columns: 1fr; }
   .history-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .span-2 { grid-column: span 1; }

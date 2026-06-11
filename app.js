@@ -205,6 +205,8 @@ function bindLedger() {
     button.addEventListener("click", () => {
       ledgerFilter = button.dataset.ledgerFilter;
       $$("[data-ledger-filter]").forEach((item) => item.classList.toggle("active", item === button));
+      updateLedgerFilterLabel(button);
+      $("#ledgerFilterDetails").open = false;
       renderProjectList();
     });
   });
@@ -355,6 +357,11 @@ function renderDashboard() {
   $("#dashboardNotWon").textContent = counts.notWon;
   $("#dashboardPaymentToday").textContent = counts.paymentToday;
   $("#dashboardDuePayment").textContent = counts.duePayment;
+}
+
+function updateLedgerFilterLabel(button) {
+  const label = button?.querySelector("span")?.textContent || "全部项目";
+  $("#ledgerFilterLabel").textContent = `当前：${label}`;
 }
 
 function renderProjectList() {
