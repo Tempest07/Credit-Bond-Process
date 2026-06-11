@@ -5,15 +5,23 @@ const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 
 export default {
   async fetch(request, env) {
-    return handleRequest(request, env);
+    try {
+      return await handleRequest(request, env);
+    } catch (error) {
+      return jsonResponse(errorPayload(error), 500);
+    }
   },
 
   async scheduled(event, env, context) {
-    context.waitUntil(sendTodayReport(env, {
-      source: "scheduled",
-      force: false,
-      now: new Date(event.scheduledTime || Date.now()),
-    }));
+    context.waitUntil(
+      sendTodayReport(env, {
+        source: "scheduled",
+        force: false,
+        now: new Date(event.scheduledTime || Date.now()),
+      }).catch((error) => {
+        console.error("Scheduled mail failed", error);
+      }),
+    );
   },
 };
 
@@ -249,23 +257,38 @@ async function loadState(db) {
 }
 
 async function sendWithResend(env, report) {
-  const response = await fetch(RESEND_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: env.MAIL_FROM,
-      to: splitEmails(env.MAIL_TO),
-      cc: splitEmails(env.MAIL_CC),
-      bcc: splitEmails(env.MAIL_BCC),
-      reply_to: env.MAIL_REPLY_TO || undefined,
-      subject: report.subject,
-      text: report.text,
-      html: report.html,
-    }),
-  });
+  const timeoutMs = positiveInteger(env.RESEND_TIMEOUT_MS) || 15000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+
+  try {
+    response = await fetch(RESEND_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.MAIL_FROM,
+        to: splitEmails(env.MAIL_TO),
+        cc: splitEmails(env.MAIL_CC),
+        bcc: splitEmails(env.MAIL_BCC),
+        reply_to: env.MAIL_REPLY_TO || undefined,
+        subject: report.subject,
+        text: report.text,
+        html: report.html,
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Resend 请求超过 ${Math.round(timeoutMs / 1000)} 秒仍未返回，请稍后重试或检查 RESEND_API_KEY / MAIL_FROM / MAIL_TO 配置`);
+    }
+    throw new Error(`无法连接 Resend：${error.message || error}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -348,12 +371,39 @@ function controlPage() {
     }
     async function call(path, method = "GET") {
       output.textContent = "处理中...";
-      const response = await fetch(path, {
-        method,
-        headers: { Authorization: "Bearer " + password.value },
-      });
-      const data = await response.json();
-      output.textContent = JSON.stringify(data, null, 2);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      try {
+        const response = await fetch(path, {
+          method,
+          headers: { Authorization: "Bearer " + password.value },
+          signal: controller.signal,
+        });
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (error) {
+          data = {
+            status: "error",
+            httpStatus: response.status,
+            message: "Worker 返回了非 JSON 内容",
+            body: text.slice(0, 1000),
+          };
+        }
+        output.textContent = JSON.stringify({
+          ok: response.ok,
+          httpStatus: response.status,
+          ...data,
+        }, null, 2);
+      } catch (error) {
+        output.textContent = JSON.stringify({
+          status: "error",
+          message: controller.signal.aborted ? "请求超过 45 秒仍未返回" : String(error.message || error),
+        }, null, 2);
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
     document.querySelector("#preview").onclick = () => call("/preview-today" + query());
     document.querySelector("#send").onclick = () => call("/send-today" + query(), "POST");
@@ -373,6 +423,24 @@ function jsonResponse(data, status = 200) {
       "X-Content-Type-Options": "nosniff",
     },
   });
+}
+
+function errorPayload(error) {
+  return {
+    status: "error",
+    error: error.message || String(error),
+    hint: guessErrorHint(error),
+  };
+}
+
+function guessErrorHint(error) {
+  const message = String(error?.message || error || "");
+  if (/RESEND_API_KEY/i.test(message)) return "请检查 Worker Secret RESEND_API_KEY 是否已填写并重新部署";
+  if (/MAIL_FROM/i.test(message)) return "请检查 Worker Text 变量 MAIL_FROM；无自有域名测试时可用：流程意见提示 <onboarding@resend.dev>";
+  if (/MAIL_TO/i.test(message)) return "请检查 Worker Text 变量 MAIL_TO；使用 onboarding@resend.dev 测试时，收件人通常必须是 Resend 账号邮箱";
+  if (/403|domain|verify|sender|from/i.test(message)) return "这通常是 Resend 发件域名/发件人限制：无自有域名时 MAIL_FROM 用 onboarding@resend.dev，MAIL_TO 用 Resend 账号邮箱";
+  if (/401|API key|Unauthorized/i.test(message)) return "这通常是 Resend API Key 不正确或没有保存为 Secret";
+  return "请把这段 JSON 错误内容发给我，我可以继续定位";
 }
 
 function htmlResponse(html) {
@@ -453,6 +521,11 @@ function formatNumber(value) {
 
 function stringFlag(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function positiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
 }
 
 function escapeHtml(value) {

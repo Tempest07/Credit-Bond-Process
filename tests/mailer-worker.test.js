@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildTodayMail, selectTodayBidProjects } from "../mailer-worker.js";
+import mailerWorker, { buildTodayMail, selectTodayBidProjects } from "../mailer-worker.js";
 
 const today = "2026-06-11";
 
@@ -72,4 +72,19 @@ test("uses a fallback project brief when source text is missing", () => {
   assert.match(report.text, /主体：测试集团有限公司/);
   assert.match(report.text, /询价区间：1.5%-2.5%/);
   assert.match(report.text, /流程意见：\n【暂无流程意见】/);
+});
+
+test("returns a readable JSON error when sending is misconfigured", async () => {
+  const response = await mailerWorker.fetch(new Request("https://mailer.test/send-today", {
+    method: "POST",
+    headers: { Authorization: "Bearer secret" },
+  }), {
+    APP_PASSWORD: "secret",
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 500);
+  assert.equal(body.status, "error");
+  assert.match(body.error, /RESEND_API_KEY/);
+  assert.match(body.hint, /RESEND_API_KEY/);
 });
