@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260612-cloud-motion";
+} from "./core.js?v=20260612-template-fields";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260612-cloud-motion";
+} from "./lifecycle.js?v=20260612-template-fields";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260612-cloud-motion";
+} from "./history-parser.js?v=20260612-template-fields";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -45,9 +45,9 @@ const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 
 26粤交投SCP002 市场估值约1.46
 如需综合定价，指导价约1.48`;
-const BLANK_BRIEF_TEMPLATE = `【债券简称】 非我行主承 【分行】
+const BLANK_BRIEF_TEMPLATE = `【债券简称】 非我行主承 【分行】分行
 【期限】 规模【规模】亿 【主体评级】(【评级机构】)/隐含【隐含评级】
-询价区间【询价下限】-【询价上限】 【发行场所】 【牵头主承销商】
+询价区间【询价下限】%-【询价上限】% 【发行场所】 【牵头主承销商】
 
 【债券简称】 市场估值约【估值】
 如需综合定价，指导价约【指导价】`;

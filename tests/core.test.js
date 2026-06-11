@@ -66,6 +66,21 @@ test("treats no comprehensive pricing guidance as unpriced", () => {
   assert.equal(noGuidance.guidancePrice, null);
 });
 
+test("parses blank-template style branch suffix and percent inquiry", () => {
+  const parsed = parseProjectBrief(`26苏州测试MTN001 非我行主承 苏州分行
+3年期 规模5亿 AA+(联合资信)/隐含AA+
+询价区间1.50%-2.10% 银行间 中信银行
+
+26苏州测试MTN001 市场估值约1.85
+如需综合定价，指导价约1.90`);
+
+  assert.equal(parsed.branch, "苏州分行");
+  assert.equal(parsed.inquiryLow, 1.5);
+  assert.equal(parsed.inquiryHigh, 2.1);
+  assert.equal(parsed.venue, "银行间");
+  assert.equal(parsed.leadUnderwriter, "中信银行");
+});
+
 test("builds standard interbank bond full name", () => {
   assert.equal(
     buildBondFullName("26粤交投SCP002", issuer.legalName),

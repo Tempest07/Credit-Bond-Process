@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260612-cloud-motion">
+  <link rel="stylesheet" href="./styles.css?v=20260612-template-fields">
 </head>
 <body>
   <div class="app-shell">
@@ -80,7 +80,7 @@
             <div class="brief-template-guide">
               <strong>必填占位</strong>
               <span>债券简称</span><span>主承身份</span><span>分行</span><span>期限</span><span>规模</span><span>主体评级</span><span>隐含评级</span><span>询价区间</span><span>发行场所</span><span>牵头主承销商</span><span>估值</span><span>指导价/不综</span>
-              <small>按 Tab / Shift+Tab 可在占位符之间跳转；不执行综合定价时，删除指导价行或改写为“不执行综合定价”。</small>
+              <small>分行只填“苏州/广州”这类名称，询价只填数字；按 Tab / Shift+Tab 可在占位符之间跳转。不执行综合定价时，删除指导价行或改写为“不执行综合定价”。</small>
             </div>
             <button class="button primary wide" id="parseButton">解析并生成</button>
 
@@ -480,6 +480,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260612-cloud-motion"></script>
+  <script type="module" src="./app.js?v=20260612-template-fields"></script>
 </body>
 </html>

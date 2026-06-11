@@ -288,7 +288,7 @@ function parseSecondLine(line, result) {
 function parseThirdLine(line, result) {
   const inquiryIndex = line.search(/询价区间/);
   const inquiryText = inquiryIndex >= 0 ? line.slice(inquiryIndex + 4) : line;
-  const inquiryRanges = [...inquiryText.matchAll(/(\d+(?:\.\d+)?)\s*[-—~至]\s*(\d+(?:\.\d+)?)/g)]
+  const inquiryRanges = [...inquiryText.matchAll(/(\d+(?:\.\d+)?)\s*%?\s*[-—~至]\s*(\d+(?:\.\d+)?)\s*%?/g)]
     .map((match) => ({ low: Number(match[1]), high: Number(match[2]) }));
   if (inquiryRanges.length) {
     result.inquiryRanges = inquiryRanges;
