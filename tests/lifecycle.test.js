@@ -78,7 +78,7 @@ test("derives bidding, award and payment statuses from tranche records", () => {
     ...base,
     resultConfirmed: true,
     tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12" }],
-  }, new Date("2026-06-11T09:00:00")), "已中标");
+  }, new Date("2026-06-11T09:00:00")), "待缴款");
   assert.equal(deriveProjectStatus({
     ...base,
     resultConfirmed: true,
@@ -87,7 +87,7 @@ test("derives bidding, award and payment statuses from tranche records", () => {
   assert.equal(trancheNeedsPayment({
     resultStatus: "中标",
     paymentDate: "2026-06-12",
-  }, new Date("2026-06-11T09:00:00")), false);
+  }, new Date("2026-06-11T09:00:00")), true);
   assert.equal(trancheNeedsPayment({
     resultStatus: "中标",
     paymentDate: "2026-06-12",
@@ -125,7 +125,7 @@ test("calculates dashboard counts including payment reminders", () => {
     awaitingResult: 1,
     won: 3,
     notWon: 0,
-    duePayment: 1,
+    duePayment: 2,
     paymentToday: 1,
   });
 });
@@ -294,6 +294,14 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(detailed.items[0].fullMarketMultiple, 1.5);
   assert.equal(detailed.items[0].startDate, "2026-06-11");
   assert.equal(detailed.items[0].paymentDate, "2026-06-11");
+
+  const notice = parseIssuanceAdvertisement(`【截标通知】
+26广州产投SCP004：AAA国企，9.5亿，270天，区间1.30%-1.47%，票面利率1.43%，明日缴款，感谢支持！`, new Date("2026-06-11T09:00:00"));
+  assert.equal(notice.items[0].shortName, "26广州产投SCP004");
+  assert.equal(notice.items[0].issueScale, 9.5);
+  assert.equal(notice.items[0].durationText, "270天");
+  assert.equal(notice.items[0].couponRate, 1.43);
+  assert.equal(notice.items[0].paymentDate, "2026-06-12");
 });
 
 test("applies advertisements and builds own and outsourced award report", () => {

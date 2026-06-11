@@ -150,10 +150,8 @@ export function deriveProjectStatus(project, referenceDate = new Date()) {
 }
 
 export function trancheNeedsPayment(tranche, referenceDate = new Date()) {
-  const date = referenceDateKey(referenceDate);
   return isWinningTranche(tranche)
     && Boolean(tranche.paymentDate)
-    && tranche.paymentDate <= date
     && !tranche.paymentCompleted;
 }
 
@@ -172,7 +170,7 @@ export function dashboardCounts(projects = [], now = new Date()) {
     duePayment: duePaymentProjects.length,
     paymentToday: projects.filter((project) =>
       project.resultConfirmed
-      && project.tranches?.some((tranche) => tranche.paymentDate === date && trancheNeedsPayment(tranche, date)),
+      && project.tranches?.some((tranche) => tranche.paymentDate === date && trancheNeedsPayment(tranche)),
     ).length,
   };
 }
@@ -470,11 +468,14 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || block.match(/代码[：:]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || "";
-  const issueScale = numberFrom(block, /(?:发行)?规模[：:，,\s]*(\d+(?:\.\d+)?)\s*亿/);
+  const issueScale = numberFrom(block, /(?:发行)?规模[：:，,\s]*(\d+(?:\.\d+)?)\s*亿/)
+    ?? numberFrom(block, /(?:^|[，,\s])(\d+(?:\.\d+)?)\s*亿(?:元)?(?=[，,\s]|$)/);
   const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const couponRate = numberFrom(block, /(?:票面利率|票面)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
-  const durationText = block.match(/(?:债券)?期限[：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:规模|发行规模|票面|全场倍数|缴款|$))/)?.[1]?.trim() || "";
+  const durationText = block.match(/(?:债券)?期限[：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:规模|发行规模|票面|全场倍数|缴款|$))/)?.[1]?.trim()
+    || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
+    || "";
   const allocationNote = block.includes("全部回拨") ? block.match(/全部回拨至[^\n，,]*/)?.[0] || "全部回拨" : "";
   return {
     shortName,
@@ -555,6 +556,10 @@ function parseIssuerName(text) {
 
 function parseLabeledDate(text, label, referenceDate) {
   const line = text.match(new RegExp(`${label}(?:日期)?[：:\\s]*([^\\n，,]+)`))?.[1] || "";
+  const relative = line.match(/(今天|今日|明天|明日)/)?.[1]
+    || text.match(new RegExp(`(今天|今日|明天|明日)${label}`))?.[1]
+    || text.match(new RegExp(`${label}(?:日期)?[：:\\s]*(今天|今日|明天|明日)`))?.[1];
+  if (relative) return inferRelativeDate(relative, referenceDate);
   const iso = line.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/);
   if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, "0")}-${String(iso[3]).padStart(2, "0")}`;
   const monthDay = line.match(/(?:(\d{1,2})月)?(\d{1,2})日/)
@@ -562,6 +567,12 @@ function parseLabeledDate(text, label, referenceDate) {
   return monthDay
     ? inferPaymentDate(Number(monthDay[2]), monthDay[1] ? Number(monthDay[1]) : null, referenceDate)
     : "";
+}
+
+function inferRelativeDate(value, referenceDate) {
+  const date = new Date(referenceDate);
+  if (["明天", "明日"].includes(value)) date.setDate(date.getDate() + 1);
+  return localDate(date);
 }
 
 function inferPaymentDate(day, month, referenceDate) {

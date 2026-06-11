@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-pricing-source";
+} from "./core.js?v=20260611-payment-reminders";
 import {
   applyGuidancePricing,
   applyIssuanceAdvertisement,
@@ -25,13 +25,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-pricing-source";
+} from "./lifecycle.js?v=20260611-payment-reminders";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-pricing-source";
+} from "./history-parser.js?v=20260611-payment-reminders";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
