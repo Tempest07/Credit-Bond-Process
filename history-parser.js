@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js";
+import { durationToDays } from "./core.js?v=20260611-cutoff-cache-fix";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

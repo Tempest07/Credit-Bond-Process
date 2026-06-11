@@ -5,10 +5,10 @@
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
 
 /*.js
-  Cache-Control: public, max-age=3600
+  Cache-Control: no-cache
 
 /vendor/*
   Cache-Control: public, max-age=604800
 
 /*.css
-  Cache-Control: public, max-age=3600
+  Cache-Control: no-cache
