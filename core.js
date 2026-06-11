@@ -2,6 +2,19 @@ export const DEFAULT_STATE = {
   version: 2,
   issuers: [],
   projects: [],
+  ftpCurve: {
+    m3: null,
+    m4: null,
+    m6: null,
+    m9: null,
+    y1: null,
+    y2: null,
+    y3: null,
+    y4: null,
+    y5: null,
+    y7: null,
+    y10: null,
+  },
   updatedAt: null,
 };
 

@@ -91,6 +91,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 .issuer-list-panel { min-height: 610px; }
 .issuer-list { display: grid; gap: 7px; margin-top: 12px; }
+.ftp-curve-panel { margin-bottom: 16px; padding: 18px; }
+.ftp-curve-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px; }
+.ftp-curve-grid label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.ftp-curve-grid input { min-height: 34px; padding: 6px 8px; font-size: 11px; }
 .issuer-item { display: grid; gap: 4px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: #fff; text-align: left; }
 .issuer-item:hover, .issuer-item.active { border-color: var(--accent); background: var(--accent-soft); }
 .issuer-item span { color: var(--muted); font-size: 10px; }
@@ -291,6 +295,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .generator-grid, .database-grid, .batch-card-grid, .ledger-grid { grid-template-columns: 1fr; }
   .mail-panel { grid-template-columns: 1fr; }
   .mail-panel-actions { justify-content: flex-start; }
+  .ftp-curve-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ledger-todo-grid { grid-template-columns: 1fr; }
   .ledger-todo-grid .payment-todo-list, .ledger-todo-grid .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .payment-todo-list, .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -320,6 +325,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .review-grid .full, .batch-issuer-grid .full { grid-column: span 1; }
   .result-actions { align-items: flex-end; flex-direction: column; }
   .project-action-bar { align-items: flex-start; flex-direction: column; }
+  .ftp-curve-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ledger-todo-grid .payment-todo-list, .ledger-todo-grid .cutoff-todo-list { grid-template-columns: 1fr; }
   .project-action-buttons, .payment-todo-list, .cutoff-todo-list { width: 100%; grid-template-columns: 1fr; justify-content: flex-start; }
   .cutoff-confirm { margin-left: 0; }

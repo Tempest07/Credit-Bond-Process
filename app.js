@@ -10,12 +10,14 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-payment-reminders";
+} from "./core.js?v=20260611-ftp-curve";
 import {
+  FTP_TENORS,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
   buildBidPositionText,
+  calculateFtpForDuration,
   createProjectRecord,
   dashboardCounts,
   deriveProjectStatus,
@@ -25,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-payment-reminders";
+} from "./lifecycle.js?v=20260611-ftp-curve";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-payment-reminders";
+} from "./history-parser.js?v=20260611-ftp-curve";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -94,6 +96,7 @@ async function initialize() {
   renderIssuerOptions();
   renderIssuerList();
   renderProjectWorkspace();
+  renderFtpCurveForm();
   clearIssuerForm();
   await loadCloudState();
 }
@@ -288,7 +291,7 @@ function bindLedger() {
       showToast("请先粘贴发行结果广告。");
       return;
     }
-    const parsed = applyIssuanceAdvertisement({ ...draft, resultConfirmed: true }, advertisement);
+    const parsed = applyIssuanceAdvertisement({ ...draft, ftpCurve: state.ftpCurve, resultConfirmed: true }, advertisement);
     parsed.resultConfirmed = true;
     parsed.status = deriveProjectStatus(parsed);
     fillProjectForm(parsed);
@@ -613,17 +616,22 @@ function renderPaymentTodo() {
     ? todos.map(({ project: projectValue, tranche }) => {
         const timing = tranche.paymentDate < today ? "overdue" : tranche.paymentDate === today ? "today" : "upcoming";
         const timingLabel = timing === "overdue" ? "已逾期" : timing === "today" ? "今日缴款" : tranche.paymentDate;
+        const addBondNote = tranche.paymentDate === today && isAbsOrAbnProject(projectValue, tranche) ? " · 需加券" : "";
         return `
           <article class="payment-todo-item ${timing}">
             <button class="payment-todo-main" type="button" data-open-payment-project="${escapeAttribute(projectValue.id)}">
               <strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong>
-              <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}</span>
+              <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}${escapeHtml(addBondNote)}</span>
             </button>
             <button class="button subtle" type="button" data-complete-payment="${escapeAttribute(`${projectValue.id}:${tranche.id}`)}">标记已缴款</button>
           </article>
         `;
       }).join("")
     : '<div class="payment-todo-empty">目前没有待缴款任务。</div>';
+}
+
+function isAbsOrAbnProject(projectValue, tranche = {}) {
+  return /(?:ABS|ABN)/i.test(`${projectValue.shortName} ${tranche.shortName} ${projectValue.sourceText}`);
 }
 
 function completePaymentTodo(value) {
@@ -965,7 +973,7 @@ function readProjectForm() {
     });
     return values;
   });
-  return applySourceGuidancePricing(normalizeProjectRecord({
+  const record = applySourceGuidancePricing(normalizeProjectRecord({
     ...existing,
     id: $("#projectId").value,
     shortName: existing.shortName,
@@ -985,6 +993,24 @@ function readProjectForm() {
     ftpCost: numberOrNull($("#projectFtpCost").value),
     tranches,
   }));
+  return applyFtpRevenueToProject(record);
+}
+
+function applyFtpRevenueToProject(record) {
+  const normalized = normalizeProjectRecord(record);
+  let changed = false;
+  const tranches = normalized.tranches.map((tranche) => {
+    const winningRate = numberOrNull(tranche.winningRate);
+    const winningAmount = numberOrNull(tranche.winningAmountWan);
+    const ftpCost = calculateFtpForDuration(tranche.durationText, state.ftpCurve) ?? numberOrNull(normalized.ftpCost);
+    if (!Number.isFinite(winningRate) || !Number.isFinite(winningAmount) || winningAmount <= 0 || !Number.isFinite(ftpCost)) {
+      return tranche;
+    }
+    const revenueBp = round(winningRate * 100 * 0.9366 - ftpCost, 2);
+    if (tranche.revenueBp !== revenueBp) changed = true;
+    return { ...tranche, revenueBp };
+  });
+  return changed ? normalizeProjectRecord({ ...normalized, tranches }) : normalized;
 }
 
 function updateProjectPreviews() {
@@ -997,19 +1023,20 @@ function updateProjectPreviews() {
 function recalculateRevenueFromFtp() {
   if ($("#projectForm").hidden) return;
   const draft = readProjectForm();
-  if (!Number.isFinite(numberOrNull(draft.ftpCost))) return;
   let changed = false;
   draft.tranches = draft.tranches.map((tranche) => {
     const winningRate = numberOrNull(tranche.winningRate);
     const winningAmount = numberOrNull(tranche.winningAmountWan);
+    const ftpCost = calculateFtpForDuration(tranche.durationText, state.ftpCurve) ?? numberOrNull(draft.ftpCost);
     if (!Number.isFinite(winningRate) || !Number.isFinite(winningAmount) || winningAmount <= 0) return tranche;
+    if (!Number.isFinite(ftpCost)) return tranche;
     changed = true;
-    return { ...tranche, revenueBp: round(winningRate * 75 - draft.ftpCost, 2) };
+    return { ...tranche, revenueBp: round(winningRate * 100 * 0.9366 - ftpCost, 2) };
   });
   if (!changed) return;
   refillProjectForm(draft);
   saveProjectRecordNow(draft);
-  showToast("已按 FTP 重算表内营收。");
+  showToast("已按 FTP 曲线重算表内营收。");
 }
 
 function applyCutoffAction(action) {
@@ -1074,7 +1101,7 @@ function saveProjectDraftNow() {
 
 function saveProjectRecordNow(record) {
   clearTimeout(projectAutoSaveTimer);
-  const normalized = normalizeProjectRecord(record);
+  const normalized = applyFtpRevenueToProject(record);
   const isCurrentProject = !$("#projectForm").hidden && $("#projectId").value === normalized.id;
   state = upsertProject(state, normalized);
   if (isCurrentProject) selectedProjectId = normalized.id;
@@ -1394,6 +1421,12 @@ function saveBatchIssuers() {
 function bindDatabase() {
   $("#newIssuerButton").addEventListener("click", clearIssuerForm);
   $("#issuerSearch").addEventListener("input", renderIssuerList);
+  $("#ftpCurveForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    state = { ...state, ftpCurve: readFtpCurveForm() };
+    persistState();
+    showToast("FTP 曲线已保存。");
+  });
   $("#creditRawText").addEventListener("change", () => {
     const credit = parseCreditText($("#creditRawText").value);
     const fields = {
@@ -1867,6 +1900,20 @@ function renderIssuerOptions() {
   $("#issuerSelect").value = selectedIssuerId;
 }
 
+function renderFtpCurveForm() {
+  $("#ftpCurveGrid").innerHTML = FTP_TENORS.map((tenor) => `
+    <label>${tenor.label}<input data-ftp-field="${tenor.key}" type="number" step="0.01" value="${escapeAttribute(state.ftpCurve?.[tenor.key] ?? "")}" placeholder="BP"></label>
+  `).join("");
+}
+
+function readFtpCurveForm() {
+  const curve = normalizeFtpCurve(state.ftpCurve);
+  $$("[data-ftp-field]").forEach((input) => {
+    curve[input.dataset.ftpField] = numberOrNull(input.value);
+  });
+  return curve;
+}
+
 function clearIssuerForm() {
   $("#issuerForm").reset();
   $("#issuerId").value = "";
@@ -1930,6 +1977,7 @@ function bindDataActions() {
       persistState();
       renderIssuerOptions();
       renderIssuerList();
+      renderFtpCurveForm();
       renderProjectWorkspace();
       regenerate();
       showToast(`已导入 ${state.issuers.length} 个主体和 ${(state.projects || []).length} 个项目。`);
@@ -1966,6 +2014,7 @@ async function loadCloudState() {
   }
   renderIssuerOptions();
   renderIssuerList();
+  renderFtpCurveForm();
   renderProjectWorkspace();
   if (batchItems.length) renderBatchResults();
 }
@@ -2024,8 +2073,13 @@ function normalizeLoadedState(value) {
   return {
     ...DEFAULT_STATE,
     ...value,
+    ftpCurve: normalizeFtpCurve(value.ftpCurve),
     projects: (value.projects || []).map(normalizeProjectRecord),
   };
+}
+
+function normalizeFtpCurve(input = {}) {
+  return Object.fromEntries(FTP_TENORS.map((tenor) => [tenor.key, numberOrNull(input?.[tenor.key])]));
 }
 
 function persistLocal() {

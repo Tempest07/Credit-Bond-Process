@@ -6,6 +6,7 @@ import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
   buildBidPositionText,
+  calculateFtpForDuration,
   createProjectRecord,
   dashboardCounts,
   deriveProjectStatus,
@@ -57,6 +58,27 @@ test("fills missing comprehensive pricing from project brief guidance prices", (
   assert.equal(updated.tranches[1].pricingRate, 1.99);
 });
 
+test("matches and interpolates FTP curve by bond duration", () => {
+  const curve = {
+    m3: 80,
+    m4: 90,
+    m6: 100,
+    m9: 130,
+    y1: 150,
+    y2: 180,
+    y3: 210,
+    y4: 240,
+    y5: 260,
+    y7: 300,
+    y10: 360,
+  };
+
+  assert.equal(calculateFtpForDuration("2M", curve), 80);
+  assert.equal(calculateFtpForDuration("8M", curve), 120);
+  assert.equal(calculateFtpForDuration("3+2年", curve), 210);
+  assert.equal(calculateFtpForDuration("11年", curve), 360);
+});
+
 test("derives bidding, award and payment statuses from tranche records", () => {
   const base = normalizeProjectRecord({
     shortName: "26测试MTN001A/B",
@@ -92,6 +114,11 @@ test("derives bidding, award and payment statuses from tranche records", () => {
     resultStatus: "中标",
     paymentDate: "2026-06-12",
   }, new Date("2026-06-12T09:00:00")), true);
+  assert.equal(trancheNeedsPayment({
+    resultStatus: "待出结果",
+    winningAmountWan: 3000,
+    paymentDate: "2026-06-12",
+  }, new Date("2026-06-11T09:00:00")), true);
   assert.equal(deriveProjectStatus({
     ...base,
     resultConfirmed: true,
@@ -357,12 +384,12 @@ test("auto-calculates winning amounts from bid positions and marginal multiple",
   assert.equal(project.tranches[0].marginalMultiple, 2);
   assert.equal(project.tranches[0].resultStatus, "中标");
   assert.equal(project.tranches[0].winningAmountWan, 12000);
-  assert.equal(project.tranches[0].revenueBp, 48);
+  assert.equal(project.tranches[0].revenueBp, 90.36);
   assert.equal(project.tranches[0].outsourcedBids[0].winningAmountWan, 10000);
   assert.equal(project.tranches[0].outsourcedBids[1].winningAmountWan, 0);
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标1.2亿，未综，营收48BP\n委外一号委外中标1亿，未综`,
+    `${ad}\n\n表内中标1.2亿，未综，营收90.36BP\n委外一号委外中标1亿，未综`,
   );
 });
 
@@ -385,7 +412,26 @@ test("sums multiple own bid levels when auto-calculating winning amounts", () =>
   assert.equal(project.tranches[0].winningRate, 1.8);
   assert.equal(project.tranches[0].winningAmountWan, 14000);
   assert.equal(project.tranches[0].resultStatus, "中标");
-  assert.equal(project.tranches[0].revenueBp, 48);
+  assert.equal(project.tranches[0].revenueBp, 81.59);
+});
+
+test("uses FTP curve to calculate revenue from tranche duration", () => {
+  const ad = "【发行结果】26测试MTN001，代码：102681111，期限3年，规模10亿，票面2.00%，11日缴款";
+  const project = applyIssuanceAdvertisement({
+    ...normalizeProjectRecord({
+    shortName: "26测试MTN001",
+    tranches: [{
+      shortName: "26测试MTN001",
+      durationText: "3年",
+      bidRate: 2,
+      bidAmount: 1,
+    }],
+    }),
+    ftpCurve: { y3: 120 },
+  }, ad, new Date("2026-06-11T09:00:00"));
+
+  assert.equal(project.tranches[0].winningAmountWan, 10000);
+  assert.equal(project.tranches[0].revenueBp, 67.32);
 });
 
 test("keeps manually edited winning amounts during normal saves", () => {

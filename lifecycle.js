@@ -13,6 +13,19 @@ export const PROJECT_STATUS_OPTIONS = [...PROJECT_STATUSES];
 const EXCHANGE_VENUES = new Set(["上交所", "深交所", "北交所"]);
 const RATE_EPSILON = 0.00001;
 const BID_ACTIONS = new Set(["投标", "改标", "参团+投标"]);
+export const FTP_TENORS = [
+  { key: "m3", label: "3个月", years: 0.25 },
+  { key: "m4", label: "4个月", years: 4 / 12 },
+  { key: "m6", label: "6个月", years: 0.5 },
+  { key: "m9", label: "9个月", years: 0.75 },
+  { key: "y1", label: "1年", years: 1 },
+  { key: "y2", label: "2年", years: 2 },
+  { key: "y3", label: "3年", years: 3 },
+  { key: "y4", label: "4年", years: 4 },
+  { key: "y5", label: "5年", years: 5 },
+  { key: "y7", label: "7年", years: 7 },
+  { key: "y10", label: "10年", years: 10 },
+];
 
 export function createProjectRecord(project, issuer, generated, input = {}) {
   const now = new Date().toISOString();
@@ -177,6 +190,7 @@ export function dashboardCounts(projects = [], now = new Date()) {
 
 function isWinningTranche(tranche = {}) {
   return tranche.resultStatus === "中标"
+    || positiveNumber(tranche.winningAmountWan)
     || tranche.outsourcedBids?.some((bid) => positiveNumber(bid.winningAmountWan));
 }
 
@@ -263,7 +277,10 @@ export function buildAwardResultText(project) {
 
 export function applyIssuanceAdvertisement(project, advertisement, referenceDate = new Date()) {
   const parsed = parseIssuanceAdvertisement(advertisement, referenceDate);
-  const next = normalizeProjectRecord({ ...project, resultAdvertisement: advertisement });
+  const next = {
+    ...normalizeProjectRecord({ ...project, resultAdvertisement: advertisement }),
+    ftpCurve: project.ftpCurve,
+  };
   if (!next.issuerName && parsed.issuerName) next.issuerName = parsed.issuerName;
   next.tranches = next.tranches.map((tranche, index) => {
     const match = parsed.items.find((item) => item.shortName === tranche.shortName)
@@ -501,8 +518,9 @@ function applyAutoAward(tranche, project = {}) {
   if (estimatedOwn !== null) {
     next.winningAmountWan = estimatedOwn;
     next.resultStatus = estimatedOwn > 0 ? "中标" : "未中标";
-    if (estimatedOwn > 0 && Number.isFinite(numberOrNull(next.winningRate)) && Number.isFinite(numberOrNull(project.ftpCost))) {
-      next.revenueBp = calculateRevenueBp(next.winningRate, project.ftpCost);
+    const ftpCost = resolveFtpCost(project, next);
+    if (estimatedOwn > 0 && Number.isFinite(numberOrNull(next.winningRate)) && Number.isFinite(ftpCost)) {
+      next.revenueBp = calculateRevenueBp(next.winningRate, ftpCost);
     }
   }
 
@@ -546,8 +564,45 @@ function estimateWinningAmountWan(bidRate, bidAmountYi, couponRate, marginalMult
   return round((amountYi / divisor) * 10000, 2);
 }
 
+export function calculateFtpForDuration(durationText, ftpCurve = {}) {
+  const years = durationYearsForFtp(durationText);
+  if (!Number.isFinite(years)) return null;
+  const target = Math.min(Math.max(years, FTP_TENORS[0].years), FTP_TENORS.at(-1).years);
+  const exact = FTP_TENORS.find((tenor) => Math.abs(tenor.years - target) < 0.000001);
+  if (exact) return numberOrNull(ftpCurve[exact.key]);
+
+  const upperIndex = FTP_TENORS.findIndex((tenor) => tenor.years > target);
+  if (upperIndex <= 0) return null;
+  const lower = FTP_TENORS[upperIndex - 1];
+  const upper = FTP_TENORS[upperIndex];
+  const lowerValue = numberOrNull(ftpCurve[lower.key]);
+  const upperValue = numberOrNull(ftpCurve[upper.key]);
+  if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue)) return null;
+  const weight = (target - lower.years) / (upper.years - lower.years);
+  return round(lowerValue + (upperValue - lowerValue) * weight, 4);
+}
+
+function resolveFtpCost(project, tranche) {
+  const curveFtp = calculateFtpForDuration(tranche.durationText, project.ftpCurve);
+  return Number.isFinite(curveFtp) ? curveFtp : numberOrNull(project.ftpCost);
+}
+
 function calculateRevenueBp(winningRate, ftpCost) {
-  return round(numberOrNull(winningRate) * 75 - numberOrNull(ftpCost), 2);
+  return round(numberOrNull(winningRate) * 100 * 0.9366 - numberOrNull(ftpCost), 2);
+}
+
+function durationYearsForFtp(durationText) {
+  const text = String(durationText || "").trim().toUpperCase().replace(/期$/, "");
+  if (!text) return null;
+  const firstPart = text.split("/")[0].trim();
+  const unit = firstPart.match(/(D|天|日|M|月|Y|年)/i)?.[1];
+  if (!unit) return null;
+  const firstSegment = firstPart.split("+")[0];
+  const value = Number(firstSegment.match(/\d+(?:\.\d+)?/)?.[0]);
+  if (!Number.isFinite(value)) return null;
+  if (/^(D|天|日)$/i.test(unit)) return value / 365;
+  if (/^(M|月)$/i.test(unit)) return value / 12;
+  return value;
 }
 
 function parseIssuerName(text) {
