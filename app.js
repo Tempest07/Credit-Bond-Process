@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-multi-bid";
+} from "./core.js?v=20260611-payment-due";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -21,15 +21,16 @@ import {
   normalizeProjectRecord,
   removeProject,
   suggestProjectCutoff,
+  trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-multi-bid";
+} from "./lifecycle.js?v=20260611-payment-due";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-multi-bid";
+} from "./history-parser.js?v=20260611-payment-due";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -407,6 +408,7 @@ function renderRuleTrace(generated, issuer) {
 }
 
 function renderProjectWorkspace() {
+  refreshDerivedProjectStatuses();
   const selectedRaw = (state.projects || []).find((item) => item.id === selectedProjectId);
   const selected = ensureProjectCutoff(selectedRaw);
   renderDashboard();
@@ -415,6 +417,20 @@ function renderProjectWorkspace() {
   renderProjectList();
   if (selected) fillProjectForm(selected);
   else clearProjectForm();
+}
+
+function refreshDerivedProjectStatuses() {
+  let changed = false;
+  const projects = (state.projects || []).map((projectValue) => {
+    if (!projectValue.resultConfirmed || projectValue.status === "已结束") return projectValue;
+    const status = deriveProjectStatus(projectValue);
+    if (status === projectValue.status) return projectValue;
+    changed = true;
+    return normalizeProjectRecord({ ...projectValue, status });
+  });
+  if (!changed) return;
+  state = { ...state, projects };
+  persistState();
 }
 
 function ensureProjectCutoff(projectValue) {
@@ -568,7 +584,7 @@ function renderPaymentTodo() {
   const today = localDate(new Date());
   const todos = (state.projects || []).flatMap((projectValue) =>
     (projectValue.tranches || []).flatMap((tranche) =>
-      tranche.paymentDate && !tranche.paymentCompleted
+      projectValue.resultConfirmed && trancheNeedsPayment(tranche, today)
         ? [{ project: projectValue, tranche }]
         : [],
     ),
@@ -627,7 +643,7 @@ function renderProjectList() {
       if (ledgerFilter === "awaitingResult" && item.status !== "已投标待结果") return false;
       if (ledgerFilter === "won" && !["部分中标", "已中标", "待缴款", "已缴款"].includes(item.status)) return false;
       if (ledgerFilter === "notWon" && item.status !== "未中标") return false;
-      if (ledgerFilter === "paymentToday" && !(item.status === "待缴款" && item.tranches?.some((tranche) => tranche.paymentDate === today && !tranche.paymentCompleted))) return false;
+      if (ledgerFilter === "paymentToday" && !(item.resultConfirmed && item.tranches?.some((tranche) => tranche.paymentDate === today && trancheNeedsPayment(tranche, today)))) return false;
       return `${item.shortName} ${item.issuerName} ${item.branch} ${item.leadUnderwriter}`.toLowerCase().includes(query);
     })
     .sort(compareProjects);

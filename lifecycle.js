@@ -108,8 +108,9 @@ export function removeProject(state, id) {
   };
 }
 
-export function deriveProjectStatus(project) {
+export function deriveProjectStatus(project, referenceDate = new Date()) {
   const tranches = project.tranches || [];
+  const date = referenceDateKey(referenceDate);
   if (project.status === "已结束") return "已结束";
   if (!project.resultConfirmed) {
     return project.status === "已投标待结果" ? "已投标待结果" : "未投标";
@@ -117,20 +118,28 @@ export function deriveProjectStatus(project) {
   if (!tranches.length) return project.status || "已投标待结果";
   const results = tranches.map((tranche) => tranche.resultStatus);
   const notWonCount = results.filter((status) => status === "未中标").length;
-  const winningTranches = tranches.filter((tranche) =>
-    tranche.resultStatus === "中标"
-    || tranche.outsourcedBids?.some((bid) => positiveNumber(bid.winningAmountWan)),
-  );
+  const winningTranches = tranches.filter(isWinningTranche);
   if (winningTranches.length && winningTranches.every((tranche) => tranche.paymentCompleted)) return "已缴款";
-  if (winningTranches.some((tranche) => tranche.paymentDate && !tranche.paymentCompleted)) return "待缴款";
+  if (winningTranches.some((tranche) => trancheNeedsPayment(tranche, date))) return "待缴款";
   if (winningTranches.length && notWonCount && winningTranches.length < tranches.length) return "部分中标";
   if (winningTranches.length === tranches.length) return "已中标";
   if (notWonCount && notWonCount === tranches.length) return "未中标";
   return project.status === "已结束" ? "已结束" : "已投标待结果";
 }
 
+export function trancheNeedsPayment(tranche, referenceDate = new Date()) {
+  const date = referenceDateKey(referenceDate);
+  return isWinningTranche(tranche)
+    && Boolean(tranche.paymentDate)
+    && tranche.paymentDate <= date
+    && !tranche.paymentCompleted;
+}
+
 export function dashboardCounts(projects = [], now = new Date()) {
   const date = localDate(now);
+  const duePaymentProjects = projects.filter((project) =>
+    project.resultConfirmed && project.tranches?.some((tranche) => trancheNeedsPayment(tranche, date)),
+  );
   return {
     all: projects.length,
     dueToday: projects.filter((project) => ["未投标", "待投标"].includes(project.status) && project.cutoffAt?.slice(0, 10) === date).length,
@@ -138,12 +147,17 @@ export function dashboardCounts(projects = [], now = new Date()) {
     awaitingResult: projects.filter((project) => project.status === "已投标待结果").length,
     won: projects.filter((project) => ["部分中标", "已中标", "待缴款", "已缴款"].includes(project.status)).length,
     notWon: projects.filter((project) => project.status === "未中标").length,
-    duePayment: projects.filter((project) => project.status === "待缴款").length,
+    duePayment: duePaymentProjects.length,
     paymentToday: projects.filter((project) =>
-      project.status === "待缴款"
-      && project.tranches?.some((tranche) => tranche.paymentDate === date && !tranche.paymentCompleted),
+      project.resultConfirmed
+      && project.tranches?.some((tranche) => tranche.paymentDate === date && trancheNeedsPayment(tranche, date)),
     ).length,
   };
+}
+
+function isWinningTranche(tranche = {}) {
+  return tranche.resultStatus === "中标"
+    || tranche.outsourcedBids?.some((bid) => positiveNumber(bid.winningAmountWan));
 }
 
 export function suggestProjectCutoff(project = {}, issuer = null, referenceDate = new Date()) {
@@ -627,4 +641,9 @@ function localDate(value) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function referenceDateKey(value) {
+  if (typeof value === "string") return value.slice(0, 10);
+  return localDate(value);
 }

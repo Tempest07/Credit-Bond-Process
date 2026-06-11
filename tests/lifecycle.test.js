@@ -11,6 +11,7 @@ import {
   normalizeProjectRecord,
   parseIssuanceAdvertisement,
   suggestProjectCutoff,
+  trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
 } from "../lifecycle.js";
@@ -60,7 +61,20 @@ test("derives bidding, award and payment statuses from tranche records", () => {
     ...base,
     resultConfirmed: true,
     tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12" }],
-  }), "待缴款");
+  }, new Date("2026-06-11T09:00:00")), "已中标");
+  assert.equal(deriveProjectStatus({
+    ...base,
+    resultConfirmed: true,
+    tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12" }],
+  }, new Date("2026-06-12T09:00:00")), "待缴款");
+  assert.equal(trancheNeedsPayment({
+    resultStatus: "中标",
+    paymentDate: "2026-06-12",
+  }, new Date("2026-06-11T09:00:00")), false);
+  assert.equal(trancheNeedsPayment({
+    resultStatus: "中标",
+    paymentDate: "2026-06-12",
+  }, new Date("2026-06-12T09:00:00")), true);
   assert.equal(deriveProjectStatus({
     ...base,
     resultConfirmed: true,
@@ -75,7 +89,7 @@ test("derives bidding, award and payment statuses from tranche records", () => {
       paymentDate: "2026-06-12",
       outsourcedBids: [{ managerName: "委外一号", winningAmountWan: 5000 }],
     }],
-  })), "待缴款");
+  }), new Date("2026-06-12T09:00:00")), "待缴款");
 });
 
 test("calculates dashboard counts including payment reminders", () => {
@@ -83,15 +97,16 @@ test("calculates dashboard counts including payment reminders", () => {
   const projects = [
     normalizeProjectRecord({ shortName: "A", status: "未投标", cutoffAt: "2026-06-10T15:00" }),
     normalizeProjectRecord({ shortName: "B", status: "已投标待结果" }),
-    normalizeProjectRecord({ shortName: "C", status: "待缴款", tranches: [{ shortName: "C", paymentDate: "2026-06-10" }] }),
+    normalizeProjectRecord({ shortName: "C", status: "待缴款", resultConfirmed: true, tranches: [{ shortName: "C", resultStatus: "中标", paymentDate: "2026-06-10" }] }),
     normalizeProjectRecord({ shortName: "D", status: "已缴款" }),
+    normalizeProjectRecord({ shortName: "E", status: "已中标", resultConfirmed: true, tranches: [{ shortName: "E", resultStatus: "中标", paymentDate: "2026-06-11" }] }),
   ];
   assert.deepEqual(dashboardCounts(projects, today), {
-    all: 4,
+    all: 5,
     dueToday: 1,
     toBid: 1,
     awaitingResult: 1,
-    won: 2,
+    won: 3,
     notWon: 0,
     duePayment: 1,
     paymentToday: 1,
