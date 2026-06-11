@@ -160,6 +160,26 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
     "【参团+投标】26测试MTN001，1.60%投3亿，不超30%，主承中信银行\n【委外投标：委外一号】26测试MTN001，1.62%投1亿，不超30%",
   );
 
+  const revised = normalizeProjectRecord({
+    shortName: "26越秀交通MTN003",
+    venue: "银行间",
+    sponsorStatus: "非我行主承",
+    leadUnderwriter: "中信银行",
+    tranches: [{
+      shortName: "26越秀交通MTN003",
+      suggestedRatio: 30,
+      bidAction: "改标",
+      bidLevels: [
+        { bidRate: 1.76, bidAmount: 1.2 },
+        { bidRate: 1.8, bidAmount: 0.4 },
+      ],
+    }],
+  });
+  assert.equal(
+    buildBidPositionText(revised),
+    "【改标】26越秀交通MTN003，1.76%投1.2亿，1.80%投0.4亿，合计不超30%，主承中信银行",
+  );
+
   const lead = normalizeProjectRecord({
     shortName: "26测试SCP001",
     venue: "银行间",
@@ -304,6 +324,28 @@ test("auto-calculates winning amounts from bid positions and marginal multiple",
     buildAwardResultText(project),
     `${ad}\n\n表内中标1.2亿，未综，营收48BP\n委外一号委外中标1亿，未综`,
   );
+});
+
+test("sums multiple own bid levels when auto-calculating winning amounts", () => {
+  const ad = "【发行结果】26越秀交通MTN003，代码：102681111，期限3年，规模10亿，票面1.80%，边际倍数2倍，11日缴款";
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26越秀交通MTN003",
+    ftpCost: 87,
+    tranches: [{
+      shortName: "26越秀交通MTN003",
+      bidAction: "改标",
+      bidLevels: [
+        { bidRate: 1.76, bidAmount: 1.2 },
+        { bidRate: 1.8, bidAmount: 0.4 },
+        { bidRate: 1.82, bidAmount: 0.3 },
+      ],
+    }],
+  }), ad, new Date("2026-06-11T09:00:00"));
+
+  assert.equal(project.tranches[0].winningRate, 1.8);
+  assert.equal(project.tranches[0].winningAmountWan, 14000);
+  assert.equal(project.tranches[0].resultStatus, "中标");
+  assert.equal(project.tranches[0].revenueBp, 48);
 });
 
 test("keeps manually edited winning amounts during normal saves", () => {

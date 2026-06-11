@@ -248,6 +248,10 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .tranche-subheading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 15px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .tranche-subheading.first-subheading { margin-top: 0; padding-top: 0; border-top: 0; }
 .tranche-subheading strong { color: var(--muted); font-size: 10px; }
+.tranche-subheading-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.bid-level-list { display: grid; gap: 8px; margin: 8px 0 10px; }
+.bid-level-card { padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--accent-soft) 42%, #fff); }
+.bid-level-card .outsourced-card-head strong { color: var(--accent); }
 .outsourced-list { display: grid; gap: 8px; }
 .outsourced-card { padding: 10px; border: 1px dashed var(--line-strong); border-radius: 7px; background: #fff; }
 .outsourced-card.result-card { border-style: solid; background: var(--panel-soft); }

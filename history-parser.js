@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260611-mail-center";
+import { durationToDays } from "./core.js?v=20260611-multi-bid";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

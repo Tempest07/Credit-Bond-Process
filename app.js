@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-mail-center";
+} from "./core.js?v=20260611-multi-bid";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -23,13 +23,13 @@ import {
   suggestProjectCutoff,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-mail-center";
+} from "./lifecycle.js?v=20260611-multi-bid";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-mail-center";
+} from "./history-parser.js?v=20260611-multi-bid";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -698,6 +698,33 @@ function refillProjectForm(input) {
   if (modalOpen) openResultEntryPanel(false);
 }
 
+function renderBidLevels(tranche, trancheIndex) {
+  const levels = bidLevelsForDisplay(tranche);
+  return `
+    <div class="bid-level-list">
+      ${levels.map((level, levelIndex) => `
+        <div class="bid-level-card" data-bid-level-index="${levelIndex}" data-bid-level-id="${escapeAttribute(level.id || "")}">
+          <div class="outsourced-card-head">
+            <strong>表内标位 ${levelIndex + 1}</strong>
+            <button class="text-button" type="button" data-remove-bid-level="${trancheIndex}:${levelIndex}" ${levels.length <= 1 ? "hidden" : ""}>移除</button>
+          </div>
+          <div class="tranche-grid">
+            <label>投标利率（%）<input data-bid-level-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(level.bidRate ?? "")}"></label>
+            <label>投标量（亿元）<input data-bid-level-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(level.bidAmount ?? "")}"></label>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function bidLevelsForDisplay(tranche) {
+  const levels = Array.isArray(tranche.bidLevels) && tranche.bidLevels.length
+    ? tranche.bidLevels
+    : [{ id: "", bidRate: tranche.bidRate, bidAmount: tranche.bidAmount }];
+  return levels.length ? levels : [{ id: "", bidRate: null, bidAmount: null }];
+}
+
 function renderTranches(tranches) {
   $("#trancheList").innerHTML = tranches.map((tranche, index) => `
     <section class="tranche-card" data-tranche-index="${index}">
@@ -708,15 +735,25 @@ function renderTranches(tranches) {
       <div class="tranche-section bid-entry-section">
         <div class="tranche-subheading first-subheading">
           <strong>投标标位</strong>
-          <button class="text-button" type="button" data-add-outsourced="${index}">增加委外标位</button>
+          <div class="tranche-subheading-actions">
+            <button class="text-button" type="button" data-add-bid-level="${index}">增加表内标位</button>
+            <button class="text-button" type="button" data-add-outsourced="${index}">增加委外标位</button>
+          </div>
         </div>
         <div class="tranche-grid">
           <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
           <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
           <label>比例限制（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
-          <label>表内投标利率（%）<input data-tranche-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(tranche.bidRate ?? "")}"></label>
-          <label>表内投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
+          <label>投标类型
+            <select data-tranche-field="bidAction">
+              <option value="" ${!tranche.bidAction ? "selected" : ""}>自动</option>
+              <option value="投标" ${tranche.bidAction === "投标" ? "selected" : ""}>投标</option>
+              <option value="改标" ${tranche.bidAction === "改标" ? "selected" : ""}>改标</option>
+              <option value="参团+投标" ${tranche.bidAction === "参团+投标" ? "selected" : ""}>参团+投标</option>
+            </select>
+          </label>
         </div>
+        ${renderBidLevels(tranche, index)}
         <div class="outsourced-list">
           ${(tranche.outsourcedBids || []).map((outsourced, outsourcedIndex) => `
             <div class="outsourced-card" data-outsourced-index="${outsourcedIndex}">
@@ -804,6 +841,30 @@ function renderTranches(tranches) {
       saveProjectDraftNow();
     });
   });
+  $$("[data-add-bid-level]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const draft = readProjectForm();
+      draft.tranches[Number(button.dataset.addBidLevel)].bidLevels.push({
+        id: crypto.randomUUID(),
+        bidRate: null,
+        bidAmount: null,
+      });
+      refillProjectForm(draft);
+      saveProjectDraftNow();
+    });
+  });
+  $$("[data-remove-bid-level]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [trancheIndex, levelIndex] = button.dataset.removeBidLevel.split(":").map(Number);
+      const draft = readProjectForm();
+      draft.tranches[trancheIndex].bidLevels.splice(levelIndex, 1);
+      if (!draft.tranches[trancheIndex].bidLevels.length) {
+        draft.tranches[trancheIndex].bidLevels.push({ id: crypto.randomUUID(), bidRate: null, bidAmount: null });
+      }
+      refillProjectForm(draft);
+      saveProjectDraftNow();
+    });
+  });
   $$("[data-add-outsourced]").forEach((button) => {
     button.addEventListener("click", () => {
       const draft = readProjectForm();
@@ -846,6 +907,15 @@ function readProjectForm() {
     values.id = existing.tranches?.[trancheIndex]?.id;
     values.inquiryLow = existing.tranches?.[trancheIndex]?.inquiryLow;
     values.inquiryHigh = existing.tranches?.[trancheIndex]?.inquiryHigh;
+    values.bidLevels = [...card.querySelectorAll("[data-bid-level-index]")].map((levelCard) => {
+      const level = {};
+      levelCard.querySelectorAll("[data-bid-level-field]").forEach((input) => {
+        level[input.dataset.bidLevelField] = numberOrNull(input.value);
+      });
+      const levelIndex = Number(levelCard.dataset.bidLevelIndex);
+      level.id = levelCard.dataset.bidLevelId || existing.tranches?.[trancheIndex]?.bidLevels?.[levelIndex]?.id;
+      return level;
+    });
     values.outsourcedBids = [...card.querySelectorAll("[data-outsourced-index]")].map((outsourcedCard) => {
       const outsourced = {};
       outsourcedCard.querySelectorAll("[data-outsourced-field]").forEach((input) => {

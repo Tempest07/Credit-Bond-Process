@@ -12,6 +12,7 @@ const PROJECT_STATUSES = new Set([
 export const PROJECT_STATUS_OPTIONS = [...PROJECT_STATUSES];
 const EXCHANGE_VENUES = new Set(["上交所", "深交所", "北交所"]);
 const RATE_EPSILON = 0.00001;
+const BID_ACTIONS = new Set(["投标", "改标", "参团+投标"]);
 
 export function createProjectRecord(project, issuer, generated, input = {}) {
   const now = new Date().toISOString();
@@ -291,6 +292,8 @@ function buildTranches(project) {
 
 function normalizeTranche(input = {}) {
   const legacyWinningAmount = numberOrNull(input.winningAmount);
+  const bidLevels = normalizeBidLevels(input);
+  const primaryBid = bidLevels.find(hasAnyBidLevelValue) || {};
   return {
     id: input.id || crypto.randomUUID(),
     shortName: String(input.shortName || "").trim(),
@@ -298,8 +301,10 @@ function normalizeTranche(input = {}) {
     inquiryLow: numberOrNull(input.inquiryLow),
     inquiryHigh: numberOrNull(input.inquiryHigh),
     suggestedRatio: numberOrNull(input.suggestedRatio),
-    bidRate: numberOrNull(input.bidRate),
-    bidAmount: numberOrNull(input.bidAmount),
+    bidAction: BID_ACTIONS.has(input.bidAction) ? input.bidAction : "",
+    bidLevels,
+    bidRate: numberOrNull(primaryBid.bidRate),
+    bidAmount: numberOrNull(primaryBid.bidAmount),
     resultStatus: ["待出结果", "中标", "未中标"].includes(input.resultStatus) ? input.resultStatus : "待出结果",
     winningRate: numberOrNull(input.winningRate),
     winningAmountWan: numberOrNull(input.winningAmountWan) ?? (Number.isFinite(legacyWinningAmount) ? legacyWinningAmount * 10000 : null),
@@ -315,6 +320,27 @@ function normalizeTranche(input = {}) {
     startDate: String(input.startDate || "").trim(),
     allocationNote: String(input.allocationNote || "").trim(),
     paymentCompleted: Boolean(input.paymentCompleted),
+  };
+}
+
+function normalizeBidLevels(input = {}) {
+  const source = Array.isArray(input.bidLevels) && input.bidLevels.length
+    ? input.bidLevels
+    : [];
+  const levels = source.map(normalizeBidLevel);
+  const legacyRate = numberOrNull(input.bidRate);
+  const legacyAmount = numberOrNull(input.bidAmount);
+  if (!levels.length && (Number.isFinite(legacyRate) || Number.isFinite(legacyAmount))) {
+    levels.push(normalizeBidLevel({ bidRate: legacyRate, bidAmount: legacyAmount }));
+  }
+  return levels.length ? levels : [normalizeBidLevel({})];
+}
+
+function normalizeBidLevel(input = {}) {
+  return {
+    id: input.id || crypto.randomUUID(),
+    bidRate: numberOrNull(input.bidRate),
+    bidAmount: numberOrNull(input.bidAmount),
   };
 }
 
@@ -340,22 +366,63 @@ function normalizeOutsourcedBid(input = {}) {
 }
 
 function formatBidLine(project, tranche, participation, dual) {
-  const bid = participation || tranche;
-  if (!Number.isFinite(numberOrNull(bid.bidRate)) || !Number.isFinite(numberOrNull(bid.bidAmount))) return "";
   const isOutsourced = Boolean(participation);
-  const prefix = isOutsourced
-    ? `【委外投标${participation.managerName ? `：${participation.managerName}` : ""}】`
-    : project.venue === "银行间" && project.sponsorStatus === "非我行主承"
-      ? "【参团+投标】"
-      : "【投标】";
+  const bidLevels = isOutsourced ? [participation].filter(hasCompleteBidLevel) : ownBidLevels(tranche);
+  if (!bidLevels.length) return "";
+  const prefix = formatBidPrefix(project, tranche, participation);
   const duration = dual && tranche.durationText ? `，${formatDuration(tranche.durationText)}期` : "";
-  const ratio = Number.isFinite(numberOrNull(tranche.suggestedRatio))
-    ? `，不超${dual && tranche.durationText ? `${formatDuration(tranche.durationText)}期的` : ""}${formatNumber(tranche.suggestedRatio)}%`
-    : "，不超【待补比例】";
-  const underwriter = !isOutsourced && project.venue === "银行间" && project.sponsorStatus === "非我行主承"
+  const bids = bidLevels
+    .map((bid) => `${formatPercent(bid.bidRate)}投${formatNumber(bid.bidAmount)}亿`)
+    .join("，");
+  const ratio = formatBidRatio(tranche, dual, !isOutsourced && bidLevels.length > 1);
+  const underwriter = shouldShowUnderwriter(project, tranche, isOutsourced)
     ? `，主承${project.leadUnderwriter || "【待补主承】"}`
     : "";
-  return `${prefix}${tranche.shortName || project.shortName}${duration}，${formatPercent(bid.bidRate)}投${formatNumber(bid.bidAmount)}亿${ratio}${underwriter}`;
+  return `${prefix}${tranche.shortName || project.shortName}${duration}，${bids}${ratio}${underwriter}`;
+}
+
+function formatBidPrefix(project, tranche, participation) {
+  if (participation) {
+    return `【委外投标${participation.managerName ? `：${participation.managerName}` : ""}】`;
+  }
+  const action = BID_ACTIONS.has(tranche.bidAction)
+    ? tranche.bidAction
+    : project.venue === "银行间" && project.sponsorStatus === "非我行主承"
+      ? "参团+投标"
+      : "投标";
+  return `【${action}】`;
+}
+
+function formatBidRatio(tranche, dual, aggregate) {
+  const prefix = aggregate ? "合计不超" : "不超";
+  const duration = dual && tranche.durationText ? `${formatDuration(tranche.durationText)}期的` : "";
+  const ratio = Number.isFinite(numberOrNull(tranche.suggestedRatio))
+    ? `${formatNumber(tranche.suggestedRatio)}%`
+    : "【待补比例】";
+  return `，${prefix}${duration}${ratio}`;
+}
+
+function shouldShowUnderwriter(project, tranche, isOutsourced) {
+  return !isOutsourced
+    && project.venue === "银行间"
+    && (project.sponsorStatus === "非我行主承" || ["改标", "参团+投标"].includes(tranche.bidAction));
+}
+
+function ownBidLevels(tranche = {}) {
+  const source = Array.isArray(tranche.bidLevels) && tranche.bidLevels.length
+    ? tranche.bidLevels
+    : [{ bidRate: tranche.bidRate, bidAmount: tranche.bidAmount }];
+  return source.map(normalizeBidLevel).filter(hasCompleteBidLevel);
+}
+
+function hasCompleteBidLevel(level = {}) {
+  const rate = numberOrNull(level.bidRate);
+  const amount = numberOrNull(level.bidAmount);
+  return Number.isFinite(rate) && Number.isFinite(amount) && amount > 0;
+}
+
+function hasAnyBidLevelValue(level = {}) {
+  return Number.isFinite(numberOrNull(level.bidRate)) || Number.isFinite(numberOrNull(level.bidAmount));
 }
 
 function parseAdvertisementBlock(block, headerText, referenceDate) {
@@ -392,7 +459,7 @@ function applyAutoAward(tranche, project = {}) {
   const forcedNoIssue = /全部回拨/.test(next.allocationNote);
   const estimatedOwn = forcedNoIssue
     ? 0
-    : estimateWinningAmountWan(next.bidRate, next.bidAmount, next.winningRate, next.marginalMultiple);
+    : estimateOwnWinningAmountWan(next);
 
   if (estimatedOwn !== null) {
     next.winningAmountWan = estimatedOwn;
@@ -416,6 +483,16 @@ function applyAutoAward(tranche, project = {}) {
   });
 
   return next;
+}
+
+function estimateOwnWinningAmountWan(tranche) {
+  const levels = ownBidLevels(tranche);
+  if (!levels.length) return null;
+  const estimates = levels.map((level) =>
+    estimateWinningAmountWan(level.bidRate, level.bidAmount, tranche.winningRate, tranche.marginalMultiple),
+  );
+  if (estimates.some((value) => value === null)) return null;
+  return round(estimates.reduce((sum, value) => sum + value, 0), 2);
 }
 
 function estimateWinningAmountWan(bidRate, bidAmountYi, couponRate, marginalMultiple) {
