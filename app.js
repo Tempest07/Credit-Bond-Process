@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-payment-fallback";
+} from "./core.js?v=20260611-cloud-actions";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-payment-fallback";
+} from "./lifecycle.js?v=20260611-cloud-actions";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-payment-fallback";
+} from "./history-parser.js?v=20260611-cloud-actions";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -623,7 +623,7 @@ function renderPaymentTodo() {
               <strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong>
               <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}${escapeHtml(addBondNote)}</span>
             </button>
-            <button class="button subtle" type="button" data-complete-payment="${escapeAttribute(`${projectValue.id}:${tranche.id}`)}">标记已缴款</button>
+            <button class="button subtle" type="button" data-complete-payment="${escapeAttribute(`${projectValue.id}:${tranche.id}`)}">缴款</button>
           </article>
         `;
       }).join("")
@@ -1002,11 +1002,11 @@ function applyFtpRevenueToProject(record) {
   const tranches = normalized.tranches.map((tranche) => {
     const winningRate = numberOrNull(tranche.winningRate);
     const winningAmount = numberOrNull(tranche.winningAmountWan);
-    const ftpCost = calculateFtpForDuration(tranche.durationText, state.ftpCurve) ?? numberOrNull(normalized.ftpCost);
+    const ftpCost = calculateFtpForDuration(tranche.durationText, state.ftpCurve) ?? normalizeFtpRatePercent(normalized.ftpCost);
     if (!Number.isFinite(winningRate) || !Number.isFinite(winningAmount) || winningAmount <= 0 || !Number.isFinite(ftpCost)) {
       return tranche;
     }
-    const revenueBp = round(winningRate * 100 * 0.9366 - ftpCost, 2);
+    const revenueBp = calculateRevenueBpFromFtpRate(winningRate, ftpCost);
     if (tranche.revenueBp !== revenueBp) changed = true;
     return { ...tranche, revenueBp };
   });
@@ -1027,11 +1027,11 @@ function recalculateRevenueFromFtp() {
   draft.tranches = draft.tranches.map((tranche) => {
     const winningRate = numberOrNull(tranche.winningRate);
     const winningAmount = numberOrNull(tranche.winningAmountWan);
-    const ftpCost = calculateFtpForDuration(tranche.durationText, state.ftpCurve) ?? numberOrNull(draft.ftpCost);
+    const ftpCost = calculateFtpForDuration(tranche.durationText, state.ftpCurve) ?? normalizeFtpRatePercent(draft.ftpCost);
     if (!Number.isFinite(winningRate) || !Number.isFinite(winningAmount) || winningAmount <= 0) return tranche;
     if (!Number.isFinite(ftpCost)) return tranche;
     changed = true;
-    return { ...tranche, revenueBp: round(winningRate * 100 * 0.9366 - ftpCost, 2) };
+    return { ...tranche, revenueBp: calculateRevenueBpFromFtpRate(winningRate, ftpCost) };
   });
   if (!changed) return;
   refillProjectForm(draft);
@@ -1131,9 +1131,11 @@ function setProjectActionStatus(status) {
 }
 
 function updateProjectActionButtons(status) {
-  $("#markUnbidButton").disabled = status === "未投标";
-  $("#markBidButton").disabled = status === "已投标待结果";
-  $("#openResultButton").disabled = status === "未投标";
+  const resultStatuses = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款", "已结束"]);
+  const hasResult = resultStatuses.has(status);
+  $("#markUnbidButton").disabled = status === "未投标" || hasResult;
+  $("#markBidButton").disabled = status !== "未投标";
+  $("#openResultButton").disabled = status === "未投标" || status === "已结束";
 }
 
 function openResultEntryPanel(shouldFocus = true) {
@@ -1902,7 +1904,7 @@ function renderIssuerOptions() {
 
 function renderFtpCurveForm() {
   $("#ftpCurveGrid").innerHTML = FTP_TENORS.map((tenor) => `
-    <label>${tenor.label}<input data-ftp-field="${tenor.key}" type="number" step="0.01" value="${escapeAttribute(state.ftpCurve?.[tenor.key] ?? "")}" placeholder="BP"></label>
+    <label>${tenor.label}（%）<input data-ftp-field="${tenor.key}" type="number" step="0.0001" value="${escapeAttribute(state.ftpCurve?.[tenor.key] ?? "")}" placeholder="%"></label>
   `).join("");
 }
 
@@ -1947,7 +1949,7 @@ function fillIssuerForm(issuer) {
 function bindDataActions() {
   $("#saveCloudButton").addEventListener("click", async () => {
     const ok = await saveCloudState();
-    showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 尚未配置，资料仍已保存在本机。");
+    showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 未连接，项目中心已锁定。");
   });
 
   $("#setPasswordButton").addEventListener("click", async () => {
@@ -1992,25 +1994,29 @@ function bindDataActions() {
 async function loadCloudState() {
   if (!getApiToken()) {
     cloudAvailable = false;
-    setSyncStatus("本机模式", "设置云端口令后连接 D1");
+    setSyncStatus("未连接 D1", "请先设置云端口令");
+    setCloudGate(true, "点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。");
     return;
   }
   setSyncStatus("正在连接", "尝试读取 Cloudflare D1");
+  setCloudGate(true, "正在连接 Cloudflare D1。");
   try {
     const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const remote = await response.json();
+    const shouldMigrateFtpCurve = ftpCurveNeedsMigration(remote.data?.ftpCurve);
     if (remote.data?.issuers) {
-      const remoteTime = Date.parse(remote.data.updatedAt || 0);
-      const localTime = Date.parse(state.updatedAt || 0);
-      if (remoteTime >= localTime) state = normalizeLoadedState(remote.data);
+      state = normalizeLoadedState(remote.data);
     }
     cloudAvailable = true;
     persistLocal();
     setSyncStatus("D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setCloudGate(false);
+    if (shouldMigrateFtpCurve) await saveCloudState();
   } catch {
     cloudAvailable = false;
-    setSyncStatus("本机模式", `${state.issuers.length} 个主体，D1 尚未配置`);
+    setSyncStatus("D1 未连接", "请检查口令或重新连接");
+    setCloudGate(true, "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。");
   }
   renderIssuerOptions();
   renderIssuerList();
@@ -2022,7 +2028,8 @@ async function loadCloudState() {
 async function saveCloudState() {
   persistLocal();
   if (!getApiToken()) {
-    setSyncStatus("本机模式", "请先设置云端口令");
+    setSyncStatus("未连接 D1", "请先设置云端口令");
+    setCloudGate(true, "请先设置云端口令，连接 D1 后再同步。");
     return false;
   }
   try {
@@ -2034,10 +2041,12 @@ async function saveCloudState() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     cloudAvailable = true;
     setSyncStatus("D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setCloudGate(false);
     return true;
   } catch {
     cloudAvailable = false;
-    setSyncStatus("本机模式", "资料已保存在浏览器，D1 同步失败");
+    setSyncStatus("D1 同步失败", "请检查网络或口令");
+    setCloudGate(true, "D1 同步失败。为避免本机数据覆盖云端，请重新连接后再继续使用。");
     return false;
   }
 }
@@ -2079,7 +2088,24 @@ function normalizeLoadedState(value) {
 }
 
 function normalizeFtpCurve(input = {}) {
-  return Object.fromEntries(FTP_TENORS.map((tenor) => [tenor.key, numberOrNull(input?.[tenor.key])]));
+  return Object.fromEntries(FTP_TENORS.map((tenor) => [tenor.key, normalizeFtpRatePercent(input?.[tenor.key])]));
+}
+
+function ftpCurveNeedsMigration(input = {}) {
+  return FTP_TENORS.some((tenor) => {
+    const value = numberOrNull(input?.[tenor.key]);
+    return Number.isFinite(value) && Math.abs(value) > 20;
+  });
+}
+
+function normalizeFtpRatePercent(value) {
+  const number = numberOrNull(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.abs(number) > 20 ? round(number / 100, 6) : number;
+}
+
+function calculateRevenueBpFromFtpRate(winningRate, ftpRatePercent) {
+  return round(numberOrNull(winningRate) * 100 * 0.9366 - numberOrNull(ftpRatePercent) * 100, 2);
 }
 
 function persistLocal() {
@@ -2089,6 +2115,17 @@ function persistLocal() {
 function setSyncStatus(status, detail) {
   $("#syncStatus").textContent = status;
   $("#syncDetail").textContent = detail;
+}
+
+function setCloudGate(locked, detail = "") {
+  $(".main").classList.toggle("cloud-locked", Boolean(locked));
+  $(".main").classList.toggle("cloud-ready", !locked);
+  $("#cloudGate").hidden = !locked;
+  $("#saveCloudButton").disabled = Boolean(locked);
+  $("#exportDataButton").disabled = Boolean(locked);
+  $("#importDataInput").disabled = Boolean(locked);
+  $("#importDataInput").closest(".file-button")?.classList.toggle("unavailable", Boolean(locked));
+  if (detail) $("#cloudGateDetail").textContent = detail;
 }
 
 function getApiToken() {

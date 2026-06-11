@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260611-payment-fallback";
+import { durationToDays } from "./core.js?v=20260611-cloud-actions";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

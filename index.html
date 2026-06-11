@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-payment-fallback">
+  <link rel="stylesheet" href="./styles.css?v=20260611-cloud-actions">
 </head>
 <body>
   <div class="app-shell">
@@ -31,7 +31,7 @@
       </div>
     </aside>
 
-    <main class="main">
+    <main class="main cloud-locked">
       <header class="topbar">
         <div>
           <p class="eyebrow">Credit Bond Process</p>
@@ -44,6 +44,14 @@
           <button class="button" id="saveCloudButton">同步资料库</button>
         </div>
       </header>
+
+      <section class="cloud-gate" id="cloudGate">
+        <div>
+          <span class="step">D1</span>
+          <h2>请先连接资料库</h2>
+        </div>
+        <p id="cloudGateDetail">点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。</p>
+      </section>
 
       <section class="view" data-view="generator">
         <div class="generator-grid">
@@ -241,9 +249,9 @@
                   <span>状态只会由这里的行动按钮推进，不再根据填写内容自动跳转。</span>
                 </div>
                 <div class="project-action-buttons">
-                  <button class="button subtle" id="markUnbidButton" type="button">撤回为未投标</button>
-                  <button class="button primary" id="markBidButton" type="button">确认已投标</button>
-                  <button class="button result-action" id="openResultButton" type="button">已出结果 / 录入结果</button>
+                  <button class="button subtle" id="markUnbidButton" type="button">撤回</button>
+                  <button class="button primary" id="markBidButton" type="button">投标</button>
+                  <button class="button result-action" id="openResultButton" type="button">结果</button>
                 </div>
               </div>
               <div class="project-summary-grid" id="projectSummary">
@@ -454,6 +462,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-payment-fallback"></script>
+  <script type="module" src="./app.js?v=20260611-cloud-actions"></script>
 </body>
 </html>

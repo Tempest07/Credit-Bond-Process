@@ -60,23 +60,24 @@ test("fills missing comprehensive pricing from project brief guidance prices", (
 
 test("matches and interpolates FTP curve by bond duration", () => {
   const curve = {
-    m3: 80,
-    m4: 90,
-    m6: 100,
-    m9: 130,
-    y1: 150,
-    y2: 180,
-    y3: 210,
-    y4: 240,
-    y5: 260,
-    y7: 300,
-    y10: 360,
+    m3: 0.8,
+    m4: 0.9,
+    m6: 1,
+    m9: 1.3,
+    y1: 1.5,
+    y2: 1.8,
+    y3: 2.1,
+    y4: 2.4,
+    y5: 2.6,
+    y7: 3,
+    y10: 3.6,
   };
 
-  assert.equal(calculateFtpForDuration("2M", curve), 80);
-  assert.equal(calculateFtpForDuration("8M", curve), 120);
-  assert.equal(calculateFtpForDuration("3+2年", curve), 210);
-  assert.equal(calculateFtpForDuration("11年", curve), 360);
+  assert.equal(calculateFtpForDuration("2M", curve), 0.8);
+  assert.equal(calculateFtpForDuration("8M", curve), 1.2);
+  assert.equal(calculateFtpForDuration("3+2年", curve), 2.1);
+  assert.equal(calculateFtpForDuration("11年", curve), 3.6);
+  assert.equal(calculateFtpForDuration("3年", { y3: 210 }), 2.1);
 });
 
 test("derives bidding, award and payment statuses from tranche records", () => {
@@ -456,13 +457,13 @@ test("maps single base-name result to dual-tranche duration and infers payment d
   assert.equal(project.tranches[0].paymentDate, "");
   assert.equal(project.tranches[1].winningRate, 1.76);
   assert.equal(project.tranches[1].marginalMultiple, 1.05);
-  assert.equal(project.tranches[1].winningAmountWan, 15238.1);
+  assert.equal(project.tranches[1].winningAmountWan, 15000);
   assert.equal(project.tranches[1].paymentDate, "2026-06-12");
   assert.equal(project.tranches[1].revenueBp, -7.16);
   assert.equal(deriveProjectStatus({ ...project, resultConfirmed: true }, new Date("2026-06-11T09:00:00")), "待缴款");
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标1.5238亿，综合定价至1.85%，营收-7.16BP`,
+    `${ad}\n\n表内中标1.5亿，综合定价至1.85%，营收-7.16BP`,
   );
 });
 
@@ -478,7 +479,7 @@ test("uses FTP curve to calculate revenue from tranche duration", () => {
       bidAmount: 1,
     }],
     }),
-    ftpCurve: { y3: 120 },
+    ftpCurve: { y3: 1.2 },
   }, ad, new Date("2026-06-11T09:00:00"));
 
   assert.equal(project.tranches[0].winningAmountWan, 10000);

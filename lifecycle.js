@@ -591,7 +591,7 @@ function estimateOwnWinningAmountWan(tranche) {
     estimateWinningAmountWan(level.bidRate, level.bidAmount, tranche.winningRate, tranche.marginalMultiple),
   );
   if (estimates.some((value) => value === null)) return null;
-  return round(estimates.reduce((sum, value) => sum + value, 0), 2);
+  return roundToNearest(estimates.reduce((sum, value) => sum + value, 0), 1000);
 }
 
 function estimateWinningAmountWan(bidRate, bidAmountYi, couponRate, marginalMultiple) {
@@ -613,14 +613,14 @@ export function calculateFtpForDuration(durationText, ftpCurve = {}) {
   if (!Number.isFinite(years)) return null;
   const target = Math.min(Math.max(years, FTP_TENORS[0].years), FTP_TENORS.at(-1).years);
   const exact = FTP_TENORS.find((tenor) => Math.abs(tenor.years - target) < 0.000001);
-  if (exact) return numberOrNull(ftpCurve[exact.key]);
+  if (exact) return normalizeFtpRatePercent(ftpCurve[exact.key]);
 
   const upperIndex = FTP_TENORS.findIndex((tenor) => tenor.years > target);
   if (upperIndex <= 0) return null;
   const lower = FTP_TENORS[upperIndex - 1];
   const upper = FTP_TENORS[upperIndex];
-  const lowerValue = numberOrNull(ftpCurve[lower.key]);
-  const upperValue = numberOrNull(ftpCurve[upper.key]);
+  const lowerValue = normalizeFtpRatePercent(ftpCurve[lower.key]);
+  const upperValue = normalizeFtpRatePercent(ftpCurve[upper.key]);
   if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue)) return null;
   const weight = (target - lower.years) / (upper.years - lower.years);
   return round(lowerValue + (upperValue - lowerValue) * weight, 4);
@@ -628,11 +628,11 @@ export function calculateFtpForDuration(durationText, ftpCurve = {}) {
 
 function resolveFtpCost(project, tranche) {
   const curveFtp = calculateFtpForDuration(tranche.durationText, project.ftpCurve);
-  return Number.isFinite(curveFtp) ? curveFtp : numberOrNull(project.ftpCost);
+  return Number.isFinite(curveFtp) ? curveFtp : normalizeFtpRatePercent(project.ftpCost);
 }
 
 function calculateRevenueBp(winningRate, ftpCost) {
-  return round(numberOrNull(winningRate) * 100 * 0.9366 - numberOrNull(ftpCost), 2);
+  return round(numberOrNull(winningRate) * 100 * 0.9366 - numberOrNull(ftpCost) * 100, 2);
 }
 
 function durationYearsForFtp(durationText) {
@@ -782,6 +782,16 @@ function positiveNumber(value) {
 function round(value, digits) {
   const factor = 10 ** digits;
   return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+function roundToNearest(value, unit) {
+  return Math.round(value / unit) * unit;
+}
+
+function normalizeFtpRatePercent(value) {
+  const number = numberOrNull(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.abs(number) > 20 ? round(number / 100, 6) : number;
 }
 
 function localDate(value) {
