@@ -10,8 +10,9 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-payment-due";
+} from "./core.js?v=20260611-pricing-source";
 import {
+  applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
   buildBidPositionText,
@@ -24,13 +25,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-payment-due";
+} from "./lifecycle.js?v=20260611-pricing-source";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-payment-due";
+} from "./history-parser.js?v=20260611-pricing-source";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -422,15 +423,32 @@ function renderProjectWorkspace() {
 function refreshDerivedProjectStatuses() {
   let changed = false;
   const projects = (state.projects || []).map((projectValue) => {
-    if (!projectValue.resultConfirmed || projectValue.status === "已结束") return projectValue;
-    const status = deriveProjectStatus(projectValue);
-    if (status === projectValue.status) return projectValue;
+    let next = applySourceGuidancePricing(projectValue);
+    if (next !== projectValue) changed = true;
+    if (!next.resultConfirmed || next.status === "已结束") return next;
+    const status = deriveProjectStatus(next);
+    if (status === next.status) return next;
     changed = true;
-    return normalizeProjectRecord({ ...projectValue, status });
+    return normalizeProjectRecord({ ...next, status });
   });
   if (!changed) return;
   state = { ...state, projects };
   persistState();
+}
+
+function applySourceGuidancePricing(projectValue) {
+  const prices = guidancePricesFromSource(projectValue?.sourceText);
+  return prices.length ? applyGuidancePricing(projectValue, prices) : projectValue;
+}
+
+function guidancePricesFromSource(sourceText) {
+  if (!String(sourceText || "").trim()) return [];
+  const parsed = parseProjectBrief(sourceText);
+  return parsed.guidancePrices?.length
+    ? parsed.guidancePrices
+    : Number.isFinite(numberOrNull(parsed.guidancePrice))
+      ? [parsed.guidancePrice]
+      : [];
 }
 
 function ensureProjectCutoff(projectValue) {
@@ -947,7 +965,7 @@ function readProjectForm() {
     });
     return values;
   });
-  return normalizeProjectRecord({
+  return applySourceGuidancePricing(normalizeProjectRecord({
     ...existing,
     id: $("#projectId").value,
     shortName: existing.shortName,
@@ -966,7 +984,7 @@ function readProjectForm() {
     resultAdvertisement: $("#projectResultAdvertisement").value,
     ftpCost: numberOrNull($("#projectFtpCost").value),
     tranches,
-  });
+  }));
 }
 
 function updateProjectPreviews() {

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
   buildBidPositionText,
@@ -38,6 +39,22 @@ test("creates a project ledger record with one tranche per bond variety", () => 
   assert.deepEqual(record.tranches.map((item) => item.suggestedRatio), [20, 15]);
   assert.deepEqual(record.tranches.map((item) => item.pricingMode), ["综合定价", "综合定价"]);
   assert.deepEqual(record.tranches.map((item) => item.pricingRate), [1.7, 1.91]);
+});
+
+test("fills missing comprehensive pricing from project brief guidance prices", () => {
+  const project = normalizeProjectRecord({
+    shortName: "26测试MTN001A/B",
+    tranches: [
+      { shortName: "26测试MTN001A", pricingMode: "未综", pricingRate: null },
+      { shortName: "26测试MTN001B", pricingMode: "未综", pricingRate: 1.99 },
+    ],
+  });
+  const updated = applyGuidancePricing(project, [1.68, 1.85]);
+
+  assert.equal(updated.tranches[0].pricingMode, "综合定价");
+  assert.equal(updated.tranches[0].pricingRate, 1.68);
+  assert.equal(updated.tranches[1].pricingMode, "未综");
+  assert.equal(updated.tranches[1].pricingRate, 1.99);
 });
 
 test("derives bidding, award and payment statuses from tranche records", () => {

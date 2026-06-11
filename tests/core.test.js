@@ -50,6 +50,8 @@ test("parses the sample project brief", () => {
   assert.equal(parsed.ratingAgency, "中诚信国际");
   assert.equal(parsed.hiddenRating, "AAA");
   assert.equal(parsed.leadUnderwriter, "中信银行");
+  assert.deepEqual(parsed.guidancePrices, [1.48]);
+  assert.equal(parsed.guidancePrice, 1.48);
 });
 
 test("builds standard interbank bond full name", () => {

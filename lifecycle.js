@@ -108,6 +108,28 @@ export function removeProject(state, id) {
   };
 }
 
+export function applyGuidancePricing(project, guidancePrices = []) {
+  const prices = (Array.isArray(guidancePrices) ? guidancePrices : [guidancePrices])
+    .map(numberOrNull)
+    .filter(Number.isFinite);
+  if (!prices.length) return project;
+
+  const normalized = normalizeProjectRecord(project);
+  let changed = false;
+  const tranches = normalized.tranches.map((tranche, index) => {
+    const pricingRate = numberOrNull(prices[index] ?? prices[0]);
+    if (!Number.isFinite(pricingRate) || Number.isFinite(numberOrNull(tranche.pricingRate))) return tranche;
+    changed = true;
+    return {
+      ...tranche,
+      pricingMode: "综合定价",
+      pricingRate,
+    };
+  });
+
+  return changed ? normalizeProjectRecord({ ...normalized, tranches }) : project;
+}
+
 export function deriveProjectStatus(project, referenceDate = new Date()) {
   const tranches = project.tranches || [];
   const date = referenceDateKey(referenceDate);
