@@ -237,7 +237,18 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .result-entry-fields, .outsourced-result-field { display: none !important; }
 .show-result-entry .result-entry-fields { display: block !important; }
 .show-result-entry .outsourced-result-field { display: grid !important; }
-.result-entry-panel { margin: 18px 0 0; padding: 0 13px 13px; border: 1px solid color-mix(in srgb, var(--secondary) 32%, var(--line)); border-radius: 9px; background: var(--secondary-soft); scroll-margin-top: 18px; }
+.modal-open { overflow: hidden; }
+.result-entry-panel { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; }
+.result-entry-panel[hidden] { display: none; }
+.result-entry-backdrop { position: absolute; inset: 0; border: 0; background: rgba(22, 24, 52, .42); backdrop-filter: blur(6px); }
+.result-entry-dialog { position: relative; z-index: 1; width: min(860px, 96vw); max-height: min(780px, 90vh); overflow: auto; padding: 18px; border: 1px solid color-mix(in srgb, var(--secondary) 28%, var(--line)); border-radius: 13px; background: var(--panel); box-shadow: 0 24px 70px rgba(34, 35, 61, .2); }
+.result-entry-dialog .section-heading { margin-top: 0; }
+.result-modal-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(180px, .6fr); gap: 12px; }
+.result-modal-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.result-modal-grid input { min-height: 38px; padding: 8px 10px; font-size: 12px; }
+.result-calc-note { display: grid; gap: 5px; align-content: start; padding: 11px; border: 1px solid color-mix(in srgb, var(--secondary) 24%, var(--line)); border-radius: 8px; background: var(--secondary-soft); }
+.result-calc-note strong { color: var(--secondary); font-size: 11px; }
+.result-calc-note span { color: var(--muted); font-size: 10px; line-height: 1.7; }
 .result-entry-note { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .project-footer-actions { justify-content: space-between; }
 .project-footer-actions span { color: var(--muted); font-size: 10px; }
@@ -258,7 +269,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .payment-todo-list, .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid, .result-modal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tranche-grid .span-3 { grid-column: span 2; }
 }
 
@@ -272,7 +283,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .top-actions { flex-wrap: wrap; justify-content: flex-end; }
   .view { padding: 14px; }
   .field-grid, .rules-grid { grid-template-columns: 1fr; }
-  .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: 1fr; }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid, .result-modal-grid { grid-template-columns: 1fr; }
   .tranche-grid .span-3 { grid-column: span 1; }
   .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-list-tools { grid-template-columns: 1fr; }

@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-cutoff-cache-fix";
+} from "./core.js?v=20260611-result-modal";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -23,13 +23,13 @@ import {
   suggestProjectCutoff,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-cutoff-cache-fix";
+} from "./lifecycle.js?v=20260611-result-modal";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-cutoff-cache-fix";
+} from "./history-parser.js?v=20260611-result-modal";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -183,6 +183,10 @@ function saveCurrentProject() {
               inquiryLow: tranche.inquiryLow,
               inquiryHigh: tranche.inquiryHigh,
               suggestedRatio: tranche.suggestedRatio,
+              pricingMode: existing.tranches[index].pricingRate == null && tranche.pricingRate != null
+                ? tranche.pricingMode
+                : existing.tranches[index].pricingMode,
+              pricingRate: existing.tranches[index].pricingRate ?? tranche.pricingRate,
             }))
           : created.tranches,
         createdAt: existing.createdAt,
@@ -232,6 +236,7 @@ function bindLedger() {
     updateProjectPreviews();
     scheduleProjectAutoSave();
   });
+  $("#projectFtpCost").addEventListener("change", recalculateRevenueFromFtp);
   $("#projectForm").addEventListener("submit", (event) => event.preventDefault());
   $("#projectCutoffAt").addEventListener("change", () => {
     const existing = (state.projects || []).find((item) => item.id === $("#projectId").value) || {};
@@ -255,14 +260,14 @@ function bindLedger() {
   });
   $("#markUnbidButton").addEventListener("click", () => setProjectActionStatus("未投标"));
   $("#markBidButton").addEventListener("click", () => setProjectActionStatus("已投标待结果"));
-  $("#openResultButton").addEventListener("click", () => {
-    const draft = readProjectForm();
-    draft.resultConfirmed = true;
-    draft.status = deriveProjectStatus(draft);
-    saveProjectRecordNow(draft);
-    openResultEntryPanel();
-  });
+  $("#openResultButton").addEventListener("click", () => openResultEntryPanel());
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
+  $("#resultEntryPanel").addEventListener("click", (event) => {
+    if (event.target.closest("[data-close-result]")) closeResultEntryPanel();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("#resultEntryPanel").hidden) closeResultEntryPanel();
+  });
   $("#copyBidPositionButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#projectBidPosition").value);
     showToast("投标标位已复制。");
@@ -283,8 +288,9 @@ function bindLedger() {
     parsed.status = deriveProjectStatus(parsed);
     fillProjectForm(parsed);
     saveProjectRecordNow(parsed);
-    openResultEntryPanel();
-    showToast("已识别简称、代码、期限、规模、票面、倍数、起息日和缴款日，请复核结果。");
+    closeResultEntryPanel();
+    setResultEntryFieldsVisible(true);
+    showToast("已解析发行结果，并按标位自动推算中标量和营收，请复核明细。");
   });
   $("#editProjectOpinionButton").addEventListener("click", () => {
     const record = readProjectForm();
@@ -583,6 +589,7 @@ function fillProjectForm(input) {
   $("#projectEmpty").hidden = true;
   $("#projectForm").hidden = false;
   closeResultEntryPanel();
+  setResultEntryFieldsVisible(record.resultConfirmed);
   $("#projectId").value = record.id;
   $("#projectShortName").value = record.shortName;
   $("#projectStatus").value = record.status;
@@ -598,6 +605,7 @@ function fillProjectForm(input) {
   $("#projectSourceText").value = record.sourceText;
   $("#projectOpinion").value = record.opinion;
   $("#projectResultAdvertisement").value = record.resultAdvertisement;
+  $("#projectFtpCost").value = record.ftpCost ?? "";
   $("#projectBidPosition").value = buildBidPositionText(record);
   $("#projectResultSummary").value = buildAwardResultText(record);
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
@@ -611,8 +619,10 @@ function fillProjectForm(input) {
 
 function refillProjectForm(input) {
   const showResult = $("#projectForm").classList.contains("show-result-entry");
+  const modalOpen = !$("#resultEntryPanel").hidden;
   fillProjectForm(input);
-  if (showResult) openResultEntryPanel(false);
+  setResultEntryFieldsVisible(showResult || Boolean(input.resultConfirmed));
+  if (modalOpen) openResultEntryPanel(false);
 }
 
 function renderTranches(tranches) {
@@ -689,6 +699,7 @@ function renderTranches(tranches) {
         <label>债券代码<input data-tranche-field="securityCode" value="${escapeAttribute(tranche.securityCode)}"></label>
         <label>发行规模（亿元）<input data-tranche-field="issueScale" type="number" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}"></label>
         <label>全场倍数<input data-tranche-field="fullMarketMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.fullMarketMultiple ?? "")}"></label>
+        <label>边际倍数<input data-tranche-field="marginalMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.marginalMultiple ?? "")}"></label>
         <label>起息日期<input data-tranche-field="startDate" type="date" value="${escapeAttribute(tranche.startDate)}"></label>
         <label>缴款日期<input data-tranche-field="paymentDate" type="date" value="${escapeAttribute(tranche.paymentDate)}"></label>
         <label class="span-3">回拨 / 结果备注<input data-tranche-field="allocationNote" value="${escapeAttribute(tranche.allocationNote)}"></label>
@@ -773,6 +784,7 @@ function readProjectForm() {
     sourceText: $("#projectSourceText").value,
     opinion: $("#projectOpinion").value,
     resultAdvertisement: $("#projectResultAdvertisement").value,
+    ftpCost: numberOrNull($("#projectFtpCost").value),
     tranches,
   });
 }
@@ -782,6 +794,24 @@ function updateProjectPreviews() {
   const draft = readProjectForm();
   $("#projectBidPosition").value = buildBidPositionText(draft);
   $("#projectResultSummary").value = buildAwardResultText(draft);
+}
+
+function recalculateRevenueFromFtp() {
+  if ($("#projectForm").hidden) return;
+  const draft = readProjectForm();
+  if (!Number.isFinite(numberOrNull(draft.ftpCost))) return;
+  let changed = false;
+  draft.tranches = draft.tranches.map((tranche) => {
+    const winningRate = numberOrNull(tranche.winningRate);
+    const winningAmount = numberOrNull(tranche.winningAmountWan);
+    if (!Number.isFinite(winningRate) || !Number.isFinite(winningAmount) || winningAmount <= 0) return tranche;
+    changed = true;
+    return { ...tranche, revenueBp: round(winningRate * 75 - draft.ftpCost, 2) };
+  });
+  if (!changed) return;
+  refillProjectForm(draft);
+  saveProjectRecordNow(draft);
+  showToast("已按 FTP 重算表内营收。");
 }
 
 function applyCutoffAction(action) {
@@ -868,7 +898,10 @@ function setProjectActionStatus(status) {
   draft.status = status;
   draft.resultConfirmed = status !== "未投标" && status !== "已投标待结果" ? draft.resultConfirmed : false;
   saveProjectRecordNow(draft);
-  if (status === "未投标" || status === "已投标待结果") closeResultEntryPanel();
+  if (status === "未投标" || status === "已投标待结果") {
+    closeResultEntryPanel();
+    setResultEntryFieldsVisible(false);
+  }
   showToast(status === "未投标" ? "项目已撤回为未投标。" : "项目已确认投标，等待发行结果。");
 }
 
@@ -878,15 +911,20 @@ function updateProjectActionButtons(status) {
   $("#openResultButton").disabled = status === "未投标";
 }
 
-function openResultEntryPanel(shouldScroll = true) {
+function openResultEntryPanel(shouldFocus = true) {
   $("#resultEntryPanel").hidden = false;
-  $("#projectForm").classList.add("show-result-entry");
-  if (shouldScroll) $("#resultEntryPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.body.classList.add("modal-open");
+  setResultEntryFieldsVisible(true);
+  if (shouldFocus) $("#projectResultAdvertisement").focus();
 }
 
 function closeResultEntryPanel() {
   $("#resultEntryPanel").hidden = true;
-  $("#projectForm").classList.remove("show-result-entry");
+  document.body.classList.remove("modal-open");
+}
+
+function setResultEntryFieldsVisible(visible) {
+  $("#projectForm").classList.toggle("show-result-entry", Boolean(visible));
 }
 
 function compareProjects(left, right) {
@@ -1812,6 +1850,11 @@ function numberOrNull(value) {
   if (value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function round(value, digits) {
+  const factor = 10 ** digits;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
 function escapeHtml(value = "") {

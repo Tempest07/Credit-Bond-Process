@@ -22,6 +22,7 @@ test("creates a project ledger record with one tranche per bond variety", () => 
     durationText: "3/5年期",
     durationParts: ["3年", "5年"],
     inquiryRanges: [{ low: 1.3, high: 2.3 }, { low: 1.5, high: 2.5 }],
+    guidancePrices: [1.7, 1.91],
     suggestedRatios: [20, 15],
     branch: "广州分行",
     venue: "上交所",
@@ -34,6 +35,8 @@ test("creates a project ledger record with one tranche per bond variety", () => 
   assert.deepEqual(record.tranches.map((item) => item.shortName), ["26广越05", "26广越06"]);
   assert.deepEqual(record.tranches.map((item) => item.durationText), ["3年", "5年"]);
   assert.deepEqual(record.tranches.map((item) => item.suggestedRatio), [20, 15]);
+  assert.deepEqual(record.tranches.map((item) => item.pricingMode), ["综合定价", "综合定价"]);
+  assert.deepEqual(record.tranches.map((item) => item.pricingRate), [1.7, 1.91]);
 });
 
 test("derives bidding, award and payment statuses from tranche records", () => {
@@ -260,8 +263,65 @@ test("applies advertisements and builds own and outsourced award report", () => 
   assert.equal(project.tranches[0].paymentDate, "2026-06-11");
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标12000万，综合定价至1.48%，营收3.5BP\n委外一号委外中标5000万，未综`,
+    `${ad}\n\n表内中标1.2亿，综合定价至1.48%，营收3.5BP\n委外一号委外中标5000万，未综`,
   );
+});
+
+test("auto-calculates winning amounts from bid positions and marginal multiple", () => {
+  const ad = `珠海正方集团有限公司2026年度第一期中期票据
+......................................
+简称代码：26珠海正方MTN001（102682132.IB）
+债券期限：3年
+发行规模：6.2亿元
+票面利率：2.27%
+全场倍数：1.50倍
+边际倍数：2倍
+起息日期：2026-06-11
+缴款日期：2026-06-11
+感谢大家的支持！`;
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26珠海正方MTN001",
+    ftpCost: 122.25,
+    tranches: [{
+      shortName: "26珠海正方MTN001",
+      bidRate: 2.27,
+      bidAmount: 2.4,
+      pricingMode: "未综",
+      outsourcedBids: [
+        { managerName: "委外一号", bidRate: 2.26, bidAmount: 1 },
+        { managerName: "委外二号", bidRate: 2.3, bidAmount: 1 },
+      ],
+    }],
+  }), ad, new Date("2026-06-11T09:00:00"));
+
+  assert.equal(project.tranches[0].marginalMultiple, 2);
+  assert.equal(project.tranches[0].resultStatus, "中标");
+  assert.equal(project.tranches[0].winningAmountWan, 12000);
+  assert.equal(project.tranches[0].revenueBp, 48);
+  assert.equal(project.tranches[0].outsourcedBids[0].winningAmountWan, 10000);
+  assert.equal(project.tranches[0].outsourcedBids[1].winningAmountWan, 0);
+  assert.equal(
+    buildAwardResultText(project),
+    `${ad}\n\n表内中标1.2亿，未综，营收48BP\n委外一号委外中标1亿，未综`,
+  );
+});
+
+test("keeps manually edited winning amounts during normal saves", () => {
+  const project = normalizeProjectRecord({
+    shortName: "26测试MTN001",
+    tranches: [{
+      shortName: "26测试MTN001",
+      bidRate: 2.27,
+      bidAmount: 1.2,
+      winningRate: 2.27,
+      winningAmountWan: 8000,
+      resultStatus: "中标",
+      revenueBp: 45,
+    }],
+  });
+
+  assert.equal(project.tranches[0].winningAmountWan, 8000);
+  assert.equal(project.tranches[0].revenueBp, 45);
 });
 
 test("upserts project records without affecting issuers", () => {

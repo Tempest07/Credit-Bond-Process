@@ -11,6 +11,7 @@ const PROJECT_STATUSES = new Set([
 
 export const PROJECT_STATUS_OPTIONS = [...PROJECT_STATUSES];
 const EXCHANGE_VENUES = new Set(["上交所", "深交所", "北交所"]);
+const RATE_EPSILON = 0.00001;
 
 export function createProjectRecord(project, issuer, generated, input = {}) {
   const now = new Date().toISOString();
@@ -117,7 +118,7 @@ export function deriveProjectStatus(project) {
   const notWonCount = results.filter((status) => status === "未中标").length;
   const winningTranches = tranches.filter((tranche) =>
     tranche.resultStatus === "中标"
-    || tranche.outsourcedBids?.some((bid) => Number.isFinite(numberOrNull(bid.winningAmountWan))),
+    || tranche.outsourcedBids?.some((bid) => positiveNumber(bid.winningAmountWan)),
   );
   if (winningTranches.length && winningTranches.every((tranche) => tranche.paymentCompleted)) return "已缴款";
   if (winningTranches.some((tranche) => tranche.paymentDate && !tranche.paymentCompleted)) return "待缴款";
@@ -209,13 +210,13 @@ export function buildAwardResultText(project) {
     const name = tranche.shortName || tranche.durationText || "本品种";
     if (tranche.resultStatus === "未中标") {
       lines.push(`表内未中标（${name}）`);
-    } else if (Number.isFinite(numberOrNull(tranche.winningAmountWan))) {
-      lines.push(`表内中标${formatNumber(tranche.winningAmountWan)}万，${formatPricing(tranche.pricingMode, tranche.pricingRate)}，营收${formatBp(tranche.revenueBp)}`);
+    } else if (positiveNumber(tranche.winningAmountWan)) {
+      lines.push(`表内中标${formatWanAmount(tranche.winningAmountWan)}，${formatPricing(tranche.pricingMode, tranche.pricingRate)}，营收${formatBp(tranche.revenueBp)}`);
     }
     for (const outsourced of tranche.outsourcedBids || []) {
-      if (Number.isFinite(numberOrNull(outsourced.winningAmountWan))) {
+      if (positiveNumber(outsourced.winningAmountWan)) {
         const prefix = outsourced.managerName ? `${outsourced.managerName}委外` : "委外";
-        lines.push(`${prefix}中标${formatNumber(outsourced.winningAmountWan)}万，${formatPricing(outsourced.pricingMode, outsourced.pricingRate)}`);
+        lines.push(`${prefix}中标${formatWanAmount(outsourced.winningAmountWan)}，${formatPricing(outsourced.pricingMode, outsourced.pricingRate)}`);
       }
     }
   }
@@ -233,17 +234,18 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
     const match = parsed.items.find((item) => item.shortName === tranche.shortName)
       || parsed.items[index]
       || {};
-    return normalizeTranche({
+    return applyAutoAward(normalizeTranche({
       ...tranche,
       securityCode: match.securityCode || tranche.securityCode,
       durationText: match.durationText || tranche.durationText,
       issueScale: match.issueScale ?? tranche.issueScale,
       fullMarketMultiple: match.fullMarketMultiple ?? tranche.fullMarketMultiple,
+      marginalMultiple: match.marginalMultiple ?? tranche.marginalMultiple,
       winningRate: match.couponRate ?? tranche.winningRate,
       paymentDate: match.paymentDate || tranche.paymentDate,
       startDate: match.startDate || tranche.startDate,
       allocationNote: match.allocationNote || tranche.allocationNote,
-    });
+    }), next);
   });
   return next;
 }
@@ -269,14 +271,22 @@ function buildTranches(project) {
   const ranges = project.inquiryRanges?.length
     ? project.inquiryRanges
     : [{ low: project.inquiryLow, high: project.inquiryHigh }];
+  const guidancePrices = project.guidancePrices?.length
+    ? project.guidancePrices
+    : [project.guidancePrice].filter((value) => Number.isFinite(numberOrNull(value)));
   const count = Math.max(names.length, durations.length, ranges.length, 1);
-  return Array.from({ length: count }, (_, index) => normalizeTranche({
-    shortName: names[index] || names[0] || project.shortName,
-    durationText: durations[index] || "",
-    inquiryLow: ranges[index]?.low,
-    inquiryHigh: ranges[index]?.high,
-    suggestedRatio: project.suggestedRatios?.[index] ?? project.suggestedRatio,
-  }));
+  return Array.from({ length: count }, (_, index) => {
+    const pricingRate = numberOrNull(guidancePrices[index] ?? guidancePrices[0]);
+    return normalizeTranche({
+      shortName: names[index] || names[0] || project.shortName,
+      durationText: durations[index] || "",
+      inquiryLow: ranges[index]?.low,
+      inquiryHigh: ranges[index]?.high,
+      suggestedRatio: project.suggestedRatios?.[index] ?? project.suggestedRatio,
+      pricingMode: Number.isFinite(pricingRate) ? "综合定价" : "未综",
+      pricingRate,
+    });
+  });
 }
 
 function normalizeTranche(input = {}) {
@@ -300,6 +310,7 @@ function normalizeTranche(input = {}) {
     securityCode: String(input.securityCode || "").trim(),
     issueScale: numberOrNull(input.issueScale),
     fullMarketMultiple: numberOrNull(input.fullMarketMultiple),
+    marginalMultiple: numberOrNull(input.marginalMultiple),
     paymentDate: String(input.paymentDate || "").trim(),
     startDate: String(input.startDate || "").trim(),
     allocationNote: String(input.allocationNote || "").trim(),
@@ -358,6 +369,7 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     || "";
   const issueScale = numberFrom(block, /(?:发行)?规模[：:，,\s]*(\d+(?:\.\d+)?)\s*亿/);
   const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
+  const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const couponRate = numberFrom(block, /(?:票面利率|票面)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
   const durationText = block.match(/(?:债券)?期限[：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:规模|发行规模|票面|全场倍数|缴款|$))/)?.[1]?.trim() || "";
   const allocationNote = block.includes("全部回拨") ? block.match(/全部回拨至[^\n，,]*/)?.[0] || "全部回拨" : "";
@@ -366,12 +378,62 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     securityCode,
     issueScale,
     fullMarketMultiple,
+    marginalMultiple,
     couponRate,
     durationText,
     paymentDate: parseLabeledDate(block, "缴款", referenceDate),
     startDate: parseLabeledDate(block, "起息", referenceDate),
     allocationNote,
   };
+}
+
+function applyAutoAward(tranche, project = {}) {
+  const next = { ...tranche };
+  const forcedNoIssue = /全部回拨/.test(next.allocationNote);
+  const estimatedOwn = forcedNoIssue
+    ? 0
+    : estimateWinningAmountWan(next.bidRate, next.bidAmount, next.winningRate, next.marginalMultiple);
+
+  if (estimatedOwn !== null) {
+    next.winningAmountWan = estimatedOwn;
+    next.resultStatus = estimatedOwn > 0 ? "中标" : "未中标";
+    if (estimatedOwn > 0 && Number.isFinite(numberOrNull(next.winningRate)) && Number.isFinite(numberOrNull(project.ftpCost))) {
+      next.revenueBp = calculateRevenueBp(next.winningRate, project.ftpCost);
+    }
+  }
+
+  next.outsourcedBids = (next.outsourcedBids || []).map((outsourced) => {
+    const estimatedOutsourced = forcedNoIssue
+      ? 0
+      : estimateWinningAmountWan(outsourced.bidRate, outsourced.bidAmount, next.winningRate, next.marginalMultiple);
+    if (estimatedOutsourced === null) return outsourced;
+    return {
+      ...outsourced,
+      winningAmountWan: estimatedOutsourced,
+      pricingMode: next.pricingMode,
+      pricingRate: next.pricingRate,
+    };
+  });
+
+  return next;
+}
+
+function estimateWinningAmountWan(bidRate, bidAmountYi, couponRate, marginalMultiple) {
+  const rate = numberOrNull(bidRate);
+  const amountYi = numberOrNull(bidAmountYi);
+  const coupon = numberOrNull(couponRate);
+  if (!Number.isFinite(rate) || !Number.isFinite(amountYi) || amountYi <= 0 || !Number.isFinite(coupon)) return null;
+  if (rate - coupon > RATE_EPSILON) return 0;
+  const isMarginal = Math.abs(rate - coupon) <= RATE_EPSILON;
+  const marginal = numberOrNull(marginalMultiple);
+  const divisor = isMarginal && Number.isFinite(marginal) && marginal > 0
+    ? marginal
+    : 1;
+  return round((amountYi / divisor) * 10000, 2);
+}
+
+function calculateRevenueBp(winningRate, ftpCost) {
+  return round(numberOrNull(winningRate) * 75 - numberOrNull(ftpCost), 2);
 }
 
 function parseIssuerName(text) {
@@ -446,6 +508,14 @@ function formatBp(value) {
   return Number.isFinite(numberOrNull(value)) ? `${formatNumber(value)}BP` : "【待补】BP";
 }
 
+function formatWanAmount(value) {
+  const amountWan = numberOrNull(value);
+  if (!Number.isFinite(amountWan)) return "【待补】";
+  return amountWan >= 10000
+    ? `${formatNumber(amountWan / 10000)}亿`
+    : `${formatNumber(amountWan)}万`;
+}
+
 function formatPercent(value) {
   return `${Number(value).toFixed(2)}%`;
 }
@@ -462,6 +532,11 @@ function numberOrNull(value) {
   if (value === "" || value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function positiveNumber(value) {
+  const number = numberOrNull(value);
+  return Number.isFinite(number) && number > 0;
 }
 
 function round(value, digits) {
