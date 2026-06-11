@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-todo-grid";
+} from "./core.js?v=20260611-mail-center";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -23,17 +23,18 @@ import {
   suggestProjectCutoff,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-todo-grid";
+} from "./lifecycle.js?v=20260611-mail-center";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-todo-grid";
+} from "./history-parser.js?v=20260611-mail-center";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
 const API_URL = "./api/state";
+const MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -203,6 +204,8 @@ function saveCurrentProject() {
 function bindLedger() {
   $("#projectSearch").addEventListener("input", renderProjectList);
   $("#projectStatusFilter").addEventListener("change", renderProjectList);
+  $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
+  $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#newProjectButton").addEventListener("click", () => {
     project = parseProjectBrief("");
     selectedIssuerId = "";
@@ -448,8 +451,12 @@ function renderCutoffTodo() {
         ? "unconfirmed"
         : minutes < 0
           ? "overdue"
-          : minutes <= 60
+          : minutes <= 30
+            ? "critical"
+            : minutes <= 60
             ? "urgent"
+            : minutes <= 180
+              ? "soon"
             : date === today
               ? "today"
               : "future";
@@ -461,7 +468,17 @@ function renderCutoffTodo() {
   $("#cutoffTodoPanel").classList.toggle("empty-state", !todos.length);
   $("#cutoffTodoList").innerHTML = todos.length
     ? todos.map(({ project: projectValue, type }) => {
-        const label = type === "unconfirmed" ? "时间待确认" : type === "overdue" ? "已过截标时间" : type === "urgent" ? "不足1小时" : "今日截标";
+        const label = type === "unconfirmed"
+          ? "时间待确认"
+          : type === "overdue"
+            ? "已过截标时间"
+            : type === "critical"
+              ? "不足30分钟"
+              : type === "urgent"
+                ? "不足1小时"
+                : type === "soon"
+                  ? "不足3小时"
+                  : "今日截标";
         return `
           <article class="cutoff-todo-item ${type}">
             <button class="payment-todo-main" type="button" data-open-cutoff-project="${escapeAttribute(projectValue.id)}">
@@ -476,6 +493,63 @@ function renderCutoffTodo() {
         `;
       }).join("")
     : '<div class="payment-todo-empty">目前没有临近截标或待确认项目。</div>';
+}
+
+async function callMailer(action) {
+  const token = getApiToken();
+  const output = $("#mailOutput");
+  output.hidden = false;
+  if (!token) {
+    output.textContent = "请先点击右上角“设置云端口令”，输入 APP_PASSWORD 后再发送邮件。";
+    return;
+  }
+
+  const isSend = action === "send";
+  const button = isSend ? $("#sendMailButton") : $("#previewMailButton");
+  button.disabled = true;
+  output.textContent = isSend ? "正在发送今日流程邮件..." : "正在生成今日邮件预览...";
+  try {
+    const response = await fetch(`${MAILER_URL}/${isSend ? "send-today" : "preview-today"}`, {
+      method: isSend ? "POST" : "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const text = await response.text();
+    const payload = parseJson(text);
+    if (!response.ok) {
+      output.textContent = JSON.stringify({
+        ok: false,
+        httpStatus: response.status,
+        ...(payload || { error: text.slice(0, 1000) }),
+      }, null, 2);
+      showToast(isSend ? "邮件发送失败，请查看输出详情。" : "邮件预览失败，请查看输出详情。");
+      return;
+    }
+
+    if (isSend) {
+      output.textContent = JSON.stringify(payload, null, 2);
+      showToast(payload.status === "sent" ? "今日流程邮件已发送。" : payload.reason || "邮件发送请求已完成。");
+    } else {
+      output.textContent = payload?.text || JSON.stringify(payload, null, 2);
+      showToast(`已生成 ${payload?.projectCount ?? 0} 笔项目的邮件预览。`);
+    }
+  } catch (error) {
+    output.textContent = JSON.stringify({
+      status: "error",
+      error: error.message || String(error),
+      hint: "请确认 credit-bond-mailer Worker 已部署，且允许跨域访问。",
+    }, null, 2);
+    showToast("邮件服务暂时无法访问。");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function delayProjectCutoffFromTodo(projectId, minutes) {

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-todo-grid">
+  <link rel="stylesheet" href="./styles.css?v=20260611-mail-center">
 </head>
 <body>
   <div class="app-shell">
@@ -18,7 +18,7 @@
 
       <nav class="nav">
         <button class="nav-item active" data-view-target="ledger">项目中心</button>
-        <button class="nav-item" data-view-target="generator">新增项目 / 流程意见</button>
+        <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch">批量撰写</button>
         <button class="nav-item" data-view-target="database">主体与授信库</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
@@ -169,6 +169,18 @@
             <button class="dashboard-card muted" data-ledger-filter="notWon"><span>未中标</span><strong id="dashboardNotWon">0</strong><small>近期结果</small></button>
           </div>
         </details>
+
+        <section class="mail-panel" id="mailPanel">
+          <div class="mail-panel-main">
+            <div><span class="step">MAIL</span><h2>今日流程邮件</h2></div>
+            <p>将今日待投标项目的项目简表与流程意见发送到已配置邮箱。</p>
+          </div>
+          <div class="mail-panel-actions">
+            <button class="button subtle" id="previewMailButton" type="button">预览邮件</button>
+            <button class="button primary" id="sendMailButton" type="button">发送今日邮件</button>
+          </div>
+          <pre class="mail-output" id="mailOutput" hidden></pre>
+        </section>
 
         <div class="ledger-todo-grid">
           <section class="cutoff-todo-panel" id="cutoffTodoPanel">
@@ -436,6 +448,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-todo-grid"></script>
+  <script type="module" src="./app.js?v=20260611-mail-center"></script>
 </body>
 </html>
