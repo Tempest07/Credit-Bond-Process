@@ -162,11 +162,19 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .dashboard-more .dashboard-card { padding: 10px; box-shadow: none; }
 .dashboard-more .dashboard-card strong { font-size: 18px; }
 .payment-todo-panel { margin-bottom: 16px; padding: 14px; border: 1px solid color-mix(in srgb, var(--secondary) 25%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f5feff, #fff); box-shadow: var(--shadow); }
-.payment-todo-panel.empty-state { padding-bottom: 10px; background: rgba(255,255,255,.65); box-shadow: none; }
+.cutoff-todo-panel { margin-bottom: 10px; padding: 14px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f7f6ff, #fff); box-shadow: var(--shadow); }
+.cutoff-todo-panel.empty-state, .payment-todo-panel.empty-state { padding-bottom: 10px; background: rgba(255,255,255,.65); box-shadow: none; }
 .payment-todo-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .payment-todo-head > div { display: flex; align-items: center; gap: 8px; }
 .payment-todo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cutoff-todo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .payment-todo-item { display: flex; align-items: center; gap: 8px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.cutoff-todo-item { display: grid; gap: 7px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.cutoff-todo-item.unconfirmed { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); background: var(--warning-soft); }
+.cutoff-todo-item.urgent { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); }
+.cutoff-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); background: #fff2f4; }
+.cutoff-todo-actions { display: flex; align-items: center; gap: 8px; }
+.cutoff-todo-actions .text-button { font-size: 10px; }
 .payment-todo-item.today { border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); background: var(--warning-soft); }
 .payment-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); background: #fff2f4; }
 .payment-todo-main { display: grid; gap: 3px; min-width: 0; flex: 1; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; }
@@ -194,6 +202,13 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .project-action-bar strong { font-size: 11px; }
 .project-action-bar span { color: var(--muted); font-size: 9px; line-height: 1.5; }
 .project-action-buttons { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.cutoff-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: -4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
+.cutoff-quick-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.cutoff-quick-actions .button { min-height: 30px; padding: 0 9px; font-size: 10px; }
+.cutoff-confirm { display: flex !important; align-items: center; gap: 6px !important; margin-left: auto; color: var(--accent) !important; white-space: nowrap; }
+.cutoff-confirm input { width: 15px; min-height: 15px; }
+#projectCutoffHint { width: 100%; color: var(--muted); font-size: 9px; line-height: 1.5; }
+#projectCutoffHint.warning { color: var(--warning); font-weight: 700; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 12px; }
 .section-heading > div { display: flex; align-items: center; gap: 8px; }
 .section-heading h3 { margin: 0; }
@@ -240,7 +255,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 @media (max-width: 1120px) {
   .generator-grid, .database-grid, .batch-card-grid, .ledger-grid { grid-template-columns: 1fr; }
-  .payment-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payment-todo-list, .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -267,5 +282,6 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .review-grid .full, .batch-issuer-grid .full { grid-column: span 1; }
   .result-actions { align-items: flex-end; flex-direction: column; }
   .project-action-bar { align-items: flex-start; flex-direction: column; }
-  .project-action-buttons, .payment-todo-list { width: 100%; grid-template-columns: 1fr; justify-content: flex-start; }
+  .project-action-buttons, .payment-todo-list, .cutoff-todo-list { width: 100%; grid-template-columns: 1fr; justify-content: flex-start; }
+  .cutoff-confirm { margin-left: 0; }
 }

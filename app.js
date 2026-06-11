@@ -20,6 +20,8 @@ import {
   deriveProjectStatus,
   normalizeProjectRecord,
   removeProject,
+  suggestProjectCutoff,
+  updateProjectCutoff,
   upsertProject,
 } from "./lifecycle.js";
 import {
@@ -44,6 +46,7 @@ const SAMPLE_ISSUER = {
   legalName: "广州交通投资集团有限公司",
   aliases: ["粤交投", "广州交投"],
   defaultBranch: "广州分行",
+  enterpriseType: "地方国企",
   isRealEstate: false,
   credit: {
     approvalLevel: "总行",
@@ -165,9 +168,13 @@ function saveCurrentProject() {
     ? {
         ...created,
         status: existing.status,
-        cutoffAt: existing.cutoffAt,
+        cutoffAt: existing.cutoffAt || created.cutoffAt,
+        cutoffTimeConfirmed: existing.cutoffAt ? existing.cutoffTimeConfirmed : created.cutoffTimeConfirmed,
+        cutoffSource: existing.cutoffAt ? existing.cutoffSource : created.cutoffSource,
+        cutoffHistory: existing.cutoffHistory || [],
         notes: existing.notes,
         resultAdvertisement: existing.resultAdvertisement,
+        resultConfirmed: existing.resultConfirmed,
         tranches: existing.tranches?.length === created.tranches.length
           ? created.tranches.map((tranche, index) => ({
               ...existing.tranches[index],
@@ -226,6 +233,26 @@ function bindLedger() {
     scheduleProjectAutoSave();
   });
   $("#projectForm").addEventListener("submit", (event) => event.preventDefault());
+  $("#projectCutoffAt").addEventListener("change", () => {
+    const existing = (state.projects || []).find((item) => item.id === $("#projectId").value) || {};
+    const draft = readProjectForm();
+    const updated = updateProjectCutoff({
+      ...draft,
+      cutoffAt: existing.cutoffAt,
+      cutoffHistory: existing.cutoffHistory,
+    }, $("#projectCutoffAt").value, "手工修改", true);
+    refillProjectForm(updated);
+    saveProjectRecordNow(updated);
+  });
+  $("#projectCutoffTimeConfirmed").addEventListener("change", () => {
+    $("#projectCutoffSource").value = $("#projectCutoffTimeConfirmed").checked ? "手工确认" : "待确认";
+    const draft = readProjectForm();
+    renderCutoffHint(draft);
+    saveProjectRecordNow(draft);
+  });
+  $$("[data-cutoff-action]").forEach((button) => {
+    button.addEventListener("click", () => applyCutoffAction(button.dataset.cutoffAction));
+  });
   $("#markUnbidButton").addEventListener("click", () => setProjectActionStatus("未投标"));
   $("#markBidButton").addEventListener("click", () => setProjectActionStatus("已投标待结果"));
   $("#openResultButton").addEventListener("click", () => {
@@ -284,6 +311,16 @@ function bindLedger() {
     if (completeButton) completePaymentTodo(completeButton.dataset.completePayment);
     if (openButton) {
       selectedProjectId = openButton.dataset.openPaymentProject;
+      renderProjectWorkspace();
+      $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+  $("#cutoffTodoList").addEventListener("click", (event) => {
+    const openButton = event.target.closest("[data-open-cutoff-project]");
+    const delayButton = event.target.closest("[data-delay-cutoff]");
+    if (delayButton) delayProjectCutoffFromTodo(delayButton.dataset.delayCutoff, Number(delayButton.dataset.delayMinutes));
+    if (openButton) {
+      selectedProjectId = openButton.dataset.openCutoffProject;
       renderProjectWorkspace();
       $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -361,12 +398,24 @@ function renderRuleTrace(generated, issuer) {
 }
 
 function renderProjectWorkspace() {
+  const selectedRaw = (state.projects || []).find((item) => item.id === selectedProjectId);
+  const selected = ensureProjectCutoff(selectedRaw);
   renderDashboard();
+  renderCutoffTodo();
   renderPaymentTodo();
   renderProjectList();
-  const selected = (state.projects || []).find((item) => item.id === selectedProjectId);
   if (selected) fillProjectForm(selected);
   else clearProjectForm();
+}
+
+function ensureProjectCutoff(projectValue) {
+  if (!projectValue || projectValue.cutoffAt || !["未投标", "待投标"].includes(projectValue.status)) return projectValue;
+  const issuer = state.issuers.find((item) => item.id === projectValue.issuerId) || null;
+  const cutoff = suggestProjectCutoff(projectValue, issuer);
+  const next = normalizeProjectRecord({ ...projectValue, ...cutoff });
+  state = upsertProject(state, next);
+  persistState();
+  return next;
 }
 
 function renderDashboard() {
@@ -378,6 +427,61 @@ function renderDashboard() {
   $("#dashboardWon").textContent = counts.won;
   $("#dashboardNotWon").textContent = counts.notWon;
   $("#dashboardPaymentToday").textContent = counts.paymentToday;
+}
+
+function renderCutoffTodo() {
+  const now = new Date();
+  const today = localDate(now);
+  const todos = (state.projects || [])
+    .filter((projectValue) => ["未投标", "待投标"].includes(projectValue.status) && projectValue.cutoffAt)
+    .map((projectValue) => {
+      const cutoff = new Date(projectValue.cutoffAt);
+      const minutes = (cutoff.getTime() - now.getTime()) / 60000;
+      const date = projectValue.cutoffAt.slice(0, 10);
+      const type = !projectValue.cutoffTimeConfirmed
+        ? "unconfirmed"
+        : minutes < 0
+          ? "overdue"
+          : minutes <= 60
+            ? "urgent"
+            : date === today
+              ? "today"
+              : "future";
+      return { project: projectValue, cutoff, minutes, type };
+    })
+    .filter((item) => item.type !== "future")
+    .sort((left, right) => left.cutoff - right.cutoff);
+  $("#cutoffTodoCount").textContent = todos.length ? `${todos.length} 项需关注` : "暂无待办";
+  $("#cutoffTodoPanel").classList.toggle("empty-state", !todos.length);
+  $("#cutoffTodoList").innerHTML = todos.length
+    ? todos.map(({ project: projectValue, type }) => {
+        const label = type === "unconfirmed" ? "时间待确认" : type === "overdue" ? "已过截标时间" : type === "urgent" ? "不足1小时" : "今日截标";
+        return `
+          <article class="cutoff-todo-item ${type}">
+            <button class="payment-todo-main" type="button" data-open-cutoff-project="${escapeAttribute(projectValue.id)}">
+              <strong>${escapeHtml(projectValue.shortName || "未命名项目")}</strong>
+              <span>${escapeHtml(formatCutoff(projectValue.cutoffAt))} · ${escapeHtml(label)}</span>
+            </button>
+            <div class="cutoff-todo-actions">
+              <button class="text-button" type="button" data-delay-cutoff="${escapeAttribute(projectValue.id)}" data-delay-minutes="30">+30分钟</button>
+              <button class="text-button" type="button" data-delay-cutoff="${escapeAttribute(projectValue.id)}" data-delay-minutes="60">+1小时</button>
+            </div>
+          </article>
+        `;
+      }).join("")
+    : '<div class="payment-todo-empty">目前没有临近截标或待确认项目。</div>';
+}
+
+function delayProjectCutoffFromTodo(projectId, minutes) {
+  const projectValue = (state.projects || []).find((item) => item.id === projectId);
+  if (!projectValue?.cutoffAt) return;
+  const date = new Date(projectValue.cutoffAt);
+  date.setMinutes(date.getMinutes() + minutes);
+  const next = updateProjectCutoff(projectValue, localDateTime(date), `延期${minutes}分钟`, true);
+  state = upsertProject(state, next);
+  persistState();
+  renderProjectWorkspace();
+  showToast(`${next.shortName} 已延期${minutes}分钟。`);
 }
 
 function renderPaymentTodo() {
@@ -488,6 +592,8 @@ function fillProjectForm(input) {
   $("#projectLeadUnderwriter").value = record.leadUnderwriter;
   $("#projectSponsorStatus").value = record.sponsorStatus;
   $("#projectCutoffAt").value = record.cutoffAt;
+  $("#projectCutoffTimeConfirmed").checked = record.cutoffTimeConfirmed;
+  $("#projectCutoffSource").value = record.cutoffSource;
   $("#projectNotes").value = record.notes;
   $("#projectSourceText").value = record.sourceText;
   $("#projectOpinion").value = record.opinion;
@@ -498,6 +604,7 @@ function fillProjectForm(input) {
   $("#projectStatusPill").textContent = record.status;
   $("#projectAutosaveStatus").textContent = "已实时保存";
   updateProjectActionButtons(record.status);
+  renderCutoffHint(record);
   renderTranches(record.tranches);
   renderProjectList();
 }
@@ -660,6 +767,8 @@ function readProjectForm() {
     leadUnderwriter: $("#projectLeadUnderwriter").value,
     sponsorStatus: $("#projectSponsorStatus").value,
     cutoffAt: $("#projectCutoffAt").value,
+    cutoffTimeConfirmed: $("#projectCutoffTimeConfirmed").checked,
+    cutoffSource: $("#projectCutoffSource").value,
     notes: $("#projectNotes").value,
     sourceText: $("#projectSourceText").value,
     opinion: $("#projectOpinion").value,
@@ -673,6 +782,49 @@ function updateProjectPreviews() {
   const draft = readProjectForm();
   $("#projectBidPosition").value = buildBidPositionText(draft);
   $("#projectResultSummary").value = buildAwardResultText(draft);
+}
+
+function applyCutoffAction(action) {
+  const draft = readProjectForm();
+  const current = draft.cutoffAt ? new Date(draft.cutoffAt) : new Date();
+  const defaultTime = ["上交所", "深交所", "北交所"].includes(draft.venue) ? "19:00" : "18:00";
+  let next;
+  let reason;
+  if (action.startsWith("delay-")) {
+    const minutes = Number(action.split("-")[1]);
+    next = new Date(current);
+    next.setMinutes(next.getMinutes() + minutes);
+    reason = `延期${minutes}分钟`;
+  } else {
+    next = new Date();
+    if (action === "tomorrow") next.setDate(next.getDate() + 1);
+    if (action === "next-business-day") {
+      next.setDate(next.getDate() + 1);
+      while ([0, 6].includes(next.getDay())) next.setDate(next.getDate() + 1);
+    }
+    const time = draft.cutoffAt?.slice(11, 16) || defaultTime;
+    const [hours, minutes] = time.split(":").map(Number);
+    next.setHours(hours, minutes, 0, 0);
+    reason = action === "today" ? "快捷设置今天" : action === "tomorrow" ? "快捷设置明天" : "快捷设置下一工作日";
+  }
+  const updated = updateProjectCutoff(draft, localDateTime(next), reason, true);
+  refillProjectForm(updated);
+  saveProjectRecordNow(updated);
+  showToast(`${updated.shortName} 截标时间已更新。`);
+}
+
+function renderCutoffHint(projectValue) {
+  const issuer = state.issuers.find((item) => item.id === projectValue.issuerId);
+  const latest = projectValue.cutoffHistory?.at(-1);
+  const privateWarning = issuer?.enterpriseType === "民营企业" && projectValue.venue === "银行间" && !projectValue.cutoffTimeConfirmed
+    ? "民企银行间项目可能延期，请确认最终截标时间。"
+    : "";
+  const unconfirmed = !projectValue.cutoffTimeConfirmed
+    ? `截标时间待确认。来源：${projectValue.cutoffSource || "自动建议"}`
+    : "";
+  const history = latest ? `原 ${formatCutoff(latest.from)}，${latest.reason}至 ${formatCutoff(latest.to)}。` : "";
+  $("#projectCutoffHint").textContent = privateWarning || unconfirmed || history || `来源：${projectValue.cutoffSource || "手工填写"}`;
+  $("#projectCutoffHint").classList.toggle("warning", Boolean(privateWarning || unconfirmed));
 }
 
 function scheduleProjectAutoSave() {
@@ -693,6 +845,7 @@ function saveProjectDraftNow() {
 }
 
 function saveProjectRecordNow(record) {
+  clearTimeout(projectAutoSaveTimer);
   const normalized = normalizeProjectRecord(record);
   const isCurrentProject = !$("#projectForm").hidden && $("#projectId").value === normalized.id;
   state = upsertProject(state, normalized);
@@ -705,6 +858,7 @@ function saveProjectRecordNow(record) {
     updateProjectActionButtons(normalized.status);
   }
   renderDashboard();
+  renderCutoffTodo();
   renderPaymentTodo();
   renderProjectList();
 }
@@ -933,6 +1087,7 @@ function renderBatchIssuerEditor(draft, index, shouldOpen) {
         <label class="wide">主体正式名称<input data-batch-index="${index}" data-batch-field="legalName" value="${escapeAttribute(draft.legalName)}"></label>
         <label class="wide">常用简称<input data-batch-index="${index}" data-batch-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
         <label>默认分行<input data-batch-index="${index}" data-batch-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
+        <label>企业性质<select data-batch-index="${index}" data-batch-field="enterpriseType">${enterpriseTypeOptions(draft.enterpriseType)}</select></label>
         <label>审批层级<input data-batch-index="${index}" data-batch-field="approvalLevel" value="${escapeAttribute(draft.approvalLevel)}"></label>
         <label>公募/通用金额<input type="number" step="0.0001" data-batch-index="${index}" data-batch-field="approvedAmount" value="${escapeAttribute(draft.approvedAmount)}"></label>
         <label>私募金额<input type="number" step="0.0001" data-batch-index="${index}" data-batch-field="privateAmount" value="${escapeAttribute(draft.privateAmount)}"></label>
@@ -1169,6 +1324,7 @@ function renderHistoryReviewEditor(record, index) {
         <label class="wide">主体正式名称<input data-review-field="legalName" value="${escapeAttribute(draft.legalName)}"></label>
         <label class="wide">常用简称<input data-review-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
         <label>默认分行<input data-review-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
+        <label>企业性质<select data-review-field="enterpriseType">${enterpriseTypeOptions(draft.enterpriseType)}</select></label>
         <label>审批层级<input data-review-field="approvalLevel" value="${escapeAttribute(draft.approvalLevel)}"></label>
         <label>公募/通用金额<input type="number" step="0.0001" data-review-field="approvedAmount" value="${escapeAttribute(draft.approvedAmount)}"></label>
         <label>私募金额<input type="number" step="0.0001" data-review-field="privateAmount" value="${escapeAttribute(draft.privateAmount)}"></label>
@@ -1222,6 +1378,7 @@ function createIssuerDraft(projectValue, issuer = null) {
     legalName: issuer?.legalName || extractIssuerLegalName(projectValue?.fullName || ""),
     aliases: (issuer?.aliases?.length ? issuer.aliases : derivedAliases).join("，"),
     defaultBranch: issuer?.defaultBranch || projectValue?.branch || "",
+    enterpriseType: issuer?.enterpriseType || "",
     isRealEstate: Boolean(issuer?.isRealEstate),
     approvalLevel: credit.approvalLevel || "",
     approvedAmount: credit.approvedAmount ?? "",
@@ -1243,6 +1400,7 @@ function createHistoryReviewDraft(record) {
     legalName: record.issuerLegalName || "",
     aliases: [record.alias, record.shortName].filter(Boolean).join("，"),
     defaultBranch: record.branch || "",
+    enterpriseType: "",
     isRealEstate: Boolean(record.isRealEstate),
     approvalLevel: credit.approvalLevel || "",
     approvedAmount: credit.approvedAmount ?? "",
@@ -1275,6 +1433,7 @@ function issuerFromDraft(draft) {
     legalName: String(draft.legalName || "").trim(),
     aliases: String(draft.aliases || "").split(/[,，\n]/).map((value) => value.trim()).filter(Boolean),
     defaultBranch: String(draft.defaultBranch || "").trim(),
+    enterpriseType: String(draft.enterpriseType || "").trim(),
     isRealEstate: Boolean(draft.isRealEstate),
     credit: {
       approvalLevel: String(draft.approvalLevel || parsed.approvalLevel || "").trim(),
@@ -1360,6 +1519,7 @@ function fillIssuerInput(prefix, draft) {
     LegalName: draft.legalName,
     Aliases: draft.aliases,
     DefaultBranch: draft.defaultBranch,
+    EnterpriseType: draft.enterpriseType,
     ApprovalLevel: draft.approvalLevel,
     ApprovedAmount: draft.approvedAmount,
     PrivateAmount: draft.privateAmount,
@@ -1398,6 +1558,7 @@ function readIssuerInput(prefix) {
     legalName: $(`#${prefix}LegalName`).value,
     aliases: $(`#${prefix}Aliases`).value,
     defaultBranch: $(`#${prefix}DefaultBranch`).value,
+    enterpriseType: $(`#${prefix}EnterpriseType`).value,
     isRealEstate: $(`#${prefix}IsRealEstate`).checked,
     approvalLevel: $(`#${prefix}ApprovalLevel`).value,
     approvedAmount: $(`#${prefix}ApprovedAmount`).value,
@@ -1417,6 +1578,7 @@ function readIssuerForm() {
     legalName: $("#legalName").value,
     aliases: $("#aliases").value,
     defaultBranch: $("#defaultBranch").value,
+    enterpriseType: $("#enterpriseType").value,
     isRealEstate: $("#isRealEstate").checked,
     approvalLevel: $("#approvalLevel").value,
     approvedAmount: $("#approvedAmount").value,
@@ -1440,7 +1602,7 @@ function renderIssuerList() {
     ? issuers.map((issuer) => `
       <button class="issuer-item ${$("#issuerId").value === issuer.id ? "active" : ""}" data-issuer-id="${escapeAttribute(issuer.id)}">
         <strong>${escapeHtml(issuer.legalName)}</strong>
-        <span>${escapeHtml((issuer.aliases || []).join(" / ") || "暂无简称")} · ${escapeHtml(issuer.credit?.rawText || "暂无授信原文")}</span>
+        <span>${escapeHtml((issuer.aliases || []).join(" / ") || "暂无简称")} · ${escapeHtml(issuer.enterpriseType || "企业性质待补")} · ${escapeHtml(issuer.credit?.rawText || "暂无授信原文")}</span>
       </button>
     `).join("")
     : '<div class="empty">暂无主体资料。可新增主体，或载入示例。</div>';
@@ -1474,6 +1636,7 @@ function fillIssuerForm(issuer) {
   $("#legalName").value = issuer.legalName || "";
   $("#aliases").value = (issuer.aliases || []).join("，");
   $("#defaultBranch").value = issuer.defaultBranch || "";
+  $("#enterpriseType").value = issuer.enterpriseType || "";
   $("#isRealEstate").checked = Boolean(issuer.isRealEstate);
   $("#approvalLevel").value = issuer.credit?.approvalLevel || "";
   $("#approvedAmount").value = issuer.credit?.approvedAmount ?? "";
@@ -1598,6 +1761,18 @@ function loadLocalState() {
   } catch {
     return structuredClone(DEFAULT_STATE);
   }
+}
+
+function enterpriseTypeOptions(selected = "") {
+  const values = ["", "央企", "地方国企", "民营企业", "其他"];
+  return values.map((value) =>
+    `<option value="${value}" ${value === selected ? "selected" : ""}>${value || "待选择"}</option>`,
+  ).join("");
+}
+
+function localDateTime(value) {
+  const date = new Date(value);
+  return `${localDate(date)}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function normalizeLoadedState(value) {

@@ -10,10 +10,18 @@ const PROJECT_STATUSES = new Set([
 ]);
 
 export const PROJECT_STATUS_OPTIONS = [...PROJECT_STATUSES];
+const EXCHANGE_VENUES = new Set(["上交所", "深交所", "北交所"]);
 
 export function createProjectRecord(project, issuer, generated, input = {}) {
   const now = new Date().toISOString();
   const tranches = buildTranches(project);
+  const cutoff = input.cutoffAt
+    ? {
+        cutoffAt: input.cutoffAt,
+        cutoffTimeConfirmed: input.cutoffTimeConfirmed,
+        cutoffSource: input.cutoffSource,
+      }
+    : suggestProjectCutoff(project, issuer);
   return normalizeProjectRecord({
     id: input.id || crypto.randomUUID(),
     status: input.status || "未投标",
@@ -24,7 +32,10 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     venue: project.venue || "",
     leadUnderwriter: project.leadUnderwriter || "",
     sponsorStatus: project.sponsorStatus || "",
-    cutoffAt: input.cutoffAt || "",
+    cutoffAt: cutoff.cutoffAt,
+    cutoffTimeConfirmed: cutoff.cutoffTimeConfirmed,
+    cutoffSource: cutoff.cutoffSource,
+    cutoffHistory: input.cutoffHistory || [],
     opinion: generated?.opinion || "",
     sourceText: project.sourceText || "",
     notes: input.notes || "",
@@ -55,6 +66,9 @@ export function normalizeProjectRecord(input = {}) {
     leadUnderwriter: String(input.leadUnderwriter || "").trim(),
     sponsorStatus: String(input.sponsorStatus || "").trim(),
     cutoffAt: String(input.cutoffAt || "").trim(),
+    cutoffTimeConfirmed: input.cutoffTimeConfirmed === undefined ? Boolean(input.cutoffAt) : Boolean(input.cutoffTimeConfirmed),
+    cutoffSource: String(input.cutoffSource || "").trim(),
+    cutoffHistory: Array.isArray(input.cutoffHistory) ? input.cutoffHistory.map(normalizeCutoffHistoryItem) : [],
     opinion: String(input.opinion || "").trim(),
     sourceText: String(input.sourceText || "").trim(),
     notes: String(input.notes || "").trim(),
@@ -128,6 +142,49 @@ export function dashboardCounts(projects = [], now = new Date()) {
       && project.tranches?.some((tranche) => tranche.paymentDate === date && !tranche.paymentCompleted),
     ).length,
   };
+}
+
+export function suggestProjectCutoff(project = {}, issuer = null, referenceDate = new Date()) {
+  const venue = String(project.venue || "");
+  const defaultTime = EXCHANGE_VENUES.has(venue) ? "19:00" : "18:00";
+  const explicit = parseExplicitCutoff(project.sourceText || "", referenceDate, defaultTime);
+  if (explicit) {
+    return {
+      cutoffAt: explicit,
+      cutoffTimeConfirmed: true,
+      cutoffSource: "项目简表",
+    };
+  }
+
+  const date = nextBusinessDay(referenceDate);
+  const isPrivateInterbank = venue === "银行间" && issuer?.enterpriseType === "民营企业";
+  const venueKnown = venue === "银行间" || EXCHANGE_VENUES.has(venue);
+  return {
+    cutoffAt: `${localDate(date)}T${defaultTime}`,
+    cutoffTimeConfirmed: venueKnown && !isPrivateInterbank,
+    cutoffSource: EXCHANGE_VENUES.has(venue) ? "交易所默认19:00" : venue === "银行间" ? "银行间默认18:00" : "默认18:00，场所待确认",
+  };
+}
+
+export function updateProjectCutoff(project, cutoffAt, reason = "手工调整", confirmed = true) {
+  const previous = String(project.cutoffAt || "").trim();
+  const next = String(cutoffAt || "").trim();
+  const history = [...(project.cutoffHistory || [])];
+  if (previous && next && previous !== next) {
+    history.push({
+      from: previous,
+      to: next,
+      reason,
+      changedAt: new Date().toISOString(),
+    });
+  }
+  return normalizeProjectRecord({
+    ...project,
+    cutoffAt: next,
+    cutoffTimeConfirmed: confirmed,
+    cutoffSource: reason,
+    cutoffHistory: history,
+  });
 }
 
 export function buildBidResultSummary(project) {
@@ -250,6 +307,15 @@ function normalizeTranche(input = {}) {
   };
 }
 
+function normalizeCutoffHistoryItem(input = {}) {
+  return {
+    from: String(input.from || "").trim(),
+    to: String(input.to || "").trim(),
+    reason: String(input.reason || "").trim(),
+    changedAt: input.changedAt || new Date().toISOString(),
+  };
+}
+
 function normalizeOutsourcedBid(input = {}) {
   return {
     id: input.id || crypto.randomUUID(),
@@ -333,6 +399,36 @@ function inferPaymentDate(day, month, referenceDate) {
   }
   if (month && month < reference.getMonth() + 1) year += 1;
   return `${year}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseExplicitCutoff(text, referenceDate, defaultTime) {
+  const normalized = String(text || "");
+  const relevantLine = normalized.split(/\r?\n/).find((line) => /(截标|簿记)/.test(line)) || "";
+  if (!relevantLine) return "";
+  const timeMatch = relevantLine.match(/([01]?\d|2[0-3])[:：](\d{2})/);
+  const time = timeMatch ? `${String(timeMatch[1]).padStart(2, "0")}:${timeMatch[2]}` : defaultTime;
+  const iso = relevantLine.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/);
+  if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, "0")}-${String(iso[3]).padStart(2, "0")}T${time}`;
+  const monthDay = relevantLine.match(/(\d{1,2})月(\d{1,2})日/);
+  if (monthDay) {
+    let year = new Date(referenceDate).getFullYear();
+    if (Number(monthDay[1]) < new Date(referenceDate).getMonth() + 1) year += 1;
+    return `${year}-${String(monthDay[1]).padStart(2, "0")}-${String(monthDay[2]).padStart(2, "0")}T${time}`;
+  }
+  const relative = relevantLine.match(/(今天|今日|明天|明日)/)?.[1];
+  if (relative) {
+    const date = new Date(referenceDate);
+    if (["明天", "明日"].includes(relative)) date.setDate(date.getDate() + 1);
+    return `${localDate(date)}T${time}`;
+  }
+  return timeMatch ? `${localDate(nextBusinessDay(referenceDate))}T${time}` : "";
+}
+
+function nextBusinessDay(referenceDate) {
+  const date = new Date(referenceDate);
+  date.setDate(date.getDate() + 1);
+  while ([0, 6].includes(date.getDay())) date.setDate(date.getDate() + 1);
+  return date;
 }
 
 function numberFrom(text, pattern) {

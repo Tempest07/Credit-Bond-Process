@@ -8,9 +8,15 @@ import {
   durationToDays,
   generateOpinion,
   mergeImportedIssuers,
+  normalizeIssuer,
   parseProjectBrief,
   splitProjectBriefs,
 } from "../core.js";
+
+test("preserves supported enterprise types in issuer records", () => {
+  assert.equal(normalizeIssuer({ legalName: "测试民企有限公司", enterpriseType: "民营企业" }).enterpriseType, "民营企业");
+  assert.equal(normalizeIssuer({ legalName: "测试未知有限公司", enterpriseType: "未知类型" }).enterpriseType, "");
+});
 
 const issuer = {
   legalName: "广州交通投资集团有限公司",

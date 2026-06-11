@@ -507,6 +507,7 @@ export function normalizeIssuer(input) {
     legalName: String(input.legalName || "").trim(),
     aliases: [...new Set((input.aliases || []).map((value) => String(value).trim()).filter(Boolean))],
     defaultBranch: String(input.defaultBranch || "").trim(),
+    enterpriseType: ["央企", "地方国企", "民营企业", "其他"].includes(input.enterpriseType) ? input.enterpriseType : "",
     isRealEstate: Boolean(input.isRealEstate),
     credit: {
       approvalLevel: String(input.credit?.approvalLevel || "").trim(),

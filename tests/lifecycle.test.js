@@ -10,6 +10,8 @@ import {
   deriveProjectStatus,
   normalizeProjectRecord,
   parseIssuanceAdvertisement,
+  suggestProjectCutoff,
+  updateProjectCutoff,
   upsertProject,
 } from "../lifecycle.js";
 
@@ -90,6 +92,49 @@ test("calculates dashboard counts including payment reminders", () => {
     notWon: 0,
     duePayment: 1,
     paymentToday: 1,
+  });
+});
+
+test("suggests cutoff times by venue and flags private interbank issuers", () => {
+  const reference = new Date("2026-06-11T09:00:00");
+  assert.deepEqual(suggestProjectCutoff({ venue: "银行间", sourceText: "" }, { enterpriseType: "地方国企" }, reference), {
+    cutoffAt: "2026-06-12T18:00",
+    cutoffTimeConfirmed: true,
+    cutoffSource: "银行间默认18:00",
+  });
+  assert.deepEqual(suggestProjectCutoff({ venue: "上交所", sourceText: "" }, null, reference), {
+    cutoffAt: "2026-06-12T19:00",
+    cutoffTimeConfirmed: true,
+    cutoffSource: "交易所默认19:00",
+  });
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "" }, { enterpriseType: "民营企业" }, reference).cutoffTimeConfirmed,
+    false,
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "6月15日18:30截标" }, null, reference).cutoffAt,
+    "2026-06-15T18:30",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, new Date("2026-06-12T09:00:00")).cutoffAt,
+    "2026-06-15T18:00",
+  );
+});
+
+test("records cutoff changes and confirmation state", () => {
+  const project = normalizeProjectRecord({
+    shortName: "26测试01",
+    cutoffAt: "2026-06-12T18:00",
+    cutoffTimeConfirmed: false,
+  });
+  const updated = updateProjectCutoff(project, "2026-06-12T19:00", "延期60分钟", true);
+  assert.equal(updated.cutoffTimeConfirmed, true);
+  assert.equal(updated.cutoffSource, "延期60分钟");
+  assert.deepEqual(updated.cutoffHistory[0], {
+    from: "2026-06-12T18:00",
+    to: "2026-06-12T19:00",
+    reason: "延期60分钟",
+    changedAt: updated.cutoffHistory[0].changedAt,
   });
 });
 
