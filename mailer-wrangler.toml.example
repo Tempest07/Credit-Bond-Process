@@ -1,0 +1,17 @@
+name = "credit-bond-mailer"
+main = "mailer-worker.js"
+compatibility_date = "2026-06-11"
+
+[triggers]
+crons = ["30 0 * * 1-5"]
+
+[vars]
+TIME_ZONE = "Asia/Shanghai"
+MAIL_FROM = "流程意见提示 <notify@example.com>"
+MAIL_TO = "your-email@example.com"
+MAIL_SEND_EMPTY = "false"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "credit-bond-process"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
