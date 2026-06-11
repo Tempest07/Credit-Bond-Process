@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-result-modal">
+  <link rel="stylesheet" href="./styles.css?v=20260611-ledger-compact">
 </head>
 <body>
   <div class="app-shell">
@@ -232,13 +232,15 @@
                   <button class="button result-action" id="openResultButton" type="button">已出结果 / 录入结果</button>
                 </div>
               </div>
-              <div class="field-grid">
-                <label>项目简称<input id="projectShortName" required></label>
-                <label>主体名称<input id="projectIssuerName"></label>
-                <label>申报分行<input id="projectBranch"></label>
-                <label>发行场所<input id="projectVenue"></label>
-                <label>主承销商<input id="projectLeadUnderwriter"></label>
-                <label>主承身份<select id="projectSponsorStatus"><option value="">待选择</option><option>非我行主承</option><option>联席</option><option>牵头</option></select></label>
+              <div class="project-summary-grid" id="projectSummary">
+                <div class="project-summary-item"><span>主体</span><strong id="projectSummaryIssuer">待补</strong></div>
+                <div class="project-summary-item"><span>分行</span><strong id="projectSummaryBranch">待补</strong></div>
+                <div class="project-summary-item"><span>发行场所</span><strong id="projectSummaryVenue">待补</strong></div>
+                <div class="project-summary-item"><span>主承身份</span><strong id="projectSummarySponsor">待补</strong></div>
+                <div class="project-summary-item wide"><span>主承销商</span><strong id="projectSummaryLead">待补</strong></div>
+              </div>
+
+              <div class="field-grid compact-field-grid">
                 <label class="span-2">截标时间<input id="projectCutoffAt" type="datetime-local"></label>
                 <input id="projectCutoffSource" type="hidden">
                 <div class="cutoff-controls span-2">
@@ -252,8 +254,13 @@
                   <label class="cutoff-confirm"><input id="projectCutoffTimeConfirmed" type="checkbox">截标时间已确认</label>
                   <span id="projectCutoffHint"></span>
                 </div>
-                <label class="span-2">项目备注<textarea id="projectNotes" rows="2"></textarea></label>
               </div>
+
+              <div class="section-heading">
+                <div><span class="step">BID</span><h3>投标标位</h3></div>
+                <button class="button subtle" id="addTrancheButton" type="button">增加品种</button>
+              </div>
+              <div class="tranche-list" id="trancheList"></div>
 
               <div class="section-heading quick-output-heading">
                 <div><span class="step">OUTPUT</span><h3>快捷输出</h3></div>
@@ -306,15 +313,8 @@
                 </div>
               </section>
 
-              <div class="section-heading">
-                <div><span class="step">BID</span><h3>投标标位</h3></div>
-                <button class="button subtle" id="addTrancheButton" type="button">增加品种</button>
-              </div>
-              <div class="tranche-list" id="trancheList"></div>
-
               <div class="form-actions project-footer-actions">
                 <button class="button danger" id="deleteProjectButton" type="button">删除项目</button>
-                <span>所有修改均实时保存，无需滚动到底部点击保存。</span>
               </div>
             </form>
           </section>
@@ -433,6 +433,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-result-modal"></script>
+  <script type="module" src="./app.js?v=20260611-ledger-compact"></script>
 </body>
 </html>

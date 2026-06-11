@@ -202,6 +202,12 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .project-action-bar strong { font-size: 11px; }
 .project-action-bar span { color: var(--muted); font-size: 9px; line-height: 1.5; }
 .project-action-buttons { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.project-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.project-summary-item { display: grid; gap: 4px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.project-summary-item.wide { grid-column: span 2; }
+.project-summary-item span { color: var(--muted); font-size: 9px; font-weight: 800; }
+.project-summary-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.compact-field-grid { margin-bottom: 4px; }
 .cutoff-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: -4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
 .cutoff-quick-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .cutoff-quick-actions .button { min-height: 30px; padding: 0 9px; font-size: 10px; }
@@ -222,21 +228,24 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .tranche-card { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
 .tranche-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .tranche-card-head strong { font-size: 11px; }
+.tranche-section { margin-top: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.bid-entry-section { background: linear-gradient(145deg, #fff, var(--panel-soft)); }
 .tranche-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .tranche-grid label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 700; }
 .tranche-grid input, .tranche-grid select { min-height: 34px; padding: 6px 8px; font-size: 11px; }
 .tranche-grid .span-3 { grid-column: span 3; }
 .tranche-subheading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 15px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tranche-subheading.first-subheading { margin-top: 0; padding-top: 0; border-top: 0; }
 .tranche-subheading strong { color: var(--muted); font-size: 10px; }
 .outsourced-list { display: grid; gap: 8px; }
 .outsourced-card { padding: 10px; border: 1px dashed var(--line-strong); border-radius: 7px; background: #fff; }
+.outsourced-card.result-card { border-style: solid; background: var(--panel-soft); }
 .outsourced-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .outsourced-card-head strong { color: var(--accent); font-size: 10px; }
 .empty.compact { padding: 12px; border: 1px dashed var(--line); border-radius: 7px; }
 .compact-checkbox { padding-top: 16px; }
-.result-entry-fields, .outsourced-result-field { display: none !important; }
+.result-entry-fields { display: none !important; }
 .show-result-entry .result-entry-fields { display: block !important; }
-.show-result-entry .outsourced-result-field { display: grid !important; }
 .modal-open { overflow: hidden; }
 .result-entry-panel { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; }
 .result-entry-panel[hidden] { display: none; }
@@ -250,8 +259,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .result-calc-note strong { color: var(--secondary); font-size: 11px; }
 .result-calc-note span { color: var(--muted); font-size: 10px; line-height: 1.7; }
 .result-entry-note { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
-.project-footer-actions { justify-content: space-between; }
-.project-footer-actions span { color: var(--muted); font-size: 10px; }
+.project-footer-actions { justify-content: flex-start; }
 .result-summary { min-height: 100px; padding: 12px; resize: vertical; background: var(--panel-soft); font-size: 11px; line-height: 1.8; }
 .result-summary-output { margin-top: 8px; background: #fff; }
 

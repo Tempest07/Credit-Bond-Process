@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-result-modal";
+} from "./core.js?v=20260611-ledger-compact";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -23,13 +23,13 @@ import {
   suggestProjectCutoff,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-result-modal";
+} from "./lifecycle.js?v=20260611-ledger-compact";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-result-modal";
+} from "./history-parser.js?v=20260611-ledger-compact";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -591,17 +591,15 @@ function fillProjectForm(input) {
   closeResultEntryPanel();
   setResultEntryFieldsVisible(record.resultConfirmed);
   $("#projectId").value = record.id;
-  $("#projectShortName").value = record.shortName;
   $("#projectStatus").value = record.status;
-  $("#projectIssuerName").value = record.issuerName;
-  $("#projectBranch").value = record.branch;
-  $("#projectVenue").value = record.venue;
-  $("#projectLeadUnderwriter").value = record.leadUnderwriter;
-  $("#projectSponsorStatus").value = record.sponsorStatus;
+  $("#projectSummaryIssuer").textContent = record.issuerName || "主体待补";
+  $("#projectSummaryBranch").textContent = record.branch || "分行待补";
+  $("#projectSummaryVenue").textContent = record.venue || "场所待补";
+  $("#projectSummarySponsor").textContent = record.sponsorStatus || "身份待补";
+  $("#projectSummaryLead").textContent = record.leadUnderwriter || "主承待补";
   $("#projectCutoffAt").value = record.cutoffAt;
   $("#projectCutoffTimeConfirmed").checked = record.cutoffTimeConfirmed;
   $("#projectCutoffSource").value = record.cutoffSource;
-  $("#projectNotes").value = record.notes;
   $("#projectSourceText").value = record.sourceText;
   $("#projectOpinion").value = record.opinion;
   $("#projectResultAdvertisement").value = record.resultAdvertisement;
@@ -632,79 +630,95 @@ function renderTranches(tranches) {
         <strong>品种 ${index + 1}</strong>
         <button class="text-button" type="button" data-remove-tranche="${index}" ${tranches.length <= 1 ? "hidden" : ""}>移除品种</button>
       </div>
-      <div class="tranche-grid">
-        <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
-        <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
-        <label>建议比例上限（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
-        <label>询价下限（%）<input data-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
-        <label>询价上限（%）<input data-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
-        <label>投标利率（%）<input data-tranche-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(tranche.bidRate ?? "")}"></label>
-        <label>投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
-      </div>
-
-      <div class="result-entry-fields">
-      <div class="tranche-subheading"><strong>表内中标结果</strong></div>
-      <div class="tranche-grid">
-        <label>截标结果
-          <select data-tranche-field="resultStatus">
-            <option ${tranche.resultStatus === "待出结果" ? "selected" : ""}>待出结果</option>
-            <option ${tranche.resultStatus === "中标" ? "selected" : ""}>中标</option>
-            <option ${tranche.resultStatus === "未中标" ? "selected" : ""}>未中标</option>
-          </select>
-        </label>
-        <label>票面 / 中标利率（%）<input data-tranche-field="winningRate" type="number" step="0.0001" value="${escapeAttribute(tranche.winningRate ?? "")}"></label>
-        <label>表内中标量（万元）<input data-tranche-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(tranche.winningAmountWan ?? "")}"></label>
-        <label>综合定价
-          <select data-tranche-field="pricingMode">
-            <option ${tranche.pricingMode === "未综" ? "selected" : ""}>未综</option>
-            <option ${tranche.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
-          </select>
-        </label>
-        <label>综合定价至（%）<input data-tranche-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(tranche.pricingRate ?? "")}"></label>
-        <label>营收（BP）<input data-tranche-field="revenueBp" type="number" step="0.0001" value="${escapeAttribute(tranche.revenueBp ?? "")}"></label>
-      </div>
-      </div>
-
-      <div class="tranche-subheading">
-        <strong>委外投标与中标</strong>
-        <button class="text-button" type="button" data-add-outsourced="${index}">增加委外标位</button>
-      </div>
-      <div class="outsourced-list">
-        ${(tranche.outsourcedBids || []).map((outsourced, outsourcedIndex) => `
-          <div class="outsourced-card" data-outsourced-index="${outsourcedIndex}">
-            <div class="outsourced-card-head">
-              <strong>委外 ${outsourcedIndex + 1}</strong>
-              <button class="text-button" type="button" data-remove-outsourced="${index}:${outsourcedIndex}">移除</button>
+      <div class="tranche-section bid-entry-section">
+        <div class="tranche-subheading first-subheading">
+          <strong>投标标位</strong>
+          <button class="text-button" type="button" data-add-outsourced="${index}">增加委外标位</button>
+        </div>
+        <div class="tranche-grid">
+          <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
+          <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
+          <label>建议比例上限（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
+          <label>询价下限（%）<input data-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
+          <label>询价上限（%）<input data-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
+          <label>表内投标利率（%）<input data-tranche-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(tranche.bidRate ?? "")}"></label>
+          <label>表内投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
+        </div>
+        <div class="outsourced-list">
+          ${(tranche.outsourcedBids || []).map((outsourced, outsourcedIndex) => `
+            <div class="outsourced-card" data-outsourced-index="${outsourcedIndex}">
+              <div class="outsourced-card-head">
+                <strong>委外标位 ${outsourcedIndex + 1}</strong>
+                <button class="text-button" type="button" data-remove-outsourced="${index}:${outsourcedIndex}">移除</button>
+              </div>
+              <div class="tranche-grid">
+                <label>委外机构<input data-outsourced-field="managerName" value="${escapeAttribute(outsourced.managerName)}"></label>
+                <label>投标利率（%）<input data-outsourced-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidRate ?? "")}"></label>
+                <label>投标量（亿元）<input data-outsourced-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidAmount ?? "")}"></label>
+              </div>
             </div>
-            <div class="tranche-grid">
-              <label>委外机构<input data-outsourced-field="managerName" value="${escapeAttribute(outsourced.managerName)}"></label>
-              <label>投标利率（%）<input data-outsourced-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidRate ?? "")}"></label>
-              <label>投标量（亿元）<input data-outsourced-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidAmount ?? "")}"></label>
-              <label class="outsourced-result-field">中标量（万元）<input data-outsourced-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(outsourced.winningAmountWan ?? "")}"></label>
-              <label class="outsourced-result-field">综合定价
-                <select data-outsourced-field="pricingMode">
-                  <option ${outsourced.pricingMode === "未综" ? "selected" : ""}>未综</option>
-                  <option ${outsourced.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
-                </select>
-              </label>
-              <label class="outsourced-result-field">综合定价至（%）<input data-outsourced-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.pricingRate ?? "")}"></label>
-            </div>
-          </div>
-        `).join("") || '<div class="empty compact">暂无委外标位。</div>'}
+          `).join("") || '<div class="empty compact">暂无委外标位。</div>'}
+        </div>
       </div>
 
-      <div class="result-entry-fields">
-      <div class="tranche-subheading"><strong>发行结果与缴款</strong></div>
-      <div class="tranche-grid">
-        <label>债券代码<input data-tranche-field="securityCode" value="${escapeAttribute(tranche.securityCode)}"></label>
-        <label>发行规模（亿元）<input data-tranche-field="issueScale" type="number" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}"></label>
-        <label>全场倍数<input data-tranche-field="fullMarketMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.fullMarketMultiple ?? "")}"></label>
-        <label>边际倍数<input data-tranche-field="marginalMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.marginalMultiple ?? "")}"></label>
-        <label>起息日期<input data-tranche-field="startDate" type="date" value="${escapeAttribute(tranche.startDate)}"></label>
-        <label>缴款日期<input data-tranche-field="paymentDate" type="date" value="${escapeAttribute(tranche.paymentDate)}"></label>
-        <label class="span-3">回拨 / 结果备注<input data-tranche-field="allocationNote" value="${escapeAttribute(tranche.allocationNote)}"></label>
-        <label class="checkbox-label compact-checkbox"><input data-tranche-field="paymentCompleted" type="checkbox" ${tranche.paymentCompleted ? "checked" : ""}>已完成缴款</label>
+      <div class="result-entry-fields tranche-section">
+        <div class="tranche-subheading first-subheading"><strong>表内中标结果</strong></div>
+        <div class="tranche-grid">
+          <label>截标结果
+            <select data-tranche-field="resultStatus">
+              <option ${tranche.resultStatus === "待出结果" ? "selected" : ""}>待出结果</option>
+              <option ${tranche.resultStatus === "中标" ? "selected" : ""}>中标</option>
+              <option ${tranche.resultStatus === "未中标" ? "selected" : ""}>未中标</option>
+            </select>
+          </label>
+          <label>票面 / 中标利率（%）<input data-tranche-field="winningRate" type="number" step="0.0001" value="${escapeAttribute(tranche.winningRate ?? "")}"></label>
+          <label>表内中标量（万元）<input data-tranche-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(tranche.winningAmountWan ?? "")}"></label>
+          <label>综合定价
+            <select data-tranche-field="pricingMode">
+              <option ${tranche.pricingMode === "未综" ? "selected" : ""}>未综</option>
+              <option ${tranche.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
+            </select>
+          </label>
+          <label>综合定价至（%）<input data-tranche-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(tranche.pricingRate ?? "")}"></label>
+          <label>营收（BP）<input data-tranche-field="revenueBp" type="number" step="0.0001" value="${escapeAttribute(tranche.revenueBp ?? "")}"></label>
+        </div>
       </div>
+
+      <div class="result-entry-fields tranche-section">
+        <div class="tranche-subheading first-subheading"><strong>委外中标结果</strong></div>
+        <div class="outsourced-list">
+          ${(tranche.outsourcedBids || []).map((outsourced, outsourcedIndex) => `
+            <div class="outsourced-card result-card" data-outsourced-result-index="${outsourcedIndex}">
+              <div class="outsourced-card-head">
+                <strong>${escapeHtml(outsourced.managerName || `委外 ${outsourcedIndex + 1}`)}</strong>
+              </div>
+              <div class="tranche-grid">
+                <label>中标量（万元）<input data-outsourced-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(outsourced.winningAmountWan ?? "")}"></label>
+                <label>综合定价
+                  <select data-outsourced-field="pricingMode">
+                    <option ${outsourced.pricingMode === "未综" ? "selected" : ""}>未综</option>
+                    <option ${outsourced.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
+                  </select>
+                </label>
+                <label>综合定价至（%）<input data-outsourced-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.pricingRate ?? "")}"></label>
+              </div>
+            </div>
+          `).join("") || '<div class="empty compact">暂无委外中标结果。</div>'}
+        </div>
+      </div>
+
+      <div class="result-entry-fields tranche-section">
+        <div class="tranche-subheading first-subheading"><strong>发行结果与缴款</strong></div>
+        <div class="tranche-grid">
+          <label>债券代码<input data-tranche-field="securityCode" value="${escapeAttribute(tranche.securityCode)}"></label>
+          <label>发行规模（亿元）<input data-tranche-field="issueScale" type="number" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}"></label>
+          <label>全场倍数<input data-tranche-field="fullMarketMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.fullMarketMultiple ?? "")}"></label>
+          <label>边际倍数<input data-tranche-field="marginalMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.marginalMultiple ?? "")}"></label>
+          <label>起息日期<input data-tranche-field="startDate" type="date" value="${escapeAttribute(tranche.startDate)}"></label>
+          <label>缴款日期<input data-tranche-field="paymentDate" type="date" value="${escapeAttribute(tranche.paymentDate)}"></label>
+          <label class="span-3">回拨 / 结果备注<input data-tranche-field="allocationNote" value="${escapeAttribute(tranche.allocationNote)}"></label>
+          <label class="checkbox-label compact-checkbox"><input data-tranche-field="paymentCompleted" type="checkbox" ${tranche.paymentCompleted ? "checked" : ""}>已完成缴款</label>
+        </div>
       </div>
     </section>
   `).join("");
@@ -762,7 +776,12 @@ function readProjectForm() {
       outsourcedCard.querySelectorAll("[data-outsourced-field]").forEach((input) => {
         outsourced[input.dataset.outsourcedField] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
       });
-      outsourced.id = existing.tranches?.[trancheIndex]?.outsourcedBids?.[Number(outsourcedCard.dataset.outsourcedIndex)]?.id;
+      const outsourcedIndex = Number(outsourcedCard.dataset.outsourcedIndex);
+      const resultCard = card.querySelector(`[data-outsourced-result-index="${outsourcedIndex}"]`);
+      resultCard?.querySelectorAll("[data-outsourced-field]").forEach((input) => {
+        outsourced[input.dataset.outsourcedField] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+      });
+      outsourced.id = existing.tranches?.[trancheIndex]?.outsourcedBids?.[outsourcedIndex]?.id;
       return outsourced;
     });
     return values;
@@ -770,17 +789,17 @@ function readProjectForm() {
   return normalizeProjectRecord({
     ...existing,
     id: $("#projectId").value,
-    shortName: $("#projectShortName").value,
+    shortName: existing.shortName,
     status: $("#projectStatus").value,
-    issuerName: $("#projectIssuerName").value,
-    branch: $("#projectBranch").value,
-    venue: $("#projectVenue").value,
-    leadUnderwriter: $("#projectLeadUnderwriter").value,
-    sponsorStatus: $("#projectSponsorStatus").value,
+    issuerName: existing.issuerName,
+    branch: existing.branch,
+    venue: existing.venue,
+    leadUnderwriter: existing.leadUnderwriter,
+    sponsorStatus: existing.sponsorStatus,
     cutoffAt: $("#projectCutoffAt").value,
     cutoffTimeConfirmed: $("#projectCutoffTimeConfirmed").checked,
     cutoffSource: $("#projectCutoffSource").value,
-    notes: $("#projectNotes").value,
+    notes: existing.notes,
     sourceText: $("#projectSourceText").value,
     opinion: $("#projectOpinion").value,
     resultAdvertisement: $("#projectResultAdvertisement").value,
