@@ -283,10 +283,8 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
   };
   if (!next.issuerName && parsed.issuerName) next.issuerName = parsed.issuerName;
   next.tranches = next.tranches.map((tranche, index) => {
-    const match = parsed.items.find((item) => item.shortName === tranche.shortName)
-      || parsed.items[index]
-      || {};
-    return applyAutoAward(normalizeTranche({
+    const match = findAdvertisementMatch(next.tranches, tranche, index, parsed.items);
+    const awarded = applyAutoAward(normalizeTranche({
       ...tranche,
       securityCode: match.securityCode || tranche.securityCode,
       durationText: match.durationText || tranche.durationText,
@@ -298,6 +296,10 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
       startDate: match.startDate || tranche.startDate,
       allocationNote: match.allocationNote || tranche.allocationNote,
     }), next);
+    if (!awarded.paymentDate && isWinningTranche(awarded)) {
+      awarded.paymentDate = inferDefaultPaymentDate(next, referenceDate);
+    }
+    return awarded;
   });
   return next;
 }
@@ -476,6 +478,32 @@ function hasAnyBidLevelValue(level = {}) {
   return Number.isFinite(numberOrNull(level.bidRate)) || Number.isFinite(numberOrNull(level.bidAmount));
 }
 
+function findAdvertisementMatch(tranches, tranche, index, items = []) {
+  const exact = items.find((item) => item.shortName && item.shortName === tranche.shortName);
+  if (exact) return exact;
+
+  const single = items.length === 1 ? items[0] : null;
+  if (single) {
+    const shortNameMatches = !single.shortName || single.shortName === stripVarietySuffix(tranche.shortName);
+    const singleDuration = durationMatchKey(single.durationText);
+    if (singleDuration) {
+      if (shortNameMatches && singleDuration === durationMatchKey(tranche.durationText)) return single;
+      if (tranches.length > 1 && shortNameMatches) return {};
+    }
+    if (tranches.length === 1 && shortNameMatches) return single;
+  }
+
+  return items[index] || {};
+}
+
+function stripVarietySuffix(shortName) {
+  return String(shortName || "").trim().replace(/((?:SCP|CP|MTN|PPN)\d{3})[A-Z]$/i, "$1");
+}
+
+function durationMatchKey(value) {
+  return String(value || "").replace(/\s+/g, "").replace(/期$/, "").toUpperCase();
+}
+
 function parseAdvertisementBlock(block, headerText, referenceDate) {
   const headerParts = headerText.trim().split(/\s+/);
   const labeledShortName = block.match(/简称(?:代码)?[：:\s]*([^\s（(，,]+)/)?.[1] || "";
@@ -487,9 +515,11 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     || "";
   const issueScale = numberFrom(block, /(?:发行)?规模[：:，,\s]*(\d+(?:\.\d+)?)\s*亿/)
     ?? numberFrom(block, /(?:^|[，,\s])(\d+(?:\.\d+)?)\s*亿(?:元)?(?=[，,\s]|$)/);
-  const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
+  const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/)
+    ?? numberFrom(block, /全场[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
-  const couponRate = numberFrom(block, /(?:票面利率|票面)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
+  const couponRate = numberFrom(block, /(?:票面利率|票面)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
+    ?? numberFrom(block, /(?:边际利率|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
   const durationText = block.match(/(?:债券)?期限[：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:规模|发行规模|票面|全场倍数|缴款|$))/)?.[1]?.trim()
     || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
     || "";
@@ -640,6 +670,23 @@ function inferPaymentDate(day, month, referenceDate) {
   }
   if (month && month < reference.getMonth() + 1) year += 1;
   return `${year}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function inferDefaultPaymentDate(project, referenceDate) {
+  const base = new Date(project.cutoffAt || referenceDate);
+  if (Number.isNaN(base.getTime())) return "";
+  const days = EXCHANGE_VENUES.has(project.venue) ? 2 : 1;
+  return localDate(addBusinessDays(base, days));
+}
+
+function addBusinessDays(value, days) {
+  const date = new Date(value);
+  let remaining = days;
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    if (![0, 6].includes(date.getDay())) remaining -= 1;
+  }
+  return date;
 }
 
 function parseExplicitCutoff(text, referenceDate, defaultTime) {

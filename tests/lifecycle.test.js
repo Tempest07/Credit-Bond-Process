@@ -329,6 +329,14 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(notice.items[0].durationText, "270天");
   assert.equal(notice.items[0].couponRate, 1.43);
   assert.equal(notice.items[0].paymentDate, "2026-06-12");
+
+  const terse = parseIssuanceAdvertisement("【发行结果】26越秀交通MTN003，12亿，5年，边际1.76%，边际1.05倍，全场1.75倍，感谢支持！", new Date("2026-06-11T09:00:00"));
+  assert.equal(terse.items[0].shortName, "26越秀交通MTN003");
+  assert.equal(terse.items[0].issueScale, 12);
+  assert.equal(terse.items[0].durationText, "5年");
+  assert.equal(terse.items[0].couponRate, 1.76);
+  assert.equal(terse.items[0].marginalMultiple, 1.05);
+  assert.equal(terse.items[0].fullMarketMultiple, 1.75);
 });
 
 test("applies advertisements and builds own and outsourced award report", () => {
@@ -413,6 +421,40 @@ test("sums multiple own bid levels when auto-calculating winning amounts", () =>
   assert.equal(project.tranches[0].winningAmountWan, 14000);
   assert.equal(project.tranches[0].resultStatus, "中标");
   assert.equal(project.tranches[0].revenueBp, 81.59);
+});
+
+test("maps single base-name result to dual-tranche duration and infers payment date", () => {
+  const ad = "【发行结果】26越秀交通MTN003，12亿，5年，边际1.76%，边际1.05倍，全场1.75倍，感谢支持！";
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26越秀交通MTN003A/B",
+    venue: "银行间",
+    cutoffAt: "2026-06-11T18:00",
+    ftpCost: 172,
+    tranches: [
+      { shortName: "26越秀交通MTN003A", durationText: "2年", bidRate: 1.6, bidAmount: 1 },
+      {
+        shortName: "26越秀交通MTN003B",
+        durationText: "5年",
+        bidRate: 1.76,
+        bidAmount: 1.6,
+        pricingMode: "综合定价",
+        pricingRate: 1.85,
+      },
+    ],
+  }), ad, new Date("2026-06-11T09:00:00"));
+
+  assert.equal(project.tranches[0].winningAmountWan, null);
+  assert.equal(project.tranches[0].paymentDate, "");
+  assert.equal(project.tranches[1].winningRate, 1.76);
+  assert.equal(project.tranches[1].marginalMultiple, 1.05);
+  assert.equal(project.tranches[1].winningAmountWan, 15238.1);
+  assert.equal(project.tranches[1].paymentDate, "2026-06-12");
+  assert.equal(project.tranches[1].revenueBp, -7.16);
+  assert.equal(deriveProjectStatus({ ...project, resultConfirmed: true }, new Date("2026-06-11T09:00:00")), "待缴款");
+  assert.equal(
+    buildAwardResultText(project),
+    `${ad}\n\n表内中标1.5238亿，综合定价至1.85%，营收-7.16BP`,
+  );
 });
 
 test("uses FTP curve to calculate revenue from tranche duration", () => {
