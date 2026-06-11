@@ -119,6 +119,15 @@ test("derives bidding, award and payment statuses from tranche records", () => {
     winningAmountWan: 3000,
     paymentDate: "2026-06-12",
   }, new Date("2026-06-11T09:00:00")), true);
+  const migratedWinning = normalizeProjectRecord({
+    shortName: "26测试MTN001",
+    venue: "银行间",
+    cutoffAt: "2026-06-11T18:00",
+    resultConfirmed: true,
+    tranches: [{ shortName: "26测试MTN001", resultStatus: "中标", winningAmountWan: 3000 }],
+  });
+  assert.equal(migratedWinning.tranches[0].paymentDate, "2026-06-12");
+  assert.equal(deriveProjectStatus(migratedWinning, new Date("2026-06-11T09:00:00")), "待缴款");
   assert.equal(deriveProjectStatus({
     ...base,
     resultConfirmed: true,

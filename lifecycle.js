@@ -70,7 +70,7 @@ export function normalizeProjectRecord(input = {}) {
   const status = PROJECT_STATUSES.has(migratedStatus) ? migratedStatus : "未投标";
   const afterTaxRevenue = numberOrNull(input.afterTaxRevenue);
   const ftpCost = numberOrNull(input.ftpCost);
-  return {
+  const normalized = {
     id: input.id || crypto.randomUUID(),
     status,
     shortName: String(input.shortName || "").trim(),
@@ -102,6 +102,7 @@ export function normalizeProjectRecord(input = {}) {
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
+  return fillMissingDefaultPaymentDates(normalized);
 }
 
 export function upsertProject(state, input) {
@@ -192,6 +193,19 @@ function isWinningTranche(tranche = {}) {
   return tranche.resultStatus === "中标"
     || positiveNumber(tranche.winningAmountWan)
     || tranche.outsourcedBids?.some((bid) => positiveNumber(bid.winningAmountWan));
+}
+
+function fillMissingDefaultPaymentDates(project) {
+  if (!project.cutoffAt) return project;
+  const paymentDate = inferDefaultPaymentDate(project, project.cutoffAt);
+  if (!paymentDate) return project;
+  let changed = false;
+  const tranches = project.tranches.map((tranche) => {
+    if (!isWinningTranche(tranche) || tranche.paymentDate || tranche.paymentCompleted) return tranche;
+    changed = true;
+    return { ...tranche, paymentDate };
+  });
+  return changed ? { ...project, tranches } : project;
 }
 
 export function suggestProjectCutoff(project = {}, issuer = null, referenceDate = new Date()) {
