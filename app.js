@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-inquiry-summary";
+} from "./core.js?v=20260611-todo-grid";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -23,13 +23,13 @@ import {
   suggestProjectCutoff,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-inquiry-summary";
+} from "./lifecycle.js?v=20260611-todo-grid";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-inquiry-summary";
+} from "./history-parser.js?v=20260611-todo-grid";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";

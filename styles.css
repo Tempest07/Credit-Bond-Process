@@ -161,13 +161,15 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .ledger-filter-details[open] summary { margin: 0 -10px; padding-right: 22px; padding-left: 22px; border-bottom: 1px solid var(--line); }
 .dashboard-more .dashboard-card { padding: 10px; box-shadow: none; }
 .dashboard-more .dashboard-card strong { font-size: 18px; }
-.payment-todo-panel { margin-bottom: 16px; padding: 14px; border: 1px solid color-mix(in srgb, var(--secondary) 25%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f5feff, #fff); box-shadow: var(--shadow); }
-.cutoff-todo-panel { margin-bottom: 10px; padding: 14px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f7f6ff, #fff); box-shadow: var(--shadow); }
+.ledger-todo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: stretch; margin-bottom: 16px; }
+.payment-todo-panel { min-height: 220px; margin-bottom: 0; padding: 14px; border: 1px solid color-mix(in srgb, var(--secondary) 25%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f5feff, #fff); box-shadow: var(--shadow); }
+.cutoff-todo-panel { min-height: 220px; margin-bottom: 0; padding: 14px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f7f6ff, #fff); box-shadow: var(--shadow); }
 .cutoff-todo-panel.empty-state, .payment-todo-panel.empty-state { padding-bottom: 10px; background: rgba(255,255,255,.65); box-shadow: none; }
 .payment-todo-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .payment-todo-head > div { display: flex; align-items: center; gap: 8px; }
 .payment-todo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .cutoff-todo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ledger-todo-grid .payment-todo-list, .ledger-todo-grid .cutoff-todo-list { grid-template-columns: 1fr; align-content: start; }
 .payment-todo-item { display: flex; align-items: center; gap: 8px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .cutoff-todo-item { display: grid; gap: 7px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .cutoff-todo-item.unconfirmed { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); background: var(--warning-soft); }
@@ -274,6 +276,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 
 @media (max-width: 1120px) {
   .generator-grid, .database-grid, .batch-card-grid, .ledger-grid { grid-template-columns: 1fr; }
+  .ledger-todo-grid { grid-template-columns: 1fr; }
+  .ledger-todo-grid .payment-todo-list, .ledger-todo-grid .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .payment-todo-list, .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -301,6 +305,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .review-grid .full, .batch-issuer-grid .full { grid-column: span 1; }
   .result-actions { align-items: flex-end; flex-direction: column; }
   .project-action-bar { align-items: flex-start; flex-direction: column; }
+  .ledger-todo-grid .payment-todo-list, .ledger-todo-grid .cutoff-todo-list { grid-template-columns: 1fr; }
   .project-action-buttons, .payment-todo-list, .cutoff-todo-list { width: 100%; grid-template-columns: 1fr; justify-content: flex-start; }
   .cutoff-confirm { margin-left: 0; }
 }

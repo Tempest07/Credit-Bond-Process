@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-inquiry-summary">
+  <link rel="stylesheet" href="./styles.css?v=20260611-todo-grid">
 </head>
 <body>
   <div class="app-shell">
@@ -170,21 +170,23 @@
           </div>
         </details>
 
-        <section class="cutoff-todo-panel" id="cutoffTodoPanel">
-          <div class="payment-todo-head">
-            <div><span class="step">TIME</span><h2>截标待办</h2></div>
-            <span class="pill" id="cutoffTodoCount">暂无待办</span>
-          </div>
-          <div class="cutoff-todo-list" id="cutoffTodoList"></div>
-        </section>
+        <div class="ledger-todo-grid">
+          <section class="cutoff-todo-panel" id="cutoffTodoPanel">
+            <div class="payment-todo-head">
+              <div><span class="step">TIME</span><h2>截标待办</h2></div>
+              <span class="pill" id="cutoffTodoCount">暂无待办</span>
+            </div>
+            <div class="cutoff-todo-list" id="cutoffTodoList"></div>
+          </section>
 
-        <section class="payment-todo-panel" id="paymentTodoPanel">
-          <div class="payment-todo-head">
-            <div><span class="step">TODO</span><h2>缴款待办</h2></div>
-            <span class="pill" id="paymentTodoCount">暂无待办</span>
-          </div>
-          <div class="payment-todo-list" id="paymentTodoList"></div>
-        </section>
+          <section class="payment-todo-panel" id="paymentTodoPanel">
+            <div class="payment-todo-head">
+              <div><span class="step">TODO</span><h2>缴款待办</h2></div>
+              <span class="pill" id="paymentTodoCount">暂无待办</span>
+            </div>
+            <div class="payment-todo-list" id="paymentTodoList"></div>
+          </section>
+        </div>
 
         <div class="ledger-grid">
           <section class="panel project-list-panel">
@@ -434,6 +436,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-inquiry-summary"></script>
+  <script type="module" src="./app.js?v=20260611-todo-grid"></script>
 </body>
 </html>
