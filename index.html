@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-project-center">
+  <link rel="stylesheet" href="./styles.css?v=20260611-quick-outputs">
 </head>
 <body>
   <div class="app-shell">
@@ -219,6 +219,26 @@
                 <label class="span-2">项目备注<textarea id="projectNotes" rows="2"></textarea></label>
               </div>
 
+              <div class="section-heading quick-output-heading">
+                <div><span class="step">OUTPUT</span><h3>快捷输出</h3></div>
+              </div>
+              <div class="quick-output-grid">
+                <section class="quick-output-card">
+                  <div class="quick-output-card-head">
+                    <strong>自动生成标位</strong>
+                    <button class="button subtle" id="copyBidPositionButton" type="button">复制全部标位</button>
+                  </div>
+                  <textarea id="projectBidPosition" class="result-summary" rows="6" readonly></textarea>
+                </section>
+                <section class="quick-output-card">
+                  <div class="quick-output-card-head">
+                    <strong>中标结果分析</strong>
+                    <button class="button subtle" id="copyResultSummaryButton" type="button">复制中标汇报</button>
+                  </div>
+                  <textarea id="projectResultSummary" class="result-summary result-summary-output" rows="6" readonly></textarea>
+                </section>
+              </div>
+
               <div class="section-heading">
                 <div><span class="step">FLOW</span><h3>项目简表与流程意见</h3></div>
                 <button class="button subtle" id="editProjectOpinionButton" type="button">返回流程意见撰写</button>
@@ -235,20 +255,10 @@
               <div class="tranche-list" id="trancheList"></div>
 
               <div class="section-heading">
-                <div><span class="step">POSITION</span><h3>自动生成标位</h3></div>
-                <button class="button subtle" id="copyBidPositionButton" type="button">复制全部标位</button>
-              </div>
-              <textarea id="projectBidPosition" class="result-summary" rows="5" readonly></textarea>
-
-              <div class="section-heading">
-                <div><span class="step">RESULT</span><h3>发行结果广告与中标汇报</h3></div>
-                <div class="result-actions">
-                  <button class="button subtle" id="parseAdvertisementButton" type="button">解析发行结果</button>
-                  <button class="button subtle" id="copyResultSummaryButton" type="button">复制中标汇报</button>
-                </div>
+                <div><span class="step">RESULT</span><h3>发行结果广告录入</h3></div>
+                <button class="button subtle" id="parseAdvertisementButton" type="button">解析发行结果</button>
               </div>
               <textarea id="projectResultAdvertisement" class="result-summary" rows="8" placeholder="粘贴主承发送的簿记结果或发行结果广告"></textarea>
-              <textarea id="projectResultSummary" class="result-summary result-summary-output" rows="8" readonly></textarea>
 
               <div class="form-actions">
                 <button class="button danger" id="deleteProjectButton" type="button">删除项目</button>
@@ -368,6 +378,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-project-center"></script>
+  <script type="module" src="./app.js?v=20260611-quick-outputs"></script>
 </body>
 </html>

@@ -165,6 +165,12 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 12px; }
 .section-heading > div { display: flex; align-items: center; gap: 8px; }
 .section-heading h3 { margin: 0; }
+.quick-output-heading { margin-top: 18px; }
+.quick-output-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.quick-output-card { min-width: 0; padding: 11px; border: 1px solid #c8ded2; border-radius: 8px; background: var(--accent-soft); }
+.quick-output-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.quick-output-card-head strong { color: var(--accent); font-size: 11px; }
+.quick-output-card .result-summary { min-height: 122px; background: #fff; }
 .tranche-list { display: grid; gap: 10px; }
 .tranche-card { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
 .tranche-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -197,7 +203,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .generator-grid, .database-grid, .batch-card-grid, .ledger-grid { grid-template-columns: 1fr; }
   .dashboard-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .review-grid, .batch-issuer-grid, .tranche-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tranche-grid .span-3 { grid-column: span 2; }
 }
 
@@ -211,7 +217,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .top-actions { flex-wrap: wrap; justify-content: flex-end; }
   .view { padding: 14px; }
   .field-grid, .rules-grid { grid-template-columns: 1fr; }
-  .review-grid, .batch-issuer-grid, .tranche-grid { grid-template-columns: 1fr; }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .quick-output-grid { grid-template-columns: 1fr; }
   .tranche-grid .span-3 { grid-column: span 1; }
   .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-list-tools { grid-template-columns: 1fr; }
