@@ -27,7 +27,7 @@ test("creates a project ledger record with one tranche per bond variety", () => 
     sourceText: "source",
   }, { id: "issuer-1", legalName: "广州越秀集团股份有限公司" }, { opinion: "流程意见" });
 
-  assert.equal(record.status, "待投标");
+  assert.equal(record.status, "未投标");
   assert.equal(record.tranches.length, 2);
   assert.deepEqual(record.tranches.map((item) => item.shortName), ["26广越05", "26广越06"]);
   assert.deepEqual(record.tranches.map((item) => item.durationText), ["3年", "5年"]);
@@ -39,25 +39,31 @@ test("derives bidding, award and payment statuses from tranche records", () => {
     shortName: "26测试MTN001A/B",
     tranches: [{ shortName: "A", bidRate: 1.8, bidAmount: 1 }, { shortName: "B", bidRate: 2, bidAmount: 1 }],
   });
-  assert.equal(deriveProjectStatus(base), "已投标待结果");
+  assert.equal(deriveProjectStatus(base), "未投标");
+  assert.equal(deriveProjectStatus({ ...base, status: "已投标待结果" }), "已投标待结果");
   assert.equal(deriveProjectStatus({
     ...base,
+    resultConfirmed: true,
     tranches: [{ ...base.tranches[0], resultStatus: "中标" }, { ...base.tranches[1], resultStatus: "未中标" }],
   }), "部分中标");
   assert.equal(deriveProjectStatus({
     ...base,
+    resultConfirmed: true,
     tranches: base.tranches.map((item) => ({ ...item, resultStatus: "未中标" })),
   }), "未中标");
   assert.equal(deriveProjectStatus({
     ...base,
+    resultConfirmed: true,
     tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12" }],
   }), "待缴款");
   assert.equal(deriveProjectStatus({
     ...base,
+    resultConfirmed: true,
     tranches: [{ ...base.tranches[0], resultStatus: "中标", paymentDate: "2026-06-12", paymentCompleted: true }],
   }), "已缴款");
   assert.equal(deriveProjectStatus(normalizeProjectRecord({
     shortName: "委外中标项目",
+    resultConfirmed: true,
     tranches: [{
       shortName: "委外中标项目",
       resultStatus: "未中标",
@@ -70,7 +76,7 @@ test("derives bidding, award and payment statuses from tranche records", () => {
 test("calculates dashboard counts including payment reminders", () => {
   const today = new Date("2026-06-10T09:00:00");
   const projects = [
-    normalizeProjectRecord({ shortName: "A", status: "待投标", cutoffAt: "2026-06-10T15:00" }),
+    normalizeProjectRecord({ shortName: "A", status: "未投标", cutoffAt: "2026-06-10T15:00" }),
     normalizeProjectRecord({ shortName: "B", status: "已投标待结果" }),
     normalizeProjectRecord({ shortName: "C", status: "待缴款", tranches: [{ shortName: "C", paymentDate: "2026-06-10" }] }),
     normalizeProjectRecord({ shortName: "D", status: "已缴款" }),
@@ -164,6 +170,30 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(currentMonth.durationText, "179天");
   assert.equal(currentMonth.paymentDate, "2026-06-11");
   assert.equal(nextMonth.paymentDate, "2026-07-11");
+
+  const detailedAd = `珠海正方集团有限公司2026年度第一期中期票据
+......................................
+简称代码：26珠海正方MTN001（102682132.IB）
+主体/债项评级：AA+/-
+债券期限：3年
+发行规模：6.2亿元
+票面利率：2.27%
+全场倍数：1.50倍
+......................................
+起息日期：2026-06-11
+缴款日期：2026-06-11
+......................................
+感谢大家的支持！`;
+  const detailed = parseIssuanceAdvertisement(detailedAd, new Date("2026-06-11T09:00:00"));
+  assert.equal(detailed.issuerName, "珠海正方集团有限公司");
+  assert.equal(detailed.items[0].shortName, "26珠海正方MTN001");
+  assert.equal(detailed.items[0].securityCode, "102682132.IB");
+  assert.equal(detailed.items[0].durationText, "3年");
+  assert.equal(detailed.items[0].issueScale, 6.2);
+  assert.equal(detailed.items[0].couponRate, 2.27);
+  assert.equal(detailed.items[0].fullMarketMultiple, 1.5);
+  assert.equal(detailed.items[0].startDate, "2026-06-11");
+  assert.equal(detailed.items[0].paymentDate, "2026-06-11");
 });
 
 test("applies advertisements and builds own and outsourced award report", () => {

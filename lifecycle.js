@@ -1,5 +1,5 @@
 const PROJECT_STATUSES = new Set([
-  "待投标",
+  "未投标",
   "已投标待结果",
   "部分中标",
   "已中标",
@@ -16,7 +16,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
   const tranches = buildTranches(project);
   return normalizeProjectRecord({
     id: input.id || crypto.randomUUID(),
-    status: input.status || "待投标",
+    status: input.status || "未投标",
     shortName: project.shortName,
     issuerId: issuer?.id || "",
     issuerName: issuer?.legalName || "",
@@ -40,7 +40,8 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
 }
 
 export function normalizeProjectRecord(input = {}) {
-  const status = PROJECT_STATUSES.has(input.status) ? input.status : "待投标";
+  const migratedStatus = input.status === "待投标" ? "未投标" : input.status;
+  const status = PROJECT_STATUSES.has(migratedStatus) ? migratedStatus : "未投标";
   const afterTaxRevenue = numberOrNull(input.afterTaxRevenue);
   const ftpCost = numberOrNull(input.ftpCost);
   return {
@@ -61,6 +62,7 @@ export function normalizeProjectRecord(input = {}) {
       ? input.tranches.map(normalizeTranche)
       : [normalizeTranche({ shortName: input.shortName })],
     resultAdvertisement: String(input.resultAdvertisement || "").trim(),
+    resultConfirmed: Boolean(input.resultConfirmed || ["部分中标", "已中标", "未中标", "待缴款", "已缴款"].includes(status)),
     comprehensivePricing: Boolean(input.comprehensivePricing),
     pricingUnit: ["万元", "亿元", "元"].includes(input.pricingUnit) ? input.pricingUnit : "万元",
     afterTaxRevenue,
@@ -92,9 +94,12 @@ export function removeProject(state, id) {
 
 export function deriveProjectStatus(project) {
   const tranches = project.tranches || [];
-  if (!tranches.length) return project.status || "待投标";
+  if (project.status === "已结束") return "已结束";
+  if (!project.resultConfirmed) {
+    return project.status === "已投标待结果" ? "已投标待结果" : "未投标";
+  }
+  if (!tranches.length) return project.status || "已投标待结果";
   const results = tranches.map((tranche) => tranche.resultStatus);
-  const hasBid = tranches.some((tranche) => Number.isFinite(numberOrNull(tranche.bidAmount)) || Number.isFinite(numberOrNull(tranche.bidRate)));
   const notWonCount = results.filter((status) => status === "未中标").length;
   const winningTranches = tranches.filter((tranche) =>
     tranche.resultStatus === "中标"
@@ -105,16 +110,15 @@ export function deriveProjectStatus(project) {
   if (winningTranches.length && notWonCount && winningTranches.length < tranches.length) return "部分中标";
   if (winningTranches.length === tranches.length) return "已中标";
   if (notWonCount && notWonCount === tranches.length) return "未中标";
-  if (hasBid) return "已投标待结果";
-  return project.status === "已结束" ? "已结束" : "待投标";
+  return project.status === "已结束" ? "已结束" : "已投标待结果";
 }
 
 export function dashboardCounts(projects = [], now = new Date()) {
   const date = localDate(now);
   return {
     all: projects.length,
-    dueToday: projects.filter((project) => project.status === "待投标" && project.cutoffAt?.slice(0, 10) === date).length,
-    toBid: projects.filter((project) => project.status === "待投标").length,
+    dueToday: projects.filter((project) => ["未投标", "待投标"].includes(project.status) && project.cutoffAt?.slice(0, 10) === date).length,
+    toBid: projects.filter((project) => ["未投标", "待投标"].includes(project.status)).length,
     awaitingResult: projects.filter((project) => project.status === "已投标待结果").length,
     won: projects.filter((project) => ["部分中标", "已中标", "待缴款", "已缴款"].includes(project.status)).length,
     notWon: projects.filter((project) => project.status === "未中标").length,
@@ -167,6 +171,7 @@ export function buildAwardResultText(project) {
 export function applyIssuanceAdvertisement(project, advertisement, referenceDate = new Date()) {
   const parsed = parseIssuanceAdvertisement(advertisement, referenceDate);
   const next = normalizeProjectRecord({ ...project, resultAdvertisement: advertisement });
+  if (!next.issuerName && parsed.issuerName) next.issuerName = parsed.issuerName;
   next.tranches = next.tranches.map((tranche, index) => {
     const match = parsed.items.find((item) => item.shortName === tranche.shortName)
       || parsed.items[index]
@@ -179,6 +184,7 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
       fullMarketMultiple: match.fullMarketMultiple ?? tranche.fullMarketMultiple,
       winningRate: match.couponRate ?? tranche.winningRate,
       paymentDate: match.paymentDate || tranche.paymentDate,
+      startDate: match.startDate || tranche.startDate,
       allocationNote: match.allocationNote || tranche.allocationNote,
     });
   });
@@ -197,7 +203,7 @@ export function parseIssuanceAdvertisement(text, referenceDate = new Date()) {
   } else if (normalized) {
     items.push(parseAdvertisementBlock(normalized, "", referenceDate));
   }
-  return { items };
+  return { issuerName: parseIssuerName(normalized), items };
 }
 
 function buildTranches(project) {
@@ -238,6 +244,7 @@ function normalizeTranche(input = {}) {
     issueScale: numberOrNull(input.issueScale),
     fullMarketMultiple: numberOrNull(input.fullMarketMultiple),
     paymentDate: String(input.paymentDate || "").trim(),
+    startDate: String(input.startDate || "").trim(),
     allocationNote: String(input.allocationNote || "").trim(),
     paymentCompleted: Boolean(input.paymentCompleted),
   };
@@ -276,17 +283,17 @@ function formatBidLine(project, tranche, participation, dual) {
 
 function parseAdvertisementBlock(block, headerText, referenceDate) {
   const headerParts = headerText.trim().split(/\s+/);
+  const labeledShortName = block.match(/简称(?:代码)?[：:\s]*([^\s（(，,]+)/)?.[1] || "";
   const bodyShortName = block.match(/(?:【发行结果】\s*)?([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1] || "";
-  const shortName = headerParts.find((part) => /^\d{2}\S+/.test(part)) || bodyShortName;
-  const securityCode = headerParts.find((part) => /^\d{6}(?:\.[A-Z]{2})?$/.test(part))
-    || block.match(/代码[：:]\s*([0-9.A-Z]+)/i)?.[1]
+  const shortName = headerParts.find((part) => /^\d{2}\S+/.test(part)) || labeledShortName || bodyShortName;
+  const securityCode = headerParts.find((part) => /^\d{6,9}(?:\.[A-Z]{2})?$/.test(part))
+    || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
+    || block.match(/代码[：:]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || "";
   const issueScale = numberFrom(block, /(?:发行)?规模[：:，,\s]*(\d+(?:\.\d+)?)\s*亿/);
   const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const couponRate = numberFrom(block, /(?:票面利率|票面)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
   const durationText = block.match(/(?:债券)?期限[：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:规模|发行规模|票面|全场倍数|缴款|$))/)?.[1]?.trim() || "";
-  const paymentMatch = block.match(/缴款(?:日期)?[：:，,\s]*(?:(\d{1,2})月)?(\d{1,2})日/)
-    || block.match(/(?:(\d{1,2})月)?(\d{1,2})日缴款/);
   const allocationNote = block.includes("全部回拨") ? block.match(/全部回拨至[^\n，,]*/)?.[0] || "全部回拨" : "";
   return {
     shortName,
@@ -295,9 +302,25 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     fullMarketMultiple,
     couponRate,
     durationText,
-    paymentDate: paymentMatch ? inferPaymentDate(Number(paymentMatch[2]), paymentMatch[1] ? Number(paymentMatch[1]) : null, referenceDate) : "",
+    paymentDate: parseLabeledDate(block, "缴款", referenceDate),
+    startDate: parseLabeledDate(block, "起息", referenceDate),
     allocationNote,
   };
+}
+
+function parseIssuerName(text) {
+  return text.match(/^([^\n。；;]+?(?:集团|公司|有限责任公司|股份有限公司))20\d{2}/m)?.[1]?.trim() || "";
+}
+
+function parseLabeledDate(text, label, referenceDate) {
+  const line = text.match(new RegExp(`${label}(?:日期)?[：:\\s]*([^\\n，,]+)`))?.[1] || "";
+  const iso = line.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/);
+  if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, "0")}-${String(iso[3]).padStart(2, "0")}`;
+  const monthDay = line.match(/(?:(\d{1,2})月)?(\d{1,2})日/)
+    || text.match(new RegExp(`(?:(\\d{1,2})月)?(\\d{1,2})日${label}`));
+  return monthDay
+    ? inferPaymentDate(Number(monthDay[2]), monthDay[1] ? Number(monthDay[1]) : null, referenceDate)
+    : "";
 }
 
 function inferPaymentDate(day, month, referenceDate) {

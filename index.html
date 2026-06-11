@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-compact-filters">
+  <link rel="stylesheet" href="./styles.css?v=20260611-action-workflow">
 </head>
 <body>
   <div class="app-shell">
@@ -166,9 +166,16 @@
             <button class="dashboard-card" data-ledger-filter="toBid"><span>待投标</span><strong id="dashboardToBid">0</strong><small>尚未录入标位</small></button>
             <button class="dashboard-card success" data-ledger-filter="won"><span>中标项目</span><strong id="dashboardWon">0</strong><small>含部分中标</small></button>
             <button class="dashboard-card muted" data-ledger-filter="notWon"><span>未中标</span><strong id="dashboardNotWon">0</strong><small>近期结果</small></button>
-            <button class="dashboard-card" data-ledger-filter="duePayment"><span>待缴款</span><strong id="dashboardDuePayment">0</strong><small>未来缴款任务</small></button>
           </div>
         </details>
+
+        <section class="payment-todo-panel" id="paymentTodoPanel">
+          <div class="payment-todo-head">
+            <div><span class="step">TODO</span><h2>缴款待办</h2></div>
+            <span class="pill" id="paymentTodoCount">暂无待办</span>
+          </div>
+          <div class="payment-todo-list" id="paymentTodoList"></div>
+        </section>
 
         <div class="ledger-grid">
           <section class="panel project-list-panel">
@@ -180,7 +187,7 @@
               <input class="search-input" id="projectSearch" type="search" placeholder="搜索简称、主体、分行或主承">
               <select id="projectStatusFilter">
                 <option value="">全部状态</option>
-                <option>待投标</option>
+                <option>未投标</option>
                 <option>已投标待结果</option>
                 <option>部分中标</option>
                 <option>已中标</option>
@@ -197,24 +204,27 @@
             <div id="projectEmpty" class="empty project-empty">从左侧选择项目，或点击“新增项目”从项目简表开始。</div>
             <form id="projectForm" hidden>
               <input id="projectId" type="hidden">
+              <input id="projectStatus" type="hidden">
               <div class="panel-head">
                 <div><span class="step">PROJECT</span><h2 id="projectFormTitle">项目详情</h2></div>
-                <span class="pill" id="projectStatusPill">待投标</span>
+                <div class="project-save-state">
+                  <span id="projectAutosaveStatus">已实时保存</span>
+                  <span class="pill" id="projectStatusPill">未投标</span>
+                </div>
+              </div>
+              <div class="project-action-bar">
+                <div>
+                  <strong>项目行动</strong>
+                  <span>状态只会由这里的行动按钮推进，不再根据填写内容自动跳转。</span>
+                </div>
+                <div class="project-action-buttons">
+                  <button class="button subtle" id="markUnbidButton" type="button">撤回为未投标</button>
+                  <button class="button primary" id="markBidButton" type="button">确认已投标</button>
+                  <button class="button result-action" id="openResultButton" type="button">已出结果 / 录入结果</button>
+                </div>
               </div>
               <div class="field-grid">
                 <label>项目简称<input id="projectShortName" required></label>
-                <label>项目状态
-                  <select id="projectStatus">
-                    <option>待投标</option>
-                    <option>已投标待结果</option>
-                    <option>部分中标</option>
-                    <option>已中标</option>
-                    <option>未中标</option>
-                    <option>待缴款</option>
-                    <option>已缴款</option>
-                    <option>已结束</option>
-                  </select>
-                </label>
                 <label>主体名称<input id="projectIssuerName"></label>
                 <label>申报分行<input id="projectBranch"></label>
                 <label>发行场所<input id="projectVenue"></label>
@@ -253,21 +263,27 @@
                 <label class="span-2">流程意见<textarea id="projectOpinion" rows="7"></textarea></label>
               </div>
 
+              <section class="result-entry-panel" id="resultEntryPanel" hidden>
+                <div class="section-heading">
+                  <div><span class="step">RESULT</span><h3>发行结果广告录入与分析</h3></div>
+                  <div class="result-actions">
+                    <button class="button subtle" id="closeResultButton" type="button">收起结果录入</button>
+                    <button class="button primary" id="parseAdvertisementButton" type="button">解析发行结果</button>
+                  </div>
+                </div>
+                <textarea id="projectResultAdvertisement" class="result-summary" rows="8" placeholder="粘贴主承发送的簿记结果或发行结果广告"></textarea>
+                <p class="result-entry-note">解析后会自动填写债券代码、期限、规模、票面、倍数、起息日和缴款日；请继续确认表内及委外中标量。</p>
+              </section>
+
               <div class="section-heading">
                 <div><span class="step">BID</span><h3>投标标位</h3></div>
                 <button class="button subtle" id="addTrancheButton" type="button">增加品种</button>
               </div>
               <div class="tranche-list" id="trancheList"></div>
 
-              <div class="section-heading">
-                <div><span class="step">RESULT</span><h3>发行结果广告录入</h3></div>
-                <button class="button subtle" id="parseAdvertisementButton" type="button">解析发行结果</button>
-              </div>
-              <textarea id="projectResultAdvertisement" class="result-summary" rows="8" placeholder="粘贴主承发送的簿记结果或发行结果广告"></textarea>
-
-              <div class="form-actions">
+              <div class="form-actions project-footer-actions">
                 <button class="button danger" id="deleteProjectButton" type="button">删除项目</button>
-                <button class="button primary" type="submit">保存项目全流程</button>
+                <span>所有修改均实时保存，无需滚动到底部点击保存。</span>
               </div>
             </form>
           </section>
@@ -383,6 +399,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-compact-filters"></script>
+  <script type="module" src="./app.js?v=20260611-action-workflow"></script>
 </body>
 </html>

@@ -65,6 +65,7 @@ let pendingHistoryImport = null;
 let batchItems = [];
 let selectedProjectId = "";
 let ledgerFilter = "all";
+let projectAutoSaveTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -213,10 +214,28 @@ function bindLedger() {
   $("#addTrancheButton").addEventListener("click", () => {
     const draft = readProjectForm();
     draft.tranches.push(normalizeProjectRecord({ shortName: "新品种" }).tranches[0]);
-    fillProjectForm(draft);
+    refillProjectForm(draft);
+    saveProjectDraftNow();
   });
-  $("#projectForm").addEventListener("input", updateProjectPreviews);
-  $("#projectForm").addEventListener("change", updateProjectPreviews);
+  $("#projectForm").addEventListener("input", () => {
+    updateProjectPreviews();
+    scheduleProjectAutoSave();
+  });
+  $("#projectForm").addEventListener("change", () => {
+    updateProjectPreviews();
+    scheduleProjectAutoSave();
+  });
+  $("#projectForm").addEventListener("submit", (event) => event.preventDefault());
+  $("#markUnbidButton").addEventListener("click", () => setProjectActionStatus("未投标"));
+  $("#markBidButton").addEventListener("click", () => setProjectActionStatus("已投标待结果"));
+  $("#openResultButton").addEventListener("click", () => {
+    const draft = readProjectForm();
+    draft.resultConfirmed = true;
+    draft.status = deriveProjectStatus(draft);
+    saveProjectRecordNow(draft);
+    openResultEntryPanel();
+  });
+  $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
   $("#copyBidPositionButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#projectBidPosition").value);
     showToast("投标标位已复制。");
@@ -232,9 +251,13 @@ function bindLedger() {
       showToast("请先粘贴发行结果广告。");
       return;
     }
-    const parsed = applyIssuanceAdvertisement(draft, advertisement);
+    const parsed = applyIssuanceAdvertisement({ ...draft, resultConfirmed: true }, advertisement);
+    parsed.resultConfirmed = true;
+    parsed.status = deriveProjectStatus(parsed);
     fillProjectForm(parsed);
-    showToast("已识别票面、期限、代码和缴款日期，请复核中标信息。");
+    saveProjectRecordNow(parsed);
+    openResultEntryPanel();
+    showToast("已识别简称、代码、期限、规模、票面、倍数、起息日和缴款日，请复核结果。");
   });
   $("#editProjectOpinionButton").addEventListener("click", () => {
     const record = readProjectForm();
@@ -255,21 +278,19 @@ function bindLedger() {
     $("#opinionOutput").value = record.opinion;
     switchView("generator");
   });
-  $("#projectForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const draft = readProjectForm();
-    const derivedStatus = deriveProjectStatus(draft);
-    if (draft.status !== "已结束" && (derivedStatus !== "待投标" || draft.status === "待投标")) {
-      draft.status = derivedStatus;
+  $("#paymentTodoList").addEventListener("click", (event) => {
+    const completeButton = event.target.closest("[data-complete-payment]");
+    const openButton = event.target.closest("[data-open-payment-project]");
+    if (completeButton) completePaymentTodo(completeButton.dataset.completePayment);
+    if (openButton) {
+      selectedProjectId = openButton.dataset.openPaymentProject;
+      renderProjectWorkspace();
+      $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
     }
-    state = upsertProject(state, draft);
-    selectedProjectId = draft.id;
-    persistState();
-    renderProjectWorkspace();
-    showToast("项目、投标与中标结果已保存。");
   });
   $("#deleteProjectButton").addEventListener("click", () => {
     if (!selectedProjectId || !confirm("确定删除当前项目台账吗？")) return;
+    clearTimeout(projectAutoSaveTimer);
     state = removeProject(state, selectedProjectId);
     selectedProjectId = "";
     persistState();
@@ -341,6 +362,7 @@ function renderRuleTrace(generated, issuer) {
 
 function renderProjectWorkspace() {
   renderDashboard();
+  renderPaymentTodo();
   renderProjectList();
   const selected = (state.projects || []).find((item) => item.id === selectedProjectId);
   if (selected) fillProjectForm(selected);
@@ -356,7 +378,52 @@ function renderDashboard() {
   $("#dashboardWon").textContent = counts.won;
   $("#dashboardNotWon").textContent = counts.notWon;
   $("#dashboardPaymentToday").textContent = counts.paymentToday;
-  $("#dashboardDuePayment").textContent = counts.duePayment;
+}
+
+function renderPaymentTodo() {
+  const today = localDate(new Date());
+  const todos = (state.projects || []).flatMap((projectValue) =>
+    (projectValue.tranches || []).flatMap((tranche) =>
+      tranche.paymentDate && !tranche.paymentCompleted
+        ? [{ project: projectValue, tranche }]
+        : [],
+    ),
+  ).sort((left, right) => left.tranche.paymentDate.localeCompare(right.tranche.paymentDate));
+  $("#paymentTodoCount").textContent = todos.length ? `${todos.length} 项待处理` : "暂无待办";
+  $("#paymentTodoPanel").classList.toggle("empty-state", !todos.length);
+  $("#paymentTodoList").innerHTML = todos.length
+    ? todos.map(({ project: projectValue, tranche }) => {
+        const timing = tranche.paymentDate < today ? "overdue" : tranche.paymentDate === today ? "today" : "upcoming";
+        const timingLabel = timing === "overdue" ? "已逾期" : timing === "today" ? "今日缴款" : tranche.paymentDate;
+        return `
+          <article class="payment-todo-item ${timing}">
+            <button class="payment-todo-main" type="button" data-open-payment-project="${escapeAttribute(projectValue.id)}">
+              <strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong>
+              <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}</span>
+            </button>
+            <button class="button subtle" type="button" data-complete-payment="${escapeAttribute(`${projectValue.id}:${tranche.id}`)}">标记已缴款</button>
+          </article>
+        `;
+      }).join("")
+    : '<div class="payment-todo-empty">目前没有待缴款任务。</div>';
+}
+
+function completePaymentTodo(value) {
+  const [projectId, trancheId] = value.split(":");
+  const projectValue = (state.projects || []).find((item) => item.id === projectId);
+  if (!projectValue) return;
+  const next = normalizeProjectRecord({
+    ...projectValue,
+    resultConfirmed: true,
+    tranches: projectValue.tranches.map((tranche) =>
+      tranche.id === trancheId ? { ...tranche, paymentCompleted: true } : tranche,
+    ),
+  });
+  next.status = deriveProjectStatus(next);
+  state = upsertProject(state, next);
+  persistState();
+  renderProjectWorkspace();
+  showToast(`${next.shortName} 已标记完成缴款。`);
 }
 
 function updateLedgerFilterLabel(button) {
@@ -371,13 +438,12 @@ function renderProjectList() {
   const projects = (state.projects || [])
     .filter((item) => {
       if (statusFilter && item.status !== statusFilter) return false;
-      if (ledgerFilter === "dueToday" && !(item.status === "待投标" && item.cutoffAt?.slice(0, 10) === today)) return false;
-      if (ledgerFilter === "toBid" && item.status !== "待投标") return false;
+      if (ledgerFilter === "dueToday" && !(["未投标", "待投标"].includes(item.status) && item.cutoffAt?.slice(0, 10) === today)) return false;
+      if (ledgerFilter === "toBid" && !["未投标", "待投标"].includes(item.status)) return false;
       if (ledgerFilter === "awaitingResult" && item.status !== "已投标待结果") return false;
       if (ledgerFilter === "won" && !["部分中标", "已中标", "待缴款", "已缴款"].includes(item.status)) return false;
       if (ledgerFilter === "notWon" && item.status !== "未中标") return false;
       if (ledgerFilter === "paymentToday" && !(item.status === "待缴款" && item.tranches?.some((tranche) => tranche.paymentDate === today && !tranche.paymentCompleted))) return false;
-      if (ledgerFilter === "duePayment" && item.status !== "待缴款") return false;
       return `${item.shortName} ${item.issuerName} ${item.branch} ${item.leadUnderwriter}`.toLowerCase().includes(query);
     })
     .sort(compareProjects);
@@ -412,6 +478,7 @@ function fillProjectForm(input) {
   const record = normalizeProjectRecord(input);
   $("#projectEmpty").hidden = true;
   $("#projectForm").hidden = false;
+  closeResultEntryPanel();
   $("#projectId").value = record.id;
   $("#projectShortName").value = record.shortName;
   $("#projectStatus").value = record.status;
@@ -429,8 +496,16 @@ function fillProjectForm(input) {
   $("#projectResultSummary").value = buildAwardResultText(record);
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = record.status;
+  $("#projectAutosaveStatus").textContent = "已实时保存";
+  updateProjectActionButtons(record.status);
   renderTranches(record.tranches);
   renderProjectList();
+}
+
+function refillProjectForm(input) {
+  const showResult = $("#projectForm").classList.contains("show-result-entry");
+  fillProjectForm(input);
+  if (showResult) openResultEntryPanel(false);
 }
 
 function renderTranches(tranches) {
@@ -450,6 +525,7 @@ function renderTranches(tranches) {
         <label>投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
       </div>
 
+      <div class="result-entry-fields">
       <div class="tranche-subheading"><strong>表内中标结果</strong></div>
       <div class="tranche-grid">
         <label>截标结果
@@ -470,6 +546,7 @@ function renderTranches(tranches) {
         <label>综合定价至（%）<input data-tranche-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(tranche.pricingRate ?? "")}"></label>
         <label>营收（BP）<input data-tranche-field="revenueBp" type="number" step="0.0001" value="${escapeAttribute(tranche.revenueBp ?? "")}"></label>
       </div>
+      </div>
 
       <div class="tranche-subheading">
         <strong>委外投标与中标</strong>
@@ -486,27 +563,30 @@ function renderTranches(tranches) {
               <label>委外机构<input data-outsourced-field="managerName" value="${escapeAttribute(outsourced.managerName)}"></label>
               <label>投标利率（%）<input data-outsourced-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidRate ?? "")}"></label>
               <label>投标量（亿元）<input data-outsourced-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(outsourced.bidAmount ?? "")}"></label>
-              <label>中标量（万元）<input data-outsourced-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(outsourced.winningAmountWan ?? "")}"></label>
-              <label>综合定价
+              <label class="outsourced-result-field">中标量（万元）<input data-outsourced-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(outsourced.winningAmountWan ?? "")}"></label>
+              <label class="outsourced-result-field">综合定价
                 <select data-outsourced-field="pricingMode">
                   <option ${outsourced.pricingMode === "未综" ? "selected" : ""}>未综</option>
                   <option ${outsourced.pricingMode === "综合定价" ? "selected" : ""}>综合定价</option>
                 </select>
               </label>
-              <label>综合定价至（%）<input data-outsourced-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.pricingRate ?? "")}"></label>
+              <label class="outsourced-result-field">综合定价至（%）<input data-outsourced-field="pricingRate" type="number" step="0.0001" value="${escapeAttribute(outsourced.pricingRate ?? "")}"></label>
             </div>
           </div>
         `).join("") || '<div class="empty compact">暂无委外标位。</div>'}
       </div>
 
+      <div class="result-entry-fields">
       <div class="tranche-subheading"><strong>发行结果与缴款</strong></div>
       <div class="tranche-grid">
         <label>债券代码<input data-tranche-field="securityCode" value="${escapeAttribute(tranche.securityCode)}"></label>
         <label>发行规模（亿元）<input data-tranche-field="issueScale" type="number" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}"></label>
         <label>全场倍数<input data-tranche-field="fullMarketMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.fullMarketMultiple ?? "")}"></label>
+        <label>起息日期<input data-tranche-field="startDate" type="date" value="${escapeAttribute(tranche.startDate)}"></label>
         <label>缴款日期<input data-tranche-field="paymentDate" type="date" value="${escapeAttribute(tranche.paymentDate)}"></label>
         <label class="span-3">回拨 / 结果备注<input data-tranche-field="allocationNote" value="${escapeAttribute(tranche.allocationNote)}"></label>
         <label class="checkbox-label compact-checkbox"><input data-tranche-field="paymentCompleted" type="checkbox" ${tranche.paymentCompleted ? "checked" : ""}>已完成缴款</label>
+      </div>
       </div>
     </section>
   `).join("");
@@ -515,7 +595,8 @@ function renderTranches(tranches) {
     button.addEventListener("click", () => {
       const draft = readProjectForm();
       draft.tranches.splice(Number(button.dataset.removeTranche), 1);
-      fillProjectForm(draft);
+      refillProjectForm(draft);
+      saveProjectDraftNow();
     });
   });
   $$("[data-add-outsourced]").forEach((button) => {
@@ -530,7 +611,8 @@ function renderTranches(tranches) {
         pricingMode: "未综",
         pricingRate: null,
       });
-      fillProjectForm(draft);
+      refillProjectForm(draft);
+      saveProjectDraftNow();
     });
   });
   $$("[data-remove-outsourced]").forEach((button) => {
@@ -538,7 +620,8 @@ function renderTranches(tranches) {
       const [trancheIndex, outsourcedIndex] = button.dataset.removeOutsourced.split(":").map(Number);
       const draft = readProjectForm();
       draft.tranches[trancheIndex].outsourcedBids.splice(outsourcedIndex, 1);
-      fillProjectForm(draft);
+      refillProjectForm(draft);
+      saveProjectDraftNow();
     });
   });
 }
@@ -592,6 +675,66 @@ function updateProjectPreviews() {
   $("#projectResultSummary").value = buildAwardResultText(draft);
 }
 
+function scheduleProjectAutoSave() {
+  if ($("#projectForm").hidden) return;
+  $("#projectAutosaveStatus").textContent = "正在保存...";
+  const draft = readProjectForm();
+  if (draft.resultConfirmed) draft.status = deriveProjectStatus(draft);
+  clearTimeout(projectAutoSaveTimer);
+  projectAutoSaveTimer = setTimeout(() => saveProjectRecordNow(draft), 650);
+}
+
+function saveProjectDraftNow() {
+  if ($("#projectForm").hidden || !$("#projectId").value) return;
+  clearTimeout(projectAutoSaveTimer);
+  const draft = readProjectForm();
+  if (draft.resultConfirmed) draft.status = deriveProjectStatus(draft);
+  saveProjectRecordNow(draft);
+}
+
+function saveProjectRecordNow(record) {
+  const normalized = normalizeProjectRecord(record);
+  const isCurrentProject = !$("#projectForm").hidden && $("#projectId").value === normalized.id;
+  state = upsertProject(state, normalized);
+  if (isCurrentProject) selectedProjectId = normalized.id;
+  persistState();
+  if (isCurrentProject) {
+    $("#projectStatus").value = normalized.status;
+    $("#projectStatusPill").textContent = normalized.status;
+    $("#projectAutosaveStatus").textContent = "已实时保存";
+    updateProjectActionButtons(normalized.status);
+  }
+  renderDashboard();
+  renderPaymentTodo();
+  renderProjectList();
+}
+
+function setProjectActionStatus(status) {
+  const draft = readProjectForm();
+  draft.status = status;
+  draft.resultConfirmed = status !== "未投标" && status !== "已投标待结果" ? draft.resultConfirmed : false;
+  saveProjectRecordNow(draft);
+  if (status === "未投标" || status === "已投标待结果") closeResultEntryPanel();
+  showToast(status === "未投标" ? "项目已撤回为未投标。" : "项目已确认投标，等待发行结果。");
+}
+
+function updateProjectActionButtons(status) {
+  $("#markUnbidButton").disabled = status === "未投标";
+  $("#markBidButton").disabled = status === "已投标待结果";
+  $("#openResultButton").disabled = status === "未投标";
+}
+
+function openResultEntryPanel(shouldScroll = true) {
+  $("#resultEntryPanel").hidden = false;
+  $("#projectForm").classList.add("show-result-entry");
+  if (shouldScroll) $("#resultEntryPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeResultEntryPanel() {
+  $("#resultEntryPanel").hidden = true;
+  $("#projectForm").classList.remove("show-result-entry");
+}
+
 function compareProjects(left, right) {
   const leftCutoff = Date.parse(left.cutoffAt || "") || Number.MAX_SAFE_INTEGER;
   const rightCutoff = Date.parse(right.cutoffAt || "") || Number.MAX_SAFE_INTEGER;
@@ -613,7 +756,7 @@ function formatProjectSchedule(projectValue) {
 }
 
 function statusBadgeClass(status) {
-  if (["待投标", "已投标待结果"].includes(status)) return "warning";
+  if (["未投标", "待投标", "已投标待结果"].includes(status)) return "warning";
   if (["未中标", "已结束"].includes(status)) return "muted";
   return "";
 }
@@ -1375,7 +1518,7 @@ function bindDataActions() {
     try {
       const imported = JSON.parse(await file.text());
       if (!Array.isArray(imported.issuers)) throw new Error("文件中缺少 issuers 数组。");
-      state = { ...DEFAULT_STATE, ...imported, updatedAt: new Date().toISOString() };
+      state = normalizeLoadedState({ ...imported, updatedAt: new Date().toISOString() });
       persistState();
       renderIssuerOptions();
       renderIssuerList();
@@ -1404,7 +1547,7 @@ async function loadCloudState() {
     if (remote.data?.issuers) {
       const remoteTime = Date.parse(remote.data.updatedAt || 0);
       const localTime = Date.parse(state.updatedAt || 0);
-      if (remoteTime >= localTime) state = { ...DEFAULT_STATE, ...remote.data };
+      if (remoteTime >= localTime) state = normalizeLoadedState(remote.data);
     }
     cloudAvailable = true;
     persistLocal();
@@ -1451,10 +1594,18 @@ function persistState() {
 function loadLocalState() {
   try {
     const value = JSON.parse(localStorage.getItem(LOCAL_KEY));
-    return value?.issuers ? { ...DEFAULT_STATE, ...value, projects: value.projects || [] } : structuredClone(DEFAULT_STATE);
+    return value?.issuers ? normalizeLoadedState(value) : structuredClone(DEFAULT_STATE);
   } catch {
     return structuredClone(DEFAULT_STATE);
   }
+}
+
+function normalizeLoadedState(value) {
+  return {
+    ...DEFAULT_STATE,
+    ...value,
+    projects: (value.projects || []).map(normalizeProjectRecord),
+  };
 }
 
 function persistLocal() {
