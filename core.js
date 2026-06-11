@@ -121,7 +121,9 @@ export function parseProjectBrief(rawText) {
       result.valuations = valuations;
       result.valuation = valuations[0];
     }
-    const guidancePrices = parseNumberListAfter(line, /指导价(?:约)?\s*/);
+    const guidancePrices = /(?:不执行综合定价|不综|未综)/.test(line)
+      ? []
+      : parseNumberListAfter(line, /指导价(?:约)?\s*/);
     if (guidancePrices.length) {
       result.guidancePrices = guidancePrices;
       result.guidancePrice = guidancePrices[0];

@@ -54,6 +54,18 @@ test("parses the sample project brief", () => {
   assert.equal(parsed.guidancePrice, 1.48);
 });
 
+test("treats no comprehensive pricing guidance as unpriced", () => {
+  const noGuidance = parseProjectBrief(`26粤交投SCP002 非我行主承 广州分行
+270D 规模7亿 AAA(中诚信国际)/隐含AAA
+询价区间1.25-1.45 银行间 中信银行
+
+26粤交投SCP002 市场估值约1.46
+不执行综合定价`);
+
+  assert.deepEqual(noGuidance.guidancePrices, []);
+  assert.equal(noGuidance.guidancePrice, null);
+});
+
 test("builds standard interbank bond full name", () => {
   assert.equal(
     buildBondFullName("26粤交投SCP002", issuer.legalName),

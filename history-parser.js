@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260611-cloud-actions";
+import { durationToDays } from "./core.js?v=20260612-brief-template";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

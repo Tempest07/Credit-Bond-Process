@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260611-cloud-actions">
+  <link rel="stylesheet" href="./styles.css?v=20260612-brief-template">
 </head>
 <body>
   <div class="app-shell">
@@ -57,13 +57,21 @@
         <div class="generator-grid">
           <section class="panel input-panel">
             <div class="panel-head">
-              <div><span class="step">01</span><h2>粘贴项目简表</h2></div>
-              <button class="text-button" id="sampleButton">载入示例</button>
+              <div><span class="step">01</span><h2>填写项目简表</h2></div>
+              <div class="brief-template-actions">
+                <button class="text-button" id="blankTemplateButton" type="button">空白模板</button>
+                <button class="text-button" id="sampleButton" type="button">载入示例</button>
+              </div>
             </div>
-            <textarea id="briefInput" class="brief-input" spellcheck="false" placeholder="粘贴项目简表，例如：
+            <textarea id="briefInput" class="brief-input" spellcheck="false" placeholder="填写项目简表，或直接导入已有简表，例如：
 26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行"></textarea>
+            <div class="brief-template-guide">
+              <strong>必填占位</strong>
+              <span>债券简称</span><span>主承身份</span><span>分行</span><span>期限</span><span>规模</span><span>主体评级</span><span>隐含评级</span><span>询价区间</span><span>发行场所</span><span>牵头主承销商</span><span>估值</span><span>指导价/不综</span>
+              <small>按 Tab / Shift+Tab 可在占位符之间跳转；不执行综合定价时，删除指导价行或改写为“不执行综合定价”。</small>
+            </div>
             <button class="button primary wide" id="parseButton">解析并生成</button>
 
             <div class="warning-box" id="warningBox" hidden>
@@ -462,6 +470,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260611-cloud-actions"></script>
+  <script type="module" src="./app.js?v=20260612-brief-template"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-cloud-actions";
+} from "./core.js?v=20260612-brief-template";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-cloud-actions";
+} from "./lifecycle.js?v=20260612-brief-template";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-cloud-actions";
+} from "./history-parser.js?v=20260612-brief-template";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -45,6 +45,13 @@ const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 
 26粤交投SCP002 市场估值约1.46
 如需综合定价，指导价约1.48`;
+const BLANK_BRIEF_TEMPLATE = `【债券简称】 非我行主承 【分行】
+【期限】 规模【规模】亿 【主体评级】(【评级机构】)/隐含【隐含评级】
+询价区间【询价下限】-【询价上限】 【发行场所】 【牵头主承销商】
+
+【债券简称】 市场估值约【估值】
+如需综合定价，指导价约【指导价】`;
+const BRIEF_PLACEHOLDER_PATTERN = /【([^】]+)】/g;
 
 const SAMPLE_ISSUER = {
   id: "sample-yuejiaotou",
@@ -115,6 +122,8 @@ function switchView(viewName) {
 }
 
 function bindGenerator() {
+  $("#blankTemplateButton").addEventListener("click", loadBlankBriefTemplate);
+  $("#briefInput").addEventListener("keydown", handleBriefTemplateKeydown);
   $("#sampleButton").addEventListener("click", () => {
     if (!state.issuers.some((issuer) => issuer.id === SAMPLE_ISSUER.id)) {
       state = upsertIssuer(state, SAMPLE_ISSUER);
@@ -214,12 +223,12 @@ function bindLedger() {
   $("#newProjectButton").addEventListener("click", () => {
     project = parseProjectBrief("");
     selectedIssuerId = "";
-    $("#briefInput").value = "";
+    $("#briefInput").value = BLANK_BRIEF_TEMPLATE;
     fillProjectFields();
     renderIssuerOptions();
     regenerate();
     switchView("generator");
-    $("#briefInput").focus();
+    focusFirstBriefPlaceholder();
   });
   $$("[data-ledger-filter]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -351,12 +360,66 @@ function bindLedger() {
 }
 
 function parseAndRender() {
+  const missing = briefTemplatePlaceholders($("#briefInput").value);
+  if (missing.length) {
+    renderWarnings([`请先补全模板占位：${missing.join("、")}。`]);
+    focusFirstBriefPlaceholder();
+    showToast("项目简表还有占位符未填写。");
+    return;
+  }
   project = parseProjectBrief($("#briefInput").value);
   const matched = findIssuer(project.shortName, state.issuers);
   selectedIssuerId = matched?.id || "";
   fillProjectFields();
   renderIssuerOptions();
   regenerate();
+}
+
+function loadBlankBriefTemplate() {
+  $("#briefInput").value = BLANK_BRIEF_TEMPLATE;
+  project = parseProjectBrief("");
+  selectedIssuerId = "";
+  fillProjectFields();
+  renderIssuerOptions();
+  regenerate();
+  renderWarnings(["请把 【】 中的占位内容替换为真实要素；不执行综合定价时，删除指导价行或改写为“不执行综合定价”。"]);
+  focusFirstBriefPlaceholder();
+}
+
+function briefTemplatePlaceholders(value) {
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  return [...new Set([...String(value || "").matchAll(BRIEF_PLACEHOLDER_PATTERN)].map((match) => match[1].trim()).filter(Boolean))];
+}
+
+function focusFirstBriefPlaceholder() {
+  focusBriefPlaceholder("first");
+}
+
+function handleBriefTemplateKeydown(event) {
+  if (event.key !== "Tab") return;
+  if (!briefTemplatePlaceholders(event.currentTarget.value).length) return;
+  event.preventDefault();
+  focusBriefPlaceholder(event.shiftKey ? "previous" : "next");
+}
+
+function focusBriefPlaceholder(direction = "next") {
+  const input = $("#briefInput");
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  const placeholders = [...input.value.matchAll(BRIEF_PLACEHOLDER_PATTERN)];
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  input.focus();
+  if (!placeholders.length) return;
+
+  const selectionStart = input.selectionStart ?? 0;
+  let target = placeholders[0];
+  if (direction === "first") {
+    target = placeholders[0];
+  } else if (direction === "previous") {
+    target = [...placeholders].reverse().find((match) => match.index < selectionStart) || placeholders.at(-1);
+  } else {
+    target = placeholders.find((match) => match.index > selectionStart) || placeholders[0];
+  }
+  input.setSelectionRange(target.index, target.index + target[0].length);
 }
 
 function fillProjectFields() {
@@ -681,8 +744,16 @@ function renderProjectList() {
           <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
           <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
         </span>
-        <span class="project-item-meta"><span>${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span><span>${escapeHtml(formatProjectSchedule(item))}</span></span>
-        <span class="project-item-meta"><span>${escapeHtml((item.tranches || []).map((tranche) => tranche.durationText).filter(Boolean).join("/") || "期限待补")}</span><span>${escapeHtml(item.leadUnderwriter || "主承待补")}</span></span>
+        <span class="project-item-meta project-item-primary">
+          <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>
+          <span class="project-item-schedule">${escapeHtml(formatProjectSchedule(item))}</span>
+        </span>
+        <span class="project-item-facts">
+          <span>${escapeHtml(formatTrancheDurationSummary(item))}</span>
+          <span>${escapeHtml(formatProjectScaleSummary(item))}</span>
+          <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
+          <span>${escapeHtml(formatProjectVenueLead(item))}</span>
+        </span>
       </button>
     `).join("")
     : '<div class="empty">当前筛选下暂无项目。</div>';
@@ -1181,6 +1252,28 @@ function formatInquirySummary(tranches = []) {
       : "")
     .filter(Boolean);
   return ranges.length ? ranges.join(" / ") : "询价待补";
+}
+
+function formatTrancheDurationSummary(projectValue) {
+  const durations = (projectValue.tranches || [])
+    .map((tranche) => tranche.durationText)
+    .filter(Boolean);
+  return durations.length ? durations.join(" / ") : "期限待补";
+}
+
+function formatProjectScaleSummary(projectValue) {
+  const projectScale = numberOrNull(projectValue.issueScale);
+  if (Number.isFinite(projectScale) && projectScale > 0) return `规模${formatNumber(projectScale)}亿`;
+  const trancheScales = (projectValue.tranches || [])
+    .map((tranche) => numberOrNull(tranche.issueScale))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!trancheScales.length) return "规模待补";
+  const total = trancheScales.reduce((sum, value) => sum + value, 0);
+  return `规模${formatNumber(total)}亿`;
+}
+
+function formatProjectVenueLead(projectValue) {
+  return [projectValue.venue, projectValue.leadUnderwriter].filter(Boolean).join(" · ") || "场所/主承待补";
 }
 
 function statusBadgeClass(status) {
