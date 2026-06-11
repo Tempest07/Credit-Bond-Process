@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-ledger-compact";
+} from "./core.js?v=20260611-inquiry-summary";
 import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -23,13 +23,13 @@ import {
   suggestProjectCutoff,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-ledger-compact";
+} from "./lifecycle.js?v=20260611-inquiry-summary";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-ledger-compact";
+} from "./history-parser.js?v=20260611-inquiry-summary";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -597,6 +597,7 @@ function fillProjectForm(input) {
   $("#projectSummaryVenue").textContent = record.venue || "场所待补";
   $("#projectSummarySponsor").textContent = record.sponsorStatus || "身份待补";
   $("#projectSummaryLead").textContent = record.leadUnderwriter || "主承待补";
+  $("#projectSummaryInquiry").textContent = formatInquirySummary(record.tranches);
   $("#projectCutoffAt").value = record.cutoffAt;
   $("#projectCutoffTimeConfirmed").checked = record.cutoffTimeConfirmed;
   $("#projectCutoffSource").value = record.cutoffSource;
@@ -638,9 +639,7 @@ function renderTranches(tranches) {
         <div class="tranche-grid">
           <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
           <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
-          <label>建议比例上限（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
-          <label>询价下限（%）<input data-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
-          <label>询价上限（%）<input data-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
+          <label>比例限制（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
           <label>表内投标利率（%）<input data-tranche-field="bidRate" type="number" step="0.0001" value="${escapeAttribute(tranche.bidRate ?? "")}"></label>
           <label>表内投标量（亿元）<input data-tranche-field="bidAmount" type="number" step="0.0001" value="${escapeAttribute(tranche.bidAmount ?? "")}"></label>
         </div>
@@ -771,6 +770,8 @@ function readProjectForm() {
     });
     const trancheIndex = Number(card.dataset.trancheIndex);
     values.id = existing.tranches?.[trancheIndex]?.id;
+    values.inquiryLow = existing.tranches?.[trancheIndex]?.inquiryLow;
+    values.inquiryHigh = existing.tranches?.[trancheIndex]?.inquiryHigh;
     values.outsourcedBids = [...card.querySelectorAll("[data-outsourced-index]")].map((outsourcedCard) => {
       const outsourced = {};
       outsourcedCard.querySelectorAll("[data-outsourced-field]").forEach((input) => {
@@ -964,6 +965,15 @@ function formatProjectSchedule(projectValue) {
     .map((tranche) => tranche.paymentDate)
     .sort();
   return pendingPayments.length ? `缴款 ${pendingPayments[0]}` : formatCutoff(projectValue.cutoffAt);
+}
+
+function formatInquirySummary(tranches = []) {
+  const ranges = tranches
+    .map((tranche) => Number.isFinite(numberOrNull(tranche.inquiryLow)) && Number.isFinite(numberOrNull(tranche.inquiryHigh))
+      ? `${formatNumber(tranche.inquiryLow)}-${formatNumber(tranche.inquiryHigh)}`
+      : "")
+    .filter(Boolean);
+  return ranges.length ? ranges.join(" / ") : "询价待补";
 }
 
 function statusBadgeClass(status) {
