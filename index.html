@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260612-brief-template">
+  <link rel="stylesheet" href="./styles.css?v=20260612-cloud-motion">
 </head>
 <body>
   <div class="app-shell">
@@ -45,12 +45,22 @@
         </div>
       </header>
 
-      <section class="cloud-gate" id="cloudGate">
-        <div>
-          <span class="step">D1</span>
-          <h2>请先连接资料库</h2>
+      <section class="cloud-gate cloud-gate-idle" id="cloudGate">
+        <div class="cloud-orb" aria-hidden="true">
+          <span class="cloud-orb-ring"></span>
+          <span class="cloud-orb-ring"></span>
+          <span class="cloud-orb-core">
+            <span class="cloud-orb-symbol" id="cloudGateSymbol">D1</span>
+          </span>
         </div>
-        <p id="cloudGateDetail">点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。</p>
+        <div class="cloud-gate-copy">
+          <span class="step" id="cloudGateStep">D1</span>
+          <h2 id="cloudGateTitle">请先连接资料库</h2>
+          <p id="cloudGateDetail">点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。</p>
+          <div class="cloud-pulse-lines" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
       </section>
 
       <section class="view" data-view="generator">
@@ -470,6 +480,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260612-brief-template"></script>
+  <script type="module" src="./app.js?v=20260612-cloud-motion"></script>
 </body>
 </html>

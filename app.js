@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260612-brief-template";
+} from "./core.js?v=20260612-cloud-motion";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260612-brief-template";
+} from "./lifecycle.js?v=20260612-cloud-motion";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260612-brief-template";
+} from "./history-parser.js?v=20260612-cloud-motion";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -2088,11 +2088,19 @@ async function loadCloudState() {
   if (!getApiToken()) {
     cloudAvailable = false;
     setSyncStatus("未连接 D1", "请先设置云端口令");
-    setCloudGate(true, "点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。");
+    setCloudGate(true, {
+      state: "idle",
+      title: "请先连接资料库",
+      detail: "点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。",
+    });
     return;
   }
   setSyncStatus("正在连接", "尝试读取 Cloudflare D1");
-  setCloudGate(true, "正在连接 Cloudflare D1。");
+  setCloudGate(true, {
+    state: "connecting",
+    title: "正在连接 Cloudflare D1",
+    detail: "正在校验口令并读取云端资料库。",
+  });
   try {
     const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -2104,12 +2112,21 @@ async function loadCloudState() {
     cloudAvailable = true;
     persistLocal();
     setSyncStatus("D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
-    setCloudGate(false);
+    setCloudGate(true, {
+      state: "success",
+      title: "D1 连接成功",
+      detail: `已载入 ${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目。`,
+    });
+    window.setTimeout(() => setCloudGate(false, { state: "success" }), 850);
     if (shouldMigrateFtpCurve) await saveCloudState();
   } catch {
     cloudAvailable = false;
     setSyncStatus("D1 未连接", "请检查口令或重新连接");
-    setCloudGate(true, "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。");
+    setCloudGate(true, {
+      state: "error",
+      title: "D1 连接失败",
+      detail: "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。",
+    });
   }
   renderIssuerOptions();
   renderIssuerList();
@@ -2122,7 +2139,11 @@ async function saveCloudState() {
   persistLocal();
   if (!getApiToken()) {
     setSyncStatus("未连接 D1", "请先设置云端口令");
-    setCloudGate(true, "请先设置云端口令，连接 D1 后再同步。");
+    setCloudGate(true, {
+      state: "idle",
+      title: "请先连接资料库",
+      detail: "请先设置云端口令，连接 D1 后再同步。",
+    });
     return false;
   }
   try {
@@ -2134,12 +2155,16 @@ async function saveCloudState() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     cloudAvailable = true;
     setSyncStatus("D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
-    setCloudGate(false);
+    setCloudGate(false, { state: "success" });
     return true;
   } catch {
     cloudAvailable = false;
     setSyncStatus("D1 同步失败", "请检查网络或口令");
-    setCloudGate(true, "D1 同步失败。为避免本机数据覆盖云端，请重新连接后再继续使用。");
+    setCloudGate(true, {
+      state: "error",
+      title: "D1 同步失败",
+      detail: "为避免本机数据覆盖云端，请重新连接后再继续使用。",
+    });
     return false;
   }
 }
@@ -2210,15 +2235,23 @@ function setSyncStatus(status, detail) {
   $("#syncDetail").textContent = detail;
 }
 
-function setCloudGate(locked, detail = "") {
+function setCloudGate(locked, options = {}) {
+  const config = typeof options === "string" ? { detail: options } : options;
+  const gate = $("#cloudGate");
+  const stateName = config.state || (locked ? "idle" : "success");
   $(".main").classList.toggle("cloud-locked", Boolean(locked));
   $(".main").classList.toggle("cloud-ready", !locked);
-  $("#cloudGate").hidden = !locked;
+  gate.hidden = !locked;
+  gate.classList.remove("cloud-gate-idle", "cloud-gate-connecting", "cloud-gate-success", "cloud-gate-error");
+  gate.classList.add(`cloud-gate-${stateName}`);
   $("#saveCloudButton").disabled = Boolean(locked);
   $("#exportDataButton").disabled = Boolean(locked);
   $("#importDataInput").disabled = Boolean(locked);
   $("#importDataInput").closest(".file-button")?.classList.toggle("unavailable", Boolean(locked));
-  if (detail) $("#cloudGateDetail").textContent = detail;
+  if (config.title) $("#cloudGateTitle").textContent = config.title;
+  if (config.detail) $("#cloudGateDetail").textContent = config.detail;
+  $("#cloudGateStep").textContent = stateName === "error" ? "ERR" : stateName === "success" ? "OK" : "D1";
+  $("#cloudGateSymbol").textContent = stateName === "error" ? "!" : stateName === "success" ? "✓" : "D1";
 }
 
 function getApiToken() {
