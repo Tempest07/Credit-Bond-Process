@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260611-ftp-curve";
+} from "./core.js?v=20260611-quiet-ui";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260611-ftp-curve";
+} from "./lifecycle.js?v=20260611-quiet-ui";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260611-ftp-curve";
+} from "./history-parser.js?v=20260611-quiet-ui";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";

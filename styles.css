@@ -126,7 +126,6 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .review-source { margin-top: 10px; color: var(--muted); }
 .review-source summary { cursor: pointer; color: var(--accent); font-weight: 700; }
 .review-source p { max-height: 180px; margin: 8px 0 0; padding: 9px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; line-height: 1.7; }
-.history-note { margin: 15px 0 0; color: var(--muted); font-size: 10px; line-height: 1.7; }
 
 .batch-input-panel { padding: 18px; }
 .batch-input { min-height: 260px; padding: 14px; resize: vertical; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 12px; line-height: 1.8; }
@@ -274,10 +273,6 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .result-modal-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(180px, .6fr); gap: 12px; }
 .result-modal-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .result-modal-grid input { min-height: 38px; padding: 8px 10px; font-size: 12px; }
-.result-calc-note { display: grid; gap: 5px; align-content: start; padding: 11px; border: 1px solid color-mix(in srgb, var(--secondary) 24%, var(--line)); border-radius: 8px; background: var(--secondary-soft); }
-.result-calc-note strong { color: var(--secondary); font-size: 11px; }
-.result-calc-note span { color: var(--muted); font-size: 10px; line-height: 1.7; }
-.result-entry-note { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .project-footer-actions { justify-content: flex-start; }
 .result-summary { min-height: 100px; padding: 12px; resize: vertical; background: var(--panel-soft); font-size: 11px; line-height: 1.8; }
 .result-summary-output { margin-top: 8px; background: #fff; }
