@@ -332,6 +332,8 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .protocol-transfer-left, .protocol-transfer-detail { padding: 16px; }
 .protocol-transfer-actions { display: grid; gap: 10px; margin-bottom: 14px; }
 .protocol-transfer-input { min-height: 185px; padding: 12px; resize: vertical; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 11px; line-height: 1.8; }
+.protocol-ocr-status { padding: 9px 10px; border: 1px dashed color-mix(in srgb, var(--secondary) 34%, var(--line)); border-radius: 8px; color: var(--secondary); background: var(--secondary-soft); font-size: 11px; line-height: 1.6; }
+.protocol-ocr-status.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 34%, var(--line)); background: #fff2f4; }
 .protocol-todo-panel { margin: 14px 0; padding: 13px; border: 1px solid color-mix(in srgb, var(--secondary) 28%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f5feff, #fff); }
 .protocol-todo-list { display: grid; gap: 8px; }
 .protocol-todo-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }

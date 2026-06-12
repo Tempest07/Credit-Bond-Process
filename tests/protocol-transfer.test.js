@@ -18,6 +18,11 @@ const sample = `申请日期：     2026年 6月10日
 交易数量（手） 100000
 备注 本笔价格由买卖双方协商达成`;
 
+const tradeElements = `【深圳】 4.42Y(休1)  280607.SH  25汉投03  私募债  2.0  3k  06.15交易所  兴业银行 出给 南方基金，华创证券发 101.033/101.031
+南方基金 呼啸 3005263171
+华创证券 吴嘉仪 3007411566
+兴业银行 张夷尘 2853271332`;
+
 test("parses SSE protocol transfer Word-style text", () => {
   const parsed = parseProtocolTransferText(sample, new Date("2026-06-12T09:00:00+08:00"));
   assert.equal(parsed.code, "281926.SH");
@@ -31,6 +36,23 @@ test("parses SSE protocol transfer Word-style text", () => {
   assert.equal(parsed.counterpartySealDate, "2026-06-10");
   assert.equal(parsed.ownSealDate, "2026-06-11");
   assert.equal(parsed.exchangeSubmitDate, "2026-06-12");
+});
+
+test("parses chat-style protocol transfer trade elements", () => {
+  const parsed = parseProtocolTransferText(tradeElements, new Date("2026-06-12T09:00:00+08:00"));
+  assert.equal(parsed.code, "280607.SH");
+  assert.equal(parsed.shortName, "25汉投03");
+  assert.equal(parsed.tradeDate, "2026-06-15");
+  assert.equal(parsed.buyer, "南方基金");
+  assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.type, "商业银行");
+  assert.equal(parsed.price, 101.031);
+  assert.equal(parsed.quantityHands, 30000);
+  assert.match(parsed.remarks, /深圳/);
+  assert.match(parsed.remarks, /4\.42Y/);
+  assert.match(parsed.remarks, /华创证券发 101\.033\/101\.031/);
+  assert.doesNotMatch(parsed.remarks, /过桥费/);
+  assert.match(parsed.remarks, /南方基金 呼啸 3005263171/);
 });
 
 test("advances protocol transfer workflow by action buttons", () => {

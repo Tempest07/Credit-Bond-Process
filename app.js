@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260612-protocol-transfer";
+} from "./core.js?v=20260612-protocol-ocr";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260612-protocol-transfer";
+} from "./lifecycle.js?v=20260612-protocol-ocr";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260612-protocol-transfer";
+} from "./history-parser.js?v=20260612-protocol-ocr";
 import {
   buildProtocolTransferLedgerRows,
   markProtocolTransferStep,
@@ -45,12 +45,15 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260612-protocol-transfer";
+} from "./protocol-transfer.js?v=20260612-protocol-ocr";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
 const API_URL = "./api/state";
 const MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
+const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -691,9 +694,9 @@ function bindProtocolTransfer() {
 
 function initializeProtocolTransferImport() {
   const isReady = typeof window.mammoth?.extractRawText === "function";
-  $("#protocolTransferDocxInput").disabled = !isReady;
-  $("#protocolTransferDocxButton").classList.toggle("unavailable", !isReady);
-  $("#protocolTransferDocxButtonText").textContent = isReady ? "上传 Word 单据" : "Word 组件加载失败";
+  $("#protocolTransferDocxInput").disabled = false;
+  $("#protocolTransferDocxButton").classList.remove("unavailable");
+  $("#protocolTransferDocxButtonText").textContent = isReady ? "上传 Word/PDF/图片" : "上传 PDF/图片";
 }
 
 function renderProtocolTransferWorkspace() {
@@ -745,7 +748,7 @@ function renderProtocolTransferList() {
             </span>
             <span class="project-item-facts">
               <span>${escapeHtml(record.code || "代码待补")}</span>
-              <span>${escapeHtml(record.price ? `净价${formatNumber(record.price)}` : "价格待补")}</span>
+              <span>${escapeHtml(record.price ? `净价${formatProtocolPrice(record.price)}` : "价格待补")}</span>
               <span>${escapeHtml(record.quantityHands ? `${formatNumber(record.quantityHands)}手` : "数量待补")}</span>
               <span>${escapeHtml(step ? `${step.dueDate} ${step.label}` : "流程完成")}</span>
             </span>
@@ -766,27 +769,150 @@ function parseProtocolTransferInput() {
   showToast("已识别协议转让要素，请复核后保存。");
 }
 
+function formatProtocolPrice(value) {
+  return Number.isFinite(Number(value)) ? formatNumber(value) : String(value || "");
+}
+
 async function parseProtocolTransferDocument() {
   const input = $("#protocolTransferDocxInput");
   const file = input.files[0];
   if (!file) return;
-  if (!file.name.toLowerCase().endsWith(".docx")) {
-    showToast("请上传 .docx 格式的协议转让申请单。");
+  if (!isSupportedProtocolTransferFile(file)) {
+    showToast("请上传 Word、PDF 或图片格式的协议转让材料。");
     input.value = "";
     return;
   }
   try {
-    if (!window.mammoth?.extractRawText) throw new Error("Word 解析组件未加载，请刷新页面后重试");
-    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    $("#protocolTransferInput").value = result.value;
-    const parsed = parseProtocolTransferText(result.value);
+    setProtocolTransferImportBusy(true, `正在读取 ${file.name}...`);
+    const text = await extractProtocolTransferFileText(file);
+    if (!text.trim()) throw new Error("未识别到文字，请换清晰图片/PDF或直接粘贴交易要素");
+    $("#protocolTransferInput").value = text;
+    const parsed = parseProtocolTransferText(text);
     fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
-    showToast("Word 单据已读取，请复核后保存。");
+    setProtocolTransferOcrStatus("识别完成，请复核字段后保存。");
+    showToast("单据已识别，请复核后保存。");
   } catch (error) {
-    showToast(`Word 解析失败：${error.message || "未知错误"}`);
+    setProtocolTransferOcrStatus(`识别失败：${error.message || "未知错误"}`, true);
+    showToast(`单据识别失败：${error.message || "未知错误"}`);
   } finally {
     input.value = "";
+    setProtocolTransferImportBusy(false);
   }
+}
+
+function isSupportedProtocolTransferFile(file) {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".docx")
+    || name.endsWith(".pdf")
+    || file.type.startsWith("image/");
+}
+
+async function extractProtocolTransferFileText(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".docx")) {
+    if (!window.mammoth?.extractRawText) throw new Error("Word 解析组件未加载，请刷新页面后重试");
+    setProtocolTransferOcrStatus("正在提取 Word 文本...");
+    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return result.value;
+  }
+  if (name.endsWith(".pdf") || file.type === "application/pdf") {
+    return extractPdfTextWithOcr(file);
+  }
+  if (file.type.startsWith("image/")) {
+    return extractImageTextWithOcr(file);
+  }
+  throw new Error("暂不支持该文件格式");
+}
+
+async function extractImageTextWithOcr(file) {
+  await ensureTesseractReady();
+  setProtocolTransferOcrStatus("正在 OCR 图片...");
+  const result = await window.Tesseract.recognize(file, "chi_sim+eng", {
+    logger: (message) => updateProtocolTransferOcrProgress(message, "图片 OCR"),
+  });
+  return result?.data?.text || "";
+}
+
+async function extractPdfTextWithOcr(file) {
+  await ensurePdfJsReady();
+  await ensureTesseractReady();
+  setProtocolTransferOcrStatus("正在渲染 PDF...");
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages = Math.min(pdf.numPages, 4);
+  const texts = [];
+  for (let pageNumber = 1; pageNumber <= pages; pageNumber += 1) {
+    setProtocolTransferOcrStatus(`正在 OCR PDF 第 ${pageNumber}/${pages} 页...`);
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 2.2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    const result = await window.Tesseract.recognize(canvas, "chi_sim+eng", {
+      logger: (message) => updateProtocolTransferOcrProgress(message, `PDF 第 ${pageNumber}/${pages} 页`),
+    });
+    texts.push(result?.data?.text || "");
+  }
+  return texts.join("\n\n").trim();
+}
+
+async function ensureTesseractReady() {
+  if (window.Tesseract?.recognize) return;
+  setProtocolTransferOcrStatus("正在加载 OCR 组件...");
+  await loadExternalScript(TESSERACT_SCRIPT_URL);
+  if (!window.Tesseract?.recognize) throw new Error("OCR 组件加载失败");
+}
+
+async function ensurePdfJsReady() {
+  if (window.pdfjsLib?.getDocument) return;
+  setProtocolTransferOcrStatus("正在加载 PDF 解析组件...");
+  await loadExternalScript(PDFJS_SCRIPT_URL);
+  if (!window.pdfjsLib?.getDocument) throw new Error("PDF 解析组件加载失败");
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+}
+
+function loadExternalScript(src) {
+  const existing = document.querySelector(`script[src="${src}"]`);
+  if (existing) {
+    return existing.dataset.loaded === "true"
+      ? Promise.resolve()
+      : new Promise((resolve, reject) => {
+          existing.addEventListener("load", resolve, { once: true });
+          existing.addEventListener("error", reject, { once: true });
+        });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error(`无法加载 ${src}`)), { once: true });
+    document.head.appendChild(script);
+  });
+}
+
+function setProtocolTransferImportBusy(isBusy, message = "") {
+  $("#protocolTransferDocxInput").disabled = isBusy;
+  $("#protocolTransferParseButton").disabled = isBusy;
+  $("#protocolTransferDocxButton").classList.toggle("busy", isBusy);
+  if (message) setProtocolTransferOcrStatus(message);
+}
+
+function updateProtocolTransferOcrProgress(message, prefix) {
+  if (!message || message.status !== "recognizing text") return;
+  const progress = Math.round((message.progress || 0) * 100);
+  setProtocolTransferOcrStatus(`${prefix}：${progress}%`);
+}
+
+function setProtocolTransferOcrStatus(message, isError = false) {
+  const status = $("#protocolTransferOcrStatus");
+  if (!status) return;
+  status.textContent = message || "";
+  status.hidden = !message;
+  status.classList.toggle("error", Boolean(isError));
 }
 
 function readProtocolTransferForm() {

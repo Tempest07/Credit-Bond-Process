@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260612-protocol-transfer">
+  <link rel="stylesheet" href="./styles.css?v=20260612-protocol-ocr">
 </head>
 <body>
   <div class="app-shell">
@@ -365,15 +365,16 @@
             </div>
 
             <div class="protocol-transfer-actions">
-              <textarea id="protocolTransferInput" class="protocol-transfer-input" rows="9" spellcheck="false" placeholder="粘贴交易要素，或上传上交所协议转让 Word 申请单。"></textarea>
+              <textarea id="protocolTransferInput" class="protocol-transfer-input" rows="9" spellcheck="false" placeholder="粘贴交易要素，或上传上交所协议转让 Word / PDF / 图片材料。"></textarea>
               <div class="batch-actions">
                 <button class="button primary" id="protocolTransferParseButton" type="button">识别要素</button>
                 <label class="button subtle file-button" id="protocolTransferDocxButton">
-                  <span id="protocolTransferDocxButtonText">上传 Word 单据</span>
-                  <input id="protocolTransferDocxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                  <span id="protocolTransferDocxButtonText">上传 Word/PDF/图片</span>
+                  <input id="protocolTransferDocxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,application/pdf,image/*">
                 </label>
                 <button class="button subtle" id="protocolTransferExportButton" type="button">导出 Excel 台账</button>
               </div>
+              <div class="protocol-ocr-status" id="protocolTransferOcrStatus" hidden></div>
             </div>
 
             <section class="protocol-todo-panel">
@@ -405,7 +406,7 @@
                 <label>类型<input id="protocolTransferType" placeholder="商业银行" value="商业银行"></label>
                 <label>买入方<input id="protocolTransferBuyer"></label>
                 <label>卖出方<input id="protocolTransferSeller"></label>
-                <label>价格（全价请标注）<input id="protocolTransferPrice" type="number" step="0.001"></label>
+                <label>价格（全价请标注）<input id="protocolTransferPrice" placeholder="如 101.033 或 101.033/101.031"></label>
                 <label>数量（手）<input id="protocolTransferQuantity" type="number" step="1"></label>
                 <label>材料首次收悉日期<input id="protocolTransferMaterialFirstDate" type="date"></label>
                 <label>材料确认日期<input id="protocolTransferMaterialConfirmDate" type="date"></label>
@@ -553,6 +554,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260612-protocol-transfer"></script>
+  <script type="module" src="./app.js?v=20260612-protocol-ocr"></script>
 </body>
 </html>

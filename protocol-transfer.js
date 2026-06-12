@@ -1,6 +1,8 @@
 const DEFAULT_TYPE = "商业银行";
 const DATE_PATTERN = /(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/;
-const MONTH_DAY_PATTERN = /(\d{1,2})月(\d{1,2})日/;
+const CHINESE_MONTH_DAY_PATTERN = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
+const NUMERIC_MONTH_DAY_PATTERN = /(?:^|[^\d])(\d{1,2})[./](\d{1,2})(?!\d)/g;
+const BOND_SHORT_NAME_PATTERN = /^[0-9]{2}[\u4e00-\u9fa5A-Za-z]{1,12}[0-9A-Za-z]{1,4}$/;
 
 export function normalizeProtocolTransfers(input = []) {
   return Array.isArray(input) ? input.map(normalizeProtocolTransfer) : [];
@@ -29,7 +31,7 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
     remarks: String(input.remarks || "").trim(),
     buyer: String(input.buyer || "").trim(),
     seller: String(input.seller || "").trim(),
-    price: numberOrNull(input.price),
+    price: normalizePrice(input.price),
     quantityHands: numberOrNull(input.quantityHands),
     rawText: String(input.rawText || "").trim(),
     counterpartySealDate,
@@ -62,12 +64,12 @@ export function removeProtocolTransfer(state, id) {
 }
 
 export function parseProtocolTransferText(rawText = "", referenceDate = new Date()) {
-  const text = String(rawText || "").trim();
+  const text = normalizeText(rawText);
   const compact = text.replace(/\s+/g, " ");
-  const code = firstMatch(compact, /(\d{6}\.SH)\b/i)?.toUpperCase() || "";
-  const tradeDate = parseDateFromText(compact, referenceDate) || localDate(referenceDate);
+  const code = firstMatch(compact, /(\d{6}\.SH)\b/i).toUpperCase();
   const shortName = parseShortName(text, code);
   const sides = parseTradeSides(text);
+  const tradeDate = parseDateFromText(compact, referenceDate) || localDate(referenceDate);
 
   return normalizeProtocolTransfer({
     code,
@@ -76,9 +78,9 @@ export function parseProtocolTransferText(rawText = "", referenceDate = new Date
     type: inferTransferType(compact, sides),
     buyer: firstMatch(compact, /(?:买入方|买方|受让方)[:：\s]*([^，,；;\n]+)/) || sides.buyer,
     seller: firstMatch(compact, /(?:卖出方|卖方|转让方)[:：\s]*([^，,；;\n]+)/) || sides.seller,
-    price: firstNumber(compact, /(?:交易净价|价格|成交价|全价|净价)(?:（元）|\(元\))?(?:\s*\([^)]*\))?[:：\s]*(\d+(?:\.\d+)?)/),
-    quantityHands: firstNumber(compact, /(?:交易数量|数量|成交数量|券面|面额)(?:（手）|\(手\))?[:：\s]*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:手|张)?/),
-    remarks: firstMatch(compact, /(?:备注)[:：\s]*([^，,；;\n]+)/),
+    price: parsePrice(compact),
+    quantityHands: parseQuantityHands(compact),
+    remarks: parseRemarks(text),
     rawText: text,
   }, referenceDate);
 }
@@ -156,27 +158,37 @@ export function markProtocolTransferStep(record, step) {
   return transfer;
 }
 
+function normalizeText(value = "") {
+  return String(value)
+    .replace(/\r\n?/g, "\n")
+    .replace(/\u3000/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
 function parseShortName(text, code) {
-  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  for (const line of lines) {
-    if (code && line.toUpperCase().includes(code)) {
-      const beforeCode = line.slice(0, line.toUpperCase().indexOf(code)).replace(/[【】\[\]（）()]/g, " ").trim();
-      const tokens = beforeCode.split(/\s+/).filter(Boolean);
-      const candidate = tokens.at(-1) || "";
-      if (candidate && !/代码/.test(candidate)) return candidate;
-    }
-    const labelled = line.match(/(?:简称|债券简称)[:：\s]*([A-Za-z0-9\u4e00-\u9fa5]+(?:\d{2})?)/);
-    if (labelled) return labelled[1];
-  }
   const compact = String(text || "").replace(/\s+/g, " ");
-  const labelMatch = compact.match(/债券简称\s+([A-Za-z0-9\u4e00-\u9fa5]+(?:\d{2})?)/);
-  if (labelMatch) return labelMatch[1];
-  return firstMatch(String(text || ""), /([0-9]{2}[\u4e00-\u9fa5A-Za-z]{1,12}[0-9A-Za-z]{1,4})/) || "";
+  const labelled = compact.match(/(?:债券简称|简称)[:：\s]*([A-Za-z0-9\u4e00-\u9fa5]+(?:\d{2})?)/);
+  if (labelled && BOND_SHORT_NAME_PATTERN.test(labelled[1])) return labelled[1];
+
+  const lines = String(text || "").split(/\n/).map((line) => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (!code || !line.toUpperCase().includes(code)) continue;
+    const afterCode = line.slice(line.toUpperCase().indexOf(code) + code.length);
+    const afterCandidate = afterCode.split(/\s+/).find((token) => BOND_SHORT_NAME_PATTERN.test(cleanToken(token)));
+    if (afterCandidate) return cleanToken(afterCandidate);
+
+    const beforeCode = line.slice(0, line.toUpperCase().indexOf(code)).replace(/[【】\[\]（）()]/g, " ").trim();
+    const beforeCandidate = beforeCode.split(/\s+/).reverse().find((token) => BOND_SHORT_NAME_PATTERN.test(cleanToken(token)));
+    if (beforeCandidate) return cleanToken(beforeCandidate);
+  }
+
+  return firstMatch(String(text || ""), /([0-9]{2}[\u4e00-\u9fa5A-Za-z]{1,12}[0-9A-Za-z]{1,4})/);
 }
 
 function parseTradeSides(text) {
   const result = { buyer: "", seller: "" };
-  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = String(text || "").split(/\n/).map((line) => line.trim()).filter(Boolean);
   for (const line of lines) {
     if (!/交易机构\s*[12]/.test(line) || !/交易方向/.test(line)) continue;
     const direction = firstMatch(line, /交易方向\s*(买入|卖出)/);
@@ -188,6 +200,13 @@ function parseTradeSides(text) {
     if (direction === "买入") result.buyer = name;
     if (direction === "卖出") result.seller = name;
   }
+
+  const compact = String(text || "").replace(/\s+/g, " ");
+  const directional = compact.match(/(?:^|[，,；;\s])([\u4e00-\u9fa5A-Za-z]{2,20})\s*出给\s*([\u4e00-\u9fa5A-Za-z]{2,20})(?=[，,；;\s]|$)/);
+  if (directional) {
+    result.seller ||= directional[1].trim();
+    result.buyer ||= directional[2].trim();
+  }
   return result;
 }
 
@@ -198,17 +217,66 @@ function simplifyInstitutionName(name = "") {
 }
 
 function inferTransferType(text, sides) {
-  const explicit = firstMatch(text, /(商业银行|证券公司|券商|基金|保险|理财|其他)/);
-  if (explicit) return explicit === "券商" ? "证券公司" : explicit;
-  const joined = `${sides.buyer || ""} ${sides.seller || ""}`;
+  const joined = `${sides.buyer || ""} ${sides.seller || ""} ${text || ""}`;
   if (/银行/.test(joined)) return "商业银行";
   if (/证券|券商/.test(joined)) return "证券公司";
+  const explicit = firstMatch(text, /(商业银行|证券公司|券商|基金|保险|理财|其他)/);
+  if (explicit) return explicit === "券商" ? "证券公司" : explicit;
   return DEFAULT_TYPE;
+}
+
+function parsePrice(text) {
+  const labelled = firstMatch(text, /(?:交易净价|价格|成交价|全价|净价)(?:（元）|\(元\))?(?:\s*\([^)]*\))?[:：\s]*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/);
+  if (labelled) return labelled.replace(/\s+/g, "");
+
+  const sentBy = firstMatch(text, /(?:^|[，,；;\s])[\u4e00-\u9fa5A-Za-z]{2,20}\s*发\s*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/);
+  if (sentBy) return sentBy.replace(/\s+/g, "");
+
+  const slashPrice = firstMatch(text, /(\d{2,3}\.\d{3}\s*\/\s*\d{2,3}\.\d{3})/);
+  if (slashPrice) return slashPrice.replace(/\s+/g, "");
+
+  return firstMatch(text, /\b((?:9\d|10\d)\.\d{3})\b/);
+}
+
+function parseQuantityHands(text) {
+  const labelled = firstMatch(text, /(?:交易数量|数量|成交数量|券面|面额)(?:（手）|\(手\))?[:：\s]*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:手|张)?/);
+  if (labelled) return numberOrNull(labelled);
+
+  const shorthand = String(text || "").match(/\b(\d+(?:\.\d+)?)\s*k\b/i);
+  if (shorthand) return Math.round(Number(shorthand[1]) * 10000);
+  return null;
+}
+
+function parseRemarks(text) {
+  const compact = String(text || "").replace(/\s+/g, " ");
+  const explicit = firstMatch(compact, /(?:备注)[:：\s]*([^，,；;\n]+)/);
+  const parts = [];
+  if (explicit) parts.push(explicit);
+
+  const city = firstMatch(text, /【([^】]+)】/);
+  const duration = firstMatch(compact, /(\d+(?:\.\d+)?Y(?:\([^)]*\)|（[^）]*）)?)/i);
+  const bondType = firstMatch(compact, /(私募债|公募债|公司债|企业债|ABS|ABN)/i);
+  const sentBy = compact.match(/(?:^|[，,；;\s])([\u4e00-\u9fa5A-Za-z]{2,20})\s*发\s*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/);
+  const contacts = String(text || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => /\d{8,}/.test(line));
+
+  if (city) parts.push(city);
+  if (duration) parts.push(duration);
+  if (bondType) parts.push(bondType);
+  if (sentBy) {
+    const bridgeQuote = sentBy[2].replace(/\s+/g, "");
+    parts.push(`${sentBy[1]}发 ${bridgeQuote}`);
+  }
+  if (contacts.length) parts.push(`联系人：${contacts.join("；")}`);
+  return [...new Set(parts)].join("；");
 }
 
 function parseDateFromText(text, referenceDate) {
   const applicationDate = String(text || "").match(/申请日期[:：\s]*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)/);
   if (applicationDate) return normalizeDate(applicationDate[1]);
+
   const labelled = String(text || "").match(/(?:交易日|成交日|T日)[:：\s]*/);
   if (labelled) {
     const tail = text.slice(labelled.index + labelled[0].length);
@@ -222,10 +290,15 @@ function parseDateFromText(text, referenceDate) {
 }
 
 function parseMonthDay(text, referenceDate) {
-  const match = String(text || "").match(MONTH_DAY_PATTERN);
-  if (!match) return null;
-  const year = referenceDate.getFullYear();
-  return localDate(new Date(year, Number(match[1]) - 1, Number(match[2])));
+  const chinese = String(text || "").match(CHINESE_MONTH_DAY_PATTERN);
+  if (chinese) return localDateFromParts(referenceDate.getFullYear(), Number(chinese[1]), Number(chinese[2]), referenceDate);
+
+  const source = String(text || "");
+  for (const match of source.matchAll(NUMERIC_MONTH_DAY_PATTERN)) {
+    const date = localDateFromParts(referenceDate.getFullYear(), Number(match[1]), Number(match[2]), referenceDate);
+    if (date) return date;
+  }
+  return null;
 }
 
 function normalizeDate(value) {
@@ -233,7 +306,7 @@ function normalizeDate(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return localDate(value);
   const text = String(value).trim();
   const match = text.match(DATE_PATTERN);
-  if (match) return localDate(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (match) return localDateFromParts(Number(match[1]), Number(match[2]), Number(match[3])) || "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   return "";
 }
@@ -248,6 +321,23 @@ function addBusinessDays(value, days) {
   return localDate(date);
 }
 
+function localDateFromParts(year, month, day, referenceDate = null) {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  if (referenceDate && date < addCalendarDays(referenceDate, -60)) {
+    const nextYear = new Date(year + 1, month - 1, day);
+    return localDate(nextYear);
+  }
+  return localDate(date);
+}
+
+function addCalendarDays(value, days) {
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
 function dateFromLocal(value) {
   const [year, month, day] = String(value).split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -259,6 +349,10 @@ function localDate(value) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function cleanToken(value = "") {
+  return String(value).replace(/[【】\[\]（）(),，；;]/g, "").trim();
+}
+
 function firstMatch(text, pattern) {
   const match = String(text || "").match(pattern);
   return match?.[1]?.trim() || "";
@@ -268,10 +362,16 @@ function firstDateText(text) {
   return String(text || "").match(DATE_PATTERN)?.[0] || "";
 }
 
-function firstNumber(text, pattern) {
-  const value = firstMatch(text, pattern).replace(/,/g, "");
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+function normalizePrice(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const text = String(value).trim().replace(/\s+/g, "");
+  if (!text) return null;
+  if (text.includes("/")) {
+    const prices = text.split("/").map((item) => Number(item)).filter(Number.isFinite);
+    return prices.length ? Math.min(...prices) : text;
+  }
+  const number = Number(text);
+  return Number.isFinite(number) ? number : text;
 }
 
 function numberOrNull(value) {
