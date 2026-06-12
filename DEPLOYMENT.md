@@ -78,7 +78,7 @@ Value: 设置一个仅自己知道的高强度口令
 打开现有 Worker：
 
 ```text
-tempest07-gateway
+tempest07.com Gateway Worker
 ```
 
 使用以下仓库文件的完整内容覆盖 Worker，然后点击部署：
@@ -91,7 +91,7 @@ https://github.com/Tempest07/tempest07-home/blob/main/gateway-worker.js
 
 ```js
 {
-  prefix: "/credit-bond-process",
+  prefix: "/bond-centre",
   origin: "https://credit-bond-process.pages.dev",
 }
 ```
@@ -107,7 +107,7 @@ https://credit-bond-process.pages.dev/
 应自动跳转至：
 
 ```text
-https://tempest07-gateway.weiqian-yu.workers.dev/credit-bond-process/
+https://tempest07.com/bond-centre/
 ```
 
 在统一入口中：

@@ -86,7 +86,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 if (location.hostname.endsWith(".pages.dev")) {
-  location.replace(`https://tempest07-gateway.weiqian-yu.workers.dev/credit-bond-process/${location.search}${location.hash}`);
+  location.replace(`https://tempest07.com/bond-centre/${location.search}${location.hash}`);
 }
 
 initialize();
