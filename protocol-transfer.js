@@ -65,6 +65,9 @@ export function removeProtocolTransfer(state, id) {
 
 export function parseProtocolTransferText(rawText = "", referenceDate = new Date()) {
   const text = normalizeText(rawText);
+  const chatStyle = parseChatStyleTradeElements(text, referenceDate);
+  if (chatStyle) return normalizeProtocolTransfer({ ...chatStyle, rawText: text }, referenceDate);
+
   const compact = text.replace(/\s+/g, " ");
   const code = firstMatch(compact, /(\d{6}\.SH)\b/i).toUpperCase();
   const shortName = parseShortName(text, code);
@@ -83,6 +86,35 @@ export function parseProtocolTransferText(rawText = "", referenceDate = new Date
     remarks: parseRemarks(text),
     rawText: text,
   }, referenceDate);
+}
+
+function parseChatStyleTradeElements(text, referenceDate) {
+  const line = String(text || "").split(/\n/).map((item) => item.trim()).find((item) =>
+    /\b\d{6}(?:\.(?:SH|SZ|IB))?\b/i.test(item) && /(出给|to|发)/i.test(item),
+  );
+  if (!line) return null;
+
+  const codeMatch = line.match(/\b(\d{6})(?:\.(SH|SZ|IB))?\b/i);
+  if (!codeMatch) return null;
+  const code = `${codeMatch[1]}.${(codeMatch[2] || "SH").toUpperCase()}`;
+  const afterCode = line.slice(codeMatch.index + codeMatch[0].length);
+  const shortName = extractShortNameAfterCode(afterCode);
+  const sides = parseOperatorSides(line);
+  const price = parsePrice(line);
+  const quantityHands = parseChatQuantityHands(line);
+  const tradeDate = parseDateFromText(line, referenceDate) || localDate(referenceDate);
+
+  return {
+    code,
+    shortName,
+    tradeDate,
+    type: inferTransferType(line, sides),
+    buyer: sides.buyer,
+    seller: sides.seller,
+    price,
+    quantityHands,
+    remarks: parseRemarks(text),
+  };
 }
 
 export function protocolTransferStatus(record) {
@@ -186,6 +218,64 @@ function parseShortName(text, code) {
   return firstMatch(String(text || ""), /([0-9]{2}[\u4e00-\u9fa5A-Za-z]{1,12}[0-9A-Za-z]{1,4})/);
 }
 
+function extractShortNameAfterCode(text) {
+  const tokens = normalizeText(text).split(/\s+/).map(cleanToken).filter(Boolean);
+  return tokens.find((token) =>
+    BOND_SHORT_NAME_PATTERN.test(token)
+    && !/^(?:休|远|近)\d*$/i.test(token)
+    && !/(?:私募债|公募债|公司债|企业债|交易所)$/.test(token),
+  ) || "";
+}
+
+function parseOperatorSides(text) {
+  const result = { buyer: "", seller: "" };
+  const match = /(出给|to)/i.exec(text);
+  if (!match) return result;
+  const left = text.slice(0, match.index).trim();
+  const right = text.slice(match.index + match[0].length).trim();
+  result.seller = lastPartyBeforeOperator(left);
+  result.buyer = firstPartyAfterOperator(right);
+  return result;
+}
+
+function firstPartyAfterOperator(text) {
+  const value = normalizeText(text);
+  if (!value) return "";
+  const stop = value.split(/[，,；;]/)[0];
+  return cleanPartyName(stop.split(/\s+/)[0]);
+}
+
+function lastPartyBeforeOperator(text) {
+  const value = normalizeText(text);
+  if (!value) return "";
+  const tokens = value.split(/\s+/).map(cleanPartyName).filter(Boolean);
+  for (let index = tokens.length - 1; index >= 0; index -= 1) {
+    const token = tokens[index];
+    if (isIgnoredTradeToken(token)) continue;
+    return token;
+  }
+  return "";
+}
+
+function cleanPartyName(name = "") {
+  return cleanToken(name)
+    .replace(/^(出给|to)$/i, "")
+    .trim();
+}
+
+function isIgnoredTradeToken(token) {
+  return !token
+    || token === "交易所"
+    || /^(?:买入|卖出)$/.test(token)
+    || /^(?:私募债|公募债|公司债|企业债)$/.test(token)
+    || BOND_SHORT_NAME_PATTERN.test(token)
+    || /\d{6}\.(?:SH|SZ|IB)/i.test(token)
+    || /^\d+(?:\.\d+)?Y/i.test(token)
+    || /^\d+(?:\.\d+)?$/.test(token)
+    || /^\d+(?:\.\d+)?(?:k|kw|w|e|万|千万|亿)$/i.test(token)
+    || /^\d{1,2}[./]\d{1,2}/.test(token);
+}
+
 function parseTradeSides(text) {
   const result = { buyer: "", seller: "" };
   const lines = String(text || "").split(/\n/).map((line) => line.trim()).filter(Boolean);
@@ -242,8 +332,30 @@ function parseQuantityHands(text) {
   const labelled = firstMatch(text, /(?:交易数量|数量|成交数量|券面|面额)(?:（手）|\(手\))?[:：\s]*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:手|张)?/);
   if (labelled) return numberOrNull(labelled);
 
-  const shorthand = String(text || "").match(/\b(\d+(?:\.\d+)?)\s*k\b/i);
-  if (shorthand) return Math.round(Number(shorthand[1]) * 10000);
+  const chatQuantity = parseChatQuantityHands(text);
+  if (chatQuantity !== null) return chatQuantity;
+  return null;
+}
+
+function parseChatQuantityHands(text) {
+  const tokens = normalizeText(text).split(/\s+/).map(cleanToken).filter(Boolean);
+  for (const token of tokens) {
+    const amountTenThousand = parseAmountTenThousand(token);
+    if (amountTenThousand !== null) return Math.round(amountTenThousand * 10);
+  }
+  return null;
+}
+
+function parseAmountTenThousand(token) {
+  const value = normalizeText(token).toLowerCase();
+  const match = /^(\d+(?:\.\d+)?)(千万|kw|k|w|e|万|亿)?$/.exec(value);
+  if (!match) return null;
+  const number = Number(match[1]);
+  const unit = match[2] || "";
+  if (unit === "e" || unit === "亿") return Math.round(number * 10000);
+  if (unit === "kw" || unit === "k" || unit === "千万") return Math.round(number * 1000);
+  if (unit === "w" || unit === "万") return Math.round(number);
+  if (number >= 50 && Number.isInteger(number)) return number;
   return null;
 }
 

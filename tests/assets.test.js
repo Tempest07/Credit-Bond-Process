@@ -25,3 +25,10 @@ test("revalidates non-fingerprinted application assets", async () => {
   assert.match(headers, /\/\*\.js\s+Cache-Control: no-cache/);
   assert.match(headers, /\/\*\.css\s+Cache-Control: no-cache/);
 });
+
+test("ships the protocol transfer ledger xlsx template", async () => {
+  const workbook = await readFile(new URL("../templates/protocol-transfer-ledger-template.xlsx", import.meta.url));
+
+  assert.equal(workbook[0], 0x50);
+  assert.equal(workbook[1], 0x4b);
+});

@@ -54,6 +54,8 @@ const MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
 const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -1013,19 +1015,85 @@ function completeProtocolTransferStep(id, step) {
   showToast(`${next.shortName || next.code} 已完成：${step === "counterparty" ? "对手方用印" : step === "own" ? "本方用印" : "递交上交所"}`);
 }
 
-function exportProtocolTransferLedger() {
+async function exportProtocolTransferLedger() {
   const rows = buildProtocolTransferLedgerRows(state.protocolTransfers || []);
   if (rows.length <= 1) {
     showToast("暂无协议转让记录可导出。");
     return;
   }
-  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1">${rows.map((row) =>
-    `<tr>${row.map((cell) => `<td>${escapeHtml(cell ?? "")}</td>`).join("")}</tr>`,
-  ).join("")}</table></body></html>`;
-  downloadBlob(`债券协议转让台账${localDate(new Date()).replaceAll("-", "")}.xls`, new Blob([html], {
-    type: "application/vnd.ms-excel;charset=utf-8",
-  }));
-  showToast("已导出协议转让 Excel 台账。");
+
+  const button = $("#protocolTransferExportButton");
+  if (button) button.disabled = true;
+  try {
+    await ensureExcelJsReady();
+    const workbook = new window.ExcelJS.Workbook();
+    const template = await fetch(PROTOCOL_TRANSFER_TEMPLATE_URL, { cache: "no-store" });
+    if (!template.ok) throw new Error("协议转让台账模板读取失败");
+    await workbook.xlsx.load(await template.arrayBuffer());
+    const sheet = workbook.getWorksheet("2024") || workbook.worksheets[0];
+    if (!sheet) throw new Error("协议转让台账模板缺少工作表");
+
+    fillProtocolTransferLedgerTemplate(sheet, rows.slice(1));
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(`债券协议转让台账${localDate(new Date()).replaceAll("-", "")}.xlsx`, new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }));
+    showToast("已按模板导出协议转让 xlsx 台账。");
+  } catch (error) {
+    showToast(error.message || "导出台账失败。");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function ensureExcelJsReady() {
+  if (window.ExcelJS?.Workbook) return;
+  await loadExternalScript(EXCELJS_SCRIPT_URL);
+  if (!window.ExcelJS?.Workbook) throw new Error("Excel 导出组件加载失败");
+}
+
+function fillProtocolTransferLedgerTemplate(sheet, records) {
+  const startRowNumber = 2;
+  const originalRowCount = sheet.rowCount;
+  const endRowNumber = Math.max(originalRowCount, startRowNumber + records.length - 1);
+  const templateRow = sheet.getRow(startRowNumber);
+
+  for (let rowNumber = startRowNumber; rowNumber <= endRowNumber; rowNumber += 1) {
+    const row = sheet.getRow(rowNumber);
+    if (rowNumber > originalRowCount) copyProtocolTransferTemplateRow(templateRow, row);
+    for (let column = 1; column <= 12; column += 1) row.getCell(column).value = "";
+    row.commit?.();
+  }
+
+  records.forEach((record, index) => {
+    const rowNumber = startRowNumber + index;
+    const row = sheet.getRow(rowNumber);
+    for (let column = 1; column <= 12; column += 1) {
+      row.getCell(column).value = formatProtocolTransferLedgerCell(record[column - 1], column);
+    }
+    row.commit?.();
+  });
+}
+
+function copyProtocolTransferTemplateRow(sourceRow, targetRow) {
+  targetRow.height = sourceRow.height;
+  for (let column = 1; column <= 12; column += 1) {
+    const sourceCell = sourceRow.getCell(column);
+    const targetCell = targetRow.getCell(column);
+    targetCell.style = JSON.parse(JSON.stringify(sourceCell.style || {}));
+  }
+}
+
+function formatProtocolTransferLedgerCell(value, column) {
+  if (value === "" || value === null || value === undefined) return "";
+  if ([4, 5, 6].includes(column)) return excelDateFromLocal(value) || value;
+  return value;
+}
+
+function excelDateFromLocal(value) {
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
 function downloadBlob(filename, blob) {
