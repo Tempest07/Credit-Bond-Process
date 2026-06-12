@@ -25,6 +25,7 @@ test("creates a project ledger record with one tranche per bond variety", () => 
     durationText: "3/5年期",
     durationParts: ["3年", "5年"],
     inquiryRanges: [{ low: 1.3, high: 2.3 }, { low: 1.5, high: 2.5 }],
+    issueScale: 20,
     guidancePrices: [1.7, 1.91],
     suggestedRatios: [20, 15],
     branch: "广州分行",
@@ -34,6 +35,7 @@ test("creates a project ledger record with one tranche per bond variety", () => 
   }, { id: "issuer-1", legalName: "广州越秀集团股份有限公司" }, { opinion: "流程意见" });
 
   assert.equal(record.status, "未投标");
+  assert.equal(record.issueScale, 20);
   assert.equal(record.tranches.length, 2);
   assert.deepEqual(record.tranches.map((item) => item.shortName), ["26广越05", "26广越06"]);
   assert.deepEqual(record.tranches.map((item) => item.durationText), ["3年", "5年"]);

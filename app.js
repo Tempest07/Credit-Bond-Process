@@ -1265,9 +1265,18 @@ function formatProjectScaleSummary(projectValue) {
   const trancheScales = (projectValue.tranches || [])
     .map((tranche) => numberOrNull(tranche.issueScale))
     .filter((value) => Number.isFinite(value) && value > 0);
+  const sourceScale = parseScaleFromSourceText(projectValue.sourceText);
+  if (!trancheScales.length && Number.isFinite(sourceScale) && sourceScale > 0) return `规模${formatNumber(sourceScale)}亿`;
   if (!trancheScales.length) return "规模待补";
   const total = trancheScales.reduce((sum, value) => sum + value, 0);
   return `规模${formatNumber(total)}亿`;
+}
+
+function parseScaleFromSourceText(text = "") {
+  const match = String(text || "").match(/规模(?:合计)?\s*(\d+(?:\.\d+)?(?:\s*\+\s*\d+(?:\.\d+)?)*)\s*亿/);
+  if (!match) return null;
+  const total = match[1].split("+").reduce((sum, value) => sum + Number(value.trim()), 0);
+  return Number.isFinite(total) ? total : null;
 }
 
 function formatProjectVenueLead(projectValue) {

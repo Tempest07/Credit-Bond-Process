@@ -53,6 +53,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     cutoffHistory: input.cutoffHistory || [],
     opinion: generated?.opinion || "",
     sourceText: project.sourceText || "",
+    issueScale: project.issueScale,
     notes: input.notes || "",
     tranches,
     resultAdvertisement: "",
@@ -86,6 +87,7 @@ export function normalizeProjectRecord(input = {}) {
     cutoffHistory: Array.isArray(input.cutoffHistory) ? input.cutoffHistory.map(normalizeCutoffHistoryItem) : [],
     opinion: String(input.opinion || "").trim(),
     sourceText: String(input.sourceText || "").trim(),
+    issueScale: numberOrNull(input.issueScale),
     notes: String(input.notes || "").trim(),
     tranches: Array.isArray(input.tranches) && input.tranches.length
       ? input.tranches.map(normalizeTranche)
