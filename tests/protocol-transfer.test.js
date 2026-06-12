@@ -23,6 +23,11 @@ const tradeElements = `【深圳】 4.42Y(休1)  280607.SH  25汉投03  私募�
 华创证券 吴嘉仪 3007411566
 兴业银行 张夷尘 2853271332`;
 
+const contactBridgeElements = `【深圳】 4.42Y(休1)  280607.SH  25汉投03  私募债  2.0  3k  06.15交易所  兴业银行 出给 南方基金 101.031
+南方基金 呼啸 3005263171
+华创证券 吴嘉仪 3007411566
+兴业银行 张夷尘 2853271332`;
+
 test("parses SSE protocol transfer Word-style text", () => {
   const parsed = parseProtocolTransferText(sample, new Date("2026-06-12T09:00:00+08:00"));
   assert.equal(parsed.code, "281926.SH");
@@ -43,7 +48,7 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.equal(parsed.code, "280607.SH");
   assert.equal(parsed.shortName, "25汉投03");
   assert.equal(parsed.tradeDate, "2026-06-15");
-  assert.equal(parsed.buyer, "南方基金");
+  assert.equal(parsed.buyer, "华创证券");
   assert.equal(parsed.seller, "兴业银行");
   assert.equal(parsed.type, "商业银行");
   assert.equal(parsed.price, 101.031);
@@ -53,6 +58,14 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.match(parsed.remarks, /华创证券发 101\.033\/101\.031/);
   assert.doesNotMatch(parsed.remarks, /过桥费/);
   assert.match(parsed.remarks, /南方基金 呼啸 3005263171/);
+});
+
+test("uses contact list to identify the bridge party when no sent-by quote exists", () => {
+  const parsed = parseProtocolTransferText(contactBridgeElements, new Date("2026-06-12T09:00:00+08:00"));
+
+  assert.equal(parsed.buyer, "华创证券");
+  assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.price, 101.031);
 });
 
 test("advances protocol transfer workflow by action buttons", () => {

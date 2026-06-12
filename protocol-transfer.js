@@ -100,6 +100,8 @@ function parseChatStyleTradeElements(text, referenceDate) {
   const afterCode = line.slice(codeMatch.index + codeMatch[0].length);
   const shortName = extractShortNameAfterCode(afterCode);
   const sides = parseOperatorSides(line);
+  const bridgeBuyer = parseBridgeBuyer(text, sides);
+  const actualSides = { ...sides, buyer: bridgeBuyer || sides.buyer };
   const price = parsePrice(line);
   const quantityHands = parseChatQuantityHands(line);
   const tradeDate = parseDateFromText(line, referenceDate) || localDate(referenceDate);
@@ -108,9 +110,9 @@ function parseChatStyleTradeElements(text, referenceDate) {
     code,
     shortName,
     tradeDate,
-    type: inferTransferType(line, sides),
-    buyer: sides.buyer,
-    seller: sides.seller,
+    type: inferTransferType(line, actualSides),
+    buyer: actualSides.buyer,
+    seller: actualSides.seller,
     price,
     quantityHands,
     remarks: parseRemarks(text),
@@ -236,6 +238,31 @@ function parseOperatorSides(text) {
   result.seller = lastPartyBeforeOperator(left);
   result.buyer = firstPartyAfterOperator(right);
   return result;
+}
+
+function parseBridgeBuyer(text, sides) {
+  const sentByParty = parseSentByParty(text);
+  if (sentByParty && sentByParty !== sides.seller) return sentByParty;
+
+  const excluded = new Set([sides.seller, sides.buyer].filter(Boolean));
+  const contacts = parseContactParties(text);
+  return contacts.find((party) => !excluded.has(party))
+    || contacts.find((party) => party !== sides.seller)
+    || "";
+}
+
+function parseSentByParty(text) {
+  const match = String(text || "").match(/(?:^|[\s，,；;])([\u4e00-\u9fa5A-Za-z]{2,24})\s*发\s*\d{2,3}(?:\.\d+)?(?:\s*\/\s*\d{2,3}(?:\.\d+)?)?/m);
+  return match ? cleanPartyName(match[1]) : "";
+}
+
+function parseContactParties(text) {
+  return String(text || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => /\d{8,}/.test(line))
+    .map((line) => cleanPartyName(line.split(/\s+/)[0]))
+    .filter(Boolean);
 }
 
 function firstPartyAfterOperator(text) {
