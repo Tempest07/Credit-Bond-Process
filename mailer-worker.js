@@ -16,7 +16,6 @@ export default {
     context.waitUntil(
       sendTodayReport(env, {
         source: "scheduled",
-        force: false,
         now: new Date(event.scheduledTime || Date.now()),
       }).catch((error) => {
         console.error("Scheduled mail failed", error);
@@ -55,7 +54,6 @@ export async function handleRequest(request, env) {
     const result = await sendTodayReport(env, {
       source: "manual",
       date: url.searchParams.get("date") || "",
-      force: url.searchParams.get("force") === "1",
       now: new Date(),
     });
     return jsonResponse(result, result.status === "sent" ? 200 : 202);
@@ -79,22 +77,8 @@ export async function sendTodayReport(env, options = {}) {
     };
   }
 
-  const logKey = `${REPORT_KIND}:${report.date}`;
-  if (!options.force) {
-    const existing = await env.DB.prepare("SELECT id, sent_at FROM mail_log WHERE id = ?1").bind(logKey).first();
-    if (existing) {
-      return {
-        status: "skipped",
-        reason: "今日邮件已经发送过，如需重发请使用 force=1",
-        date: report.date,
-        projectCount: report.projects.length,
-        sentAt: existing.sent_at,
-      };
-    }
-  }
-
   const sent = await sendWithResend(env, report);
-  const logId = options.force ? `${logKey}:${crypto.randomUUID()}` : logKey;
+  const logId = `${REPORT_KIND}:${report.date}:${crypto.randomUUID()}`;
   const sentAt = new Date().toISOString();
   await env.DB.prepare(`
     INSERT INTO mail_log (id, report_date, sent_at, subject, project_count, resend_id, source)
@@ -354,7 +338,6 @@ function controlPage() {
     <div class="actions">
       <button id="preview">预览今日邮件</button>
       <button class="primary" id="send">发送今日邮件</button>
-      <button id="force">强制重发今日邮件</button>
     </div>
     <pre id="output">等待操作...</pre>
   </main>
@@ -362,10 +345,9 @@ function controlPage() {
     const output = document.querySelector("#output");
     const password = document.querySelector("#password");
     const date = document.querySelector("#date");
-    function query(extra = "") {
+    function query() {
       const params = new URLSearchParams();
       if (date.value) params.set("date", date.value);
-      if (extra) params.set("force", "1");
       const text = params.toString();
       return text ? "?" + text : "";
     }
@@ -407,7 +389,6 @@ function controlPage() {
     }
     document.querySelector("#preview").onclick = () => call("/preview-today" + query());
     document.querySelector("#send").onclick = () => call("/send-today" + query(), "POST");
-    document.querySelector("#force").onclick = () => call("/send-today" + query("force"), "POST");
   </script>
 </body>
 </html>`;
