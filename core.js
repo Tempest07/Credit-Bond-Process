@@ -2,6 +2,7 @@ export const DEFAULT_STATE = {
   version: 2,
   issuers: [],
   projects: [],
+  protocolTransfers: [],
   ftpCurve: {
     m3: null,
     m4: null,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260612-todo-cleanup";
+const VERSION = "20260612-protocol-transfer";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser] = await Promise.all([
@@ -15,6 +15,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`history-parser\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
 });
 

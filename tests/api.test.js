@@ -41,9 +41,19 @@ test("accepts and preserves project ledger records", async () => {
     request: new Request("https://example.com/api/state", {
       method: "PUT",
       headers: { Authorization: "Bearer correct" },
-      body: JSON.stringify({ data: { version: 2, issuers: [], projects: [{ id: "p1", shortName: "26测试01" }] } }),
+      body: JSON.stringify({
+        data: {
+          version: 3,
+          issuers: [],
+          projects: [{ id: "p1", shortName: "26测试01" }],
+          protocolTransfers: [{ id: "t1", code: "281926.SH", shortName: "26光交01" }],
+          ftpCurve: { y1: 1.5 },
+        },
+      }),
     }),
   });
   assert.equal(response.status, 200);
   assert.equal(saved.projects[0].shortName, "26测试01");
+  assert.equal(saved.protocolTransfers[0].code, "281926.SH");
+  assert.equal(saved.ftpCurve.y1, 1.5);
 });

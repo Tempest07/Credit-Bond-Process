@@ -67,10 +67,14 @@ function validateState(data) {
   if (data.issuers.length > 10000) throw new Error("主体数量不能超过10000");
   if (data.projects !== undefined && !Array.isArray(data.projects)) throw new Error("项目台账必须为 projects 数组");
   if ((data.projects || []).length > 10000) throw new Error("项目数量不能超过10000");
+  if (data.protocolTransfers !== undefined && !Array.isArray(data.protocolTransfers)) throw new Error("协议转让台账必须为 protocolTransfers 数组");
+  if ((data.protocolTransfers || []).length > 10000) throw new Error("协议转让记录数量不能超过10000");
   return {
-    version: 2,
+    version: 3,
     issuers: data.issuers,
     projects: data.projects || [],
+    protocolTransfers: data.protocolTransfers || [],
+    ftpCurve: data.ftpCurve || {},
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };
 }

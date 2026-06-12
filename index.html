@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260612-todo-cleanup">
+  <link rel="stylesheet" href="./styles.css?v=20260612-protocol-transfer">
 </head>
 <body>
   <div class="app-shell">
@@ -18,6 +18,7 @@
 
       <nav class="nav">
         <button class="nav-item active" data-view-target="ledger">项目中心</button>
+        <button class="nav-item" data-view-target="protocol-transfer">协议转让</button>
         <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch">批量撰写</button>
         <button class="nav-item" data-view-target="database">主体与授信库</button>
@@ -355,6 +356,80 @@
         </div>
       </section>
 
+      <section class="view" data-view="protocol-transfer">
+        <div class="protocol-transfer-grid">
+          <section class="panel protocol-transfer-left">
+            <div class="panel-head">
+              <div><span class="step">SSE</span><h2>上交所协议转让</h2></div>
+              <button class="button primary" id="protocolTransferNewButton" type="button">新建记录</button>
+            </div>
+
+            <div class="protocol-transfer-actions">
+              <textarea id="protocolTransferInput" class="protocol-transfer-input" rows="9" spellcheck="false" placeholder="粘贴交易要素，或上传上交所协议转让 Word 申请单。"></textarea>
+              <div class="batch-actions">
+                <button class="button primary" id="protocolTransferParseButton" type="button">识别要素</button>
+                <label class="button subtle file-button" id="protocolTransferDocxButton">
+                  <span id="protocolTransferDocxButtonText">上传 Word 单据</span>
+                  <input id="protocolTransferDocxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                </label>
+                <button class="button subtle" id="protocolTransferExportButton" type="button">导出 Excel 台账</button>
+              </div>
+            </div>
+
+            <section class="protocol-todo-panel">
+              <div class="payment-todo-head">
+                <div><span class="step">TODO</span><h2>协议转让待办</h2></div>
+              </div>
+              <div class="protocol-todo-list" id="protocolTransferTodoList"></div>
+            </section>
+
+            <div class="panel-head protocol-list-head">
+              <div><span class="step">LEDGER</span><h2>协议转让台账</h2></div>
+            </div>
+            <input class="search-input" id="protocolTransferSearch" type="search" placeholder="搜索代码、简称、买方或卖方">
+            <div class="protocol-transfer-list" id="protocolTransferList"></div>
+          </section>
+
+          <section class="panel protocol-transfer-detail">
+            <form id="protocolTransferForm">
+              <input id="protocolTransferId" type="hidden">
+              <div class="panel-head">
+                <div><span class="step">FORM</span><h2>成交要素与流程节点</h2></div>
+                <span class="pill accent" id="protocolTransferStatusPill">待录入</span>
+              </div>
+
+              <div class="field-grid">
+                <label>债券代码<input id="protocolTransferCode" placeholder="281926.SH"></label>
+                <label>债券简称<input id="protocolTransferShortName" placeholder="26光交01"></label>
+                <label>交易日<input id="protocolTransferTradeDate" type="date"></label>
+                <label>类型<input id="protocolTransferType" placeholder="商业银行" value="商业银行"></label>
+                <label>买入方<input id="protocolTransferBuyer"></label>
+                <label>卖出方<input id="protocolTransferSeller"></label>
+                <label>价格（全价请标注）<input id="protocolTransferPrice" type="number" step="0.001"></label>
+                <label>数量（手）<input id="protocolTransferQuantity" type="number" step="1"></label>
+                <label>材料首次收悉日期<input id="protocolTransferMaterialFirstDate" type="date"></label>
+                <label>材料确认日期<input id="protocolTransferMaterialConfirmDate" type="date"></label>
+                <label>对手方用印日<input id="protocolTransferCounterpartySealDate" type="date"></label>
+                <label>本方用印日<input id="protocolTransferOwnSealDate" type="date"></label>
+                <label>递交上交所日<input id="protocolTransferExchangeSubmitDate" type="date"></label>
+                <label class="span-2">备注<input id="protocolTransferRemarks" placeholder="例如：本笔价格由买卖双方协商达成"></label>
+              </div>
+
+              <div class="protocol-step-grid">
+                <label class="checkbox-label"><input id="protocolTransferCounterpartySealed" type="checkbox">对手方已用印</label>
+                <label class="checkbox-label"><input id="protocolTransferOwnSealed" type="checkbox">本方已用印</label>
+                <label class="checkbox-label"><input id="protocolTransferExchangeSubmitted" type="checkbox">已递交上交所</label>
+              </div>
+
+              <div class="form-actions">
+                <button class="button danger" id="protocolTransferDeleteButton" type="button" hidden>删除记录</button>
+                <button class="button primary" id="protocolTransferSaveButton" type="button">保存记录</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+
       <section class="view" data-view="batch">
         <section class="panel batch-input-panel">
           <div class="panel-head">
@@ -478,6 +553,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260612-todo-cleanup"></script>
+  <script type="module" src="./app.js?v=20260612-protocol-transfer"></script>
 </body>
 </html>

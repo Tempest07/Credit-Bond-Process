@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260612-todo-cleanup";
+} from "./core.js?v=20260612-protocol-transfer";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,25 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260612-todo-cleanup";
+} from "./lifecycle.js?v=20260612-protocol-transfer";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260612-todo-cleanup";
+} from "./history-parser.js?v=20260612-protocol-transfer";
+import {
+  buildProtocolTransferLedgerRows,
+  markProtocolTransferStep,
+  nextProtocolTransferStep,
+  normalizeProtocolTransfer,
+  normalizeProtocolTransfers,
+  parseProtocolTransferText,
+  protocolTransferStatus,
+  protocolTransferTodos,
+  removeProtocolTransfer,
+  upsertProtocolTransfer,
+} from "./protocol-transfer.js?v=20260612-protocol-transfer";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -79,6 +91,7 @@ let cloudAvailable = false;
 let pendingHistoryImport = null;
 let batchItems = [];
 let selectedProjectId = "";
+let selectedProtocolTransferId = "";
 let ledgerFilter = "all";
 let projectAutoSaveTimer = null;
 
@@ -95,6 +108,7 @@ async function initialize() {
   bindNavigation();
   bindGenerator();
   bindLedger();
+  bindProtocolTransfer();
   bindQuickIssuer();
   bindBatch();
   bindDatabase();
@@ -103,6 +117,7 @@ async function initialize() {
   renderIssuerOptions();
   renderIssuerList();
   renderProjectWorkspace();
+  renderProtocolTransferWorkspace();
   renderFtpCurveForm();
   clearIssuerForm();
   await loadCloudState();
@@ -649,6 +664,253 @@ function parseJson(text) {
   } catch {
     return null;
   }
+}
+
+function bindProtocolTransfer() {
+  if (!$("#protocolTransferForm")) return;
+  $("#protocolTransferParseButton").addEventListener("click", parseProtocolTransferInput);
+  $("#protocolTransferSaveButton").addEventListener("click", saveProtocolTransferFromForm);
+  $("#protocolTransferNewButton").addEventListener("click", clearProtocolTransferForm);
+  $("#protocolTransferDeleteButton").addEventListener("click", deleteSelectedProtocolTransfer);
+  $("#protocolTransferExportButton").addEventListener("click", exportProtocolTransferLedger);
+  $("#protocolTransferSearch").addEventListener("input", renderProtocolTransferList);
+  $("#protocolTransferDocxInput").addEventListener("change", parseProtocolTransferDocument);
+  $("#protocolTransferList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-protocol-transfer-id]");
+    if (!button) return;
+    selectedProtocolTransferId = button.dataset.protocolTransferId;
+    renderProtocolTransferWorkspace();
+  });
+  $("#protocolTransferTodoList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-protocol-transfer-step]");
+    if (!button) return;
+    completeProtocolTransferStep(button.dataset.protocolTransferId, button.dataset.protocolTransferStep);
+  });
+  initializeProtocolTransferImport();
+}
+
+function initializeProtocolTransferImport() {
+  const isReady = typeof window.mammoth?.extractRawText === "function";
+  $("#protocolTransferDocxInput").disabled = !isReady;
+  $("#protocolTransferDocxButton").classList.toggle("unavailable", !isReady);
+  $("#protocolTransferDocxButtonText").textContent = isReady ? "上传 Word 单据" : "Word 组件加载失败";
+}
+
+function renderProtocolTransferWorkspace() {
+  if (!$("#protocolTransferForm")) return;
+  const selected = (state.protocolTransfers || []).find((item) => item.id === selectedProtocolTransferId);
+  renderProtocolTransferTodos();
+  renderProtocolTransferList();
+  if (selected) fillProtocolTransferForm(selected);
+  else if (!$("#protocolTransferId").value) clearProtocolTransferForm(false);
+}
+
+function renderProtocolTransferTodos() {
+  const todos = protocolTransferTodos(state.protocolTransfers || []);
+  $("#protocolTransferTodoList").innerHTML = todos.length
+    ? todos.map(({ record, step, timing }) => `
+      <article class="protocol-todo-item ${timing}">
+        <div>
+          <strong>${escapeHtml(record.shortName || record.code || "未命名单据")}</strong>
+          <span>${escapeHtml(step.dueDate)} · ${escapeHtml(step.label)}</span>
+        </div>
+        <button class="button subtle" type="button" data-protocol-transfer-id="${escapeAttribute(record.id)}" data-protocol-transfer-step="${escapeAttribute(step.key)}">${escapeHtml(step.label)}</button>
+      </article>
+    `).join("")
+    : '<div class="payment-todo-empty">目前没有待处理的协议转让事项。</div>';
+}
+
+function renderProtocolTransferList() {
+  const query = $("#protocolTransferSearch").value.trim().toLowerCase();
+  const records = normalizeProtocolTransfers(state.protocolTransfers || [])
+    .filter((record) =>
+      `${record.code} ${record.shortName} ${record.buyer} ${record.seller}`.toLowerCase().includes(query),
+    )
+    .sort((left, right) =>
+      right.tradeDate.localeCompare(left.tradeDate)
+      || right.createdAt.localeCompare(left.createdAt),
+    );
+  $("#protocolTransferList").innerHTML = records.length
+    ? records.map((record) => {
+        const step = nextProtocolTransferStep(record);
+        return `
+          <button class="protocol-transfer-item ${record.id === selectedProtocolTransferId ? "active" : ""}" type="button" data-protocol-transfer-id="${escapeAttribute(record.id)}">
+            <span class="project-item-head">
+              <strong>${escapeHtml(record.shortName || record.code || "未命名单据")}</strong>
+              <span class="status-badge">${escapeHtml(protocolTransferStatus(record))}</span>
+            </span>
+            <span class="project-item-meta project-item-primary">
+              <span>${escapeHtml(record.buyer || "买方待补")} → ${escapeHtml(record.seller || "卖方待补")}</span>
+              <span class="project-item-schedule">${escapeHtml(record.tradeDate)}</span>
+            </span>
+            <span class="project-item-facts">
+              <span>${escapeHtml(record.code || "代码待补")}</span>
+              <span>${escapeHtml(record.price ? `净价${formatNumber(record.price)}` : "价格待补")}</span>
+              <span>${escapeHtml(record.quantityHands ? `${formatNumber(record.quantityHands)}手` : "数量待补")}</span>
+              <span>${escapeHtml(step ? `${step.dueDate} ${step.label}` : "流程完成")}</span>
+            </span>
+          </button>
+        `;
+      }).join("")
+    : '<div class="empty">暂无协议转让记录。</div>';
+}
+
+function parseProtocolTransferInput() {
+  const text = $("#protocolTransferInput").value;
+  if (!text.trim()) {
+    showToast("请先粘贴交易要素，或上传 Word 单据。");
+    return;
+  }
+  const parsed = parseProtocolTransferText(text);
+  fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
+  showToast("已识别协议转让要素，请复核后保存。");
+}
+
+async function parseProtocolTransferDocument() {
+  const input = $("#protocolTransferDocxInput");
+  const file = input.files[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith(".docx")) {
+    showToast("请上传 .docx 格式的协议转让申请单。");
+    input.value = "";
+    return;
+  }
+  try {
+    if (!window.mammoth?.extractRawText) throw new Error("Word 解析组件未加载，请刷新页面后重试");
+    const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    $("#protocolTransferInput").value = result.value;
+    const parsed = parseProtocolTransferText(result.value);
+    fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
+    showToast("Word 单据已读取，请复核后保存。");
+  } catch (error) {
+    showToast(`Word 解析失败：${error.message || "未知错误"}`);
+  } finally {
+    input.value = "";
+  }
+}
+
+function readProtocolTransferForm() {
+  return normalizeProtocolTransfer({
+    id: $("#protocolTransferId").value,
+    code: $("#protocolTransferCode").value,
+    shortName: $("#protocolTransferShortName").value,
+    tradeDate: $("#protocolTransferTradeDate").value,
+    materialFirstReceivedDate: $("#protocolTransferMaterialFirstDate").value,
+    materialConfirmedDate: $("#protocolTransferMaterialConfirmDate").value,
+    type: $("#protocolTransferType").value,
+    buyer: $("#protocolTransferBuyer").value,
+    seller: $("#protocolTransferSeller").value,
+    price: $("#protocolTransferPrice").value,
+    quantityHands: $("#protocolTransferQuantity").value,
+    remarks: $("#protocolTransferRemarks").value,
+    rawText: $("#protocolTransferInput").value,
+    counterpartySealDate: $("#protocolTransferCounterpartySealDate").value,
+    ownSealDate: $("#protocolTransferOwnSealDate").value,
+    exchangeSubmitDate: $("#protocolTransferExchangeSubmitDate").value,
+    counterpartySealed: $("#protocolTransferCounterpartySealed").checked,
+    ownSealed: $("#protocolTransferOwnSealed").checked,
+    exchangeSubmitted: $("#protocolTransferExchangeSubmitted").checked,
+  });
+}
+
+function fillProtocolTransferForm(input) {
+  const record = normalizeProtocolTransfer(input);
+  selectedProtocolTransferId = record.id;
+  $("#protocolTransferId").value = record.id;
+  $("#protocolTransferCode").value = record.code;
+  $("#protocolTransferShortName").value = record.shortName;
+  $("#protocolTransferTradeDate").value = record.tradeDate;
+  $("#protocolTransferMaterialFirstDate").value = record.materialFirstReceivedDate;
+  $("#protocolTransferMaterialConfirmDate").value = record.materialConfirmedDate;
+  $("#protocolTransferType").value = record.type;
+  $("#protocolTransferBuyer").value = record.buyer;
+  $("#protocolTransferSeller").value = record.seller;
+  $("#protocolTransferPrice").value = record.price ?? "";
+  $("#protocolTransferQuantity").value = record.quantityHands ?? "";
+  $("#protocolTransferRemarks").value = record.remarks;
+  $("#protocolTransferCounterpartySealDate").value = record.counterpartySealDate;
+  $("#protocolTransferOwnSealDate").value = record.ownSealDate;
+  $("#protocolTransferExchangeSubmitDate").value = record.exchangeSubmitDate;
+  $("#protocolTransferCounterpartySealed").checked = record.counterpartySealed;
+  $("#protocolTransferOwnSealed").checked = record.ownSealed;
+  $("#protocolTransferExchangeSubmitted").checked = record.exchangeSubmitted;
+  if (record.rawText) $("#protocolTransferInput").value = record.rawText;
+  $("#protocolTransferDeleteButton").hidden = !(state.protocolTransfers || []).some((item) => item.id === record.id);
+  $("#protocolTransferStatusPill").textContent = protocolTransferStatus(record);
+  renderProtocolTransferList();
+}
+
+function clearProtocolTransferForm(resetInput = true) {
+  selectedProtocolTransferId = "";
+  $("#protocolTransferForm").reset();
+  $("#protocolTransferId").value = "";
+  $("#protocolTransferType").value = "商业银行";
+  if (resetInput) $("#protocolTransferInput").value = "";
+  $("#protocolTransferDeleteButton").hidden = true;
+  $("#protocolTransferStatusPill").textContent = "待录入";
+  renderProtocolTransferList();
+}
+
+function saveProtocolTransferFromForm() {
+  const record = readProtocolTransferForm();
+  if (!record.code || !record.shortName) {
+    showToast("请至少补齐债券代码和债券简称。");
+    return;
+  }
+  state = upsertProtocolTransfer(state, record);
+  selectedProtocolTransferId = record.id;
+  persistState();
+  renderProtocolTransferWorkspace();
+  showToast("协议转让记录已保存，并纳入台账导出。");
+}
+
+function deleteSelectedProtocolTransfer() {
+  const id = $("#protocolTransferId").value;
+  if (!id) return;
+  if (!confirm("确认删除这笔协议转让记录？")) return;
+  state = removeProtocolTransfer(state, id);
+  selectedProtocolTransferId = "";
+  persistState();
+  clearProtocolTransferForm();
+  renderProtocolTransferWorkspace();
+  showToast("协议转让记录已删除。");
+}
+
+function completeProtocolTransferStep(id, step) {
+  const record = (state.protocolTransfers || []).find((item) => item.id === id);
+  if (!record) return;
+  const next = markProtocolTransferStep(record, step);
+  state = upsertProtocolTransfer(state, next);
+  selectedProtocolTransferId = next.id;
+  persistState();
+  renderProtocolTransferWorkspace();
+  showToast(`${next.shortName || next.code} 已完成：${step === "counterparty" ? "对手方用印" : step === "own" ? "本方用印" : "递交上交所"}`);
+}
+
+function exportProtocolTransferLedger() {
+  const rows = buildProtocolTransferLedgerRows(state.protocolTransfers || []);
+  if (rows.length <= 1) {
+    showToast("暂无协议转让记录可导出。");
+    return;
+  }
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><table border="1">${rows.map((row) =>
+    `<tr>${row.map((cell) => `<td>${escapeHtml(cell ?? "")}</td>`).join("")}</tr>`,
+  ).join("")}</table></body></html>`;
+  downloadBlob(`债券协议转让台账${localDate(new Date()).replaceAll("-", "")}.xls`, new Blob([html], {
+    type: "application/vnd.ms-excel;charset=utf-8",
+  }));
+  showToast("已导出协议转让 Excel 台账。");
+}
+
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function delayProjectCutoffFromTodo(projectId, minutes) {
@@ -2081,6 +2343,7 @@ function bindDataActions() {
       renderIssuerList();
       renderFtpCurveForm();
       renderProjectWorkspace();
+      renderProtocolTransferWorkspace();
       regenerate();
       showToast(`已导入 ${state.issuers.length} 个主体和 ${(state.projects || []).length} 个项目。`);
     } catch (error) {
@@ -2139,6 +2402,7 @@ async function loadCloudState() {
   renderIssuerList();
   renderFtpCurveForm();
   renderProjectWorkspace();
+  renderProtocolTransferWorkspace();
   if (batchItems.length) renderBatchResults();
 }
 
@@ -2209,6 +2473,7 @@ function normalizeLoadedState(value) {
     ...value,
     ftpCurve: normalizeFtpCurve(value.ftpCurve),
     projects: (value.projects || []).map(normalizeProjectRecord),
+    protocolTransfers: normalizeProtocolTransfers(value.protocolTransfers || []),
   };
 }
 
