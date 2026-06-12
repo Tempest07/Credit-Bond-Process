@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260612-template-fields";
+} from "./core.js?v=20260612-todo-cleanup";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260612-template-fields";
+} from "./lifecycle.js?v=20260612-todo-cleanup";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260612-template-fields";
+} from "./history-parser.js?v=20260612-todo-cleanup";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -564,7 +564,6 @@ function renderCutoffTodo() {
     })
     .filter((item) => item.type !== "future")
     .sort((left, right) => left.cutoff - right.cutoff);
-  $("#cutoffTodoCount").textContent = todos.length ? `${todos.length} 项需关注` : "暂无待办";
   $("#cutoffTodoPanel").classList.toggle("empty-state", !todos.length);
   $("#cutoffTodoList").innerHTML = todos.length
     ? todos.map(({ project: projectValue, type }) => {
@@ -673,7 +672,6 @@ function renderPaymentTodo() {
         : [],
     ),
   ).sort((left, right) => left.tranche.paymentDate.localeCompare(right.tranche.paymentDate));
-  $("#paymentTodoCount").textContent = todos.length ? `${todos.length} 项待处理` : "暂无待办";
   $("#paymentTodoPanel").classList.toggle("empty-state", !todos.length);
   $("#paymentTodoList").innerHTML = todos.length
     ? todos.map(({ project: projectValue, tranche }) => {

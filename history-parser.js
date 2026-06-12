@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260612-template-fields";
+import { durationToDays } from "./core.js?v=20260612-todo-cleanup";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
