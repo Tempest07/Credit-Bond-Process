@@ -165,26 +165,57 @@ export function protocolTransferTodos(records = [], referenceDate = new Date()) 
 
 export function buildProtocolTransferLedgerRows(records = []) {
   const header = ["序号", "代码", "简称", "材料首次收悉日期", "材料确认日期", "交易日", "类型", "备注", "买入方", "卖出方", "价格（全价请标注）", "数量（手）"];
-  const body = normalizeProtocolTransfers(records)
+  const numberedRecords = normalizeProtocolTransfers(records)
     .sort((left, right) =>
       right.tradeDate.localeCompare(left.tradeDate)
       || right.createdAt.localeCompare(left.createdAt),
     )
-    .map((record, index) => [
-      index + 1,
+    .map((record, index) => ({ record, serial: index + 1 }));
+  const duplicateRemarks = buildDuplicateProtocolTransferRemarks(numberedRecords);
+  const body = numberedRecords.map(({ record, serial }) => [
+    serial,
+    record.code,
+    record.shortName,
+    record.tradeDate,
+    record.tradeDate,
+    record.tradeDate,
+    record.type,
+    duplicateRemarks.get(serial) || "",
+    record.buyer,
+    record.seller,
+    record.price ?? "",
+    record.quantityHands ?? "",
+  ]);
+  return [header, ...body];
+}
+
+function buildDuplicateProtocolTransferRemarks(numberedRecords) {
+  const groups = new Map();
+  numberedRecords.forEach(({ record, serial }) => {
+    const key = JSON.stringify([
+      record.tradeDate,
       record.code,
       record.shortName,
-      record.tradeDate,
-      record.tradeDate,
-      record.tradeDate,
       record.type,
-      record.remarks,
       record.buyer,
       record.seller,
+      record.finalBuyer,
       record.price ?? "",
       record.quantityHands ?? "",
     ]);
-  return [header, ...body];
+    const group = groups.get(key) || [];
+    group.push(serial);
+    groups.set(key, group);
+  });
+
+  const remarks = new Map();
+  groups.forEach((serials) => {
+    if (serials.length < 2) return;
+    const countText = serials.length === 2 ? "两笔" : `${serials.length}笔`;
+    const remark = `序号${serials.join("、")}是${countText}不同的交易`;
+    serials.forEach((serial) => remarks.set(serial, remark));
+  });
+  return remarks;
 }
 
 export function markProtocolTransferStep(record, step) {

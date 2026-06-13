@@ -89,7 +89,51 @@ test("exports all ledger date columns as the trade date", () => {
   assert.equal(rows[1][3], "2026-06-15");
   assert.equal(rows[1][4], "2026-06-15");
   assert.equal(rows[1][5], "2026-06-15");
+  assert.equal(rows[1][7], "");
   assert.equal(rows[1][11], 30000);
+});
+
+test("leaves ledger remarks blank unless same-day trades have identical elements", () => {
+  const rows = buildProtocolTransferLedgerRows([
+    {
+      code: "280607.SH",
+      shortName: "25汉投03",
+      tradeDate: "2026-06-16",
+      buyer: "华创证券",
+      seller: "兴业银行",
+      finalBuyer: "南方基金",
+      price: 101.031,
+      amountTenThousand: 3000,
+      remarks: "系统内备注不导出",
+      createdAt: "2026-06-16T10:00:00.000Z",
+    },
+    {
+      code: "280607.SH",
+      shortName: "25汉投03",
+      tradeDate: "2026-06-15",
+      buyer: "华创证券",
+      seller: "兴业银行",
+      finalBuyer: "南方基金",
+      price: 101.031,
+      amountTenThousand: 3000,
+      createdAt: "2026-06-15T10:00:00.000Z",
+    },
+    {
+      code: "280607.SH",
+      shortName: "25汉投03",
+      tradeDate: "2026-06-15",
+      buyer: "华创证券",
+      seller: "兴业银行",
+      finalBuyer: "南方基金",
+      price: 101.031,
+      amountTenThousand: 3000,
+      createdAt: "2026-06-15T09:00:00.000Z",
+    },
+  ]);
+
+  assert.equal(rows[1][7], "");
+  assert.equal(rows[2][7], "序号2、3是两笔不同的交易");
+  assert.equal(rows[3][7], "序号2、3是两笔不同的交易");
 });
 
 test("advances protocol transfer workflow by action buttons", () => {
