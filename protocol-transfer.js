@@ -14,7 +14,7 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
   const materialConfirmedDate = normalizeDate(input.materialConfirmedDate) || tradeDate;
   const counterpartySealDate = normalizeDate(input.counterpartySealDate) || tradeDate;
   const ownSealDate = normalizeDate(input.ownSealDate) || addBusinessDays(tradeDate, 1);
-  const exchangeSubmitDate = normalizeDate(input.exchangeSubmitDate) || addBusinessDays(tradeDate, 2);
+  const exchangeSubmitDate = tradeDate;
   const counterpartySealed = Boolean(input.counterpartySealed);
   const ownSealed = Boolean(input.ownSealed);
   const exchangeSubmitted = Boolean(input.exchangeSubmitted || input.completed);

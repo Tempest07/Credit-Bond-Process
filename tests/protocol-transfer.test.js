@@ -41,7 +41,7 @@ test("parses SSE protocol transfer Word-style text", () => {
   assert.equal(parsed.quantityHands, 100000);
   assert.equal(parsed.counterpartySealDate, "2026-06-10");
   assert.equal(parsed.ownSealDate, "2026-06-11");
-  assert.equal(parsed.exchangeSubmitDate, "2026-06-12");
+  assert.equal(parsed.exchangeSubmitDate, "2026-06-10");
 });
 
 test("parses chat-style protocol transfer trade elements", () => {

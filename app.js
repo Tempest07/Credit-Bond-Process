@@ -956,7 +956,7 @@ function readProtocolTransferForm() {
     tradeDate: $("#protocolTransferTradeDate").value,
     materialFirstReceivedDate: existing?.materialFirstReceivedDate,
     materialConfirmedDate: existing?.materialConfirmedDate,
-    type: $("#protocolTransferType").value,
+    type: existing?.type,
     buyer: $("#protocolTransferBuyer").value,
     seller: $("#protocolTransferSeller").value,
     finalBuyer: $("#protocolTransferFinalBuyer").value,
@@ -967,7 +967,6 @@ function readProtocolTransferForm() {
     rawText: $("#protocolTransferInput").value,
     counterpartySealDate: $("#protocolTransferCounterpartySealDate").value,
     ownSealDate: $("#protocolTransferOwnSealDate").value,
-    exchangeSubmitDate: $("#protocolTransferExchangeSubmitDate").value,
     counterpartySealed: $("#protocolTransferCounterpartySealed").checked,
     ownSealed: $("#protocolTransferOwnSealed").checked,
     exchangeSubmitted: $("#protocolTransferExchangeSubmitted").checked,
@@ -981,7 +980,6 @@ function fillProtocolTransferForm(input) {
   $("#protocolTransferCode").value = record.code;
   $("#protocolTransferShortName").value = record.shortName;
   $("#protocolTransferTradeDate").value = record.tradeDate;
-  $("#protocolTransferType").value = record.type;
   $("#protocolTransferBuyer").value = record.buyer;
   $("#protocolTransferSeller").value = record.seller;
   $("#protocolTransferFinalBuyer").value = record.finalBuyer;
@@ -991,7 +989,6 @@ function fillProtocolTransferForm(input) {
   $("#protocolTransferRemarks").value = record.remarks;
   $("#protocolTransferCounterpartySealDate").value = record.counterpartySealDate;
   $("#protocolTransferOwnSealDate").value = record.ownSealDate;
-  $("#protocolTransferExchangeSubmitDate").value = record.exchangeSubmitDate;
   $("#protocolTransferCounterpartySealed").checked = record.counterpartySealed;
   $("#protocolTransferOwnSealed").checked = record.ownSealed;
   $("#protocolTransferExchangeSubmitted").checked = record.exchangeSubmitted;
@@ -1005,7 +1002,6 @@ function clearProtocolTransferForm(resetInput = true) {
   selectedProtocolTransferId = "";
   $("#protocolTransferForm").reset();
   $("#protocolTransferId").value = "";
-  $("#protocolTransferType").value = "商业银行";
   if (resetInput) $("#protocolTransferInput").value = "";
   $("#protocolTransferDeleteButton").hidden = true;
   $("#protocolTransferStatusPill").textContent = "待录入";
