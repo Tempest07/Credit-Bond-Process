@@ -743,9 +743,7 @@ function renderProtocolTransferList() {
       || right.createdAt.localeCompare(left.createdAt),
     );
   $("#protocolTransferList").innerHTML = records.length
-    ? records.map((record) => {
-        const step = nextProtocolTransferStep(record);
-        return `
+    ? records.map((record) => `
           <button class="protocol-transfer-item ${record.id === selectedProtocolTransferId ? "active" : ""}" type="button" data-protocol-transfer-id="${escapeAttribute(record.id)}">
             <span class="project-item-head">
               <strong>${escapeHtml(record.shortName || record.code || "未命名单据")}</strong>
@@ -759,12 +757,10 @@ function renderProtocolTransferList() {
               <span>${escapeHtml(record.code || "代码待补")}</span>
               <span>${escapeHtml(record.price ? `净价${formatProtocolPrice(record.price)}` : "价格待补")}</span>
               <span>${escapeHtml(record.amountTenThousand ? `${formatNumber(record.amountTenThousand)}万` : "金额待补")}</span>
-              <span>${escapeHtml(record.quantityHands ? `${formatNumber(record.quantityHands)}手` : "手数待补")}</span>
-              <span>${escapeHtml(step ? `${step.dueDate} ${step.label}` : "流程完成")}</span>
+              <span>${escapeHtml(record.tradeDate ? `交易日${record.tradeDate}` : "交易日待补")}</span>
             </span>
           </button>
-        `;
-      }).join("")
+        `).join("")
     : '<div class="empty">暂无协议转让记录。</div>';
 }
 
