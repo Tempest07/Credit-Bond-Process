@@ -391,7 +391,7 @@
             <div class="panel-head protocol-list-head">
               <div><span class="step">LEDGER</span><h2>协议转让台账</h2></div>
             </div>
-            <input class="search-input" id="protocolTransferSearch" type="search" placeholder="搜索代码、简称、买方或卖方">
+            <input class="search-input" id="protocolTransferSearch" type="search" placeholder="搜索代码、简称、买方、卖方或最终买方">
             <div class="protocol-transfer-list" id="protocolTransferList"></div>
           </section>
 
@@ -408,12 +408,12 @@
                 <label>债券简称<input id="protocolTransferShortName" placeholder="26光交01"></label>
                 <label>交易日<input id="protocolTransferTradeDate" type="date"></label>
                 <label>类型<input id="protocolTransferType" placeholder="商业银行" value="商业银行"></label>
-                <label>买入方<input id="protocolTransferBuyer"></label>
+                <label>买入方/做市商<input id="protocolTransferBuyer"></label>
                 <label>卖出方<input id="protocolTransferSeller"></label>
+                <label>最终买方<input id="protocolTransferFinalBuyer"></label>
                 <label>价格（全价请标注）<input id="protocolTransferPrice" placeholder="如 101.033 或 101.033/101.031"></label>
-                <label>数量（手）<input id="protocolTransferQuantity" type="number" step="1"></label>
-                <label>材料首次收悉日期<input id="protocolTransferMaterialFirstDate" type="date"></label>
-                <label>材料确认日期<input id="protocolTransferMaterialConfirmDate" type="date"></label>
+                <label>交易量（万元）<input id="protocolTransferAmount" type="number" step="0.01"></label>
+                <label>交易量（手）<input id="protocolTransferQuantity" type="number" step="1"></label>
                 <label>对手方用印日<input id="protocolTransferCounterpartySealDate" type="date"></label>
                 <label>本方用印日<input id="protocolTransferOwnSealDate" type="date"></label>
                 <label>递交上交所日<input id="protocolTransferExchangeSubmitDate" type="date"></label>

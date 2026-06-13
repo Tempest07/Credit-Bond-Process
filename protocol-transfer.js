@@ -19,6 +19,10 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
   const ownSealed = Boolean(input.ownSealed);
   const exchangeSubmitted = Boolean(input.exchangeSubmitted || input.completed);
   const completed = Boolean(input.completed || exchangeSubmitted);
+  const inputAmountTenThousand = numberOrNull(input.amountTenThousand);
+  const inputQuantityHands = numberOrNull(input.quantityHands);
+  const amountTenThousand = inputAmountTenThousand ?? (inputQuantityHands !== null ? inputQuantityHands / 10 : null);
+  const quantityHands = inputQuantityHands ?? (inputAmountTenThousand !== null ? Math.round(inputAmountTenThousand * 10) : null);
 
   return {
     id: input.id || crypto.randomUUID(),
@@ -31,8 +35,10 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
     remarks: String(input.remarks || "").trim(),
     buyer: String(input.buyer || "").trim(),
     seller: String(input.seller || "").trim(),
+    finalBuyer: String(input.finalBuyer || "").trim(),
     price: normalizePrice(input.price),
-    quantityHands: numberOrNull(input.quantityHands),
+    amountTenThousand,
+    quantityHands,
     rawText: String(input.rawText || "").trim(),
     counterpartySealDate,
     ownSealDate,
@@ -81,6 +87,7 @@ export function parseProtocolTransferText(rawText = "", referenceDate = new Date
     type: inferTransferType(compact, sides),
     buyer: firstMatch(compact, /(?:买入方|买方|受让方)[:：\s]*([^，,；;\n]+)/) || sides.buyer,
     seller: firstMatch(compact, /(?:卖出方|卖方|转让方)[:：\s]*([^，,；;\n]+)/) || sides.seller,
+    finalBuyer: "",
     price: parsePrice(compact),
     quantityHands: parseQuantityHands(compact),
     remarks: parseRemarks(text),
@@ -102,8 +109,10 @@ function parseChatStyleTradeElements(text, referenceDate) {
   const sides = parseOperatorSides(line);
   const bridgeBuyer = parseBridgeBuyer(text, sides);
   const actualSides = { ...sides, buyer: bridgeBuyer || sides.buyer };
+  const finalBuyer = actualSides.buyer && sides.buyer && actualSides.buyer !== sides.buyer ? sides.buyer : "";
   const price = parsePrice(line);
-  const quantityHands = parseChatQuantityHands(line);
+  const amountTenThousand = parseChatAmountTenThousand(line);
+  const quantityHands = amountTenThousand !== null ? Math.round(amountTenThousand * 10) : parseQuantityHands(line);
   const tradeDate = parseDateFromText(line, referenceDate) || localDate(referenceDate);
 
   return {
@@ -113,7 +122,9 @@ function parseChatStyleTradeElements(text, referenceDate) {
     type: inferTransferType(line, actualSides),
     buyer: actualSides.buyer,
     seller: actualSides.seller,
+    finalBuyer,
     price,
+    amountTenThousand,
     quantityHands,
     remarks: parseRemarks(text),
   };
@@ -163,8 +174,8 @@ export function buildProtocolTransferLedgerRows(records = []) {
       index + 1,
       record.code,
       record.shortName,
-      record.materialFirstReceivedDate,
-      record.materialConfirmedDate,
+      record.tradeDate,
+      record.tradeDate,
       record.tradeDate,
       record.type,
       record.remarks,
@@ -359,16 +370,16 @@ function parseQuantityHands(text) {
   const labelled = firstMatch(text, /(?:交易数量|数量|成交数量|券面|面额)(?:（手）|\(手\))?[:：\s]*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:手|张)?/);
   if (labelled) return numberOrNull(labelled);
 
-  const chatQuantity = parseChatQuantityHands(text);
-  if (chatQuantity !== null) return chatQuantity;
+  const chatAmount = parseChatAmountTenThousand(text);
+  if (chatAmount !== null) return Math.round(chatAmount * 10);
   return null;
 }
 
-function parseChatQuantityHands(text) {
+function parseChatAmountTenThousand(text) {
   const tokens = normalizeText(text).split(/\s+/).map(cleanToken).filter(Boolean);
   for (const token of tokens) {
     const amountTenThousand = parseAmountTenThousand(token);
-    if (amountTenThousand !== null) return Math.round(amountTenThousand * 10);
+    if (amountTenThousand !== null) return amountTenThousand;
   }
   return null;
 }

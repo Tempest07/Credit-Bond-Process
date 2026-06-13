@@ -37,6 +37,7 @@ test("parses SSE protocol transfer Word-style text", () => {
   assert.equal(parsed.seller, "兴业银行");
   assert.equal(parsed.type, "商业银行");
   assert.equal(parsed.price, 100.659);
+  assert.equal(parsed.amountTenThousand, 10000);
   assert.equal(parsed.quantityHands, 100000);
   assert.equal(parsed.counterpartySealDate, "2026-06-10");
   assert.equal(parsed.ownSealDate, "2026-06-11");
@@ -50,8 +51,10 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.equal(parsed.tradeDate, "2026-06-15");
   assert.equal(parsed.buyer, "华创证券");
   assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.finalBuyer, "南方基金");
   assert.equal(parsed.type, "商业银行");
   assert.equal(parsed.price, 101.031);
+  assert.equal(parsed.amountTenThousand, 3000);
   assert.equal(parsed.quantityHands, 30000);
   assert.match(parsed.remarks, /深圳/);
   assert.match(parsed.remarks, /4\.42Y/);
@@ -65,7 +68,28 @@ test("uses contact list to identify the bridge party when no sent-by quote exist
 
   assert.equal(parsed.buyer, "华创证券");
   assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.finalBuyer, "南方基金");
+  assert.equal(parsed.amountTenThousand, 3000);
   assert.equal(parsed.price, 101.031);
+});
+
+test("exports all ledger date columns as the trade date", () => {
+  const rows = buildProtocolTransferLedgerRows([{
+    code: "280607.SH",
+    shortName: "25汉投03",
+    tradeDate: "2026-06-15",
+    materialFirstReceivedDate: "2026-06-12",
+    materialConfirmedDate: "2026-06-11",
+    buyer: "华创证券",
+    seller: "兴业银行",
+    price: 101.031,
+    amountTenThousand: 3000,
+  }]);
+
+  assert.equal(rows[1][3], "2026-06-15");
+  assert.equal(rows[1][4], "2026-06-15");
+  assert.equal(rows[1][5], "2026-06-15");
+  assert.equal(rows[1][11], 30000);
 });
 
 test("advances protocol transfer workflow by action buttons", () => {

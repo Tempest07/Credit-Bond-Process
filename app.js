@@ -684,6 +684,8 @@ function bindProtocolTransfer() {
   $("#protocolTransferDeleteButton").addEventListener("click", deleteSelectedProtocolTransfer);
   $("#protocolTransferExportButton").addEventListener("click", exportProtocolTransferLedger);
   $("#protocolTransferSearch").addEventListener("input", renderProtocolTransferList);
+  $("#protocolTransferAmount").addEventListener("input", () => syncProtocolTransferAmountFields("amount"));
+  $("#protocolTransferQuantity").addEventListener("input", () => syncProtocolTransferAmountFields("hands"));
   $("#protocolTransferDocxInput").addEventListener("change", parseProtocolTransferDocument);
   $("#protocolTransferList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-protocol-transfer-id]");
@@ -734,7 +736,7 @@ function renderProtocolTransferList() {
   const query = $("#protocolTransferSearch").value.trim().toLowerCase();
   const records = normalizeProtocolTransfers(state.protocolTransfers || [])
     .filter((record) =>
-      `${record.code} ${record.shortName} ${record.buyer} ${record.seller}`.toLowerCase().includes(query),
+      `${record.code} ${record.shortName} ${record.buyer} ${record.seller} ${record.finalBuyer}`.toLowerCase().includes(query),
     )
     .sort((left, right) =>
       right.tradeDate.localeCompare(left.tradeDate)
@@ -750,13 +752,14 @@ function renderProtocolTransferList() {
               <span class="status-badge">${escapeHtml(protocolTransferStatus(record))}</span>
             </span>
             <span class="project-item-meta project-item-primary">
-              <span>${escapeHtml(record.buyer || "买方待补")} → ${escapeHtml(record.seller || "卖方待补")}</span>
+              <span>${escapeHtml(formatProtocolTransferFlow(record))}</span>
               <span class="project-item-schedule">${escapeHtml(record.tradeDate)}</span>
             </span>
             <span class="project-item-facts">
               <span>${escapeHtml(record.code || "代码待补")}</span>
               <span>${escapeHtml(record.price ? `净价${formatProtocolPrice(record.price)}` : "价格待补")}</span>
-              <span>${escapeHtml(record.quantityHands ? `${formatNumber(record.quantityHands)}手` : "数量待补")}</span>
+              <span>${escapeHtml(record.amountTenThousand ? `${formatNumber(record.amountTenThousand)}万` : "金额待补")}</span>
+              <span>${escapeHtml(record.quantityHands ? `${formatNumber(record.quantityHands)}手` : "手数待补")}</span>
               <span>${escapeHtml(step ? `${step.dueDate} ${step.label}` : "流程完成")}</span>
             </span>
           </button>
@@ -778,6 +781,27 @@ function parseProtocolTransferInput() {
 
 function formatProtocolPrice(value) {
   return Number.isFinite(Number(value)) ? formatNumber(value) : String(value || "");
+}
+
+function formatProtocolTransferFlow(record) {
+  const parties = [
+    record.seller || "卖方待补",
+    record.buyer || "买方/做市商待补",
+    record.finalBuyer,
+  ].filter(Boolean);
+  return parties.join(" → ");
+}
+
+function syncProtocolTransferAmountFields(source) {
+  const amountInput = $("#protocolTransferAmount");
+  const handsInput = $("#protocolTransferQuantity");
+  if (source === "amount") {
+    const amount = numberOrNull(amountInput.value);
+    if (amount !== null) handsInput.value = String(Math.round(amount * 10));
+  } else {
+    const hands = numberOrNull(handsInput.value);
+    if (hands !== null) amountInput.value = formatNumber(hands / 10);
+  }
 }
 
 async function parseProtocolTransferDocument() {
@@ -923,17 +947,21 @@ function setProtocolTransferOcrStatus(message, isError = false) {
 }
 
 function readProtocolTransferForm() {
+  const id = $("#protocolTransferId").value;
+  const existing = (state.protocolTransfers || []).find((item) => item.id === id) || null;
   return normalizeProtocolTransfer({
-    id: $("#protocolTransferId").value,
+    id,
     code: $("#protocolTransferCode").value,
     shortName: $("#protocolTransferShortName").value,
     tradeDate: $("#protocolTransferTradeDate").value,
-    materialFirstReceivedDate: $("#protocolTransferMaterialFirstDate").value,
-    materialConfirmedDate: $("#protocolTransferMaterialConfirmDate").value,
+    materialFirstReceivedDate: existing?.materialFirstReceivedDate,
+    materialConfirmedDate: existing?.materialConfirmedDate,
     type: $("#protocolTransferType").value,
     buyer: $("#protocolTransferBuyer").value,
     seller: $("#protocolTransferSeller").value,
+    finalBuyer: $("#protocolTransferFinalBuyer").value,
     price: $("#protocolTransferPrice").value,
+    amountTenThousand: $("#protocolTransferAmount").value,
     quantityHands: $("#protocolTransferQuantity").value,
     remarks: $("#protocolTransferRemarks").value,
     rawText: $("#protocolTransferInput").value,
@@ -953,12 +981,12 @@ function fillProtocolTransferForm(input) {
   $("#protocolTransferCode").value = record.code;
   $("#protocolTransferShortName").value = record.shortName;
   $("#protocolTransferTradeDate").value = record.tradeDate;
-  $("#protocolTransferMaterialFirstDate").value = record.materialFirstReceivedDate;
-  $("#protocolTransferMaterialConfirmDate").value = record.materialConfirmedDate;
   $("#protocolTransferType").value = record.type;
   $("#protocolTransferBuyer").value = record.buyer;
   $("#protocolTransferSeller").value = record.seller;
+  $("#protocolTransferFinalBuyer").value = record.finalBuyer;
   $("#protocolTransferPrice").value = record.price ?? "";
+  $("#protocolTransferAmount").value = record.amountTenThousand ?? "";
   $("#protocolTransferQuantity").value = record.quantityHands ?? "";
   $("#protocolTransferRemarks").value = record.remarks;
   $("#protocolTransferCounterpartySealDate").value = record.counterpartySealDate;
