@@ -684,6 +684,11 @@ function bindProtocolTransfer() {
   $("#protocolTransferDeleteButton").addEventListener("click", deleteSelectedProtocolTransfer);
   $("#protocolTransferExportButton").addEventListener("click", exportProtocolTransferLedger);
   $("#protocolTransferSearch").addEventListener("input", renderProtocolTransferList);
+  $("#protocolTransferDateFilter").addEventListener("change", renderProtocolTransferList);
+  $("#protocolTransferTodayFilterButton").addEventListener("click", () => {
+    $("#protocolTransferDateFilter").value = localDate(new Date());
+    renderProtocolTransferList();
+  });
   $("#protocolTransferAmount").addEventListener("input", () => syncProtocolTransferAmountFields("amount"));
   $("#protocolTransferQuantity").addEventListener("input", () => syncProtocolTransferAmountFields("hands"));
   $("#protocolTransferDocxInput").addEventListener("change", parseProtocolTransferDocument);
@@ -734,7 +739,8 @@ function renderProtocolTransferTodos() {
 
 function renderProtocolTransferList() {
   const query = $("#protocolTransferSearch").value.trim().toLowerCase();
-  const records = normalizeProtocolTransfers(state.protocolTransfers || [])
+  const dateFilter = $("#protocolTransferDateFilter").value;
+  const records = protocolTransferRecordsForDate(dateFilter)
     .filter((record) =>
       `${record.code} ${record.shortName} ${record.buyer} ${record.seller} ${record.finalBuyer}`.toLowerCase().includes(query),
     )
@@ -762,6 +768,11 @@ function renderProtocolTransferList() {
           </button>
         `).join("")
     : '<div class="empty">暂无协议转让记录。</div>';
+}
+
+function protocolTransferRecordsForDate(date = "") {
+  return normalizeProtocolTransfers(state.protocolTransfers || [])
+    .filter((record) => !date || record.tradeDate === date);
 }
 
 function parseProtocolTransferInput() {
@@ -1041,9 +1052,14 @@ function completeProtocolTransferStep(id, step) {
 }
 
 async function exportProtocolTransferLedger() {
-  const rows = buildProtocolTransferLedgerRows(state.protocolTransfers || []);
+  const tradeDate = $("#protocolTransferDateFilter").value;
+  if (!tradeDate) {
+    showToast("请先选择要导出的交易日。");
+    return;
+  }
+  const rows = buildProtocolTransferLedgerRows(protocolTransferRecordsForDate(tradeDate));
   if (rows.length <= 1) {
-    showToast("暂无协议转让记录可导出。");
+    showToast(`${tradeDate} 暂无协议转让记录可导出。`);
     return;
   }
 
@@ -1060,10 +1076,10 @@ async function exportProtocolTransferLedger() {
 
     fillProtocolTransferLedgerTemplate(sheet, rows.slice(1));
     const buffer = await workbook.xlsx.writeBuffer();
-    downloadBlob(`债券协议转让台账${localDate(new Date()).replaceAll("-", "")}.xlsx`, new Blob([buffer], {
+    downloadBlob(`债券协议转让台账${tradeDate.replaceAll("-", "")}.xlsx`, new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }));
-    showToast("已按模板导出协议转让 xlsx 台账。");
+    showToast(`已导出 ${tradeDate} 协议转让 xlsx 台账。`);
   } catch (error) {
     showToast(error.message || "导出台账失败。");
   } finally {

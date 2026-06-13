@@ -346,6 +346,9 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .protocol-todo-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .protocol-todo-item span { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .protocol-list-head { margin-top: 16px; margin-bottom: 10px; }
+.protocol-transfer-filter-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
+.protocol-transfer-filter-tools input { min-height: 38px; padding: 8px 10px; font-size: 11px; }
+.protocol-transfer-filter-tools .button { min-height: 38px; padding: 0 13px; font-size: 11px; white-space: nowrap; }
 .protocol-transfer-list { display: grid; gap: 8px; max-height: 430px; margin-top: 10px; overflow: auto; padding-right: 3px; }
 .protocol-transfer-item { display: grid; gap: 8px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: linear-gradient(145deg, #fff, #fbfbff); text-align: left; }
 .protocol-transfer-item:hover, .protocol-transfer-item.active { border-color: var(--accent); background: linear-gradient(145deg, var(--accent-soft), #fff); }

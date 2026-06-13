@@ -376,7 +376,7 @@
                   <span id="protocolTransferDocxButtonText">上传 Word/PDF/图片</span>
                   <input id="protocolTransferDocxInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,application/pdf,image/*">
                 </label>
-                <button class="button subtle" id="protocolTransferExportButton" type="button">导出 Excel 台账</button>
+                <button class="button subtle" id="protocolTransferExportButton" type="button">导出所选交易日</button>
               </div>
               <div class="protocol-ocr-status" id="protocolTransferOcrStatus" hidden></div>
             </div>
@@ -390,6 +390,10 @@
 
             <div class="panel-head protocol-list-head">
               <div><span class="step">LEDGER</span><h2>协议转让台账</h2></div>
+            </div>
+            <div class="protocol-transfer-filter-tools">
+              <input id="protocolTransferDateFilter" type="date" aria-label="按交易日筛选协议转让">
+              <button class="button subtle" id="protocolTransferTodayFilterButton" type="button">今日</button>
             </div>
             <input class="search-input" id="protocolTransferSearch" type="search" placeholder="搜索代码、简称、买方、卖方或最终买方">
             <div class="protocol-transfer-list" id="protocolTransferList"></div>
