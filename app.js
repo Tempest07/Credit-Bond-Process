@@ -238,6 +238,11 @@ function saveCurrentProject() {
 function bindLedger() {
   $("#projectSearch").addEventListener("input", renderProjectList);
   $("#projectStatusFilter").addEventListener("change", renderProjectList);
+  $("#projectDateFilter").addEventListener("change", renderProjectList);
+  $("#projectTodayFilterButton").addEventListener("click", () => {
+    $("#projectDateFilter").value = localDate(new Date());
+    renderProjectList();
+  });
   $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#newProjectButton").addEventListener("click", () => {
@@ -1177,10 +1182,12 @@ function updateLedgerFilterLabel(button) {
 function renderProjectList() {
   const query = $("#projectSearch").value.trim().toLowerCase();
   const statusFilter = $("#projectStatusFilter").value;
+  const dateFilter = $("#projectDateFilter").value;
   const today = localDate(new Date());
   const projects = (state.projects || [])
     .filter((item) => {
       if (statusFilter && item.status !== statusFilter) return false;
+      if (dateFilter && !projectMatchesDateFilter(item, dateFilter)) return false;
       if (ledgerFilter === "dueToday" && !(["未投标", "待投标"].includes(item.status) && item.cutoffAt?.slice(0, 10) === today)) return false;
       if (ledgerFilter === "toBid" && !["未投标", "待投标"].includes(item.status)) return false;
       if (ledgerFilter === "awaitingResult" && item.status !== "已投标待结果") return false;
@@ -1218,6 +1225,14 @@ function renderProjectList() {
       renderProjectWorkspace();
     });
   });
+}
+
+function projectMatchesDateFilter(projectValue, date) {
+  if (!date) return true;
+  if (projectValue.cutoffAt?.slice(0, 10) === date) return true;
+  return (projectValue.tranches || []).some((tranche) =>
+    tranche.paymentDate === date && !tranche.paymentCompleted,
+  );
 }
 
 function clearProjectForm() {
