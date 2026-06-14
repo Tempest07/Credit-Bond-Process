@@ -23,6 +23,31 @@ test("rejects an incorrect API password", async () => {
   assert.equal(response.status, 401);
 });
 
+test("allows local development requests without APP_PASSWORD", async () => {
+  let saved = null;
+  const DB = {
+    prepare(sql) {
+      return {
+        bind(data) {
+          if (sql.includes("INSERT INTO app_state")) saved = JSON.parse(data);
+          return this;
+        },
+        async run() {},
+      };
+    },
+  };
+  const response = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({ data: { version: 3, issuers: [], projects: [], secondaryTrades: [] } }),
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(saved.secondaryTrades, []);
+});
+
 test("accepts and preserves project ledger records", async () => {
   let saved = null;
   const DB = {

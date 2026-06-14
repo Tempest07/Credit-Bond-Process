@@ -1,0 +1,8 @@
+name = "credit-bond-process-local"
+pages_build_output_dir = "."
+compatibility_date = "2026-06-09"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "credit-bond-process-local"
+database_id = "00000000-0000-0000-0000-000000000001"

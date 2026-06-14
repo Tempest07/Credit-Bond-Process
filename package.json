@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "prepare:local": "node tools/prepare-local-dev.mjs",
+    "dev:local": "npm run prepare:local && wrangler pages dev . --port 8788 --persist-to .wrangler/state --show-interactive-dev-session=false",
+    "seed:local": "npm run prepare:local && node tools/seed-local-d1.mjs",
+    "pull:remote": "npm run prepare:local && node tools/pull-remote-state.mjs"
   }
 }

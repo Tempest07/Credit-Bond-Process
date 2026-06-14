@@ -71,6 +71,8 @@ const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
+const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const IS_LOCAL_DEV = LOCAL_DEV_HOSTS.has(location.hostname);
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -2910,7 +2912,7 @@ function fillIssuerForm(issuer) {
 function bindDataActions() {
   $("#saveCloudButton").addEventListener("click", async () => {
     const ok = await saveCloudState();
-    showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 未连接，项目中心已锁定。");
+    showToast(ok ? `资料库已同步至${IS_LOCAL_DEV ? "本地" : "Cloudflare"} D1。` : "D1 未连接，项目中心已锁定。");
   });
 
   $("#setPasswordButton").addEventListener("click", async () => {
@@ -2955,7 +2957,7 @@ function bindDataActions() {
 }
 
 async function loadCloudState() {
-  if (!getApiToken()) {
+  if (!getApiToken() && !IS_LOCAL_DEV) {
     cloudAvailable = false;
     setSyncStatus("未连接 D1", "请先设置云端口令");
     setCloudGate(true, {
@@ -2965,11 +2967,11 @@ async function loadCloudState() {
     });
     return;
   }
-  setSyncStatus("正在连接", "尝试读取 Cloudflare D1");
+  setSyncStatus("正在连接", `尝试读取${IS_LOCAL_DEV ? "本地" : "Cloudflare"} D1`);
   setCloudGate(true, {
     state: "connecting",
-    title: "正在连接 Cloudflare D1",
-    detail: "正在校验口令并读取云端资料库。",
+    title: `正在连接${IS_LOCAL_DEV ? "本地" : "Cloudflare"} D1`,
+    detail: IS_LOCAL_DEV ? "本地预览模式将直接读取本地 D1，不需要云端口令。" : "正在校验口令并读取云端资料库。",
   });
   try {
     const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
@@ -2981,10 +2983,10 @@ async function loadCloudState() {
     }
     cloudAvailable = true;
     persistLocal();
-    setSyncStatus("D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(IS_LOCAL_DEV ? "本地 D1 已连接" : "D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
     setCloudGate(true, {
       state: "success",
-      title: "D1 连接成功",
+      title: `${IS_LOCAL_DEV ? "本地 " : ""}D1 连接成功`,
       detail: `已载入 ${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目。`,
     });
     window.setTimeout(() => setCloudGate(false, { state: "success" }), 850);
@@ -2995,7 +2997,7 @@ async function loadCloudState() {
     setCloudGate(true, {
       state: "error",
       title: "D1 连接失败",
-      detail: "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。",
+      detail: IS_LOCAL_DEV ? "本地 D1 暂时无法连接，请确认已使用 npm run dev:local 启动。" : "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。",
     });
   }
   renderIssuerOptions();
@@ -3009,7 +3011,7 @@ async function loadCloudState() {
 
 async function saveCloudState() {
   persistLocal();
-  if (!getApiToken()) {
+  if (!getApiToken() && !IS_LOCAL_DEV) {
     setSyncStatus("未连接 D1", "请先设置云端口令");
     setCloudGate(true, {
       state: "idle",
@@ -3026,7 +3028,7 @@ async function saveCloudState() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     cloudAvailable = true;
-    setSyncStatus("D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(IS_LOCAL_DEV ? "本地 D1 已同步" : "D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
     setCloudGate(false, { state: "success" });
     return true;
   } catch {
@@ -3133,7 +3135,8 @@ function getApiToken() {
 }
 
 function authHeaders() {
-  return { Authorization: `Bearer ${getApiToken()}` };
+  const token = getApiToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function showToast(message) {
