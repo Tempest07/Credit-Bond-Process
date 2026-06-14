@@ -331,6 +331,35 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .result-summary { min-height: 100px; padding: 12px; resize: vertical; background: var(--panel-soft); font-size: 11px; line-height: 1.8; }
 .result-summary-output { margin-top: 8px; background: #fff; }
 
+.secondary-trading-grid { display: grid; grid-template-columns: minmax(380px, .82fr) minmax(640px, 1.18fr); gap: 14px; align-items: start; }
+.secondary-trading-left, .secondary-trading-detail { padding: 16px; }
+.secondary-trade-actions { display: grid; gap: 10px; margin-bottom: 14px; }
+.secondary-trade-input { min-height: 170px; padding: 12px; resize: vertical; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 11px; line-height: 1.8; }
+.secondary-trade-output { max-height: 220px; margin: 0; overflow: auto; padding: 11px; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius: 8px; color: var(--text); background: #fff; white-space: pre-wrap; font-size: 11px; line-height: 1.8; }
+.secondary-todo-panel { margin: 14px 0; padding: 13px; border: 1px solid color-mix(in srgb, var(--secondary) 28%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, #f5feff, #fff); }
+.secondary-todo-list { display: grid; gap: 8px; }
+.secondary-todo-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.secondary-todo-item.today { border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); background: var(--warning-soft); }
+.secondary-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); background: #fff2f4; }
+.secondary-todo-item strong, .secondary-todo-item span { display: block; }
+.secondary-todo-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.secondary-todo-item span { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.secondary-list-head { margin-top: 16px; margin-bottom: 10px; }
+.secondary-filter-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
+.secondary-filter-tools input { min-height: 38px; padding: 8px 10px; font-size: 11px; }
+.secondary-filter-tools .button { min-height: 38px; padding: 0 13px; font-size: 11px; white-space: nowrap; }
+.secondary-list-tools { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 8px; }
+.secondary-list-tools select { min-height: 38px; padding: 8px; font-size: 11px; }
+.secondary-trade-list { display: grid; gap: 8px; max-height: 430px; margin-top: 10px; overflow: auto; padding-right: 3px; }
+.secondary-trade-item { display: grid; gap: 8px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: linear-gradient(145deg, #fff, #fbfbff); text-align: left; }
+.secondary-trade-item:hover, .secondary-trade-item.active { border-color: var(--accent); background: linear-gradient(145deg, var(--accent-soft), #fff); }
+.secondary-trade-item.active { box-shadow: inset 3px 0 0 var(--accent); }
+.secondary-action-bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin: 0 0 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
+.secondary-field-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.secondary-field-grid .span-2 { grid-column: span 2; }
+.secondary-standard-card { margin-top: 12px; }
+.secondary-standard-card .result-summary { min-height: 110px; background: #fff; }
+
 .protocol-transfer-grid { display: grid; grid-template-columns: minmax(360px, .78fr) minmax(620px, 1.22fr); gap: 14px; align-items: start; }
 .protocol-transfer-left, .protocol-transfer-detail { padding: 16px; }
 .protocol-transfer-actions { display: grid; gap: 10px; margin-bottom: 14px; }
@@ -405,7 +434,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 }
 
 @media (max-width: 1120px) {
-  .generator-grid, .database-grid, .batch-card-grid, .ledger-grid, .protocol-transfer-grid { grid-template-columns: 1fr; }
+  .generator-grid, .database-grid, .batch-card-grid, .ledger-grid, .secondary-trading-grid, .protocol-transfer-grid { grid-template-columns: 1fr; }
   .project-list-panel { position: static; max-height: none; overflow: visible; }
   .project-list { max-height: none; overflow: visible; }
   .mail-panel { grid-template-columns: 1fr; }
@@ -416,7 +445,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .payment-todo-list, .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .secondary-field-grid, .protocol-transfer-detail .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
   .project-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .project-detail-panel .compact-field-grid { grid-template-columns: 1fr; }
   .project-detail-panel .compact-field-grid > .span-2 { grid-column: span 1; }
@@ -436,12 +465,13 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .cloud-orb { margin: 0 auto; }
   .cloud-pulse-lines { margin-right: auto; margin-left: auto; }
   .field-grid, .rules-grid { grid-template-columns: 1fr; }
-  .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .secondary-field-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
   .tranche-grid .span-3 { grid-column: span 1; }
   .dashboard-grid, .dashboard-priority, .dashboard-more { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-summary-item.wide { grid-column: span 2; }
   .project-list-tools { grid-template-columns: 1fr; }
+  .secondary-list-tools { grid-template-columns: 1fr; }
   .history-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .span-2 { grid-column: span 1; }
   .review-grid .wide, .batch-issuer-grid .wide { grid-column: span 1; }

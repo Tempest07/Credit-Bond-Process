@@ -7,7 +7,7 @@ export async function onRequestGet(context) {
     await ensureSchema(context.env.DB);
     const row = await context.env.DB.prepare("SELECT data, updated_at FROM app_state WHERE id = 1").first();
     return json({
-      data: row?.data ? JSON.parse(row.data) : { version: 2, issuers: [], projects: [], updatedAt: null },
+      data: row?.data ? JSON.parse(row.data) : { version: 3, issuers: [], projects: [], protocolTransfers: [], secondaryTrades: [], updatedAt: null },
       updatedAt: row?.updated_at || null,
     });
   } catch (error) {
@@ -69,11 +69,14 @@ function validateState(data) {
   if ((data.projects || []).length > 10000) throw new Error("项目数量不能超过10000");
   if (data.protocolTransfers !== undefined && !Array.isArray(data.protocolTransfers)) throw new Error("协议转让台账必须为 protocolTransfers 数组");
   if ((data.protocolTransfers || []).length > 10000) throw new Error("协议转让记录数量不能超过10000");
+  if (data.secondaryTrades !== undefined && !Array.isArray(data.secondaryTrades)) throw new Error("二级交易台账必须为 secondaryTrades 数组");
+  if ((data.secondaryTrades || []).length > 10000) throw new Error("二级交易记录数量不能超过10000");
   return {
     version: 3,
     issuers: data.issuers,
     projects: data.projects || [],
     protocolTransfers: data.protocolTransfers || [],
+    secondaryTrades: data.secondaryTrades || [],
     ftpCurve: data.ftpCurve || {},
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };

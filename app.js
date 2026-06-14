@@ -46,6 +46,21 @@ import {
   removeProtocolTransfer,
   upsertProtocolTransfer,
 } from "./protocol-transfer.js?v=20260612-protocol-ocr";
+import {
+  SECONDARY_TRADE_ACCOUNTS,
+  SECONDARY_TRADE_STATUSES,
+  buildBrokerSellList,
+  buildDailySecondaryTradeSummary,
+  buildSecondaryTradeLedgerRows,
+  markSecondaryTradeAction,
+  normalizeSecondaryTrade,
+  normalizeSecondaryTrades,
+  parseSecondaryTradeBatch,
+  removeSecondaryTrade,
+  secondaryTradeTodos,
+  standardizeSecondaryTradeText,
+  upsertSecondaryTrade,
+} from "./secondary-trading.js?v=20260612-protocol-ocr";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -97,6 +112,7 @@ let pendingHistoryImport = null;
 let batchItems = [];
 let selectedProjectId = "";
 let selectedProtocolTransferId = "";
+let selectedSecondaryTradeId = "";
 let ledgerFilter = "all";
 let projectAutoSaveTimer = null;
 
@@ -113,6 +129,7 @@ async function initialize() {
   bindNavigation();
   bindGenerator();
   bindLedger();
+  bindSecondaryTrading();
   bindProtocolTransfer();
   bindQuickIssuer();
   bindBatch();
@@ -122,6 +139,7 @@ async function initialize() {
   renderIssuerOptions();
   renderIssuerList();
   renderProjectWorkspace();
+  renderSecondaryTradingWorkspace();
   renderProtocolTransferWorkspace();
   renderFtpCurveForm();
   clearIssuerForm();
@@ -674,6 +692,342 @@ function parseJson(text) {
   } catch {
     return null;
   }
+}
+
+function bindSecondaryTrading() {
+  if (!$("#secondaryTradeForm")) return;
+  fillSecondaryTradeSelectOptions();
+  $("#secondaryTradeParseListingButton").addEventListener("click", () => parseSecondaryTradeInput("listing"));
+  $("#secondaryTradeParseDealButton").addEventListener("click", () => parseSecondaryTradeInput("trade"));
+  $("#secondaryTradeCopySellListButton").addEventListener("click", copySecondaryBrokerSellList);
+  $("#secondaryTradeCopySummaryButton").addEventListener("click", copySecondaryDailySummary);
+  $("#secondaryTradeExportButton").addEventListener("click", exportSecondaryTradeLedger);
+  $("#secondaryTradeNewButton").addEventListener("click", clearSecondaryTradeForm);
+  $("#secondaryTradeSaveButton").addEventListener("click", saveSecondaryTradeFromForm);
+  $("#secondaryTradeDeleteButton").addEventListener("click", deleteSelectedSecondaryTrade);
+  $("#secondaryTradeListedButton").addEventListener("click", () => completeSecondaryTradeAction("listed"));
+  $("#secondaryTradeExecutedButton").addEventListener("click", () => completeSecondaryTradeAction("executed"));
+  $("#secondaryTradeSettledButton").addEventListener("click", () => completeSecondaryTradeAction("settled"));
+  $("#secondaryTradeCancelButton").addEventListener("click", () => completeSecondaryTradeAction("cancelled"));
+  $("#secondaryTradeCopyStandardButton").addEventListener("click", copySecondaryStandardText);
+  $("#secondaryTradeSearch").addEventListener("input", renderSecondaryTradeList);
+  $("#secondaryTradeStatusFilter").addEventListener("change", renderSecondaryTradeList);
+  $("#secondaryTradeDateFilter").addEventListener("change", renderSecondaryTradeList);
+  $("#secondaryTradeTodayFilterButton").addEventListener("click", () => {
+    $("#secondaryTradeDateFilter").value = localDate(new Date());
+    renderSecondaryTradeList();
+  });
+  $("#secondaryTradeList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-secondary-trade-id]");
+    if (!button) return;
+    selectedSecondaryTradeId = button.dataset.secondaryTradeId;
+    renderSecondaryTradingWorkspace();
+  });
+  $("#secondaryTradeTodoList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-secondary-trade-id]");
+    if (!button) return;
+    selectedSecondaryTradeId = button.dataset.secondaryTradeId;
+    if (button.dataset.secondaryTradeAction) {
+      completeSecondaryTradeAction(button.dataset.secondaryTradeAction, button.dataset.secondaryTradeId);
+    }
+    else renderSecondaryTradingWorkspace();
+  });
+  $("#secondaryTradeAmount").addEventListener("input", updateSecondaryTradeStandardText);
+  $("#secondaryTradePrice").addEventListener("input", updateSecondaryTradeStandardText);
+  $("#secondaryTradePriceType").addEventListener("change", updateSecondaryTradeStandardText);
+  $("#secondaryTradeDirection").addEventListener("change", updateSecondaryTradeStandardText);
+  $("#secondaryTradeAccount").addEventListener("change", updateSecondaryTradeStandardText);
+}
+
+function fillSecondaryTradeSelectOptions() {
+  $("#secondaryTradeAccount").innerHTML = SECONDARY_TRADE_ACCOUNTS.map((account) =>
+    `<option value="${escapeAttribute(account.key)}">${escapeHtml(account.label)} · ${escapeHtml(account.description)}</option>`,
+  ).join("");
+  $("#secondaryTradeStatus").innerHTML = SECONDARY_TRADE_STATUSES.map((status) =>
+    `<option>${escapeHtml(status)}</option>`,
+  ).join("");
+}
+
+function renderSecondaryTradingWorkspace() {
+  if (!$("#secondaryTradeForm")) return;
+  const selected = (state.secondaryTrades || []).find((item) => item.id === selectedSecondaryTradeId);
+  renderSecondaryTradeTodos();
+  renderSecondaryTradeList();
+  if (selected) fillSecondaryTradeForm(selected);
+  else if (!$("#secondaryTradeId").value) clearSecondaryTradeForm(false);
+}
+
+function renderSecondaryTradeTodos() {
+  const todos = secondaryTradeTodos(state.secondaryTrades || []);
+  $("#secondaryTradeTodoList").innerHTML = todos.length
+    ? todos.map(({ record, step, timing }) => `
+      <article class="secondary-todo-item ${timing}">
+        <button class="payment-todo-main" type="button" data-secondary-trade-id="${escapeAttribute(record.id)}">
+          <strong>${escapeHtml(record.shortName || record.code || "未命名交易")}</strong>
+          <span>${escapeHtml(record.account)} · ${escapeHtml(record.direction)}${escapeHtml(formatSecondaryAmount(record.amountWan))} · ${escapeHtml(step.dueDate)}交割</span>
+        </button>
+        <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(record.id)}" data-secondary-trade-action="${escapeAttribute(step.key)}">${escapeHtml(step.label)}</button>
+      </article>
+    `).join("")
+    : '<div class="payment-todo-empty">目前没有待交割的二级交易。</div>';
+}
+
+function renderSecondaryTradeList() {
+  const query = $("#secondaryTradeSearch").value.trim().toLowerCase();
+  const status = $("#secondaryTradeStatusFilter").value;
+  const date = $("#secondaryTradeDateFilter").value;
+  const records = secondaryTradesForDate(date)
+    .filter((record) => !status || record.status === status)
+    .filter((record) =>
+      `${record.code} ${record.shortName} ${record.account} ${record.broker} ${record.counterparty}`.toLowerCase().includes(query),
+    )
+    .sort((left, right) =>
+      right.tradeDate.localeCompare(left.tradeDate)
+      || (right.settlementDate || "").localeCompare(left.settlementDate || "")
+      || right.createdAt.localeCompare(left.createdAt),
+    );
+
+  $("#secondaryTradeList").innerHTML = records.length
+    ? records.map((record) => `
+      <button class="secondary-trade-item ${record.id === selectedSecondaryTradeId ? "active" : ""}" type="button" data-secondary-trade-id="${escapeAttribute(record.id)}">
+        <span class="project-item-head">
+          <strong>${escapeHtml(record.shortName || record.code || "未命名交易")}</strong>
+          <span class="status-badge">${escapeHtml(record.status)}</span>
+        </span>
+        <span class="project-item-meta project-item-primary">
+          <span>${escapeHtml(record.account)} · ${escapeHtml(record.direction)} · ${escapeHtml(formatSecondaryParty(record))}</span>
+          <span class="project-item-schedule">${escapeHtml(record.tradeDate)}</span>
+        </span>
+        <span class="project-item-facts">
+          <span>${escapeHtml(record.code || "代码待补")}</span>
+          <span>${escapeHtml(formatSecondaryAmount(record.amountWan))}</span>
+          <span>${escapeHtml(formatSecondaryPrice(record))}</span>
+          <span>${escapeHtml(record.settlementDate ? `${record.settlementDate}交割` : "交割日待补")}</span>
+        </span>
+      </button>
+    `).join("")
+    : '<div class="empty">暂无二级交易记录。</div>';
+}
+
+function secondaryTradesForDate(date = "") {
+  return normalizeSecondaryTrades(state.secondaryTrades || [])
+    .filter((record) => !date || record.tradeDate === date);
+}
+
+function parseSecondaryTradeInput(kind) {
+  const text = $("#secondaryTradeInput").value;
+  if (!text.trim()) {
+    showToast("请先粘贴挂卖清单或成交要素。");
+    return;
+  }
+  const currentId = $("#secondaryTradeId").value;
+  const parsed = parseSecondaryTradeBatch(text, { kind });
+  if (!parsed.length) {
+    showToast("暂未识别到有效的二级交易要素，请补充代码、简称、金额或价格。");
+    return;
+  }
+  let firstRecord = null;
+  parsed.forEach((record, index) => {
+    const next = index === 0 && currentId ? { ...record, id: currentId } : record;
+    state = upsertSecondaryTrade(state, next);
+    if (!firstRecord) firstRecord = next;
+  });
+  selectedSecondaryTradeId = firstRecord.id;
+  persistState();
+  renderSecondaryTradingWorkspace();
+  showSecondaryOutput(kind === "listing"
+    ? buildBrokerSellList(secondaryTradesForDate(firstRecord.tradeDate), firstRecord.tradeDate)
+    : buildDailySecondaryTradeSummary(secondaryTradesForDate(firstRecord.tradeDate), firstRecord.tradeDate));
+  showToast(`已识别并保存 ${parsed.length} 笔${kind === "listing" ? "挂卖" : "成交"}记录。`);
+}
+
+function readSecondaryTradeForm() {
+  const id = $("#secondaryTradeId").value;
+  const existing = (state.secondaryTrades || []).find((item) => item.id === id) || null;
+  return normalizeSecondaryTrade({
+    id,
+    code: $("#secondaryTradeCode").value,
+    shortName: $("#secondaryTradeShortName").value,
+    direction: $("#secondaryTradeDirection").value,
+    account: $("#secondaryTradeAccount").value,
+    status: $("#secondaryTradeStatus").value,
+    tradeDate: $("#secondaryTradeDate").value,
+    settlementDate: $("#secondaryTradeSettlementDate").value,
+    amountWan: $("#secondaryTradeAmount").value,
+    priceType: $("#secondaryTradePriceType").value,
+    price: $("#secondaryTradePrice").value,
+    broker: $("#secondaryTradeBroker").value,
+    counterparty: $("#secondaryTradeCounterparty").value,
+    isTaskPurchase: $("#secondaryTradeTaskPurchase").checked,
+    notes: $("#secondaryTradeNotes").value,
+    rawText: $("#secondaryTradeInput").value || existing?.rawText || "",
+    createdAt: existing?.createdAt,
+  });
+}
+
+function fillSecondaryTradeForm(input) {
+  const record = normalizeSecondaryTrade(input);
+  selectedSecondaryTradeId = record.id;
+  $("#secondaryTradeId").value = record.id;
+  $("#secondaryTradeCode").value = record.code;
+  $("#secondaryTradeShortName").value = record.shortName;
+  $("#secondaryTradeDirection").value = record.direction;
+  $("#secondaryTradeAccount").value = record.account;
+  $("#secondaryTradeStatus").value = record.status;
+  $("#secondaryTradeDate").value = record.tradeDate;
+  $("#secondaryTradeSettlementDate").value = record.settlementDate;
+  $("#secondaryTradeAmount").value = record.amountWan ?? "";
+  $("#secondaryTradePriceType").value = record.priceType;
+  $("#secondaryTradePrice").value = record.price ?? "";
+  $("#secondaryTradeBroker").value = record.broker;
+  $("#secondaryTradeCounterparty").value = record.counterparty;
+  $("#secondaryTradeTaskPurchase").checked = record.isTaskPurchase;
+  $("#secondaryTradeNotes").value = record.notes;
+  if (record.rawText) $("#secondaryTradeInput").value = record.rawText;
+  $("#secondaryTradeDeleteButton").hidden = !(state.secondaryTrades || []).some((item) => item.id === record.id);
+  $("#secondaryTradeStatusPill").textContent = record.status;
+  updateSecondaryTradeStandardText(record);
+  renderSecondaryTradeList();
+}
+
+function clearSecondaryTradeForm(resetInput = true) {
+  selectedSecondaryTradeId = "";
+  $("#secondaryTradeForm").reset();
+  $("#secondaryTradeId").value = "";
+  $("#secondaryTradeAccount").value = "SDR";
+  $("#secondaryTradeStatus").value = "拟挂卖";
+  $("#secondaryTradeDate").value = localDate(new Date());
+  $("#secondaryTradeSettlementDate").value = "";
+  $("#secondaryTradeDeleteButton").hidden = true;
+  $("#secondaryTradeStatusPill").textContent = "待录入";
+  $("#secondaryTradeStandardText").value = "";
+  if (resetInput) $("#secondaryTradeInput").value = "";
+  renderSecondaryTradeList();
+}
+
+function saveSecondaryTradeFromForm() {
+  const record = readSecondaryTradeForm();
+  if (!record.code && !record.shortName) {
+    showToast("请至少补齐债券代码或债券简称。");
+    return;
+  }
+  state = upsertSecondaryTrade(state, record);
+  selectedSecondaryTradeId = record.id;
+  persistState();
+  renderSecondaryTradingWorkspace();
+  showToast("二级交易记录已保存。");
+}
+
+function deleteSelectedSecondaryTrade() {
+  const id = $("#secondaryTradeId").value;
+  if (!id) return;
+  if (!confirm("确认删除这笔二级交易记录？")) return;
+  state = removeSecondaryTrade(state, id);
+  selectedSecondaryTradeId = "";
+  persistState();
+  clearSecondaryTradeForm();
+  renderSecondaryTradingWorkspace();
+  showToast("二级交易记录已删除。");
+}
+
+function completeSecondaryTradeAction(action, explicitId = "") {
+  const id = explicitId || $("#secondaryTradeId").value || selectedSecondaryTradeId;
+  const record = (state.secondaryTrades || []).find((item) => item.id === id);
+  if (!record) {
+    showToast("请先选择或保存一笔二级交易。");
+    return;
+  }
+  const next = markSecondaryTradeAction(record, action);
+  state = upsertSecondaryTrade(state, next);
+  selectedSecondaryTradeId = next.id;
+  persistState();
+  renderSecondaryTradingWorkspace();
+  const label = action === "listed" ? "挂出" : action === "executed" ? "成交" : action === "settled" ? "交割" : "取消";
+  showToast(`${next.shortName || next.code} 已标记为${label}。`);
+}
+
+async function copySecondaryStandardText() {
+  const text = $("#secondaryTradeStandardText").value.trim();
+  if (!text) {
+    showToast("暂无可复制的标准化文本。");
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  showToast("标准化文本已复制。");
+}
+
+async function copySecondaryBrokerSellList() {
+  const date = $("#secondaryTradeDateFilter").value || localDate(new Date());
+  const text = buildBrokerSellList(secondaryTradesForDate(date), date);
+  if (!text) {
+    showToast(`${date} 暂无可复制的挂卖清单。`);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  showSecondaryOutput(text);
+  showToast("挂卖清单已复制。");
+}
+
+async function copySecondaryDailySummary() {
+  const date = $("#secondaryTradeDateFilter").value || localDate(new Date());
+  const text = buildDailySecondaryTradeSummary(secondaryTradesForDate(date), date);
+  if (!text) {
+    showToast(`${date} 暂无二级成交汇总。`);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  showSecondaryOutput(text);
+  showToast("成交汇总已复制。");
+}
+
+function exportSecondaryTradeLedger() {
+  const date = $("#secondaryTradeDateFilter").value;
+  if (!date) {
+    showToast("请先选择要导出的交易日。");
+    return;
+  }
+  const rows = buildSecondaryTradeLedgerRows(secondaryTradesForDate(date));
+  if (rows.length <= 1) {
+    showToast(`${date} 暂无二级交易记录可导出。`);
+    return;
+  }
+  const csv = rows.map((row) => row.map(formatCsvCell).join(",")).join("\r\n");
+  downloadBlob(`二级交易台账${date.replaceAll("-", "")}.csv`, new Blob([`\ufeff${csv}`], {
+    type: "text/csv;charset=utf-8",
+  }));
+  showToast(`已导出 ${date} 二级交易台账。`);
+}
+
+function updateSecondaryTradeStandardText(record = null) {
+  const value = record || readSecondaryTradeForm();
+  $("#secondaryTradeStandardText").value = standardizeSecondaryTradeText(value);
+  $("#secondaryTradeStatusPill").textContent = value.status || "待录入";
+}
+
+function showSecondaryOutput(text) {
+  const output = $("#secondaryTradeOutput");
+  output.hidden = !text;
+  output.textContent = text || "";
+}
+
+function formatSecondaryParty(record) {
+  return record.counterparty || record.broker || "对手方待补";
+}
+
+function formatSecondaryAmount(value) {
+  if (!Number.isFinite(Number(value))) return "金额待补";
+  const number = Number(value);
+  return number >= 10000 && number % 10000 === 0 ? `${number / 10000}亿` : `${formatNumber(number)}万`;
+}
+
+function formatSecondaryPrice(record) {
+  if (!Number.isFinite(Number(record.price))) return "价格待补";
+  return `${record.priceType || "价格"}${formatNumber(record.price)}${record.priceType === "收益率" ? "%" : ""}`;
+}
+
+function formatCsvCell(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 function bindProtocolTransfer() {
@@ -2588,6 +2942,7 @@ function bindDataActions() {
       renderIssuerList();
       renderFtpCurveForm();
       renderProjectWorkspace();
+      renderSecondaryTradingWorkspace();
       renderProtocolTransferWorkspace();
       regenerate();
       showToast(`已导入 ${state.issuers.length} 个主体和 ${(state.projects || []).length} 个项目。`);
@@ -2647,6 +3002,7 @@ async function loadCloudState() {
   renderIssuerList();
   renderFtpCurveForm();
   renderProjectWorkspace();
+  renderSecondaryTradingWorkspace();
   renderProtocolTransferWorkspace();
   if (batchItems.length) renderBatchResults();
 }
@@ -2718,6 +3074,7 @@ function normalizeLoadedState(value) {
     ...value,
     ftpCurve: normalizeFtpCurve(value.ftpCurve),
     projects: (value.projects || []).map(normalizeProjectRecord),
+    secondaryTrades: normalizeSecondaryTrades(value.secondaryTrades || []),
     protocolTransfers: normalizeProtocolTransfers(value.protocolTransfers || []),
   };
 }

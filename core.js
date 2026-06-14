@@ -3,6 +3,7 @@ export const DEFAULT_STATE = {
   issuers: [],
   projects: [],
   protocolTransfers: [],
+  secondaryTrades: [],
   ftpCurve: {
     m3: null,
     m4: null,

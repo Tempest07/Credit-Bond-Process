@@ -18,6 +18,7 @@
 
       <nav class="nav">
         <button class="nav-item active" data-view-target="ledger">项目中心</button>
+        <button class="nav-item" data-view-target="secondary-trading">二级交易</button>
         <button class="nav-item" data-view-target="protocol-transfer">协议转让</button>
         <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch">批量撰写</button>
@@ -354,6 +355,118 @@
 
               <div class="form-actions project-footer-actions">
                 <button class="button danger" id="deleteProjectButton" type="button">删除项目</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" data-view="secondary-trading">
+        <div class="secondary-trading-grid">
+          <section class="panel secondary-trading-left">
+            <div class="panel-head">
+              <div><span class="step">SECONDARY</span><h2>二级交易中心</h2></div>
+              <button class="button primary" id="secondaryTradeNewButton" type="button">新建交易</button>
+            </div>
+
+            <div class="secondary-trade-actions">
+              <textarea id="secondaryTradeInput" class="secondary-trade-input" rows="8" spellcheck="false" placeholder="粘贴早上挂卖清单，或盘中成交要素。例如：102682132.IB 26珠海正方MTN001 SDR 卖出5000万 1.83% 中信证券 T+1"></textarea>
+              <div class="batch-actions">
+                <button class="button primary" id="secondaryTradeParseListingButton" type="button">识别为挂卖</button>
+                <button class="button" id="secondaryTradeParseDealButton" type="button">识别为成交</button>
+                <button class="button subtle" id="secondaryTradeCopySellListButton" type="button">复制挂卖清单</button>
+                <button class="button subtle" id="secondaryTradeCopySummaryButton" type="button">复制成交汇总</button>
+                <button class="button subtle" id="secondaryTradeExportButton" type="button">导出所选交易日</button>
+              </div>
+              <pre class="secondary-trade-output" id="secondaryTradeOutput" hidden></pre>
+            </div>
+
+            <section class="secondary-todo-panel">
+              <div class="payment-todo-head">
+                <div><span class="step">TODO</span><h2>交割待办</h2></div>
+              </div>
+              <div class="secondary-todo-list" id="secondaryTradeTodoList"></div>
+            </section>
+
+            <div class="panel-head secondary-list-head">
+              <div><span class="step">LEDGER</span><h2>二级交易台账</h2></div>
+            </div>
+            <div class="secondary-filter-tools">
+              <input id="secondaryTradeDateFilter" type="date" aria-label="按交易日筛选二级交易">
+              <button class="button subtle" id="secondaryTradeTodayFilterButton" type="button">今日</button>
+            </div>
+            <div class="secondary-list-tools">
+              <input class="search-input" id="secondaryTradeSearch" type="search" placeholder="搜索代码、简称、组合、中介或对手方">
+              <select id="secondaryTradeStatusFilter">
+                <option value="">全部状态</option>
+                <option>拟挂卖</option>
+                <option>已挂出</option>
+                <option>待交割</option>
+                <option>已交割</option>
+                <option>已取消</option>
+              </select>
+            </div>
+            <div class="secondary-trade-list" id="secondaryTradeList"></div>
+          </section>
+
+          <section class="panel secondary-trading-detail">
+            <form id="secondaryTradeForm">
+              <input id="secondaryTradeId" type="hidden">
+              <div class="panel-head">
+                <div><span class="step">FORM</span><h2>交易要素与状态</h2></div>
+                <span class="pill accent" id="secondaryTradeStatusPill">待录入</span>
+              </div>
+
+              <div class="secondary-action-bar">
+                <button class="button subtle" id="secondaryTradeListedButton" type="button">挂出</button>
+                <button class="button primary" id="secondaryTradeExecutedButton" type="button">成交</button>
+                <button class="button result-action" id="secondaryTradeSettledButton" type="button">交割</button>
+                <button class="button subtle" id="secondaryTradeCancelButton" type="button">取消</button>
+              </div>
+
+              <div class="field-grid secondary-field-grid">
+                <label>债券代码<input id="secondaryTradeCode" placeholder="102682132.IB"></label>
+                <label>债券简称<input id="secondaryTradeShortName" placeholder="26珠海正方MTN001"></label>
+                <label>方向
+                  <select id="secondaryTradeDirection">
+                    <option>卖出</option>
+                    <option>买入</option>
+                  </select>
+                </label>
+                <label>组合
+                  <select id="secondaryTradeAccount"></select>
+                </label>
+                <label>状态
+                  <select id="secondaryTradeStatus"></select>
+                </label>
+                <label>交易日<input id="secondaryTradeDate" type="date"></label>
+                <label>交割日<input id="secondaryTradeSettlementDate" type="date"></label>
+                <label>金额（万元）<input id="secondaryTradeAmount" type="number" step="0.01"></label>
+                <label>价格类型
+                  <select id="secondaryTradePriceType">
+                    <option>收益率</option>
+                    <option>净价</option>
+                    <option>全价</option>
+                  </select>
+                </label>
+                <label>价格<input id="secondaryTradePrice" type="number" step="0.0001"></label>
+                <label>中介<input id="secondaryTradeBroker" placeholder="如 中信证券"></label>
+                <label>对手方<input id="secondaryTradeCounterparty" placeholder="成交对手方"></label>
+                <label class="checkbox-label"><input id="secondaryTradeTaskPurchase" type="checkbox">任务内收券</label>
+                <label class="span-2">备注<input id="secondaryTradeNotes" placeholder="如 T+0、询价来源、特殊交割要求"></label>
+              </div>
+
+              <section class="quick-output-card secondary-standard-card">
+                <div class="quick-output-card-head">
+                  <strong>标准化文本</strong>
+                  <button class="button subtle" id="secondaryTradeCopyStandardButton" type="button">复制</button>
+                </div>
+                <textarea id="secondaryTradeStandardText" class="result-summary" rows="5" readonly></textarea>
+              </section>
+
+              <div class="form-actions">
+                <button class="button danger" id="secondaryTradeDeleteButton" type="button" hidden>删除交易</button>
+                <button class="button primary" id="secondaryTradeSaveButton" type="button">保存交易</button>
               </div>
             </form>
           </section>

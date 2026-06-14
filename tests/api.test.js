@@ -47,6 +47,7 @@ test("accepts and preserves project ledger records", async () => {
           issuers: [],
           projects: [{ id: "p1", shortName: "26测试01" }],
           protocolTransfers: [{ id: "t1", code: "281926.SH", shortName: "26光交01" }],
+          secondaryTrades: [{ id: "s1", code: "102682132.IB", shortName: "26测试MTN001" }],
           ftpCurve: { y1: 1.5 },
         },
       }),
@@ -55,5 +56,6 @@ test("accepts and preserves project ledger records", async () => {
   assert.equal(response.status, 200);
   assert.equal(saved.projects[0].shortName, "26测试01");
   assert.equal(saved.protocolTransfers[0].code, "281926.SH");
+  assert.equal(saved.secondaryTrades[0].code, "102682132.IB");
   assert.equal(saved.ftpCurve.y1, 1.5);
 });

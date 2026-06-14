@@ -16,6 +16,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`history-parser\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`secondary-trading\\.js\\?v=${VERSION}`));
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
 });
 
