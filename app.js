@@ -192,15 +192,32 @@ function saveCurrentProject() {
     showToast("请先解析项目简表，再保存为项目。");
     return;
   }
-  const existing = (state.projects || []).find((item) => item.shortName === project.shortName && item.status !== "已结束");
+  const result = upsertParsedProjectToLedger(project, issuer, generated);
+  if (!result) return;
+  selectedProjectId = result.record.id;
+  persistState();
+  renderProjectWorkspace();
+  switchView("ledger");
+  showToast(result.isUpdate ? "已更新现有项目台账。" : "已保存至项目台账。");
+}
+
+function upsertParsedProjectToLedger(projectValue, issuer, generated) {
+  if (!projectValue?.shortName) return null;
+  const existing = (state.projects || []).find((item) => item.shortName === projectValue.shortName && item.status !== "已结束");
+  const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing);
+  state = upsertProject(state, record);
+  return { record, isUpdate: Boolean(existing) };
+}
+
+function buildLedgerProjectRecord(projectValue, issuer, generated, existing = null) {
   const suggestedRatios = generated.suggestion.trancheSuggestions.map((item) => item.suggestedRatio);
   const created = createProjectRecord({
-    ...project,
-    leadUnderwriter: project.sponsorStatus === "牵头" ? "兴业银行" : project.leadUnderwriter,
+    ...projectValue,
+    leadUnderwriter: projectValue.sponsorStatus === "牵头" ? "兴业银行" : projectValue.leadUnderwriter,
     suggestedRatios,
   }, issuer, generated, { id: existing?.id });
-  const record = existing
-    ? {
+  return existing
+    ? normalizeProjectRecord({
         ...created,
         status: existing.status,
         cutoffAt: existing.cutoffAt || created.cutoffAt,
@@ -210,6 +227,10 @@ function saveCurrentProject() {
         notes: existing.notes,
         resultAdvertisement: existing.resultAdvertisement,
         resultConfirmed: existing.resultConfirmed,
+        comprehensivePricing: existing.comprehensivePricing,
+        pricingUnit: existing.pricingUnit,
+        afterTaxRevenue: existing.afterTaxRevenue,
+        ftpCost: existing.ftpCost,
         tranches: existing.tranches?.length === created.tranches.length
           ? created.tranches.map((tranche, index) => ({
               ...existing.tranches[index],
@@ -225,14 +246,8 @@ function saveCurrentProject() {
             }))
           : created.tranches,
         createdAt: existing.createdAt,
-      }
+      })
     : created;
-  state = upsertProject(state, record);
-  selectedProjectId = record.id;
-  persistState();
-  renderProjectWorkspace();
-  switchView("ledger");
-  showToast(existing ? "已更新现有项目台账。" : "已保存至项目台账。");
 }
 
 function bindLedger() {
@@ -1848,6 +1863,7 @@ function bindBatch() {
     showToast(`已复制 ${opinions.length} 笔流程意见。`);
   });
   $("#batchSaveIssuersButton").addEventListener("click", saveBatchIssuers);
+  $("#batchSaveProjectsButton").addEventListener("click", saveBatchProjects);
 }
 
 function parseBatchInput() {
@@ -1873,6 +1889,7 @@ function renderBatchResults() {
     $("#batchSummary").textContent = "等待解析";
     $("#batchCopyAllButton").disabled = true;
     $("#batchSaveIssuersButton").disabled = true;
+    $("#batchSaveProjectsButton").disabled = true;
     return;
   }
 
@@ -1923,6 +1940,7 @@ function renderBatchResults() {
   $("#batchSummary").textContent = `${batchItems.length} 笔 / 已匹配 ${matchedCount} 笔 / ${warningCount} 笔需确认`;
   $("#batchCopyAllButton").disabled = false;
   $("#batchSaveIssuersButton").disabled = false;
+  $("#batchSaveProjectsButton").disabled = false;
 
   $$("[data-batch-select]").forEach((select) => {
     select.addEventListener("change", () => {
@@ -2025,6 +2043,47 @@ function saveBatchIssuers() {
   renderIssuerList();
   renderBatchResults();
   showToast(`已批量录入或更新 ${savedCount} 个主体${skippedCount ? `，另有 ${skippedCount} 个待补充` : ""}。`);
+}
+
+function saveBatchProjects() {
+  captureBatchDrafts();
+  let createdCount = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+  let firstRecordId = "";
+
+  for (const [index, item] of batchItems.entries()) {
+    if (!item.project?.shortName) {
+      skippedCount += 1;
+      continue;
+    }
+    const issuer = state.issuers.find((candidate) => candidate.id === item.selectedIssuerId) || null;
+    const opinion = $(`[data-batch-opinion="${index}"]`)?.value.trim() || item.generated?.opinion || "";
+    const generated = { ...(item.generated || generateOpinion(item.project, issuer)), opinion };
+    const result = upsertParsedProjectToLedger(item.project, issuer, generated);
+    if (!result) {
+      skippedCount += 1;
+      continue;
+    }
+    firstRecordId ||= result.record.id;
+    if (result.isUpdate) updatedCount += 1;
+    else createdCount += 1;
+  }
+
+  if (!createdCount && !updatedCount) {
+    showToast("没有可加入项目台账的批量结果。");
+    return;
+  }
+
+  selectedProjectId = firstRecordId;
+  persistState();
+  renderProjectWorkspace();
+  switchView("ledger");
+  const parts = [];
+  if (createdCount) parts.push(`新增 ${createdCount} 笔`);
+  if (updatedCount) parts.push(`更新 ${updatedCount} 笔`);
+  if (skippedCount) parts.push(`跳过 ${skippedCount} 笔`);
+  showToast(`已批量加入项目台账：${parts.join("，")}。`);
 }
 
 function bindDatabase() {
