@@ -213,22 +213,23 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .payment-todo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .cutoff-todo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .ledger-todo-grid .payment-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
-.ledger-todo-grid .cutoff-todo-list { grid-template-columns: 1fr; align-content: start; }
+.ledger-todo-grid .cutoff-todo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
 .payment-todo-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-.cutoff-todo-item { display: grid; gap: 7px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.cutoff-todo-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .cutoff-todo-item.today { border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); background: #f8fbff; }
 .cutoff-todo-item.soon { border-color: color-mix(in srgb, var(--warning) 34%, var(--line)); background: #fffaf0; }
 .cutoff-todo-item.unconfirmed { border-color: color-mix(in srgb, var(--warning) 45%, var(--line)); background: var(--warning-soft); }
 .cutoff-todo-item.urgent { border-color: color-mix(in srgb, var(--warning) 58%, var(--line)); background: #fff3d9; box-shadow: inset 3px 0 0 color-mix(in srgb, var(--warning) 70%, #f59e0b); }
 .cutoff-todo-item.critical { border-color: color-mix(in srgb, var(--danger) 50%, var(--line)); background: #fff0e8; box-shadow: inset 3px 0 0 #ef4444; }
 .cutoff-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 65%, var(--line)); background: #ffe6eb; box-shadow: inset 3px 0 0 var(--danger); }
-.cutoff-todo-actions { display: flex; align-items: center; gap: 8px; }
+.cutoff-todo-actions { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .cutoff-todo-actions .text-button { font-size: 10px; }
 .payment-todo-item.today { border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); background: var(--warning-soft); }
 .payment-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); background: #fff2f4; }
 .payment-todo-main { display: grid; gap: 2px; min-width: 0; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; }
 .payment-todo-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .payment-todo-main span, .payment-todo-empty { color: var(--muted); font-size: 10px; }
+.cutoff-todo-item .payment-todo-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .payment-todo-item .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
 .payment-todo-empty { grid-column: 1 / -1; padding: 2px; }
 .ledger-grid { display: grid; grid-template-columns: clamp(320px, 27vw, 430px) minmax(760px, 1fr); gap: 14px; align-items: start; }
