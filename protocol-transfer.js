@@ -189,6 +189,14 @@ export function buildProtocolTransferLedgerRows(records = []) {
   return [header, ...body];
 }
 
+export function excelDateSerialFromLocalDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const utcDate = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const excelEpoch = Date.UTC(1899, 11, 30);
+  return Math.round((utcDate - excelEpoch) / 86400000);
+}
+
 function buildDuplicateProtocolTransferRemarks(numberedRecords) {
   const groups = new Map();
   numberedRecords.forEach(({ record, serial }) => {

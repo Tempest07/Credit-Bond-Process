@@ -36,6 +36,7 @@ import {
 } from "./history-parser.js?v=20260612-protocol-ocr";
 import {
   buildProtocolTransferLedgerRows,
+  excelDateSerialFromLocalDate,
   markProtocolTransferStep,
   nextProtocolTransferStep,
   normalizeProtocolTransfer,
@@ -1125,7 +1126,9 @@ function fillProtocolTransferLedgerTemplate(sheet, records) {
     const rowNumber = startRowNumber + index;
     const row = sheet.getRow(rowNumber);
     for (let column = 1; column <= 12; column += 1) {
-      row.getCell(column).value = formatProtocolTransferLedgerCell(record[column - 1], column);
+      const cell = row.getCell(column);
+      cell.value = formatProtocolTransferLedgerCell(record[column - 1], column);
+      if ([4, 5, 6].includes(column)) cell.numFmt = "yyyy/m/d";
     }
     row.commit?.();
   });
@@ -1142,14 +1145,8 @@ function copyProtocolTransferTemplateRow(sourceRow, targetRow) {
 
 function formatProtocolTransferLedgerCell(value, column) {
   if (value === "" || value === null || value === undefined) return "";
-  if ([4, 5, 6].includes(column)) return excelDateFromLocal(value) || value;
+  if ([4, 5, 6].includes(column)) return excelDateSerialFromLocalDate(value) ?? value;
   return value;
-}
-
-function excelDateFromLocal(value) {
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
 function downloadBlob(filename, blob) {

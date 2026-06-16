@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildProtocolTransferLedgerRows,
+  excelDateSerialFromLocalDate,
   markProtocolTransferStep,
   parseProtocolTransferText,
   protocolTransferStatus,
@@ -103,6 +104,14 @@ test("exports all ledger date columns as the trade date", () => {
   assert.equal(rows[1][5], "2026-06-15");
   assert.equal(rows[1][7], "");
   assert.equal(rows[1][11], 30000);
+});
+
+test("converts local trade dates to timezone-stable Excel serial dates", () => {
+  const serial = excelDateSerialFromLocalDate("2026-06-17");
+  const excelEpoch = Date.UTC(1899, 11, 30);
+
+  assert.equal(new Date(excelEpoch + serial * 86400000).toISOString().slice(0, 10), "2026-06-17");
+  assert.equal(excelDateSerialFromLocalDate(""), null);
 });
 
 test("leaves ledger remarks blank unless same-day trades have identical elements", () => {
