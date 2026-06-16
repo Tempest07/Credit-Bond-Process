@@ -157,8 +157,13 @@ test("caps Xingye-led investments at 20 percent", () => {
 
 test("caps overdue AA and AA(2) bonds", () => {
   const base = { ...parseProjectBrief(sample), durationDays: 1460 };
+  assert.equal(calculateSuggestion({ ...base, hiddenRating: "AA+" }, issuer).suggestedRatio, 20);
   assert.equal(calculateSuggestion({ ...base, hiddenRating: "AA" }, issuer).suggestedRatio, 15);
   assert.equal(calculateSuggestion({ ...base, hiddenRating: "AA(2)" }, issuer).suggestedRatio, 10);
+
+  const privateBase = { ...base, offeringType: "私募" };
+  assert.equal(calculateSuggestion({ ...privateBase, hiddenRating: "AA+" }, issuer).suggestedRatio, 10);
+  assert.equal(calculateSuggestion({ ...privateBase, hiddenRating: "AA" }, issuer).suggestedRatio, 0);
 });
 
 test("uses the longest possible term for option and dual-tranche durations", () => {
@@ -220,6 +225,34 @@ test("lists different suggested ratios for dual-tranche term caps", () => {
   });
   assert.deepEqual(generated.suggestion.trancheSuggestions.map((item) => item.suggestedRatio), [30, 15]);
   assert.match(generated.opinion, /投资比例不超过3年期最终发行规模的30%和5年期最终发行规模的15%/);
+});
+
+test("limits dual-tranche overdue private AA bonds to investable terms only", () => {
+  const project = parseProjectBrief(`26湛基01
+26湛基02 非我行主承 广州分行
+3/5年期 规模15亿 AAA(中诚信国际)/隐含AA 非公开 第1期
+询价区间1.5-2.5/1.8-2.8 上交所 华泰联合证券`);
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "湛江市基础设施建设投资集团有限公司",
+    credit: {
+      ...issuer.credit,
+      offeringType: "公私募",
+      approvedAmount: 3,
+      approvedRatio: 30,
+      privateRatio: 30,
+      investmentTermText: "3年",
+      investmentTermDays: 1095,
+      rawText: "总行批3亿，公私募（私募3亿），30%，3年",
+    },
+  });
+
+  assert.deepEqual(generated.suggestion.trancheSuggestions.map((item) => item.suggestedRatio), [30, 0]);
+  assert.equal(generated.suggestion.investmentAmount, 4.5);
+  assert.match(generated.opinion, /2026年面向专业投资者非公开发行公司债券\(第一期\)/);
+  assert.match(generated.opinion, /拟申请投资金额合计不超过4.5亿元/);
+  assert.match(generated.opinion, /建议限投资3年期金额不超过4.5亿元、投资比例不超过3年期最终发行规模的30%、3年期一级投标利率不低于【待填写】%/);
+  assert.doesNotMatch(generated.opinion, /5年期一级投标利率/);
 });
 
 test("splits multiple project briefs by their project headers", () => {

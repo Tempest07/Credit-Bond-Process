@@ -390,12 +390,7 @@ export function calculateSuggestion(project, issuer) {
       Number.isFinite(numberOrNull(credit.investmentTermDays)) &&
       durationDays > Number(credit.investmentTermDays);
 
-    if (exceedsCreditTerm && project.hiddenRating === "AA") {
-      caps.push({ value: 15, reason: `${formatDuration(durationText)}超过授信投资期限，隐含评级AA投资比例上限为15%` });
-    }
-    if (exceedsCreditTerm && project.hiddenRating === "AA(2)") {
-      caps.push({ value: 10, reason: `${formatDuration(durationText)}超过授信投资期限，隐含评级AA(2)投资比例上限为10%` });
-    }
+    caps.push(...overdueRatingCaps(project.hiddenRating, offeringType, durationText, exceedsCreditTerm));
 
     let ratio = approvedRatio;
     if (Number.isFinite(ratio)) {
@@ -411,6 +406,9 @@ export function calculateSuggestion(project, issuer) {
     warnings.push(exchangeOfferingUnknown
       ? "交易所债券发行方式未确认，暂不计算投资比例和金额。"
       : "主体资料中缺少授信投资比例，无法计算建议比例和投资金额。");
+  }
+  if (trancheSuggestions.some((item) => item.suggestedRatio === 0)) {
+    warnings.push("部分期限因超授信期限及隐含评级规则不可投资，建议限投可投期限。");
   }
 
   const investmentAmount =
@@ -488,11 +486,13 @@ export function generateOpinion(project, issuer) {
     : "【待补充投资金额】";
   const ratio = formatSuggestionRatio(suggestion, dualTranche);
   const bidRate = "【待填写】";
+  const bidRateItems = recommendationTrancheSuggestions(suggestion);
   const bidRateSentence = dualTranche
-    ? suggestion.trancheSuggestions.map((item) => `${formatDuration(item.durationText)}期一级投标利率不低于${bidRate}%`).join("、")
+    ? bidRateItems.map((item) => `${formatDuration(item.durationText)}期一级投标利率不低于${bidRate}%`).join("、")
     : `一级投标利率不低于${bidRate}%`;
   const creditSentence = formatCreditSentence(issuer);
   const approver = determineApprover(project.hiddenRating, suggestion.investmentAmount, Boolean(issuer?.isRealEstate));
+  const recommendationAmount = formatRecommendationAmount(suggestion, amount, dualTranche);
 
   const opinion = [
     `${branch}申请与资金营运中心一二级联动投资${fullName || "【待补充债券全称】"}。`,
@@ -502,7 +502,7 @@ export function generateOpinion(project, issuer) {
       ? `${branch}拟申请投资金额合计不超过${amount}。`
       : `${branch}拟申请投资金额不超过${amount}、${bidRateSentence}。`,
     dualTranche
-      ? `建议投资金额合计不超过${amount}、${ratio}、${bidRateSentence}。`
+      ? `${recommendationAmount}、${ratio}、${bidRateSentence}。`
       : `建议投资金额不超过${amount}、投资比例不超过最终发行规模的${ratio}、${bidRateSentence}。`,
     "本流程可用于一级、二级市场投资。",
     "以上妥否，请领导审核。",
@@ -653,6 +653,40 @@ function uniqueCaps(caps) {
   return [...new Map(caps.map((cap) => [`${cap.value}:${cap.reason}`, cap])).values()];
 }
 
+function overdueRatingCaps(hiddenRating, offeringType, durationText, exceedsCreditTerm) {
+  if (!exceedsCreditTerm) return [];
+  const rank = hiddenRatingRank(hiddenRating);
+  if (!Number.isFinite(rank)) return [];
+  const duration = formatDuration(durationText);
+  if (rank === 5) {
+    return offeringType === "私募"
+      ? [{ value: 10, reason: `${duration}超过授信投资期限，隐含评级AA+私募投资比例上限为10%` }]
+      : [{ value: 20, reason: `${duration}超过授信投资期限，隐含评级AA+公募投资比例上限为20%` }];
+  }
+  if (rank <= 4 && offeringType === "私募") {
+    return [{ value: 0, reason: `${duration}超过授信投资期限，隐含评级AA及以下不可投资私募债` }];
+  }
+  if (rank <= 3) {
+    return [{ value: 10, reason: `${duration}超过授信投资期限，隐含评级AA(2)及以下公募投资比例上限为10%` }];
+  }
+  if (rank <= 4) {
+    return [{ value: 15, reason: `${duration}超过授信投资期限，隐含评级AA公募投资比例上限为15%` }];
+  }
+  return [];
+}
+
+function hiddenRatingRank(value = "") {
+  const text = String(value || "").trim().toUpperCase();
+  if (text === "AAA") return 7;
+  if (text === "AAA-") return 6;
+  if (text === "AA+") return 5;
+  if (text === "AA") return 4;
+  if (text === "AA(2)") return 3;
+  if (text === "AA-") return 2;
+  if (/^A/.test(text)) return 1;
+  return null;
+}
+
 function formatProjectDuration(project) {
   const parts = projectDurationParts(project).filter(Boolean);
   if (!parts.length) return "【待补充发行期限】";
@@ -692,13 +726,36 @@ function formatSuggestionRatio(suggestion, dualTranche) {
       ? `${formatNumber(suggestion.suggestedRatio)}%`
       : "【待补充投资比例】";
   }
-  const items = suggestion.trancheSuggestions.filter((item) => item.durationText);
+  const limited = hasNonInvestableTranches(suggestion);
+  const items = recommendationTrancheSuggestions(suggestion).filter((item) => item.durationText);
   const ratios = [...new Set(items.map((item) => item.suggestedRatio).filter(Number.isFinite))];
   if (!ratios.length) return "投资比例不超过各期限最终发行规模的【待补充投资比例】";
-  if (ratios.length === 1) return `投资比例不超过各期限最终发行规模的${formatNumber(ratios[0])}%`;
+  if (ratios.length === 1 && !limited) return `投资比例不超过各期限最终发行规模的${formatNumber(ratios[0])}%`;
+  if (ratios.length === 1 && items.length === 1) {
+    return `投资比例不超过${formatDuration(items[0].durationText)}期最终发行规模的${formatNumber(ratios[0])}%`;
+  }
   return `投资比例不超过${items.map((item) =>
     `${formatDuration(item.durationText)}期最终发行规模的${Number.isFinite(item.suggestedRatio) ? `${formatNumber(item.suggestedRatio)}%` : "【待补充投资比例】"}`,
   ).join("和")}`;
+}
+
+function formatRecommendationAmount(suggestion, amount, dualTranche) {
+  if (!dualTranche || !hasNonInvestableTranches(suggestion)) return `建议投资金额合计不超过${amount}`;
+  const items = recommendationTrancheSuggestions(suggestion);
+  if (items.length === 1) return `建议限投资${formatDuration(items[0].durationText)}期金额不超过${amount}`;
+  return `建议限投资${items.map((item) => `${formatDuration(item.durationText)}期`).join("、")}金额合计不超过${amount}`;
+}
+
+function recommendationTrancheSuggestions(suggestion) {
+  const items = (suggestion.trancheSuggestions || []).filter((item) => item.durationText);
+  const investable = items.filter((item) => Number.isFinite(item.suggestedRatio) && item.suggestedRatio > 0);
+  return investable.length ? investable : items;
+}
+
+function hasNonInvestableTranches(suggestion) {
+  const items = (suggestion.trancheSuggestions || []).filter((item) => item.durationText);
+  return items.some((item) => item.suggestedRatio === 0)
+    && items.some((item) => Number.isFinite(item.suggestedRatio) && item.suggestedRatio > 0);
 }
 
 function daysToTermText(days) {
