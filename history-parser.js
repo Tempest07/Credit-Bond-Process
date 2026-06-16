@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260616-ad-brief";
+import { durationToDays } from "./core.js?v=20260616-placeholder-select";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-ad-brief";
+} from "./core.js?v=20260616-placeholder-select";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-ad-brief";
+} from "./lifecycle.js?v=20260616-placeholder-select";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-ad-brief";
+} from "./history-parser.js?v=20260616-placeholder-select";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -46,7 +46,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-ad-brief";
+} from "./protocol-transfer.js?v=20260616-placeholder-select";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -145,6 +145,7 @@ function switchView(viewName) {
 function bindGenerator() {
   $("#blankTemplateButton").addEventListener("click", loadBlankBriefTemplate);
   $("#briefInput").addEventListener("keydown", handleBriefTemplateKeydown);
+  $("#briefInput").addEventListener("dblclick", selectBriefPlaceholderOnDoubleClick);
   $("#sampleButton").addEventListener("click", () => {
     if (!state.issuers.some((issuer) => issuer.id === SAMPLE_ISSUER.id)) {
       state = upsertIssuer(state, SAMPLE_ISSUER);
@@ -446,6 +447,36 @@ function handleBriefTemplateKeydown(event) {
   if (!briefTemplatePlaceholders(event.currentTarget.value).length) return;
   event.preventDefault();
   focusBriefPlaceholder(event.shiftKey ? "previous" : "next");
+}
+
+function selectBriefPlaceholderOnDoubleClick(event) {
+  const input = event.currentTarget;
+  const placeholder = findBriefPlaceholderAtSelection(input);
+  if (!placeholder) return;
+  event.preventDefault();
+  selectBriefPlaceholderRange(input, placeholder);
+}
+
+function findBriefPlaceholderAtSelection(input) {
+  const value = String(input.value || "");
+  const selectionStart = Math.min(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+  const selectionEnd = Math.max(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  const placeholders = [...value.matchAll(BRIEF_PLACEHOLDER_PATTERN)];
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  return placeholders.find((match) => {
+    const start = match.index;
+    const end = start + match[0].length;
+    return selectionStart >= start && selectionEnd <= end;
+  }) || null;
+}
+
+function selectBriefPlaceholderRange(input, placeholder) {
+  const start = placeholder.index;
+  const end = start + placeholder[0].length;
+  input.focus();
+  input.setSelectionRange(start, end);
+  requestAnimationFrame(() => input.setSelectionRange(start, end));
 }
 
 function focusBriefPlaceholder(direction = "next") {
