@@ -218,15 +218,20 @@ function combineShortNames(names) {
   if (!names.length) return "";
   if (names.length === 1) return names[0];
   const first = names[0];
-  const second = names[1];
   const letterPair = first.match(/^(.*)([A-Z])$/i);
-  if (letterPair && second === `${letterPair[1]}${nextLetter(letterPair[2])}`) {
-    return `${first}/${second.slice(-1)}`;
+  if (letterPair) {
+    const suffixes = names.map((name) => name.match(new RegExp(`^${escapeRegExp(letterPair[1])}([A-Z])$`, "i"))?.[1]?.toUpperCase());
+    const baseCode = letterPair[2].toUpperCase().charCodeAt(0);
+    if (suffixes.every((suffix, index) => suffix && suffix.charCodeAt(0) === baseCode + index)) {
+      return `${first}/${suffixes.slice(1).join("/")}`;
+    }
   }
   const firstNumber = first.match(/^(.*?)(\d+)$/);
-  const secondNumber = second.match(/^(.*?)(\d+)$/);
-  if (firstNumber && secondNumber && firstNumber[1] === secondNumber[1]) {
-    return `${firstNumber[1]}${firstNumber[2]}/${secondNumber[2]}`;
+  if (firstNumber) {
+    const suffixes = names.map((name) => name.match(new RegExp(`^${escapeRegExp(firstNumber[1])}(\\d+)$`))?.[1]);
+    if (suffixes.every(Boolean)) {
+      return `${firstNumber[1]}${suffixes.join("/")}`;
+    }
   }
   return names.join("/");
 }
@@ -900,7 +905,11 @@ function formatProjectDuration(project) {
 }
 
 function projectInquiryRanges(project) {
-  if (Array.isArray(project?.inquiryRanges) && project.inquiryRanges.length) return project.inquiryRanges;
+  if (Array.isArray(project?.inquiryRanges) && project.inquiryRanges.length) {
+    return project.inquiryRanges.filter((range) =>
+      Number.isFinite(Number(range?.low)) && Number.isFinite(Number(range?.high)),
+    );
+  }
   const ranges = [];
   if (Number.isFinite(project?.inquiryLow) && Number.isFinite(project?.inquiryHigh)) {
     ranges.push({ low: project.inquiryLow, high: project.inquiryHigh });

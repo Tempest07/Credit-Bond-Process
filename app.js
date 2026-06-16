@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260617-split-offering-chip";
+} from "./core.js?v=20260617-dynamic-inquiry-ranges";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -29,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260617-split-offering-chip";
+} from "./lifecycle.js?v=20260617-dynamic-inquiry-ranges";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260617-split-offering-chip";
+} from "./history-parser.js?v=20260617-dynamic-inquiry-ranges";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -48,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260617-split-offering-chip";
+} from "./protocol-transfer.js?v=20260617-dynamic-inquiry-ranges";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -205,12 +205,23 @@ function bindGenerator() {
       if (field === "durationText") {
         project.durationDays = durationToDays(project.durationText);
         project.durationParts = durationParts(project.durationText);
+        ensureInquiryRangeCapacity(project);
+        renderTrancheInquiryFields();
       }
-      if (field.startsWith("inquiry")) rebuildInquiryRanges(project);
+      if (field.startsWith("inquiry")) {
+        rebuildInquiryRanges(project);
+        renderTrancheInquiryFields();
+      }
       if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
       if (field === "exchangeIssueNumber") applyExchangeIssueNumberChoice(project, project.exchangeIssueNumber, true);
       regenerate();
     });
+  });
+  $("#trancheInquiryRows").addEventListener("input", (event) => {
+    const input = event.target.closest("[data-inquiry-index]");
+    if (!input) return;
+    updateDynamicInquiryRange(input);
+    regenerate();
   });
 
   $("#copyButton").addEventListener("click", async () => {
@@ -579,6 +590,8 @@ function fillProjectFields() {
     const field = input.dataset.projectField;
     input.value = project[field] ?? "";
   });
+  ensureInquiryRangeCapacity(project);
+  renderTrancheInquiryFields();
 }
 
 function regenerate() {
@@ -2637,13 +2650,93 @@ function clearGeneratedExchangeFullName(projectValue, updateSingleInput) {
 }
 
 function rebuildInquiryRanges(projectValue) {
-  projectValue.inquiryRanges = [];
+  const existing = Array.isArray(projectValue.inquiryRanges) ? projectValue.inquiryRanges : [];
+  const ranges = existing.map((range) => ({
+    low: numberOrNull(range?.low),
+    high: numberOrNull(range?.high),
+  }));
   if (Number.isFinite(projectValue.inquiryLow) && Number.isFinite(projectValue.inquiryHigh)) {
-    projectValue.inquiryRanges.push({ low: projectValue.inquiryLow, high: projectValue.inquiryHigh });
+    ranges[0] = { low: projectValue.inquiryLow, high: projectValue.inquiryHigh };
+  } else {
+    ranges[0] = { low: numberOrNull(projectValue.inquiryLow), high: numberOrNull(projectValue.inquiryHigh) };
   }
-  if (Number.isFinite(projectValue.inquiryLow2) && Number.isFinite(projectValue.inquiryHigh2)) {
-    projectValue.inquiryRanges.push({ low: projectValue.inquiryLow2, high: projectValue.inquiryHigh2 });
+  if (Number.isFinite(projectValue.inquiryLow2) || Number.isFinite(projectValue.inquiryHigh2)) {
+    ranges[1] = { low: numberOrNull(projectValue.inquiryLow2), high: numberOrNull(projectValue.inquiryHigh2) };
   }
+  projectValue.inquiryRanges = ranges
+    .map((range) => ({
+      low: numberOrNull(range?.low),
+      high: numberOrNull(range?.high),
+    }))
+    .filter((range, index) => index < inquiryVarietyCount(projectValue) || Number.isFinite(range.low) || Number.isFinite(range.high));
+  projectValue.inquiryLow2 = projectValue.inquiryRanges[1]?.low ?? null;
+  projectValue.inquiryHigh2 = projectValue.inquiryRanges[1]?.high ?? null;
+}
+
+function ensureInquiryRangeCapacity(projectValue) {
+  const count = inquiryVarietyCount(projectValue);
+  if (count <= 1) return;
+  const ranges = Array.isArray(projectValue.inquiryRanges) ? [...projectValue.inquiryRanges] : [];
+  if (!ranges.length && (Number.isFinite(projectValue.inquiryLow) || Number.isFinite(projectValue.inquiryHigh))) {
+    ranges[0] = { low: numberOrNull(projectValue.inquiryLow), high: numberOrNull(projectValue.inquiryHigh) };
+  }
+  for (let index = 0; index < count; index += 1) {
+    ranges[index] = ranges[index] || { low: null, high: null };
+  }
+  projectValue.inquiryRanges = ranges;
+  projectValue.inquiryLow2 = ranges[1]?.low ?? null;
+  projectValue.inquiryHigh2 = ranges[1]?.high ?? null;
+}
+
+function renderTrancheInquiryFields() {
+  const count = inquiryVarietyCount(project);
+  const panel = $("#trancheInquiryPanel");
+  const rows = $("#trancheInquiryRows");
+  panel.hidden = count <= 1;
+  if (count <= 1) {
+    rows.innerHTML = "";
+    return;
+  }
+  ensureInquiryRangeCapacity(project);
+  rows.innerHTML = project.inquiryRanges.slice(1, count).map((range, offset) => {
+    const index = offset + 1;
+    return `
+      <div class="tranche-inquiry-row">
+        <span>${escapeHtml(inquiryVarietyLabel(project, index))}</span>
+        <label>下限（%）<input type="number" step="0.0001" data-inquiry-index="${index}" data-inquiry-bound="low" value="${escapeAttribute(range?.low ?? "")}"></label>
+        <label>上限（%）<input type="number" step="0.0001" data-inquiry-index="${index}" data-inquiry-bound="high" value="${escapeAttribute(range?.high ?? "")}"></label>
+      </div>
+    `;
+  }).join("");
+}
+
+function updateDynamicInquiryRange(input) {
+  const index = Number(input.dataset.inquiryIndex);
+  const bound = input.dataset.inquiryBound;
+  if (!Number.isInteger(index) || index < 1 || !["low", "high"].includes(bound)) return;
+  ensureInquiryRangeCapacity(project);
+  project.inquiryRanges[index] = {
+    ...(project.inquiryRanges[index] || { low: null, high: null }),
+    [bound]: numberOrNull(input.value),
+  };
+  project.inquiryLow2 = project.inquiryRanges[1]?.low ?? null;
+  project.inquiryHigh2 = project.inquiryRanges[1]?.high ?? null;
+}
+
+function inquiryVarietyCount(projectValue) {
+  const ranges = Array.isArray(projectValue?.inquiryRanges) ? projectValue.inquiryRanges.length : 0;
+  const durations = Array.isArray(projectValue?.durationParts) ? projectValue.durationParts.length : 0;
+  const names = Array.isArray(projectValue?.shortNames) ? projectValue.shortNames.length : 0;
+  const legacySecond = Number.isFinite(numberOrNull(projectValue?.inquiryLow2)) || Number.isFinite(numberOrNull(projectValue?.inquiryHigh2)) ? 2 : 0;
+  return Math.max(ranges, durations, names, legacySecond, 1);
+}
+
+function inquiryVarietyLabel(projectValue, index) {
+  const duration = projectValue.durationParts?.[index];
+  const shortName = projectValue.shortNames?.[index];
+  const fallback = `品种${index + 1}`;
+  const durationText = duration ? `（${formatDurationSummaryValue(duration)}）` : "";
+  return `${shortName || fallback}${durationText}`;
 }
 
 function formatSuggestionRatios(suggestion) {

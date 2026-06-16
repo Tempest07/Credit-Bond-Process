@@ -121,6 +121,22 @@ test("parses structured project advertisements", () => {
   assert.match(generateOpinion(parsed, null).opinion, /陕西建工控股集团有限公司2026年度第五期短期融资券/);
 });
 
+test("parses three-variety inquiry ranges", () => {
+  const parsed = parseProjectBrief(`26测试MTN001A
+26测试MTN001B
+26测试MTN001C 非我行主承 广州分行
+1/2/3年期 规模10亿 AAA(中诚信国际)/隐含AAA
+询价区间1.1-1.6/1.2-1.7/1.3-1.8 银行间 中信银行`);
+
+  assert.equal(parsed.shortName, "26测试MTN001A/B/C");
+  assert.deepEqual(parsed.shortNames, ["26测试MTN001A", "26测试MTN001B", "26测试MTN001C"]);
+  assert.deepEqual(parsed.inquiryRanges, [
+    { low: 1.1, high: 1.6 },
+    { low: 1.2, high: 1.7 },
+    { low: 1.3, high: 1.8 },
+  ]);
+});
+
 test("uses stored common issuer fields and warns on mismatches", () => {
   const parsed = parseProjectBrief(`26测试MTN001 非我行主承 上海分行
 3年期 规模5亿 AA+(联合资信)/隐含AA+

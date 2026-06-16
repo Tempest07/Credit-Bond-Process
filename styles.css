@@ -122,6 +122,16 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .rule-trace { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
 .trace-item { padding: 6px 8px; border-radius: 5px; color: var(--muted); background: var(--panel-soft); font-size: 10px; }
 .trace-item.active { color: var(--accent); background: var(--accent-soft); }
+.tranche-inquiry-panel { display: grid; gap: 10px; padding: 12px; border: 1px dashed color-mix(in srgb, var(--accent) 34%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, var(--panel-soft), #fff); }
+.tranche-inquiry-panel[hidden] { display: none; }
+.tranche-inquiry-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tranche-inquiry-head strong { color: var(--accent); font-size: 11px; }
+.tranche-inquiry-head span { color: var(--muted); font-size: 10px; }
+.tranche-inquiry-rows { display: grid; gap: 8px; }
+.tranche-inquiry-row { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(120px, 1fr) minmax(120px, 1fr); gap: 8px; align-items: end; }
+.tranche-inquiry-row > span { align-self: center; color: var(--text); font-size: 11px; font-weight: 800; }
+.tranche-inquiry-row label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+.tranche-inquiry-row input { min-height: 34px; padding: 6px 8px; font-size: 11px; }
 
 .issuer-list-panel { min-height: 610px; }
 .issuer-list { display: grid; gap: 7px; margin-top: 12px; }
@@ -442,6 +452,7 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .cloud-orb { margin: 0 auto; }
   .cloud-pulse-lines { margin-right: auto; margin-left: auto; }
   .field-grid, .rules-grid { grid-template-columns: 1fr; }
+  .tranche-inquiry-row { grid-template-columns: 1fr; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
   .tranche-grid .span-3 { grid-column: span 1; }
   .ledger-filter-bar { align-items: stretch; flex-direction: column; }
