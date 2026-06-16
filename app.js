@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-compact-ledger-filters";
+} from "./core.js?v=20260616-mail-output-panel";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -29,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-compact-ledger-filters";
+} from "./lifecycle.js?v=20260616-mail-output-panel";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-compact-ledger-filters";
+} from "./history-parser.js?v=20260616-mail-output-panel";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -48,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-compact-ledger-filters";
+} from "./protocol-transfer.js?v=20260616-mail-output-panel";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -299,6 +299,7 @@ function bindLedger() {
   });
   $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
+  $("#collapseMailOutputButton").addEventListener("click", hideMailOutput);
   $("#newProjectButton").addEventListener("click", () => {
     project = parseProjectBrief("");
     selectedIssuerId = "";
@@ -748,17 +749,19 @@ function renderCutoffTodo() {
 
 async function callMailer(action) {
   const token = getApiToken();
-  const output = $("#mailOutput");
-  output.hidden = false;
   if (!token) {
-    output.textContent = "请先点击右上角“设置云端口令”，输入 APP_PASSWORD 后再发送邮件。";
+    showMailOutput("需要云端口令", "warning", "请先点击右上角“设置云端口令”，输入 APP_PASSWORD 后再发送邮件。");
     return;
   }
 
   const isSend = action === "send";
   const button = isSend ? $("#sendMailButton") : $("#previewMailButton");
   button.disabled = true;
-  output.textContent = isSend ? "正在发送今日流程邮件..." : "正在生成今日邮件预览...";
+  showMailOutput(
+    isSend ? "正在发送" : "正在生成预览",
+    "loading",
+    isSend ? "正在发送今日流程邮件..." : "正在生成今日邮件预览...",
+  );
   try {
     const response = await fetch(`${MAILER_URL}/${isSend ? "send-today" : "preview-today"}`, {
       method: isSend ? "POST" : "GET",
@@ -767,32 +770,45 @@ async function callMailer(action) {
     const text = await response.text();
     const payload = parseJson(text);
     if (!response.ok) {
-      output.textContent = JSON.stringify({
+      showMailOutput("邮件请求失败", "error", JSON.stringify({
         ok: false,
         httpStatus: response.status,
         ...(payload || { error: text.slice(0, 1000) }),
-      }, null, 2);
+      }, null, 2));
       showToast(isSend ? "邮件发送失败，请查看输出详情。" : "邮件预览失败，请查看输出详情。");
       return;
     }
 
     if (isSend) {
-      output.textContent = JSON.stringify(payload, null, 2);
+      showMailOutput("发送结果", payload?.status === "sent" ? "success" : "info", JSON.stringify(payload, null, 2));
       showToast(payload.status === "sent" ? "今日流程邮件已发送。" : payload.reason || "邮件发送请求已完成。");
     } else {
-      output.textContent = payload?.text || JSON.stringify(payload, null, 2);
+      showMailOutput("邮件预览", "preview", payload?.text || JSON.stringify(payload, null, 2));
       showToast(`已生成 ${payload?.projectCount ?? 0} 笔项目的邮件预览。`);
     }
   } catch (error) {
-    output.textContent = JSON.stringify({
+    showMailOutput("邮件服务异常", "error", JSON.stringify({
       status: "error",
       error: error.message || String(error),
       hint: "请确认 credit-bond-mailer Worker 已部署，且允许跨域访问。",
-    }, null, 2);
+    }, null, 2));
     showToast("邮件服务暂时无法访问。");
   } finally {
     button.disabled = false;
   }
+}
+
+function showMailOutput(title, status, text) {
+  const panel = $("#mailOutputPanel");
+  panel.hidden = false;
+  panel.dataset.status = status || "info";
+  $("#mailOutputTitle").textContent = title || "邮件输出";
+  $("#mailOutput").textContent = text || "";
+}
+
+function hideMailOutput() {
+  $("#mailOutputPanel").hidden = true;
+  $("#mailOutput").textContent = "";
 }
 
 function parseJson(text) {

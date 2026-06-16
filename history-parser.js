@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260616-compact-ledger-filters";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260616-mail-output-panel";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
