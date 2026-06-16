@@ -280,8 +280,6 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .project-detail-panel .cutoff-controls { min-height: 38px; margin-top: 0; padding: 6px 8px; }
 .cutoff-quick-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .cutoff-quick-actions .button { min-height: 30px; padding: 0 9px; font-size: 10px; }
-.cutoff-confirm { display: flex !important; align-items: center; gap: 6px !important; margin-left: auto; color: var(--accent) !important; white-space: nowrap; }
-.cutoff-confirm input { width: 15px; min-height: 15px; }
 #projectCutoffHint { width: 100%; color: var(--muted); font-size: 9px; line-height: 1.5; }
 #projectCutoffHint.warning { color: var(--warning); font-weight: 700; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
@@ -458,5 +456,4 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
   .ftp-curve-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ledger-todo-grid .payment-todo-list, .ledger-todo-grid .cutoff-todo-list { grid-template-columns: 1fr; }
   .project-action-buttons, .payment-todo-list, .cutoff-todo-list { width: 100%; grid-template-columns: 1fr; justify-content: flex-start; }
-  .cutoff-confirm { margin-left: 0; }
 }

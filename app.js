@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-mail-output-panel";
+} from "./core.js?v=20260616-hide-cutoff-confirm";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -29,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-mail-output-panel";
+} from "./lifecycle.js?v=20260616-hide-cutoff-confirm";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-mail-output-panel";
+} from "./history-parser.js?v=20260616-hide-cutoff-confirm";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -48,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-mail-output-panel";
+} from "./protocol-transfer.js?v=20260616-hide-cutoff-confirm";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -344,12 +344,6 @@ function bindLedger() {
     }, $("#projectCutoffAt").value, "手工修改", true);
     refillProjectForm(updated);
     saveProjectRecordNow(updated);
-  });
-  $("#projectCutoffTimeConfirmed").addEventListener("change", () => {
-    $("#projectCutoffSource").value = $("#projectCutoffTimeConfirmed").checked ? "手工确认" : "待确认";
-    const draft = readProjectForm();
-    renderCutoffHint(draft);
-    saveProjectRecordNow(draft);
   });
   $$("[data-cutoff-action]").forEach((button) => {
     button.addEventListener("click", () => applyCutoffAction(button.dataset.cutoffAction));
@@ -1445,7 +1439,7 @@ function fillProjectForm(input) {
   $("#projectSummaryLead").textContent = record.leadUnderwriter || "主承待补";
   $("#projectSummaryInquiry").textContent = formatInquirySummary(record.tranches);
   $("#projectCutoffAt").value = record.cutoffAt;
-  $("#projectCutoffTimeConfirmed").checked = record.cutoffTimeConfirmed;
+  $("#projectCutoffTimeConfirmed").value = record.cutoffTimeConfirmed ? "true" : "false";
   $("#projectCutoffSource").value = record.cutoffSource;
   $("#projectSourceText").value = record.sourceText;
   $("#projectOpinion").value = record.opinion;
@@ -1714,7 +1708,7 @@ function readProjectForm() {
     leadUnderwriter: existing.leadUnderwriter,
     sponsorStatus: existing.sponsorStatus,
     cutoffAt: $("#projectCutoffAt").value,
-    cutoffTimeConfirmed: $("#projectCutoffTimeConfirmed").checked,
+    cutoffTimeConfirmed: $("#projectCutoffTimeConfirmed").value === "true",
     cutoffSource: $("#projectCutoffSource").value,
     notes: existing.notes,
     sourceText: $("#projectSourceText").value,

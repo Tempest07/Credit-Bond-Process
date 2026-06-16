@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260616-mail-output-panel">
+  <link rel="stylesheet" href="./styles.css?v=20260616-hide-cutoff-confirm">
 </head>
 <body>
   <div class="app-shell">
@@ -303,6 +303,7 @@
               <div class="field-grid compact-field-grid">
                 <label class="span-2">截标时间<input id="projectCutoffAt" type="datetime-local"></label>
                 <input id="projectCutoffSource" type="hidden">
+                <input id="projectCutoffTimeConfirmed" type="hidden">
                 <div class="cutoff-controls span-2">
                   <div class="cutoff-quick-actions">
                     <button class="button subtle" type="button" data-cutoff-action="today">今天</button>
@@ -311,7 +312,6 @@
                     <button class="button subtle" type="button" data-cutoff-action="delay-30">延期30分钟</button>
                     <button class="button subtle" type="button" data-cutoff-action="delay-60">延期1小时</button>
                   </div>
-                  <label class="cutoff-confirm"><input id="projectCutoffTimeConfirmed" type="checkbox">截标时间已确认</label>
                   <span id="projectCutoffHint"></span>
                 </div>
               </div>
@@ -580,6 +580,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260616-mail-output-panel"></script>
+  <script type="module" src="./app.js?v=20260616-hide-cutoff-confirm"></script>
 </body>
 </html>
