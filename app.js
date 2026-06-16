@@ -1400,10 +1400,7 @@ function renderProjectList() {
       <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
         <span class="project-item-head">
           <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
-          <span class="project-item-badges">
-            ${item.id === selectedProjectId ? '<span class="selected-badge">已选取</span>' : ""}
-            <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
-          </span>
+          <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
         </span>
         <span class="project-item-meta project-item-primary">
           <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>
