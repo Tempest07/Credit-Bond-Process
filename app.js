@@ -787,7 +787,11 @@ async function callMailer(action) {
     }
 
     if (isSend) {
-      showMailOutput("发送结果", payload?.status === "sent" ? "success" : "info", JSON.stringify(payload, null, 2));
+      if (payload?.status === "sent") {
+        showMailOutput("邮件已发送", "success", buildMailSuccessMessage(payload));
+      } else {
+        showMailOutput("发送结果", "info", payload?.reason || "邮件发送请求已完成。");
+      }
       showToast(payload.status === "sent" ? "今日流程邮件已发送。" : payload.reason || "邮件发送请求已完成。");
     } else {
       showMailOutput("邮件预览", "preview", payload?.text || JSON.stringify(payload, null, 2));
@@ -803,6 +807,12 @@ async function callMailer(action) {
   } finally {
     button.disabled = false;
   }
+}
+
+function buildMailSuccessMessage(payload = {}) {
+  const subject = payload.subject ? `主题：${payload.subject}` : "";
+  const count = Number.isFinite(Number(payload.projectCount)) ? `项目数量：${payload.projectCount} 笔` : "";
+  return ["今日流程意见邮件已成功发送。", subject, count].filter(Boolean).join("\n");
 }
 
 function showMailOutput(title, status, text) {
