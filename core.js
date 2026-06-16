@@ -66,6 +66,8 @@ export function parseProjectBrief(rawText) {
   const result = {
     shortName: "",
     shortNames: [],
+    fullName: "",
+    issuerName: "",
     sponsorStatus: "",
     branch: "",
     durationText: "",
@@ -98,17 +100,21 @@ export function parseProjectBrief(rawText) {
     return result;
   }
 
-  const headerIndex = lines.findIndex(isProjectHeader);
-  const effectiveHeaderIndex = headerIndex >= 0 ? headerIndex : 0;
-  parseFirstLine(lines[effectiveHeaderIndex], result);
-  result.shortNames = collectShortNames(lines, effectiveHeaderIndex);
-  result.shortName = combineShortNames(result.shortNames) || result.shortName;
+  if (isStructuredProjectAdvertisement(lines)) {
+    parseStructuredProjectAdvertisement(lines, result);
+  } else {
+    const headerIndex = lines.findIndex(isProjectHeader);
+    const effectiveHeaderIndex = headerIndex >= 0 ? headerIndex : 0;
+    parseFirstLine(lines[effectiveHeaderIndex], result);
+    result.shortNames = collectShortNames(lines, effectiveHeaderIndex);
+    result.shortName = combineShortNames(result.shortNames) || result.shortName;
 
-  const detailLines = lines.slice(effectiveHeaderIndex + 1);
-  const termsLine = detailLines.find((line) => /规模\s*/.test(line) || /隐含\s*/.test(line));
-  const inquiryLine = detailLines.find((line) => /询价区间/.test(line) || /(银行间|上交所|深交所|北交所)/.test(line));
-  if (termsLine) parseSecondLine(termsLine, result);
-  if (inquiryLine) parseThirdLine(inquiryLine, result);
+    const detailLines = lines.slice(effectiveHeaderIndex + 1);
+    const termsLine = detailLines.find((line) => /规模\s*/.test(line) || /隐含\s*/.test(line));
+    const inquiryLine = detailLines.find((line) => /询价区间/.test(line) || /(银行间|上交所|深交所|北交所)/.test(line));
+    if (termsLine) parseSecondLine(termsLine, result);
+    if (inquiryLine) parseThirdLine(inquiryLine, result);
+  }
   parseOfferingType(text, result);
   result.exchangeIssueNumber = parseExplicitIssueNumber(text);
 
@@ -168,9 +174,10 @@ export function splitProjectBriefs(rawText) {
     const line = rawLine.trim();
     if (!line) continue;
     const isHeader = isProjectHeader(line);
-    if (isHeader && current.length) {
+    const isStructuredHeader = isStructuredAdvertisementHeader(line);
+    if ((isHeader || isStructuredHeader) && current.length) {
       const pendingShortNames = [];
-      while (current.length && isStandaloneShortName(current[current.length - 1])) {
+      while (isHeader && current.length && isStandaloneShortName(current[current.length - 1])) {
         pendingShortNames.unshift(current.pop());
       }
       if (current.length) blocks.push(current.join("\n"));
@@ -191,6 +198,10 @@ function isProjectHeader(line) {
 
 function isStandaloneShortName(line) {
   return /^\d{2}\S+$/.test(String(line || "").trim());
+}
+
+function isStructuredAdvertisementHeader(line) {
+  return /^[【\[]\d{2}[^】\]]+[】\]]/.test(String(line || "").trim());
 }
 
 function collectShortNames(lines, headerIndex) {
@@ -235,6 +246,151 @@ function parseExplicitIssueNumber(text) {
   if (!match) return null;
   if (/^\d+$/.test(match[1])) return Number(match[1]);
   return chineseTextToNumber(match[1]);
+}
+
+function isStructuredProjectAdvertisement(lines) {
+  return lines.some((line) =>
+    /^(债券名称|债券全称|发行人|发行主体|债券类型|主体评级|隐含评级|发行场所|发行规模|发行期限|债券期限|询价区间|簿记管理人|主承销商|牵头主承销商)\s*[：:]/.test(line),
+  );
+}
+
+function parseStructuredProjectAdvertisement(lines, result) {
+  const shortName = readStructuredField(lines, ["债券简称", "简称"])
+    || parseBracketedShortName(lines[0]);
+  if (shortName) {
+    result.shortName = shortName;
+    result.shortNames = [shortName];
+  }
+
+  result.fullName = readStructuredField(lines, ["债券名称", "债券全称"]) || "";
+  result.issuerName = readStructuredField(lines, ["发行人", "发行主体", "主体"]) || inferIssuerNameFromFullName(result.fullName);
+
+  const sponsorStatus = parseSponsorStatus(readStructuredField(lines, ["主承身份", "承销身份"]));
+  if (sponsorStatus) result.sponsorStatus = sponsorStatus;
+
+  const branch = readStructuredField(lines, ["分行", "申报分行"]);
+  if (branch) result.branch = normalizeBranchName(branch);
+
+  const durationValue = readStructuredField(lines, ["发行期限", "债券期限", "期限"]);
+  applyDurationValue(durationValue, result);
+
+  const scale = parseScaleValue(readStructuredField(lines, ["发行规模", "规模"]));
+  if (Number.isFinite(scale)) result.issueScale = scale;
+
+  const rating = parseRatingValue(readStructuredField(lines, ["主体评级", "评级", "主体/债项评级"]));
+  if (rating.rating) {
+    result.subjectRating = rating.rating;
+    result.ratingAgency = rating.agency;
+  }
+
+  const hiddenRating = parseRatingValue(readStructuredField(lines, ["隐含评级", "隐含"])).rating;
+  if (hiddenRating) result.hiddenRating = hiddenRating;
+
+  const venue = readStructuredField(lines, ["发行场所", "发行市场", "场所", "市场"]);
+  const venueMatch = venue.match(/(银行间|上交所|深交所|北交所)/);
+  if (venueMatch) result.venue = venueMatch[1];
+
+  const underwriter = readStructuredField(lines, ["簿记管理人", "簿记人", "牵头主承销商", "主承销商", "主承"]);
+  if (underwriter) result.leadUnderwriter = underwriter.trim();
+
+  if (!result.sponsorStatus && result.leadUnderwriter) {
+    result.sponsorStatus = result.leadUnderwriter.includes("兴业银行") ? "牵头" : "非我行主承";
+  }
+
+  applyInquiryValue(readStructuredField(lines, ["询价区间", "利率区间"]), result);
+
+  const valuation = parseNumberListAfter(readStructuredField(lines, ["市场估值", "估值"]), /^/);
+  if (valuation.length) {
+    result.valuations = valuation;
+    result.valuation = valuation[0];
+  }
+
+  const guidanceText = readStructuredField(lines, ["指导价", "综合定价指导价"]);
+  if (guidanceText && !/(?:不执行综合定价|不综|未综)/.test(guidanceText)) {
+    const guidancePrices = parseNumberListAfter(guidanceText, /^/);
+    if (guidancePrices.length) {
+      result.guidancePrices = guidancePrices;
+      result.guidancePrice = guidancePrices[0];
+    }
+  }
+}
+
+function readStructuredField(lines, labels) {
+  const pattern = new RegExp(`^(?:${labels.map(escapeRegExp).join("|")})\\s*[：:]\\s*(.+)$`);
+  for (const line of lines) {
+    const match = String(line || "").trim().match(pattern);
+    if (match) return match[1].trim();
+  }
+  return "";
+}
+
+function parseBracketedShortName(line = "") {
+  const match = String(line || "").trim().match(/^[【\[]([^】\]]+)[】\]]/);
+  return match?.[1]?.trim() || "";
+}
+
+function inferIssuerNameFromFullName(fullName = "") {
+  const text = String(fullName || "").trim();
+  const match = text.match(/^(.+?)(?:20\d{2}年度|20\d{2}年|202\d年度|202\d年)/);
+  return match?.[1]?.trim() || "";
+}
+
+function applyDurationValue(value, result) {
+  const match = String(value || "").match(/(\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*(?:\/\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*)*\s*(?:D|M|Y|天|月|年)(?:期)?)/i);
+  if (!match) return;
+  result.durationText = match[1].replace(/\s+/g, "").toUpperCase();
+  result.durationDays = durationToDays(result.durationText);
+  result.durationParts = durationParts(result.durationText);
+}
+
+function parseScaleValue(value = "") {
+  const text = String(value || "");
+  const expression = text.match(/(\d+(?:\.\d+)?(?:\s*\+\s*\d+(?:\.\d+)?)*)\s*亿/);
+  if (expression) {
+    return expression[1].split("+").reduce((sum, item) => sum + Number(item.trim()), 0);
+  }
+  const firstNumber = text.match(/\d+(?:\.\d+)?/);
+  return firstNumber ? Number(firstNumber[0]) : null;
+}
+
+function parseRatingValue(value = "") {
+  const match = String(value || "").match(/([A-Z]+[+-]?(?:\(\d+\))?)(?:\(([^)]+)\))?/i);
+  return {
+    rating: match?.[1]?.toUpperCase() || "",
+    agency: match?.[2] || "",
+  };
+}
+
+function parseSponsorStatus(value = "") {
+  if (/联席/.test(value)) return "联席";
+  if (/牵头|我行主承|兴业银行/.test(value)) return "牵头";
+  if (/非我行主承|非/.test(value)) return "非我行主承";
+  return "";
+}
+
+function normalizeBranchName(value = "") {
+  const branch = String(value || "").trim();
+  if (!branch) return "";
+  return branch.endsWith("分行") ? branch : `${branch}分行`;
+}
+
+function applyInquiryValue(value, result) {
+  const inquiryRanges = parseInquiryRanges(value);
+  if (!inquiryRanges.length) return;
+  result.inquiryRanges = inquiryRanges;
+  result.inquiryLow = inquiryRanges[0].low;
+  result.inquiryHigh = inquiryRanges[0].high;
+  result.inquiryLow2 = inquiryRanges[1]?.low ?? null;
+  result.inquiryHigh2 = inquiryRanges[1]?.high ?? null;
+}
+
+function parseInquiryRanges(value = "") {
+  return [...String(value || "").matchAll(/(\d+(?:\.\d+)?)\s*%?\s*[-—~至]\s*(\d+(?:\.\d+)?)\s*%?/g)]
+    .map((match) => ({ low: Number(match[1]), high: Number(match[2]) }));
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseFirstLine(line, result) {

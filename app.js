@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260612-protocol-ocr";
+} from "./core.js?v=20260616-ad-brief";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260612-protocol-ocr";
+} from "./lifecycle.js?v=20260616-ad-brief";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260612-protocol-ocr";
+} from "./history-parser.js?v=20260616-ad-brief";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -46,7 +46,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260612-protocol-ocr";
+} from "./protocol-transfer.js?v=20260616-ad-brief";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -409,11 +409,16 @@ function parseAndRender() {
     return;
   }
   project = parseProjectBrief($("#briefInput").value);
-  const matched = findIssuer(project.shortName, state.issuers);
+  const matched = findIssuerForProject(project);
   selectedIssuerId = matched?.id || "";
   fillProjectFields();
   renderIssuerOptions();
   regenerate();
+}
+
+function findIssuerForProject(projectValue) {
+  return findIssuer(projectValue?.shortName || "", state.issuers)
+    || findIssuer(projectValue?.issuerName || "", state.issuers);
 }
 
 function loadBlankBriefTemplate() {
@@ -1908,7 +1913,7 @@ function parseBatchInput() {
   const blocks = splitProjectBriefs($("#batchInput").value);
   batchItems = blocks.map((sourceText) => {
     const parsedProject = parseProjectBrief(sourceText);
-    const issuer = findIssuer(parsedProject.shortName, state.issuers);
+    const issuer = findIssuerForProject(parsedProject);
     return {
       sourceText,
       project: parsedProject,
@@ -2359,7 +2364,7 @@ function createIssuerDraft(projectValue, issuer = null) {
   return {
     id: issuer?.id || "",
     include: !issuer,
-    legalName: issuer?.legalName || extractIssuerLegalName(projectValue?.fullName || ""),
+    legalName: issuer?.legalName || projectValue?.issuerName || extractIssuerLegalName(projectValue?.fullName || ""),
     aliases: (issuer?.aliases?.length ? issuer.aliases : derivedAliases).join("，"),
     defaultBranch: issuer?.defaultBranch || projectValue?.branch || "",
     enterpriseType: issuer?.enterpriseType || "",

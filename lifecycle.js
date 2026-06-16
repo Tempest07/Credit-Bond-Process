@@ -42,7 +42,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     status: input.status || "未投标",
     shortName: project.shortName,
     issuerId: issuer?.id || "",
-    issuerName: issuer?.legalName || "",
+    issuerName: issuer?.legalName || project.issuerName || "",
     branch: project.branch || issuer?.defaultBranch || "",
     venue: project.venue || "",
     offeringType: project.offeringType || "",

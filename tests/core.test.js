@@ -81,6 +81,33 @@ test("parses blank-template style branch suffix and percent inquiry", () => {
   assert.equal(parsed.leadUnderwriter, "中信银行");
 });
 
+test("parses structured project advertisements", () => {
+  const parsed = parseProjectBrief(`【26陕西建工CP005】
+债券名称：陕西建工控股集团有限公司2026年度第五期短期融资券
+发行人：陕西建工控股集团有限公司
+债券类型： CP
+主体评级：AAA
+发行场所：银行间
+发行规模：不超过7亿
+发行期限：1年
+询价区间：2.95%-3.95%
+簿记管理人：兴业银行
+发行日：2026年6月17日`);
+
+  assert.equal(parsed.shortName, "26陕西建工CP005");
+  assert.equal(parsed.fullName, "陕西建工控股集团有限公司2026年度第五期短期融资券");
+  assert.equal(parsed.issuerName, "陕西建工控股集团有限公司");
+  assert.equal(parsed.durationDays, 365);
+  assert.equal(parsed.issueScale, 7);
+  assert.equal(parsed.subjectRating, "AAA");
+  assert.equal(parsed.venue, "银行间");
+  assert.equal(parsed.leadUnderwriter, "兴业银行");
+  assert.equal(parsed.sponsorStatus, "牵头");
+  assert.equal(parsed.inquiryLow, 2.95);
+  assert.equal(parsed.inquiryHigh, 3.95);
+  assert.match(generateOpinion(parsed, null).opinion, /陕西建工控股集团有限公司2026年度第五期短期融资券/);
+});
+
 test("builds standard interbank bond full name", () => {
   assert.equal(
     buildBondFullName("26粤交投SCP002", issuer.legalName),

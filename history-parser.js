@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260612-protocol-ocr";
+import { durationToDays } from "./core.js?v=20260616-ad-brief";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
