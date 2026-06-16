@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-valuation-bid";
+} from "./core.js?v=20260616-ad-placeholder-fix";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-valuation-bid";
+} from "./lifecycle.js?v=20260616-ad-placeholder-fix";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-valuation-bid";
+} from "./history-parser.js?v=20260616-ad-placeholder-fix";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -46,7 +46,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-valuation-bid";
+} from "./protocol-transfer.js?v=20260616-ad-placeholder-fix";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -70,6 +70,21 @@ const BLANK_BRIEF_TEMPLATE = `【债券简称】 非我行主承 【分行】分
 【债券简称】 市场估值约【估值】
 如需综合定价，指导价约【指导价】`;
 const BRIEF_PLACEHOLDER_PATTERN = /【([^】]+)】/g;
+const BRIEF_PLACEHOLDER_LABELS = new Set([
+  "债券简称",
+  "分行",
+  "期限",
+  "规模",
+  "主体评级",
+  "评级机构",
+  "隐含评级",
+  "询价下限",
+  "询价上限",
+  "发行场所",
+  "牵头主承销商",
+  "估值",
+  "指导价",
+]);
 
 const SAMPLE_ISSUER = {
   id: "sample-yuejiaotou",
@@ -145,6 +160,7 @@ function switchView(viewName) {
 function bindGenerator() {
   $("#blankTemplateButton").addEventListener("click", loadBlankBriefTemplate);
   $("#briefInput").addEventListener("keydown", handleBriefTemplateKeydown);
+  $("#briefInput").addEventListener("mousedown", selectBriefPlaceholderOnMouseDown);
   $("#briefInput").addEventListener("dblclick", selectBriefPlaceholderOnDoubleClick);
   $("#sampleButton").addEventListener("click", () => {
     if (!state.issuers.some((issuer) => issuer.id === SAMPLE_ISSUER.id)) {
@@ -184,6 +200,7 @@ function bindGenerator() {
     await navigator.clipboard.writeText(value);
     showToast("流程意见已复制。");
   });
+  $("#opinionOutput").addEventListener("mousedown", selectBidRateOnMouseDown);
   $("#opinionOutput").addEventListener("dblclick", selectBidRateOnDoubleClick);
   $("#saveProjectButton").addEventListener("click", saveCurrentProject);
 }
@@ -435,8 +452,7 @@ function loadBlankBriefTemplate() {
 }
 
 function briefTemplatePlaceholders(value) {
-  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
-  return [...new Set([...String(value || "").matchAll(BRIEF_PLACEHOLDER_PATTERN)].map((match) => match[1].trim()).filter(Boolean))];
+  return [...new Set(briefPlaceholderMatches(value).map((match) => match[1].trim()))];
 }
 
 function focusFirstBriefPlaceholder() {
@@ -450,6 +466,14 @@ function handleBriefTemplateKeydown(event) {
   focusBriefPlaceholder(event.shiftKey ? "previous" : "next");
 }
 
+function selectBriefPlaceholderOnMouseDown(event) {
+  if (event.button !== 0 || event.detail !== 2) return;
+  const placeholder = findBriefPlaceholderAtSelection(event.currentTarget);
+  if (!placeholder) return;
+  event.preventDefault();
+  selectBriefPlaceholderRange(event.currentTarget, placeholder);
+}
+
 function selectBriefPlaceholderOnDoubleClick(event) {
   const input = event.currentTarget;
   const placeholder = findBriefPlaceholderAtSelection(input);
@@ -459,17 +483,21 @@ function selectBriefPlaceholderOnDoubleClick(event) {
 }
 
 function findBriefPlaceholderAtSelection(input) {
-  const value = String(input.value || "");
   const selectionStart = Math.min(input.selectionStart ?? 0, input.selectionEnd ?? 0);
   const selectionEnd = Math.max(input.selectionStart ?? 0, input.selectionEnd ?? 0);
-  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
-  const placeholders = [...value.matchAll(BRIEF_PLACEHOLDER_PATTERN)];
-  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
-  return placeholders.find((match) => {
+  return briefPlaceholderMatches(input.value).find((match) => {
     const start = match.index;
     const end = start + match[0].length;
     return selectionStart >= start && selectionEnd <= end;
   }) || null;
+}
+
+function briefPlaceholderMatches(value) {
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  const matches = [...String(value || "").matchAll(BRIEF_PLACEHOLDER_PATTERN)]
+    .filter((match) => BRIEF_PLACEHOLDER_LABELS.has(match[1].trim()));
+  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  return matches;
 }
 
 function selectBriefPlaceholderRange(input, placeholder) {
@@ -490,6 +518,16 @@ function selectBidRateOnDoubleClick(event) {
   requestAnimationFrame(() => input.setSelectionRange(range.start, range.end));
 }
 
+function selectBidRateOnMouseDown(event) {
+  if (event.button !== 0 || event.detail !== 2) return;
+  const range = findBidRateRangeAtSelection(event.currentTarget);
+  if (!range) return;
+  event.preventDefault();
+  event.currentTarget.focus();
+  event.currentTarget.setSelectionRange(range.start, range.end);
+  requestAnimationFrame(() => event.currentTarget.setSelectionRange(range.start, range.end));
+}
+
 function findBidRateRangeAtSelection(input) {
   const value = String(input.value || "");
   const selectionStart = Math.min(input.selectionStart ?? 0, input.selectionEnd ?? 0);
@@ -506,9 +544,7 @@ function findBidRateRangeAtSelection(input) {
 
 function focusBriefPlaceholder(direction = "next") {
   const input = $("#briefInput");
-  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
-  const placeholders = [...input.value.matchAll(BRIEF_PLACEHOLDER_PATTERN)];
-  BRIEF_PLACEHOLDER_PATTERN.lastIndex = 0;
+  const placeholders = briefPlaceholderMatches(input.value);
   input.focus();
   if (!placeholders.length) return;
 

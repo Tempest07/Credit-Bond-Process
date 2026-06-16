@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260616-valuation-bid";
+import { durationToDays } from "./core.js?v=20260616-ad-placeholder-fix";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
