@@ -12,8 +12,8 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
   const tradeDate = normalizeDate(input.tradeDate) || localDate(referenceDate);
   const materialFirstReceivedDate = normalizeDate(input.materialFirstReceivedDate) || tradeDate;
   const materialConfirmedDate = normalizeDate(input.materialConfirmedDate) || tradeDate;
-  const counterpartySealDate = normalizeDate(input.counterpartySealDate) || tradeDate;
-  const ownSealDate = normalizeDate(input.ownSealDate) || addBusinessDays(tradeDate, 1);
+  const counterpartySealDate = normalizeDate(input.counterpartySealDate) || addBusinessDays(tradeDate, -2);
+  const ownSealDate = normalizeDate(input.ownSealDate) || addBusinessDays(tradeDate, -1);
   const exchangeSubmitDate = tradeDate;
   const counterpartySealed = Boolean(input.counterpartySealed);
   const ownSealed = Boolean(input.ownSealed);
@@ -494,9 +494,10 @@ function normalizeDate(value) {
 
 function addBusinessDays(value, days) {
   const date = dateFromLocal(value);
-  let remaining = days;
+  const direction = days >= 0 ? 1 : -1;
+  let remaining = Math.abs(days);
   while (remaining > 0) {
-    date.setDate(date.getDate() + 1);
+    date.setDate(date.getDate() + direction);
     if (![0, 6].includes(date.getDay())) remaining -= 1;
   }
   return localDate(date);

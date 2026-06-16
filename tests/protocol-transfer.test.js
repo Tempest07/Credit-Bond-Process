@@ -28,6 +28,8 @@ const contactBridgeElements = `【深圳】 4.42Y(休1)  280607.SH  25汉投03  
 华创证券 吴嘉仪 3007411566
 兴业银行 张夷尘 2853271332`;
 
+const internationalElements = `【国际】2.41Y  280680.SH  25联投17  私募债  1.87  5000  06.18交易所  兴业银行 出给 首创证券 100.992/100.990`;
+
 test("parses SSE protocol transfer Word-style text", () => {
   const parsed = parseProtocolTransferText(sample, new Date("2026-06-12T09:00:00+08:00"));
   assert.equal(parsed.code, "281926.SH");
@@ -39,8 +41,8 @@ test("parses SSE protocol transfer Word-style text", () => {
   assert.equal(parsed.price, 100.659);
   assert.equal(parsed.amountTenThousand, 10000);
   assert.equal(parsed.quantityHands, 100000);
-  assert.equal(parsed.counterpartySealDate, "2026-06-10");
-  assert.equal(parsed.ownSealDate, "2026-06-11");
+  assert.equal(parsed.counterpartySealDate, "2026-06-08");
+  assert.equal(parsed.ownSealDate, "2026-06-09");
   assert.equal(parsed.exchangeSubmitDate, "2026-06-10");
 });
 
@@ -56,6 +58,8 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.equal(parsed.price, 101.031);
   assert.equal(parsed.amountTenThousand, 3000);
   assert.equal(parsed.quantityHands, 30000);
+  assert.equal(parsed.counterpartySealDate, "2026-06-11");
+  assert.equal(parsed.ownSealDate, "2026-06-12");
   assert.match(parsed.remarks, /深圳/);
   assert.match(parsed.remarks, /4\.42Y/);
   assert.match(parsed.remarks, /华创证券发 101\.033\/101\.031/);
@@ -71,6 +75,14 @@ test("uses contact list to identify the bridge party when no sent-by quote exist
   assert.equal(parsed.finalBuyer, "南方基金");
   assert.equal(parsed.amountTenThousand, 3000);
   assert.equal(parsed.price, 101.031);
+});
+
+test("derives seal dates as T-2 and T-1 from chat-style trade dates", () => {
+  const parsed = parseProtocolTransferText(internationalElements, new Date("2026-06-16T09:00:00+08:00"));
+
+  assert.equal(parsed.tradeDate, "2026-06-18");
+  assert.equal(parsed.counterpartySealDate, "2026-06-16");
+  assert.equal(parsed.ownSealDate, "2026-06-17");
 });
 
 test("exports all ledger date columns as the trade date", () => {
@@ -152,7 +164,7 @@ test("advances protocol transfer workflow by action buttons", () => {
 
 test("builds protocol transfer todos and ledger rows", () => {
   const parsed = parseProtocolTransferText(sample);
-  const todos = protocolTransferTodos([parsed], new Date("2026-06-10T09:00:00+08:00"));
+  const todos = protocolTransferTodos([parsed], new Date("2026-06-08T09:00:00+08:00"));
   assert.equal(todos[0].step.label, "对手方用印");
   assert.equal(todos[0].timing, "today");
 
