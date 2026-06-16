@@ -1,5 +1,6 @@
 import {
   DEFAULT_STATE,
+  applyIssuerCommonFields,
   buildBondFullName,
   durationParts,
   durationToDays,
@@ -7,10 +8,11 @@ import {
   formatNumber,
   generateOpinion,
   mergeImportedIssuers,
+  normalizeIssuer,
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-ad-placeholder-fix";
+} from "./core.js?v=20260616-issuer-common-fields";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-ad-placeholder-fix";
+} from "./lifecycle.js?v=20260616-issuer-common-fields";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-ad-placeholder-fix";
+} from "./history-parser.js?v=20260616-issuer-common-fields";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -46,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-ad-placeholder-fix";
+} from "./protocol-transfer.js?v=20260616-issuer-common-fields";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -92,6 +94,9 @@ const SAMPLE_ISSUER = {
   aliases: ["粤交投", "广州交投"],
   defaultBranch: "广州分行",
   enterpriseType: "地方国企",
+  subjectRating: "AAA",
+  ratingAgency: "中诚信国际",
+  hiddenRating: "AAA",
   isRealEstate: false,
   credit: {
     approvalLevel: "总行",
@@ -176,6 +181,9 @@ function bindGenerator() {
   $("#parseButton").addEventListener("click", parseAndRender);
   $("#issuerSelect").addEventListener("change", () => {
     selectedIssuerId = $("#issuerSelect").value;
+    const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
+    project = applyIssuerCommonFields(project, issuer);
+    fillProjectFields();
     regenerate();
   });
 
@@ -427,8 +435,9 @@ function parseAndRender() {
     showToast("项目简表还有占位符未填写。");
     return;
   }
-  project = parseProjectBrief($("#briefInput").value);
-  const matched = findIssuerForProject(project);
+  const parsedProject = parseProjectBrief($("#briefInput").value);
+  const matched = findIssuerForProject(parsedProject);
+  project = applyIssuerCommonFields(parsedProject, matched);
   selectedIssuerId = matched?.id || "";
   fillProjectFields();
   renderIssuerOptions();
@@ -1967,9 +1976,12 @@ function bindQuickIssuer() {
       if (existing) issuer.id = existing.id;
       state = upsertIssuer(state, issuer);
       selectedIssuerId = issuer.id;
+      const saved = state.issuers.find((item) => item.id === issuer.id) || issuer;
+      project = applyIssuerCommonFields(project, saved);
       persistState();
       renderIssuerOptions();
       renderIssuerList();
+      fillProjectFields();
       regenerate();
       if (batchItems.length) renderBatchResults();
       $("#quickIssuerPanel").hidden = true;
@@ -2006,11 +2018,12 @@ function parseBatchInput() {
   batchItems = blocks.map((sourceText) => {
     const parsedProject = parseProjectBrief(sourceText);
     const issuer = findIssuerForProject(parsedProject);
+    const projectWithIssuerFields = applyIssuerCommonFields(parsedProject, issuer);
     return {
       sourceText,
-      project: parsedProject,
+      project: projectWithIssuerFields,
       selectedIssuerId: issuer?.id || "",
-      draft: createIssuerDraft(parsedProject, issuer),
+      draft: createIssuerDraft(projectWithIssuerFields, issuer),
     };
   });
   renderBatchResults();
@@ -2032,6 +2045,7 @@ function renderBatchResults() {
   let warningCount = 0;
   container.innerHTML = batchItems.map((item, index) => {
     const issuer = state.issuers.find((candidate) => candidate.id === item.selectedIssuerId) || null;
+    item.project = applyIssuerCommonFields(item.project, issuer);
     const generated = generateOpinion(item.project, issuer);
     item.generated = generated;
     if (issuer) matchedCount += 1;
@@ -2081,6 +2095,7 @@ function renderBatchResults() {
       const index = Number(select.dataset.batchSelect);
       const issuer = state.issuers.find((candidate) => candidate.id === select.value) || null;
       batchItems[index].selectedIssuerId = select.value;
+      batchItems[index].project = applyIssuerCommonFields(batchItems[index].project, issuer);
       batchItems[index].draft = createIssuerDraft(batchItems[index].project, issuer);
       renderBatchResults();
     });
@@ -2120,6 +2135,9 @@ function renderBatchIssuerEditor(draft, index, shouldOpen) {
         <label class="wide">常用简称<input data-batch-index="${index}" data-batch-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
         <label>默认分行<input data-batch-index="${index}" data-batch-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
         <label>企业性质<select data-batch-index="${index}" data-batch-field="enterpriseType">${enterpriseTypeOptions(draft.enterpriseType)}</select></label>
+        <label>主体评级<input data-batch-index="${index}" data-batch-field="subjectRating" value="${escapeAttribute(draft.subjectRating)}"></label>
+        <label>评级机构<input data-batch-index="${index}" data-batch-field="ratingAgency" value="${escapeAttribute(draft.ratingAgency)}"></label>
+        <label>市场隐含评级<input data-batch-index="${index}" data-batch-field="hiddenRating" value="${escapeAttribute(draft.hiddenRating)}"></label>
         <label>审批层级<input data-batch-index="${index}" data-batch-field="approvalLevel" value="${escapeAttribute(draft.approvalLevel)}"></label>
         <label>公募/通用金额<input type="number" step="0.0001" data-batch-index="${index}" data-batch-field="approvedAmount" value="${escapeAttribute(draft.approvedAmount)}"></label>
         <label>私募金额<input type="number" step="0.0001" data-batch-index="${index}" data-batch-field="privateAmount" value="${escapeAttribute(draft.privateAmount)}"></label>
@@ -2404,6 +2422,9 @@ function renderHistoryReviewEditor(record, index) {
         <label class="wide">常用简称<input data-review-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
         <label>默认分行<input data-review-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
         <label>企业性质<select data-review-field="enterpriseType">${enterpriseTypeOptions(draft.enterpriseType)}</select></label>
+        <label>主体评级<input data-review-field="subjectRating" value="${escapeAttribute(draft.subjectRating)}"></label>
+        <label>评级机构<input data-review-field="ratingAgency" value="${escapeAttribute(draft.ratingAgency)}"></label>
+        <label>市场隐含评级<input data-review-field="hiddenRating" value="${escapeAttribute(draft.hiddenRating)}"></label>
         <label>审批层级<input data-review-field="approvalLevel" value="${escapeAttribute(draft.approvalLevel)}"></label>
         <label>公募/通用金额<input type="number" step="0.0001" data-review-field="approvedAmount" value="${escapeAttribute(draft.approvedAmount)}"></label>
         <label>私募金额<input type="number" step="0.0001" data-review-field="privateAmount" value="${escapeAttribute(draft.privateAmount)}"></label>
@@ -2458,6 +2479,9 @@ function createIssuerDraft(projectValue, issuer = null) {
     aliases: (issuer?.aliases?.length ? issuer.aliases : derivedAliases).join("，"),
     defaultBranch: issuer?.defaultBranch || projectValue?.branch || "",
     enterpriseType: issuer?.enterpriseType || "",
+    subjectRating: issuer?.subjectRating || projectValue?.subjectRating || "",
+    ratingAgency: issuer?.ratingAgency || projectValue?.ratingAgency || "",
+    hiddenRating: issuer?.hiddenRating || projectValue?.hiddenRating || "",
     isRealEstate: Boolean(issuer?.isRealEstate),
     approvalLevel: credit.approvalLevel || "",
     approvedAmount: credit.approvedAmount ?? "",
@@ -2480,6 +2504,9 @@ function createHistoryReviewDraft(record) {
     aliases: [record.alias, record.shortName].filter(Boolean).join("，"),
     defaultBranch: record.branch || "",
     enterpriseType: "",
+    subjectRating: record.subjectRating || "",
+    ratingAgency: record.ratingAgency || "",
+    hiddenRating: record.hiddenRating || "",
     isRealEstate: Boolean(record.isRealEstate),
     approvalLevel: credit.approvalLevel || "",
     approvedAmount: credit.approvedAmount ?? "",
@@ -2513,6 +2540,9 @@ function issuerFromDraft(draft) {
     aliases: String(draft.aliases || "").split(/[,，\n]/).map((value) => value.trim()).filter(Boolean),
     defaultBranch: String(draft.defaultBranch || "").trim(),
     enterpriseType: String(draft.enterpriseType || "").trim(),
+    subjectRating: String(draft.subjectRating || "").trim().toUpperCase(),
+    ratingAgency: String(draft.ratingAgency || "").trim(),
+    hiddenRating: String(draft.hiddenRating || "").trim().toUpperCase(),
     isRealEstate: Boolean(draft.isRealEstate),
     credit: {
       approvalLevel: String(draft.approvalLevel || parsed.approvalLevel || "").trim(),
@@ -2599,6 +2629,9 @@ function fillIssuerInput(prefix, draft) {
     Aliases: draft.aliases,
     DefaultBranch: draft.defaultBranch,
     EnterpriseType: draft.enterpriseType,
+    SubjectRating: draft.subjectRating,
+    RatingAgency: draft.ratingAgency,
+    HiddenRating: draft.hiddenRating,
     ApprovalLevel: draft.approvalLevel,
     ApprovedAmount: draft.approvedAmount,
     PrivateAmount: draft.privateAmount,
@@ -2638,6 +2671,9 @@ function readIssuerInput(prefix) {
     aliases: $(`#${prefix}Aliases`).value,
     defaultBranch: $(`#${prefix}DefaultBranch`).value,
     enterpriseType: $(`#${prefix}EnterpriseType`).value,
+    subjectRating: $(`#${prefix}SubjectRating`).value,
+    ratingAgency: $(`#${prefix}RatingAgency`).value,
+    hiddenRating: $(`#${prefix}HiddenRating`).value,
     isRealEstate: $(`#${prefix}IsRealEstate`).checked,
     approvalLevel: $(`#${prefix}ApprovalLevel`).value,
     approvedAmount: $(`#${prefix}ApprovedAmount`).value,
@@ -2658,6 +2694,9 @@ function readIssuerForm() {
     aliases: $("#aliases").value,
     defaultBranch: $("#defaultBranch").value,
     enterpriseType: $("#enterpriseType").value,
+    subjectRating: $("#subjectRating").value,
+    ratingAgency: $("#ratingAgency").value,
+    hiddenRating: $("#hiddenRating").value,
     isRealEstate: $("#isRealEstate").checked,
     approvalLevel: $("#approvalLevel").value,
     approvedAmount: $("#approvedAmount").value,
@@ -2681,7 +2720,7 @@ function renderIssuerList() {
     ? issuers.map((issuer) => `
       <button class="issuer-item ${$("#issuerId").value === issuer.id ? "active" : ""}" data-issuer-id="${escapeAttribute(issuer.id)}">
         <strong>${escapeHtml(issuer.legalName)}</strong>
-        <span>${escapeHtml((issuer.aliases || []).join(" / ") || "暂无简称")} · ${escapeHtml(issuer.enterpriseType || "企业性质待补")} · ${escapeHtml(issuer.credit?.rawText || "暂无授信原文")}</span>
+        <span>${escapeHtml((issuer.aliases || []).join(" / ") || "暂无简称")} · ${escapeHtml(issuer.enterpriseType || "企业性质待补")} · ${escapeHtml(issuerCommonSummary(issuer))} · ${escapeHtml(issuer.credit?.rawText || "暂无授信原文")}</span>
       </button>
     `).join("")
     : '<div class="empty">暂无主体资料。可新增主体，或载入示例。</div>';
@@ -2689,6 +2728,13 @@ function renderIssuerList() {
   $$("[data-issuer-id]").forEach((button) => {
     button.addEventListener("click", () => fillIssuerForm(state.issuers.find((issuer) => issuer.id === button.dataset.issuerId)));
   });
+}
+
+function issuerCommonSummary(issuer) {
+  const rating = issuer.subjectRating
+    ? `${issuer.subjectRating}${issuer.ratingAgency ? `(${issuer.ratingAgency})` : ""}`
+    : "主体评级待补";
+  return `${rating} / 隐含${issuer.hiddenRating || "待补"}`;
 }
 
 function renderIssuerOptions() {
@@ -2730,6 +2776,9 @@ function fillIssuerForm(issuer) {
   $("#aliases").value = (issuer.aliases || []).join("，");
   $("#defaultBranch").value = issuer.defaultBranch || "";
   $("#enterpriseType").value = issuer.enterpriseType || "";
+  $("#subjectRating").value = issuer.subjectRating || "";
+  $("#ratingAgency").value = issuer.ratingAgency || "";
+  $("#hiddenRating").value = issuer.hiddenRating || "";
   $("#isRealEstate").checked = Boolean(issuer.isRealEstate);
   $("#approvalLevel").value = issuer.credit?.approvalLevel || "";
   $("#approvedAmount").value = issuer.credit?.approvedAmount ?? "";
@@ -2908,6 +2957,7 @@ function normalizeLoadedState(value) {
   return {
     ...DEFAULT_STATE,
     ...value,
+    issuers: (value.issuers || []).filter((issuer) => issuer?.legalName).map(normalizeIssuer),
     ftpCurve: normalizeFtpCurve(value.ftpCurve),
     projects: (value.projects || []).map(normalizeProjectRecord),
     protocolTransfers: normalizeProtocolTransfers(value.protocolTransfers || []),

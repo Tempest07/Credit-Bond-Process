@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260616-ad-placeholder-fix">
+  <link rel="stylesheet" href="./styles.css?v=20260616-issuer-common-fields">
 </head>
 <body>
   <div class="app-shell">
@@ -150,6 +150,9 @@
               <label class="span-2">常用简称<input id="quickAliases" placeholder="自动带入债券简称衍生简称，可用逗号分隔"></label>
               <label>默认申报分行<input id="quickDefaultBranch"></label>
               <label>企业性质<select id="quickEnterpriseType"><option value="">待选择</option><option>央企</option><option>地方国企</option><option>民营企业</option><option>其他</option></select></label>
+              <label>主体评级<input id="quickSubjectRating" placeholder="如 AAA"></label>
+              <label>评级机构<input id="quickRatingAgency" placeholder="如 中诚信国际"></label>
+              <label>市场隐含评级<input id="quickHiddenRating" placeholder="如 AAA-、AA+"></label>
               <label class="checkbox-label"><input id="quickIsRealEstate" type="checkbox">房地产主体</label>
               <label>审批层级<input id="quickApprovalLevel" placeholder="总行或分行"></label>
               <label>公募/通用批复金额（亿元）<input id="quickApprovedAmount" type="number" step="0.0001"></label>
@@ -511,6 +514,9 @@
                 <label class="span-2">常用简称（逗号或换行分隔）<textarea id="aliases" rows="3"></textarea></label>
                 <label>默认申报分行<input id="defaultBranch"></label>
                 <label>企业性质<select id="enterpriseType"><option value="">待选择</option><option>央企</option><option>地方国企</option><option>民营企业</option><option>其他</option></select></label>
+                <label>主体评级<input id="subjectRating" placeholder="如 AAA"></label>
+                <label>评级机构<input id="ratingAgency" placeholder="如 中诚信国际"></label>
+                <label>市场隐含评级<input id="hiddenRating" placeholder="如 AAA-、AA+"></label>
                 <label class="checkbox-label"><input id="isRealEstate" type="checkbox">房地产主体</label>
               </div>
 
@@ -547,7 +553,7 @@
           <article class="rule-card"><span>主承表述</span><h2>牵头与联席自动改写</h2><p>牵头时主承销商写兴业银行；联席时写“牵头主承销商、兴业银行”。</p></article>
           <article class="rule-card"><span>交易所债券</span><h2>发行方式与期次需确认</h2><p>简称尾号不等于发行期次。简表需注明公开/非公开及“第几期”，也可在结构化字段中手工确认。</p></article>
           <article class="rule-card"><span>双品种互拨</span><h2>一条意见分别列示</h2><p>自动合并 A/B 或相邻交易所简称，规模按合计、期限按双向互拨表述，询价和比例按两个期限分别列示。</p></article>
-          <article class="rule-card"><span>待补字段</span><h2>一级投标利率始终留空</h2><p>自动生成时使用【待填写】标记，不根据估值或指导价猜测。</p></article>
+          <article class="rule-card"><span>投标利率</span><h2>默认取市场估值</h2><p>自动生成时优先使用项目简表中的市场估值；未识别估值时保留【待填写】。</p></article>
           <article class="rule-card"><span>截标时间</span><h2>按场所自动建议</h2><p>新项目默认采用下一工作日；银行间默认18:00，交易所默认19:00，简表明确写有截标时间时优先采用简表内容。</p></article>
           <article class="rule-card"><span>民企与延期</span><h2>民企时间需要确认</h2><p>民企银行间项目默认标记为截标时间待确认；快捷延期会保存原时间与调整记录。</p></article>
         </div>
@@ -561,6 +567,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260616-ad-placeholder-fix"></script>
+  <script type="module" src="./app.js?v=20260616-issuer-common-fields"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyIssuerCommonFields,
   buildBondFullName,
   calculateSuggestion,
   determineApprover,
@@ -16,6 +17,18 @@ import {
 test("preserves supported enterprise types in issuer records", () => {
   assert.equal(normalizeIssuer({ legalName: "测试民企有限公司", enterpriseType: "民营企业" }).enterpriseType, "民营企业");
   assert.equal(normalizeIssuer({ legalName: "测试未知有限公司", enterpriseType: "未知类型" }).enterpriseType, "");
+});
+
+test("preserves common issuer fields in issuer records", () => {
+  const normalized = normalizeIssuer({
+    legalName: "测试主体有限公司",
+    subjectRating: "aa+",
+    ratingAgency: "联合资信",
+    hiddenRating: "aa(2)",
+  });
+  assert.equal(normalized.subjectRating, "AA+");
+  assert.equal(normalized.ratingAgency, "联合资信");
+  assert.equal(normalized.hiddenRating, "AA(2)");
 });
 
 const issuer = {
@@ -106,6 +119,27 @@ test("parses structured project advertisements", () => {
   assert.equal(parsed.inquiryLow, 2.95);
   assert.equal(parsed.inquiryHigh, 3.95);
   assert.match(generateOpinion(parsed, null).opinion, /陕西建工控股集团有限公司2026年度第五期短期融资券/);
+});
+
+test("uses stored common issuer fields and warns on mismatches", () => {
+  const parsed = parseProjectBrief(`26测试MTN001 非我行主承 上海分行
+3年期 规模5亿 AA+(联合资信)/隐含AA+
+询价区间1.5-2.5 银行间 中信银行
+
+26测试MTN001 市场估值约1.8`);
+  const applied = applyIssuerCommonFields(parsed, {
+    legalName: "测试集团有限公司",
+    subjectRating: "AAA",
+    ratingAgency: "中诚信国际",
+    hiddenRating: "AAA-",
+  });
+
+  assert.equal(applied.subjectRating, "AAA");
+  assert.equal(applied.ratingAgency, "中诚信国际");
+  assert.equal(applied.hiddenRating, "AAA-");
+  assert.match(applied.warnings.join("；"), /主体库要素主体评级为“AAA”，输入简表为“AA\+”/);
+  assert.match(applied.warnings.join("；"), /主体库要素评级机构为“中诚信国际”，输入简表为“联合资信”/);
+  assert.match(applied.warnings.join("；"), /主体库要素市场隐含评级为“AAA-”，输入简表为“AA\+”/);
 });
 
 test("builds standard interbank bond full name", () => {

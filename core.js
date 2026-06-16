@@ -674,6 +674,51 @@ export function generateOpinion(project, issuer) {
   return { opinion, suggestion, approver, fullName, warnings };
 }
 
+export function applyIssuerCommonFields(project, issuer) {
+  const sourceCommonFields = project.sourceCommonFields || {
+    subjectRating: project.subjectRating || "",
+    ratingAgency: project.ratingAgency || "",
+    hiddenRating: project.hiddenRating || "",
+  };
+  if (!issuer) {
+    return {
+      ...project,
+      ...sourceCommonFields,
+      sourceCommonFields,
+      warnings: (project.warnings || []).filter((warning) => !warning.startsWith("主体库要素")),
+    };
+  }
+  const next = {
+    ...project,
+    sourceCommonFields,
+    warnings: (project.warnings || []).filter((warning) => !warning.startsWith("主体库要素")),
+  };
+
+  applyIssuerCommonField(next, issuer, "subjectRating", "主体评级", normalizeRatingValue);
+  applyIssuerCommonField(next, issuer, "ratingAgency", "评级机构", normalizeTextValue);
+  applyIssuerCommonField(next, issuer, "hiddenRating", "市场隐含评级", normalizeRatingValue);
+  return next;
+}
+
+function applyIssuerCommonField(project, issuer, field, label, normalize) {
+  const storedRaw = issuer?.[field];
+  if (!String(storedRaw || "").trim()) return;
+  const storedValue = normalize(storedRaw);
+  const inputValue = normalize(project.sourceCommonFields?.[field] ?? project[field]);
+  if (inputValue && inputValue !== storedValue) {
+    project.warnings.push(`主体库要素${label}为“${storedValue}”，输入简表为“${inputValue}”，已优先使用主体库，请检查。`);
+  }
+  project[field] = storedValue;
+}
+
+function normalizeRatingValue(value = "") {
+  return String(value || "").trim().toUpperCase();
+}
+
+function normalizeTextValue(value = "") {
+  return String(value || "").trim();
+}
+
 export function normalizeIssuer(input) {
   const issuer = {
     id: input.id || crypto.randomUUID(),
@@ -681,6 +726,9 @@ export function normalizeIssuer(input) {
     aliases: [...new Set((input.aliases || []).map((value) => String(value).trim()).filter(Boolean))],
     defaultBranch: String(input.defaultBranch || "").trim(),
     enterpriseType: ["央企", "地方国企", "民营企业", "其他"].includes(input.enterpriseType) ? input.enterpriseType : "",
+    subjectRating: String(input.subjectRating || "").trim().toUpperCase(),
+    ratingAgency: String(input.ratingAgency || "").trim(),
+    hiddenRating: String(input.hiddenRating || "").trim().toUpperCase(),
     isRealEstate: Boolean(input.isRealEstate),
     credit: {
       approvalLevel: String(input.credit?.approvalLevel || "").trim(),

@@ -23,6 +23,8 @@ test("extracts issuer and credit from a standard historical opinion", () => {
   assert.equal(record.credit.approvedAmount, 20);
   assert.equal(record.credit.approvedRatio, 30);
   assert.equal(record.credit.investmentTermDays, 1095);
+  assert.equal(record.subjectRating, "AAA");
+  assert.equal(record.ratingAgency, "中诚信国际");
 });
 
 test("parses public and private credit ratios separately", () => {
@@ -66,4 +68,7 @@ test("separates standard credit records and ABS records", () => {
   assert.equal(parsed.standardRecordCount, 1);
   assert.equal(parsed.absRecordCount, 2);
   assert.equal(parsed.issuers.length, 1);
+  assert.equal(parsed.issuers[0].subjectRating, "AAA");
+  assert.equal(parsed.issuers[0].ratingAgency, "中诚信国际");
+  assert.equal(parsed.issuers[0].hiddenRating, "AAA");
 });

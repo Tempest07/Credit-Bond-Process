@@ -1,4 +1,4 @@
-import { durationToDays } from "./core.js?v=20260616-ad-placeholder-fix";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260616-issuer-common-fields";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
@@ -21,7 +21,7 @@ export function parseHistoryText(rawText) {
     const text = paragraphs[index];
     const header = parseHistoryHeader(text);
     if (header) {
-      currentHeader = { ...header, sourceRank: index, rawText: text };
+      currentHeader = enrichHistoryHeader({ ...header, sourceRank: index, rawText: text });
       continue;
     }
 
@@ -35,10 +35,19 @@ export function parseHistoryText(rawText) {
       continue;
     }
 
-    if (!isStandardOpinion(text)) continue;
-    const parsed = parseStandardOpinion(text, currentHeader, index);
-    if (parsed.issuerLegalName && parsed.credit.rawText) records.push(parsed);
-    else skipped.push(parsed);
+    if (isStandardOpinion(text)) {
+      const parsed = parseStandardOpinion(text, currentHeader, index);
+      if (parsed.issuerLegalName && parsed.credit.rawText) records.push(parsed);
+      else skipped.push(parsed);
+      continue;
+    }
+
+    if (currentHeader && isHistoryBriefContinuation(text, currentHeader)) {
+      currentHeader = enrichHistoryHeader({
+        ...currentHeader,
+        rawText: `${currentHeader.rawText || ""}\n${text}`,
+      });
+    }
   }
 
   const grouped = groupNewestIssuerRecords(records);
@@ -92,6 +101,7 @@ export function parseStandardOpinion(text, header = null, sourceRank = 0) {
   const issuerLegalName = extractIssuerLegalName(fullName);
   const creditRaw = text.match(/授信方面[，,](.+?)。(?:[^。]*分行拟申请|建议|本笔业务|本流程|以上妥否)/)?.[1]?.trim() || "";
   const credit = parseCreditText(creditRaw, sourceRank);
+  const opinionRating = parseOpinionRating(text);
   const warnings = [];
 
   if (!header) warnings.push("未找到对应的项目简表首行。");
@@ -107,6 +117,9 @@ export function parseStandardOpinion(text, header = null, sourceRank = 0) {
     shortName: header?.shortName || "",
     alias: header?.alias || "",
     branch: header?.branch || "",
+    subjectRating: header?.subjectRating || opinionRating.subjectRating,
+    ratingAgency: header?.ratingAgency || opinionRating.ratingAgency,
+    hiddenRating: header?.hiddenRating || "",
     isRealEstate: Boolean(header?.isRealEstate) || /房地产债业务/.test(text),
     fullName,
     issuerLegalName,
@@ -114,6 +127,32 @@ export function parseStandardOpinion(text, header = null, sourceRank = 0) {
     opinion: text,
     warnings,
     confidence: warnings.length ? "review" : "high",
+  };
+}
+
+function enrichHistoryHeader(header) {
+  const parsed = parseProjectBrief(header.rawText || "");
+  return {
+    ...header,
+    subjectRating: parsed.subjectRating || header.subjectRating || "",
+    ratingAgency: parsed.ratingAgency || header.ratingAgency || "",
+    hiddenRating: parsed.hiddenRating || header.hiddenRating || "",
+  };
+}
+
+function isHistoryBriefContinuation(text, header) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+  if (/^(?:\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*(?:\/\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*)*\s*(?:D|M|Y|天|月|年)(?:期)?\s+)?规模/.test(value)) return true;
+  if (/询价区间|市场估值|指导价|不执行综合定价|不综|隐含/.test(value)) return true;
+  return Boolean(header?.shortName && value.startsWith(header.shortName));
+}
+
+function parseOpinionRating(text) {
+  const match = String(text || "").match(/主体信用评级为\s*([A-Z]+[+-]?)(?:\(([^)）]+)\))?/i);
+  return {
+    subjectRating: match?.[1]?.toUpperCase() || "",
+    ratingAgency: match?.[2] || "",
   };
 }
 
@@ -180,6 +219,9 @@ export function groupNewestIssuerRecords(records) {
         legalName: record.issuerLegalName,
         aliases: [...new Set(aliases)],
         defaultBranch: record.branch,
+        subjectRating: record.subjectRating || "",
+        ratingAgency: record.ratingAgency || "",
+        hiddenRating: record.hiddenRating || "",
         isRealEstate: record.isRealEstate,
         credit: record.credit,
         sourceOpinion: record.opinion,
@@ -191,6 +233,7 @@ export function groupNewestIssuerRecords(records) {
 
     current.aliases = [...new Set([...current.aliases, ...aliases])];
     current.isRealEstate ||= record.isRealEstate;
+    mergeCommonIssuerFields(current, record);
 
     const currentHasPlaceholder = /[XxＸ？?]{2,}/.test(current.credit.rawText || "");
     const incomingHasConcreteRatio = Number.isFinite(record.credit.approvedRatio) || Number.isFinite(record.credit.privateRatio);
@@ -198,10 +241,17 @@ export function groupNewestIssuerRecords(records) {
       current.credit = record.credit;
       current.sourceOpinion = record.opinion;
       current.importWarnings = record.warnings;
+      mergeCommonIssuerFields(current, record);
     }
   }
 
   return { issuers: [...byIssuer.values()], reviewRecords };
+}
+
+function mergeCommonIssuerFields(target, source) {
+  for (const field of ["subjectRating", "ratingAgency", "hiddenRating"]) {
+    if (!target[field] && source[field]) target[field] = source[field];
+  }
 }
 
 function numberOrNull(value) {
