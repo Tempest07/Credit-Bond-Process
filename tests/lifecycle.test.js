@@ -30,12 +30,14 @@ test("creates a project ledger record with one tranche per bond variety", () => 
     suggestedRatios: [20, 15],
     branch: "广州分行",
     venue: "上交所",
+    offeringType: "公募",
     leadUnderwriter: "中信证券",
     sourceText: "source",
   }, { id: "issuer-1", legalName: "广州越秀集团股份有限公司" }, { opinion: "流程意见" });
 
   assert.equal(record.status, "未投标");
   assert.equal(record.issueScale, 20);
+  assert.equal(record.offeringType, "公募");
   assert.equal(record.tranches.length, 2);
   assert.deepEqual(record.tranches.map((item) => item.shortName), ["26广越05", "26广越06"]);
   assert.deepEqual(record.tranches.map((item) => item.durationText), ["3年", "5年"]);

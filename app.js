@@ -1773,22 +1773,22 @@ function formatInquirySummary(tranches = []) {
 
 function formatTrancheDurationSummary(projectValue) {
   const durations = (projectValue.tranches || [])
-    .map((tranche) => tranche.durationText)
+    .map((tranche) => formatDurationSummaryValue(tranche.durationText))
     .filter(Boolean);
   return durations.length ? durations.join(" / ") : "期限待补";
 }
 
 function formatProjectScaleSummary(projectValue) {
   const projectScale = numberOrNull(projectValue.issueScale);
-  if (Number.isFinite(projectScale) && projectScale > 0) return `规模${formatNumber(projectScale)}亿`;
+  if (Number.isFinite(projectScale) && projectScale > 0) return `${formatNumber(projectScale)}亿`;
   const trancheScales = (projectValue.tranches || [])
     .map((tranche) => numberOrNull(tranche.issueScale))
     .filter((value) => Number.isFinite(value) && value > 0);
   const sourceScale = parseScaleFromSourceText(projectValue.sourceText);
-  if (!trancheScales.length && Number.isFinite(sourceScale) && sourceScale > 0) return `规模${formatNumber(sourceScale)}亿`;
-  if (!trancheScales.length) return "规模待补";
+  if (!trancheScales.length && Number.isFinite(sourceScale) && sourceScale > 0) return `${formatNumber(sourceScale)}亿`;
+  if (!trancheScales.length) return "待补";
   const total = trancheScales.reduce((sum, value) => sum + value, 0);
-  return `规模${formatNumber(total)}亿`;
+  return `${formatNumber(total)}亿`;
 }
 
 function parseScaleFromSourceText(text = "") {
@@ -1799,7 +1799,48 @@ function parseScaleFromSourceText(text = "") {
 }
 
 function formatProjectVenueLead(projectValue) {
-  return [projectValue.venue, projectValue.leadUnderwriter].filter(Boolean).join(" · ") || "场所/主承待补";
+  return [
+    projectValue.venue,
+    formatProjectOfferingSummary(projectValue),
+    projectValue.leadUnderwriter,
+  ].filter(Boolean).join(" · ") || "场所/主承待补";
+}
+
+function formatDurationSummaryValue(value = "") {
+  const text = String(value || "").trim().replace(/期$/, "");
+  if (!text) return "";
+  const unit = text.match(/(D|M|Y|天|月|年)$/i)?.[1] || "";
+  if (text.includes("/") && unit) {
+    return text
+      .slice(0, -unit.length)
+      .split("/")
+      .map((part) => formatDurationPart(`${part}${unit}`))
+      .join(" / ");
+  }
+  return formatDurationPart(text);
+}
+
+function formatDurationPart(value = "") {
+  const text = String(value || "").trim().toUpperCase();
+  const match = text.match(/^(\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*)\s*(D|M|Y|天|月|年)$/i);
+  if (!match) return String(value || "").trim();
+  const amount = match[1].split("+").map((item) => formatNumber(item)).join("+");
+  const unit = { D: "天", M: "个月", Y: "年", 天: "天", 月: "个月", 年: "年" }[match[2].toUpperCase()] || match[2];
+  return `${amount}${unit}`;
+}
+
+function formatProjectOfferingSummary(projectValue) {
+  if (["公募", "私募", "公私募"].includes(projectValue.offeringType)) return projectValue.offeringType;
+  const text = `${projectValue.sourceText || ""} ${projectValue.opinion || ""}`;
+  if (/(?:非公开|私募)/.test(text)) return "私募";
+  if (/公开发行|(?:^|[\s/，,])(?:公开|公募)(?:$|[\s/，,])/.test(text)) return "公募";
+  const shortNameText = [
+    projectValue.shortName,
+    ...(projectValue.tranches || []).map((tranche) => tranche.shortName),
+  ].filter(Boolean).join(" ");
+  if (/PPN\d*/i.test(shortNameText)) return "私募";
+  if (/(SCP|CP|MTN)\d*/i.test(shortNameText)) return "公募";
+  return "";
 }
 
 function statusBadgeClass(status) {
