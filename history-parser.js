@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260616-hide-cutoff-confirm";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260617-selected-project-highlight";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

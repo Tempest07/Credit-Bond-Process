@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-hide-cutoff-confirm";
+} from "./core.js?v=20260617-selected-project-highlight";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -29,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-hide-cutoff-confirm";
+} from "./lifecycle.js?v=20260617-selected-project-highlight";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-hide-cutoff-confirm";
+} from "./history-parser.js?v=20260617-selected-project-highlight";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -48,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-hide-cutoff-confirm";
+} from "./protocol-transfer.js?v=20260617-selected-project-highlight";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -1384,10 +1384,13 @@ function renderProjectList() {
 
   $("#projectList").innerHTML = projects.length
     ? projects.map((item) => `
-      <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}">
+      <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
         <span class="project-item-head">
           <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
-          <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
+          <span class="project-item-badges">
+            ${item.id === selectedProjectId ? '<span class="selected-badge">已选取</span>' : ""}
+            <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
+          </span>
         </span>
         <span class="project-item-meta project-item-primary">
           <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>

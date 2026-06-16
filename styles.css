@@ -245,11 +245,14 @@ textarea:focus, input:focus, select:focus { border-color: var(--accent); box-sha
 .project-list-date-tools input { min-height: 38px; padding: 8px 10px; font-size: 11px; }
 .project-list-date-tools .button { min-height: 38px; padding: 0 13px; font-size: 11px; white-space: nowrap; }
 .project-list { display: grid; gap: 7px; max-height: calc(100vh - 198px); margin-top: 12px; padding-right: 4px; overflow: auto; }
-.project-item { display: grid; gap: 8px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: linear-gradient(145deg, #fff, #fbfbff); text-align: left; }
-.project-item:hover, .project-item.active { border-color: var(--accent); background: linear-gradient(145deg, var(--accent-soft), #fff); }
-.project-item.active { box-shadow: inset 3px 0 0 var(--accent); }
+.project-item { position: relative; display: grid; gap: 8px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: linear-gradient(145deg, #fff, #fbfbff); text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease; }
+.project-item:hover { border-color: var(--accent); background: linear-gradient(145deg, var(--accent-soft), #fff); }
+.project-item.active { border-color: color-mix(in srgb, var(--accent) 72%, var(--line)); background: linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 88%, #fff), #fff 78%); box-shadow: inset 5px 0 0 var(--accent), 0 10px 24px rgba(89, 87, 217, .16); transform: translateX(2px); }
+.project-item.active::after { content: ""; position: absolute; inset: -1px; pointer-events: none; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: inherit; }
 .project-item-head, .project-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .project-item-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.project-item-badges { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.selected-badge { padding: 3px 7px; border-radius: 99px; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-strong)); box-shadow: 0 5px 12px rgba(89, 87, 217, .22); font-size: 9px; font-weight: 800; white-space: nowrap; }
 .project-item-meta { color: var(--muted); font-size: 10px; }
 .project-item-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 .project-item-issuer { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
