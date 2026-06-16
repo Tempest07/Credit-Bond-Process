@@ -488,6 +488,39 @@ test("uses FTP curve to calculate revenue from tranche duration", () => {
   assert.equal(project.tranches[0].revenueBp, 67.32);
 });
 
+test("defaults same-rate bids to full allocation when no marginal multiple is disclosed", () => {
+  const ad = "【截标通知】26南航股SCP012，25亿，210天，票面利率1.43%，明日缴款，感谢支持！";
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26南航股SCP012",
+    tranches: [{
+      shortName: "26南航股SCP012",
+      durationText: "210天",
+      bidRate: 1.43,
+      bidAmount: 5,
+      resultStatus: "待出结果",
+    }],
+  }), ad, new Date("2026-06-16T09:00:00"));
+
+  assert.equal(project.tranches[0].winningRate, 1.43);
+  assert.equal(project.tranches[0].marginalMultiple, null);
+  assert.equal(project.tranches[0].winningAmountWan, 50000);
+  assert.equal(project.tranches[0].resultStatus, "中标");
+});
+
+test("normalizes positive winning amount as won when result status is still pending", () => {
+  const project = normalizeProjectRecord({
+    shortName: "26测试SCP001",
+    tranches: [{
+      shortName: "26测试SCP001",
+      resultStatus: "待出结果",
+      winningRate: 1.43,
+      winningAmountWan: 50000,
+    }],
+  });
+
+  assert.equal(project.tranches[0].resultStatus, "中标");
+});
+
 test("keeps manually edited winning amounts during normal saves", () => {
   const project = normalizeProjectRecord({
     shortName: "26测试MTN001",

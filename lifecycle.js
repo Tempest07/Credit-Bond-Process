@@ -363,6 +363,11 @@ function normalizeTranche(input = {}) {
   const legacyWinningAmount = numberOrNull(input.winningAmount);
   const bidLevels = normalizeBidLevels(input);
   const primaryBid = bidLevels.find(hasAnyBidLevelValue) || {};
+  const winningAmountWan = numberOrNull(input.winningAmountWan) ?? (Number.isFinite(legacyWinningAmount) ? legacyWinningAmount * 10000 : null);
+  const inputResultStatus = ["待出结果", "中标", "未中标"].includes(input.resultStatus) ? input.resultStatus : "待出结果";
+  const resultStatus = inputResultStatus === "待出结果" && positiveNumber(winningAmountWan)
+    ? "中标"
+    : inputResultStatus;
   return {
     id: input.id || crypto.randomUUID(),
     shortName: String(input.shortName || "").trim(),
@@ -374,9 +379,9 @@ function normalizeTranche(input = {}) {
     bidLevels,
     bidRate: numberOrNull(primaryBid.bidRate),
     bidAmount: numberOrNull(primaryBid.bidAmount),
-    resultStatus: ["待出结果", "中标", "未中标"].includes(input.resultStatus) ? input.resultStatus : "待出结果",
+    resultStatus,
     winningRate: numberOrNull(input.winningRate),
-    winningAmountWan: numberOrNull(input.winningAmountWan) ?? (Number.isFinite(legacyWinningAmount) ? legacyWinningAmount * 10000 : null),
+    winningAmountWan,
     pricingMode: ["综合定价", "未综"].includes(input.pricingMode) ? input.pricingMode : "未综",
     pricingRate: numberOrNull(input.pricingRate),
     revenueBp: numberOrNull(input.revenueBp),
@@ -399,7 +404,7 @@ function normalizeBidLevels(input = {}) {
   const levels = source.map(normalizeBidLevel);
   const legacyRate = numberOrNull(input.bidRate);
   const legacyAmount = numberOrNull(input.bidAmount);
-  if (!levels.length && (Number.isFinite(legacyRate) || Number.isFinite(legacyAmount))) {
+  if (!levels.some(hasAnyBidLevelValue) && (Number.isFinite(legacyRate) || Number.isFinite(legacyAmount))) {
     levels.push(normalizeBidLevel({ bidRate: legacyRate, bidAmount: legacyAmount }));
   }
   return levels.length ? levels : [normalizeBidLevel({})];
@@ -481,7 +486,10 @@ function ownBidLevels(tranche = {}) {
   const source = Array.isArray(tranche.bidLevels) && tranche.bidLevels.length
     ? tranche.bidLevels
     : [{ bidRate: tranche.bidRate, bidAmount: tranche.bidAmount }];
-  return source.map(normalizeBidLevel).filter(hasCompleteBidLevel);
+  const levels = source.map(normalizeBidLevel).filter(hasCompleteBidLevel);
+  if (levels.length) return levels;
+  const legacyLevel = normalizeBidLevel({ bidRate: tranche.bidRate, bidAmount: tranche.bidAmount });
+  return hasCompleteBidLevel(legacyLevel) ? [legacyLevel] : [];
 }
 
 function hasCompleteBidLevel(level = {}) {
