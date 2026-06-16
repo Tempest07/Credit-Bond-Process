@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260616-issuer-common-fields">
+  <link rel="stylesheet" href="./styles.css?v=20260616-compact-ledger-filters">
 </head>
 <body>
   <div class="app-shell">
@@ -185,20 +185,27 @@
       </section>
 
       <section class="view active" data-view="ledger">
-        <div class="dashboard-grid dashboard-priority" id="dashboardGrid">
-          <button class="dashboard-card urgent" data-ledger-filter="dueToday"><span>今日待投标</span><strong id="dashboardDueToday">0</strong><small>按截标日期</small></button>
-          <button class="dashboard-card" data-ledger-filter="awaitingResult"><span>等待结果</span><strong id="dashboardAwaitingResult">0</strong><small>已投标待截标</small></button>
-          <button class="dashboard-card urgent" data-ledger-filter="paymentToday"><span>今日缴款</span><strong id="dashboardPaymentToday">0</strong><small>需要处理</small></button>
-        </div>
-        <details class="ledger-filter-details" id="ledgerFilterDetails">
-          <summary><span>更多筛选</span><strong id="ledgerFilterLabel">全部项目</strong></summary>
-          <div class="dashboard-grid dashboard-more">
-            <button class="dashboard-card active" data-ledger-filter="all"><span>全部项目</span><strong id="dashboardAll">0</strong><small>当前台账</small></button>
-            <button class="dashboard-card" data-ledger-filter="toBid"><span>待投标</span><strong id="dashboardToBid">0</strong><small>尚未录入标位</small></button>
-            <button class="dashboard-card success" data-ledger-filter="won"><span>中标项目</span><strong id="dashboardWon">0</strong><small>含部分中标</small></button>
-            <button class="dashboard-card muted" data-ledger-filter="notWon"><span>未中标</span><strong id="dashboardNotWon">0</strong><small>近期结果</small></button>
+        <div class="ledger-filter-bar" id="ledgerFilterBar">
+          <div class="ledger-filter-tabs" role="group" aria-label="项目筛选">
+            <button class="ledger-filter-chip active" data-ledger-filter="all" type="button">
+              <span>全部项目</span><strong id="dashboardAll">0</strong>
+            </button>
+            <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button">
+              <span>待投标</span><strong id="dashboardToBid">0</strong>
+            </button>
           </div>
-        </details>
+          <label class="ledger-filter-select">
+            <span>状态筛选</span>
+            <select id="ledgerFilterSelect">
+              <option value="all">全部项目</option>
+              <option value="toBid">待投标</option>
+              <option value="awaitingResult">等待结果</option>
+              <option value="won">中标项目</option>
+              <option value="notWon">未中标</option>
+            </select>
+          </label>
+          <span class="ledger-filter-status" id="ledgerFilterLabel">当前：全部项目</span>
+        </div>
 
         <section class="mail-panel" id="mailPanel">
           <div class="mail-panel-main">
@@ -567,6 +574,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260616-issuer-common-fields"></script>
+  <script type="module" src="./app.js?v=20260616-compact-ledger-filters"></script>
 </body>
 </html>

@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-issuer-common-fields";
+} from "./core.js?v=20260616-compact-ledger-filters";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -29,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-issuer-common-fields";
+} from "./lifecycle.js?v=20260616-compact-ledger-filters";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-issuer-common-fields";
+} from "./history-parser.js?v=20260616-compact-ledger-filters";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -48,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-issuer-common-fields";
+} from "./protocol-transfer.js?v=20260616-compact-ledger-filters";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -120,6 +120,17 @@ let selectedProjectId = "";
 let selectedProtocolTransferId = "";
 let ledgerFilter = "all";
 let projectAutoSaveTimer = null;
+
+const LEDGER_FILTER_LABELS = {
+  all: "全部项目",
+  toBid: "待投标",
+  awaitingResult: "等待结果",
+  won: "中标项目",
+  notWon: "未中标",
+  dueToday: "今日待投标",
+  paymentToday: "今日缴款",
+};
+const LEDGER_FILTER_SELECT_VALUES = new Set(["all", "toBid", "awaitingResult", "won", "notWon"]);
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -300,12 +311,11 @@ function bindLedger() {
   });
   $$("[data-ledger-filter]").forEach((button) => {
     button.addEventListener("click", () => {
-      ledgerFilter = button.dataset.ledgerFilter;
-      $$("[data-ledger-filter]").forEach((item) => item.classList.toggle("active", item === button));
-      updateLedgerFilterLabel(button);
-      $("#ledgerFilterDetails").open = false;
-      renderProjectList();
+      setLedgerFilter(button.dataset.ledgerFilter);
     });
+  });
+  $("#ledgerFilterSelect").addEventListener("change", (event) => {
+    setLedgerFilter(event.target.value);
   });
   $("#addTrancheButton").addEventListener("click", () => {
     const draft = readProjectForm();
@@ -677,12 +687,7 @@ function ensureProjectCutoff(projectValue) {
 function renderDashboard() {
   const counts = dashboardCounts(state.projects || []);
   $("#dashboardAll").textContent = counts.all;
-  $("#dashboardDueToday").textContent = counts.dueToday;
   $("#dashboardToBid").textContent = counts.toBid;
-  $("#dashboardAwaitingResult").textContent = counts.awaitingResult;
-  $("#dashboardWon").textContent = counts.won;
-  $("#dashboardNotWon").textContent = counts.notWon;
-  $("#dashboardPaymentToday").textContent = counts.paymentToday;
 }
 
 function renderCutoffTodo() {
@@ -1328,12 +1333,27 @@ function completePaymentTodo(value) {
   showToast(`${next.shortName} 已标记完成缴款。`);
 }
 
-function updateLedgerFilterLabel(button) {
-  const label = button?.querySelector("span")?.textContent || "全部项目";
+function setLedgerFilter(nextFilter) {
+  ledgerFilter = LEDGER_FILTER_LABELS[nextFilter] ? nextFilter : "all";
+  syncLedgerFilterControls();
+  renderProjectList();
+}
+
+function syncLedgerFilterControls() {
+  $$("[data-ledger-filter]").forEach((item) => {
+    item.classList.toggle("active", item.dataset.ledgerFilter === ledgerFilter);
+  });
+  const select = $("#ledgerFilterSelect");
+  if (select) {
+    const selectValue = LEDGER_FILTER_SELECT_VALUES.has(ledgerFilter) ? ledgerFilter : "all";
+    if (select.value !== selectValue) select.value = selectValue;
+  }
+  const label = LEDGER_FILTER_LABELS[ledgerFilter] || LEDGER_FILTER_LABELS.all;
   $("#ledgerFilterLabel").textContent = `当前：${label}`;
 }
 
 function renderProjectList() {
+  syncLedgerFilterControls();
   const query = $("#projectSearch").value.trim().toLowerCase();
   const statusFilter = $("#projectStatusFilter").value;
   const dateFilter = $("#projectDateFilter").value;

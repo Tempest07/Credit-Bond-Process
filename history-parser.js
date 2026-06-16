@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260616-issuer-common-fields";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260616-compact-ledger-filters";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
