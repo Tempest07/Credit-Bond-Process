@@ -223,6 +223,7 @@ test("parses and generates interbank dual-tranche mutual-allocation projects", (
   assert.match(generated.opinion, /预计发行规模合计12亿元，发行期限2年\/5年（双向互拨）/);
   assert.match(generated.opinion, /预计利率区间为2年期1.4%-1.9%\/5年期1.5%-2%/);
   assert.match(generated.opinion, /拟申请投资金额合计不超过3.6亿元/);
+  assert.match(generated.opinion, /2年期一级投标利率不低于1.65%、5年期一级投标利率不低于1.83%/);
 });
 
 test("requires explicit exchange issue number and generates dual-tranche exchange opinion", () => {
@@ -315,11 +316,11 @@ test("applies approval thresholds and real estate override", () => {
   assert.equal(determineApprover("AAA", 20, true), "本笔为房地产债业务，由林总终批。");
 });
 
-test("generates a complete opinion while leaving bid rate blank", () => {
+test("generates a complete opinion using valuation as bid rate", () => {
   const generated = generateOpinion(parseProjectBrief(sample), issuer);
   assert.match(generated.opinion, /广州交通投资集团有限公司2026年度第二期超短期融资券/);
   assert.match(generated.opinion, /拟申请投资金额不超过2.1亿元/);
-  assert.match(generated.opinion, /一级投标利率不低于【待填写】%/);
+  assert.match(generated.opinion, /一级投标利率不低于1.46%/);
   assert.match(generated.opinion, /本笔业务由处室终批。/);
 });
 

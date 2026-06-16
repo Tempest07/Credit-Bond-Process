@@ -641,11 +641,10 @@ export function generateOpinion(project, issuer) {
     ? `${formatNumber(suggestion.investmentAmount)}亿元`
     : "【待补充投资金额】";
   const ratio = formatSuggestionRatio(suggestion, dualTranche);
-  const bidRate = "【待填写】";
   const bidRateItems = recommendationTrancheSuggestions(suggestion);
   const bidRateSentence = dualTranche
-    ? bidRateItems.map((item) => `${formatDuration(item.durationText)}期一级投标利率不低于${bidRate}%`).join("、")
-    : `一级投标利率不低于${bidRate}%`;
+    ? bidRateItems.map((item) => `${formatDuration(item.durationText)}期一级投标利率不低于${formatBidRate(project, item.index)}%`).join("、")
+    : `一级投标利率不低于${formatBidRate(project, 0)}%`;
   const creditSentence = formatCreditSentence(issuer);
   const approver = determineApprover(project.hiddenRating, suggestion.investmentAmount, Boolean(issuer?.isRealEstate));
   const recommendationAmount = formatRecommendationAmount(suggestion, amount, dualTranche);
@@ -668,7 +667,9 @@ export function generateOpinion(project, issuer) {
   const warnings = [...project.warnings, ...suggestion.warnings];
   if (!issuer) warnings.push("未匹配到主体资料，请选择或新增主体。");
   if (!fullName) warnings.push("无法根据简称生成债券全称，请手工填写。");
-  warnings.push("一级投标利率按规则留空，提交前请填写。");
+  if (bidRateItems.some((item) => !Number.isFinite(bidRateValue(project, item.index)))) {
+    warnings.push("未识别市场估值，一级投标利率需手工填写。");
+  }
 
   return { opinion, suggestion, approver, fullName, warnings };
 }
@@ -906,6 +907,17 @@ function recommendationTrancheSuggestions(suggestion) {
   const items = (suggestion.trancheSuggestions || []).filter((item) => item.durationText);
   const investable = items.filter((item) => Number.isFinite(item.suggestedRatio) && item.suggestedRatio > 0);
   return investable.length ? investable : items;
+}
+
+function bidRateValue(project, index = 0) {
+  const valuations = Array.isArray(project?.valuations) ? project.valuations : [];
+  const value = valuations[index] ?? project?.valuation;
+  return numberOrNull(value);
+}
+
+function formatBidRate(project, index = 0) {
+  const value = bidRateValue(project, index);
+  return Number.isFinite(value) ? formatNumber(value) : "【待填写】";
 }
 
 function hasNonInvestableTranches(suggestion) {

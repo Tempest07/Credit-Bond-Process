@@ -10,7 +10,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260616-placeholder-select";
+} from "./core.js?v=20260616-valuation-bid";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -27,13 +27,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260616-placeholder-select";
+} from "./lifecycle.js?v=20260616-valuation-bid";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260616-placeholder-select";
+} from "./history-parser.js?v=20260616-valuation-bid";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -46,7 +46,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260616-placeholder-select";
+} from "./protocol-transfer.js?v=20260616-valuation-bid";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -184,6 +184,7 @@ function bindGenerator() {
     await navigator.clipboard.writeText(value);
     showToast("流程意见已复制。");
   });
+  $("#opinionOutput").addEventListener("dblclick", selectBidRateOnDoubleClick);
   $("#saveProjectButton").addEventListener("click", saveCurrentProject);
 }
 
@@ -477,6 +478,30 @@ function selectBriefPlaceholderRange(input, placeholder) {
   input.focus();
   input.setSelectionRange(start, end);
   requestAnimationFrame(() => input.setSelectionRange(start, end));
+}
+
+function selectBidRateOnDoubleClick(event) {
+  const input = event.currentTarget;
+  const range = findBidRateRangeAtSelection(input);
+  if (!range) return;
+  event.preventDefault();
+  input.focus();
+  input.setSelectionRange(range.start, range.end);
+  requestAnimationFrame(() => input.setSelectionRange(range.start, range.end));
+}
+
+function findBidRateRangeAtSelection(input) {
+  const value = String(input.value || "");
+  const selectionStart = Math.min(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+  const selectionEnd = Math.max(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+  const pattern = /一级投标利率不低于(\d+(?:\.\d+)?)(?=%)/g;
+  for (const match of value.matchAll(pattern)) {
+    const rate = match[1];
+    const start = match.index + match[0].lastIndexOf(rate);
+    const end = start + rate.length;
+    if (selectionStart >= start && selectionEnd <= end) return { start, end };
+  }
+  return null;
 }
 
 function focusBriefPlaceholder(direction = "next") {
@@ -1982,9 +2007,7 @@ function renderBatchResults() {
         .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"))
         .map((candidate) => `<option value="${escapeAttribute(candidate.id)}" ${candidate.id === item.selectedIssuerId ? "selected" : ""}>${escapeHtml(candidate.legalName)}</option>`),
     ].join("");
-    const warnings = [...new Set(generated.warnings.filter((warning) =>
-      warning && !warning.startsWith("一级投标利率按规则留空"),
-    ))];
+    const warnings = [...new Set(generated.warnings.filter(Boolean))];
     if (warnings.length) warningCount += 1;
 
     return `
