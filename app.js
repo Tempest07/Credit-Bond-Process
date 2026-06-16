@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260617-selected-project-highlight";
+} from "./core.js?v=20260617-split-offering-chip";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -29,13 +29,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260617-selected-project-highlight";
+} from "./lifecycle.js?v=20260617-split-offering-chip";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260617-selected-project-highlight";
+} from "./history-parser.js?v=20260617-split-offering-chip";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -48,7 +48,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260617-selected-project-highlight";
+} from "./protocol-transfer.js?v=20260617-split-offering-chip";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -1400,6 +1400,7 @@ function renderProjectList() {
           <span>${escapeHtml(formatTrancheDurationSummary(item))}</span>
           <span>${escapeHtml(formatProjectScaleSummary(item))}</span>
           <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
+          <span>${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
           <span>${escapeHtml(formatProjectVenueLead(item))}</span>
         </span>
       </button>
@@ -1940,7 +1941,6 @@ function parseScaleFromSourceText(text = "") {
 function formatProjectVenueLead(projectValue) {
   return [
     projectValue.venue,
-    formatProjectOfferingSummary(projectValue),
     projectValue.leadUnderwriter,
   ].filter(Boolean).join(" · ") || "场所/主承待补";
 }

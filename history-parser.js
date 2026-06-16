@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260617-selected-project-highlight";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260617-split-offering-chip";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
