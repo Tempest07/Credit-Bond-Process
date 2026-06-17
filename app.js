@@ -24,6 +24,7 @@ import {
   dashboardCounts,
   deriveProjectStatus,
   normalizeProjectRecord,
+  parseIssuanceAdvertisement,
   removeProject,
   suggestProjectCutoff,
   trancheNeedsPayment,
@@ -120,6 +121,11 @@ let selectedProjectId = "";
 let selectedProtocolTransferId = "";
 let ledgerFilter = "all";
 let projectAutoSaveTimer = null;
+let projectRecognitionMarks = {};
+let resultRecognitionMarks = {};
+let resultRecognitionProjectId = "";
+let protocolTransferRecognitionMarks = {};
+let protocolTransferRecognitionId = "";
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -191,6 +197,8 @@ function bindGenerator() {
 
   $("#parseButton").addEventListener("click", parseAndRender);
   $("#issuerSelect").addEventListener("change", () => {
+    delete projectRecognitionMarks.issuerSelect;
+    setRecognitionForInput($("#issuerSelect"), null);
     selectedIssuerId = $("#issuerSelect").value;
     const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
     project = applyIssuerCommonFields(project, issuer);
@@ -200,6 +208,7 @@ function bindGenerator() {
 
   $$("[data-project-field]").forEach((input) => {
     input.addEventListener("input", () => {
+      clearRecognitionForInput(input);
       const field = input.dataset.projectField;
       project[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
       if (field === "durationText") {
@@ -220,6 +229,7 @@ function bindGenerator() {
   $("#trancheInquiryRows").addEventListener("input", (event) => {
     const input = event.target.closest("[data-inquiry-index]");
     if (!input) return;
+    clearRecognitionForInput(input);
     updateDynamicInquiryRange(input);
     regenerate();
   });
@@ -335,11 +345,13 @@ function bindLedger() {
     refillProjectForm(draft);
     saveProjectDraftNow();
   });
-  $("#projectForm").addEventListener("input", () => {
+  $("#projectForm").addEventListener("input", (event) => {
+    clearRecognitionForInput(event.target);
     updateProjectPreviews();
     scheduleProjectAutoSave();
   });
-  $("#projectForm").addEventListener("change", () => {
+  $("#projectForm").addEventListener("change", (event) => {
+    clearRecognitionForInput(event.target);
     updateProjectPreviews();
     scheduleProjectAutoSave();
   });
@@ -384,9 +396,12 @@ function bindLedger() {
       showToast("请先粘贴发行结果广告。");
       return;
     }
+    const parsedAdvertisement = parseIssuanceAdvertisement(advertisement);
     const parsed = applyIssuanceAdvertisement({ ...draft, ftpCurve: state.ftpCurve, resultConfirmed: true }, advertisement);
     parsed.resultConfirmed = true;
     parsed.status = deriveProjectStatus(parsed);
+    resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, parsedAdvertisement);
+    resultRecognitionProjectId = parsed.id || draft.id || "";
     fillProjectForm(parsed);
     saveProjectRecordNow(parsed);
     closeResultEntryPanel();
@@ -446,6 +461,7 @@ function bindLedger() {
 function parseAndRender() {
   const missing = briefTemplatePlaceholders($("#briefInput").value);
   if (missing.length) {
+    clearProjectRecognitionMarks();
     renderWarnings([`请先补全模板占位：${missing.join("、")}。`]);
     focusFirstBriefPlaceholder();
     showToast("项目简表还有占位符未填写。");
@@ -455,6 +471,8 @@ function parseAndRender() {
   const matched = findIssuerForProject(parsedProject);
   project = applyIssuerCommonFields(parsedProject, matched);
   selectedIssuerId = matched?.id || "";
+  projectRecognitionMarks = buildProjectRecognitionMarks(project, matched);
+  resultRecognitionMarks = {};
   fillProjectFields();
   renderIssuerOptions();
   regenerate();
@@ -469,6 +487,7 @@ function loadBlankBriefTemplate() {
   $("#briefInput").value = BLANK_BRIEF_TEMPLATE;
   project = parseProjectBrief("");
   selectedIssuerId = "";
+  clearProjectRecognitionMarks();
   fillProjectFields();
   renderIssuerOptions();
   regenerate();
@@ -592,6 +611,101 @@ function fillProjectFields() {
   });
   ensureInquiryRangeCapacity(project);
   renderTrancheInquiryFields();
+  applyProjectRecognitionMarks();
+}
+
+function clearProjectRecognitionMarks() {
+  projectRecognitionMarks = {};
+  resultRecognitionMarks = {};
+  resultRecognitionProjectId = "";
+  clearRecognitionMarks(document);
+}
+
+function buildProjectRecognitionMarks(projectValue, issuer) {
+  const marks = {};
+  const markAuto = (field, label) => {
+    marks[field] = valueHasContent(projectValue[field])
+      ? recognitionMark("success", `${label}已识别`)
+      : recognitionMark("error", `${label}未识别，请补充`);
+  };
+
+  [
+    ["shortName", "债券简称"],
+    ["sponsorStatus", "主承身份"],
+    ["branch", "申报分行"],
+    ["durationText", "债券期限"],
+    ["issueScale", "发行规模"],
+    ["subjectRating", "主体评级"],
+    ["ratingAgency", "评级机构"],
+    ["hiddenRating", "隐含评级"],
+    ["inquiryLow", "询价下限"],
+    ["inquiryHigh", "询价上限"],
+    ["venue", "发行场所"],
+  ].forEach(([field, label]) => markAuto(field, label));
+
+  ["subjectRating", "ratingAgency", "hiddenRating"].forEach((field) => {
+    const warning = commonFieldMismatchWarning(projectValue, field);
+    if (warning) marks[field] = recognitionMark("attention", warning);
+  });
+
+  if (projectValue.sponsorStatus === "牵头") {
+    marks.leadUnderwriter = recognitionMark("attention", "牵头项目主承默认兴业银行，如需改写请补充");
+  } else {
+    markAuto("leadUnderwriter", "牵头主承销商");
+  }
+
+  if (valueHasContent(projectValue.offeringType)) {
+    marks.offeringType = recognitionMark("success", "发行方式已识别");
+  } else if (isExchangeProject(projectValue)) {
+    marks.offeringType = recognitionMark("attention", "交易所项目发行方式需确认");
+  }
+
+  if (isExchangeProject(projectValue)) {
+    marks.exchangeIssueNumber = Number.isInteger(numberOrNull(projectValue.exchangeIssueNumber))
+      ? recognitionMark("success", "交易所发行期次已识别")
+      : recognitionMark("attention", "交易所发行期次通常需要人工确认");
+  }
+
+  const count = inquiryVarietyCount(projectValue);
+  if (count > 1) {
+    ensureInquiryRangeCapacity(projectValue);
+    for (let index = 1; index < count; index += 1) {
+      const range = projectValue.inquiryRanges?.[index] || {};
+      marks[`inquiryRanges.${index}.low`] = Number.isFinite(numberOrNull(range.low))
+        ? recognitionMark("success", `${inquiryVarietyLabel(projectValue, index)}询价下限已识别`)
+        : recognitionMark("error", `${inquiryVarietyLabel(projectValue, index)}询价下限未识别，请补充`);
+      marks[`inquiryRanges.${index}.high`] = Number.isFinite(numberOrNull(range.high))
+        ? recognitionMark("success", `${inquiryVarietyLabel(projectValue, index)}询价上限已识别`)
+        : recognitionMark("error", `${inquiryVarietyLabel(projectValue, index)}询价上限未识别，请补充`);
+    }
+  }
+
+  if (!issuer) {
+    marks.issuerSelect = recognitionMark("attention", "未匹配主体资料，请选择或新增主体");
+  }
+  return marks;
+}
+
+function applyProjectRecognitionMarks() {
+  $$("[data-project-field]").forEach((input) => {
+    setRecognitionForInput(input, projectRecognitionMarks[input.dataset.projectField]);
+  });
+  $$("[data-inquiry-index][data-inquiry-bound]").forEach((input) => {
+    const key = `inquiryRanges.${input.dataset.inquiryIndex}.${input.dataset.inquiryBound}`;
+    setRecognitionForInput(input, projectRecognitionMarks[key]);
+  });
+  const issuerSelect = $("#issuerSelect");
+  if (issuerSelect) setRecognitionForInput(issuerSelect, projectRecognitionMarks.issuerSelect);
+}
+
+function commonFieldMismatchWarning(projectValue, field) {
+  const labels = {
+    subjectRating: "主体评级",
+    ratingAgency: "评级机构",
+    hiddenRating: "市场隐含评级",
+  };
+  const label = labels[field];
+  return (projectValue.warnings || []).find((warning) => label && warning.includes(`主体库要素${label}`)) || "";
 }
 
 function regenerate() {
@@ -851,6 +965,8 @@ function bindProtocolTransfer() {
   });
   $("#protocolTransferAmount").addEventListener("input", () => syncProtocolTransferAmountFields("amount"));
   $("#protocolTransferQuantity").addEventListener("input", () => syncProtocolTransferAmountFields("hands"));
+  $("#protocolTransferForm").addEventListener("input", (event) => clearRecognitionForInput(event.target));
+  $("#protocolTransferForm").addEventListener("change", (event) => clearRecognitionForInput(event.target));
   $("#protocolTransferDocxInput").addEventListener("change", parseProtocolTransferDocument);
   $("#protocolTransferList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-protocol-transfer-id]");
@@ -942,6 +1058,8 @@ function parseProtocolTransferInput() {
     return;
   }
   const parsed = parseProtocolTransferText(text);
+  protocolTransferRecognitionMarks = buildProtocolTransferRecognitionMarks(parsed, text);
+  protocolTransferRecognitionId = $("#protocolTransferId").value || parsed.id || "";
   fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
   showToast("已识别协议转让要素，请复核后保存。");
 }
@@ -986,6 +1104,8 @@ async function parseProtocolTransferDocument() {
     if (!text.trim()) throw new Error("未识别到文字，请换清晰图片/PDF或直接粘贴交易要素");
     $("#protocolTransferInput").value = text;
     const parsed = parseProtocolTransferText(text);
+    protocolTransferRecognitionMarks = buildProtocolTransferRecognitionMarks(parsed, text);
+    protocolTransferRecognitionId = $("#protocolTransferId").value || parsed.id || "";
     fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
     setProtocolTransferOcrStatus("识别完成，请复核字段后保存。");
     showToast("单据已识别，请复核后保存。");
@@ -1142,6 +1262,10 @@ function readProtocolTransferForm() {
 
 function fillProtocolTransferForm(input) {
   const record = normalizeProtocolTransfer(input);
+  if (protocolTransferRecognitionId && protocolTransferRecognitionId !== record.id) {
+    protocolTransferRecognitionMarks = {};
+    protocolTransferRecognitionId = "";
+  }
   selectedProtocolTransferId = record.id;
   $("#protocolTransferId").value = record.id;
   $("#protocolTransferCode").value = record.code;
@@ -1162,11 +1286,82 @@ function fillProtocolTransferForm(input) {
   if (record.rawText) $("#protocolTransferInput").value = record.rawText;
   $("#protocolTransferDeleteButton").hidden = !(state.protocolTransfers || []).some((item) => item.id === record.id);
   $("#protocolTransferStatusPill").textContent = protocolTransferStatus(record);
+  applyProtocolTransferRecognitionMarks(record);
   renderProtocolTransferList();
+}
+
+function buildProtocolTransferRecognitionMarks(record, rawText = "") {
+  const marks = {};
+  const text = String(rawText || "");
+  const tradeDateRecognized = protocolTextHasDate(text);
+  const markRequired = (field, label, sourceValue = record[field]) => {
+    marks[field] = valueHasContent(sourceValue)
+      ? recognitionMark("success", `${label}已识别`)
+      : recognitionMark("error", `${label}未识别，请补充`);
+  };
+
+  markRequired("code", "债券代码");
+  markRequired("shortName", "债券简称");
+  marks.tradeDate = valueHasContent(record.tradeDate)
+    ? tradeDateRecognized
+      ? recognitionMark("success", "交易日已识别")
+      : recognitionMark("attention", "交易日为系统默认，请复核")
+    : recognitionMark("error", "交易日未识别，请补充");
+  markRequired("buyer", "买入方/做市商");
+  markRequired("seller", "卖出方");
+  marks.finalBuyer = valueHasContent(record.finalBuyer)
+    ? recognitionMark("success", "最终买方已识别")
+    : recognitionMark("attention", "最终买方未识别，如为过桥交易请补充");
+  markRequired("price", "价格");
+  markRequired("amountTenThousand", "交易量（万元）");
+  markRequired("quantityHands", "交易量（手）");
+  marks.counterpartySealDate = valueHasContent(record.counterpartySealDate)
+    ? recognitionMark(tradeDateRecognized ? "success" : "attention", tradeDateRecognized ? "对手方用印日已按交易日推导" : "对手方用印日随默认交易日推导，请复核")
+    : recognitionMark("attention", "对手方用印日需补充");
+  marks.ownSealDate = valueHasContent(record.ownSealDate)
+    ? recognitionMark(tradeDateRecognized ? "success" : "attention", tradeDateRecognized ? "本方用印日已按交易日推导" : "本方用印日随默认交易日推导，请复核")
+    : recognitionMark("attention", "本方用印日需补充");
+  marks.remarks = valueHasContent(record.remarks)
+    ? recognitionMark("success", "备注已带入原始要素")
+    : recognitionMark("attention", "备注为空，必要时补充联系人或来源信息");
+  return marks;
+}
+
+function applyProtocolTransferRecognitionMarks(record) {
+  if (!protocolTransferRecognitionId || protocolTransferRecognitionId !== record.id) return;
+  Object.entries(protocolTransferInputIds()).forEach(([field, id]) => {
+    const input = $(`#${id}`);
+    if (input) setRecognitionForInput(input, protocolTransferRecognitionMarks[field]);
+  });
+}
+
+function protocolTransferInputIds() {
+  return {
+    code: "protocolTransferCode",
+    shortName: "protocolTransferShortName",
+    tradeDate: "protocolTransferTradeDate",
+    buyer: "protocolTransferBuyer",
+    seller: "protocolTransferSeller",
+    finalBuyer: "protocolTransferFinalBuyer",
+    price: "protocolTransferPrice",
+    amountTenThousand: "protocolTransferAmount",
+    quantityHands: "protocolTransferQuantity",
+    counterpartySealDate: "protocolTransferCounterpartySealDate",
+    ownSealDate: "protocolTransferOwnSealDate",
+    remarks: "protocolTransferRemarks",
+  };
+}
+
+function protocolTextHasDate(text = "") {
+  return /(20\d{2})\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}/.test(text)
+    || /(?:^|[^\d])\d{1,2}[./]\d{1,2}(?!\d)/.test(text)
+    || /\d{1,2}\s*月\s*\d{1,2}\s*日/.test(text);
 }
 
 function clearProtocolTransferForm(resetInput = true) {
   selectedProtocolTransferId = "";
+  protocolTransferRecognitionMarks = {};
+  protocolTransferRecognitionId = "";
   $("#protocolTransferForm").reset();
   $("#protocolTransferId").value = "";
   if (resetInput) $("#protocolTransferInput").value = "";
@@ -1446,10 +1641,16 @@ function projectMatchesDateFilter(projectValue, date) {
 function clearProjectForm() {
   $("#projectEmpty").hidden = false;
   $("#projectForm").hidden = true;
+  resultRecognitionMarks = {};
+  resultRecognitionProjectId = "";
 }
 
 function fillProjectForm(input) {
   const record = normalizeProjectRecord(input);
+  if (resultRecognitionProjectId && resultRecognitionProjectId !== record.id) {
+    resultRecognitionMarks = {};
+    resultRecognitionProjectId = "";
+  }
   $("#projectEmpty").hidden = true;
   $("#projectForm").hidden = false;
   closeResultEntryPanel();
@@ -1477,6 +1678,7 @@ function fillProjectForm(input) {
   updateProjectActionButtons(record.status);
   renderCutoffHint(record);
   renderTranches(record.tranches);
+  applyResultRecognitionMarks(record);
   renderProjectList();
 }
 
@@ -1680,6 +1882,129 @@ function renderTranches(tranches) {
       saveProjectDraftNow();
     });
   });
+}
+
+function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertisement) {
+  const marks = {};
+  const items = parsedAdvertisement?.items || [];
+  const tranches = afterProject.tranches || [];
+  tranches.forEach((tranche, index) => {
+    const item = matchAdvertisementItemForRecognition(tranche, index, items);
+    const base = `tranche.${index}`;
+    const hasCoupon = Number.isFinite(numberOrNull(item?.couponRate));
+    const hasIssueScale = Number.isFinite(numberOrNull(item?.issueScale));
+    const hasPaymentDate = valueHasContent(item?.paymentDate);
+    const hasStartDate = valueHasContent(item?.startDate);
+
+    marks[`${base}.resultStatus`] = tranche.resultStatus && tranche.resultStatus !== "待出结果"
+      ? recognitionMark("success", "截标结果已按票面和标位推算")
+      : recognitionMark("attention", "截标结果需要复核或补充标位");
+    marks[`${base}.winningRate`] = hasCoupon
+      ? recognitionMark("success", "票面/中标利率已识别")
+      : recognitionMark("error", "票面/中标利率未识别，请补充");
+    marks[`${base}.winningAmountWan`] = Number.isFinite(numberOrNull(tranche.winningAmountWan))
+      ? recognitionMark("success", "表内中标量已自动推算")
+      : recognitionMark("attention", "表内中标量需复核或补充投标标位");
+    marks[`${base}.pricingMode`] = valueHasContent(tranche.pricingMode)
+      ? recognitionMark("success", "综合定价状态已带入")
+      : recognitionMark("attention", "综合定价状态需确认");
+    if (tranche.pricingMode === "综合定价") {
+      marks[`${base}.pricingRate`] = Number.isFinite(numberOrNull(tranche.pricingRate))
+        ? recognitionMark("success", "综合定价价格已带入")
+        : recognitionMark("attention", "综合定价价格需补充");
+    }
+    if (Number.isFinite(numberOrNull(tranche.winningAmountWan)) && numberOrNull(tranche.winningAmountWan) > 0) {
+      marks[`${base}.revenueBp`] = Number.isFinite(numberOrNull(tranche.revenueBp))
+        ? recognitionMark("success", "营收已按 FTP 曲线计算")
+        : recognitionMark("attention", "营收未计算，请检查 FTP 曲线或期限");
+    }
+
+    marks[`${base}.securityCode`] = valueHasContent(item?.securityCode)
+      ? recognitionMark("success", "债券代码已识别")
+      : recognitionMark("attention", "债券代码未识别，必要时补充");
+    marks[`${base}.issueScale`] = hasIssueScale
+      ? recognitionMark("success", "发行规模已识别")
+      : recognitionMark("error", "发行规模未识别，请补充");
+    marks[`${base}.fullMarketMultiple`] = Number.isFinite(numberOrNull(item?.fullMarketMultiple))
+      ? recognitionMark("success", "全场倍数已识别")
+      : recognitionMark("attention", "全场倍数未披露或未识别");
+    if (Number.isFinite(numberOrNull(item?.marginalMultiple))) {
+      marks[`${base}.marginalMultiple`] = recognitionMark("success", "边际倍数已识别");
+    } else if (hasMarginalBidForRecognition(tranche)) {
+      marks[`${base}.marginalMultiple`] = recognitionMark("attention", "标位在边际上，未识别边际倍数时按全中处理，请复核");
+    }
+    marks[`${base}.startDate`] = hasStartDate
+      ? recognitionMark("success", "起息日期已识别")
+      : recognitionMark("attention", "起息日期未识别，必要时补充");
+    marks[`${base}.paymentDate`] = hasPaymentDate
+      ? recognitionMark("success", "缴款日期已识别")
+      : valueHasContent(tranche.paymentDate)
+        ? recognitionMark("attention", "缴款日期为系统推导，请复核")
+        : recognitionMark("error", "缴款日期未识别，请补充");
+    if (valueHasContent(item?.allocationNote)) {
+      marks[`${base}.allocationNote`] = recognitionMark("success", "回拨/结果备注已识别");
+    }
+
+    (tranche.outsourcedBids || []).forEach((outsourced, outsourcedIndex) => {
+      const outsourcedBase = `${base}.outsourced.${outsourcedIndex}`;
+      if (Number.isFinite(numberOrNull(outsourced.winningAmountWan))) {
+        marks[`${outsourcedBase}.winningAmountWan`] = recognitionMark("success", "委外中标量已自动推算");
+      } else if (Number.isFinite(numberOrNull(outsourced.bidRate)) && Number.isFinite(numberOrNull(outsourced.bidAmount))) {
+        marks[`${outsourcedBase}.winningAmountWan`] = recognitionMark("attention", "委外中标量需复核");
+      }
+      marks[`${outsourcedBase}.pricingMode`] = valueHasContent(outsourced.pricingMode)
+        ? recognitionMark("success", "委外综合定价状态已带入")
+        : recognitionMark("attention", "委外综合定价状态需确认");
+      if (outsourced.pricingMode === "综合定价") {
+        marks[`${outsourcedBase}.pricingRate`] = Number.isFinite(numberOrNull(outsourced.pricingRate))
+          ? recognitionMark("success", "委外综合定价价格已带入")
+          : recognitionMark("attention", "委外综合定价价格需补充");
+      }
+    });
+  });
+  return marks;
+}
+
+function applyResultRecognitionMarks(record) {
+  if (!resultRecognitionProjectId || resultRecognitionProjectId !== record.id) return;
+  $("#projectForm").querySelectorAll("[data-tranche-index]").forEach((card) => {
+    const index = Number(card.dataset.trancheIndex);
+    card.querySelectorAll("[data-tranche-field]").forEach((input) => {
+      const field = input.dataset.trancheField;
+      setRecognitionForInput(input, resultRecognitionMarks[`tranche.${index}.${field}`]);
+    });
+    card.querySelectorAll("[data-outsourced-result-index]").forEach((outsourcedCard) => {
+      const outsourcedIndex = Number(outsourcedCard.dataset.outsourcedResultIndex);
+      outsourcedCard.querySelectorAll("[data-outsourced-field]").forEach((input) => {
+        const field = input.dataset.outsourcedField;
+        setRecognitionForInput(input, resultRecognitionMarks[`tranche.${index}.outsourced.${outsourcedIndex}.${field}`]);
+      });
+    });
+  });
+}
+
+function matchAdvertisementItemForRecognition(tranche, index, items) {
+  const shortName = stripTrancheSuffixForRecognition(tranche.shortName);
+  return items.find((item) =>
+    item?.shortName
+    && (
+      item.shortName === tranche.shortName
+      || stripTrancheSuffixForRecognition(item.shortName) === shortName
+      || tranche.shortName?.includes(item.shortName)
+      || item.shortName?.includes(tranche.shortName)
+    )
+  ) || items[index] || {};
+}
+
+function stripTrancheSuffixForRecognition(value = "") {
+  return String(value || "").trim().replace(/((?:SCP|CP|MTN|PPN)\d{3})[A-Z]$/i, "$1");
+}
+
+function hasMarginalBidForRecognition(tranche) {
+  const coupon = numberOrNull(tranche.winningRate);
+  if (!Number.isFinite(coupon)) return false;
+  return (tranche.bidLevels || [])
+    .some((level) => Math.abs(numberOrNull(level.bidRate) - coupon) <= 0.000001);
 }
 
 function readProjectForm() {
@@ -2006,6 +2331,94 @@ function statusBadgeClass(status) {
   if (["未投标", "待投标", "已投标待结果"].includes(status)) return "warning";
   if (["未中标", "已结束"].includes(status)) return "muted";
   return "";
+}
+
+function recognitionMark(status, message) {
+  return { status, message };
+}
+
+function valueHasContent(value) {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (value === null || value === undefined) return false;
+  return String(value).trim() !== "";
+}
+
+function setRecognitionForInput(input, mark) {
+  if (!input) return;
+  const target = recognitionTargetForInput(input);
+  if (!target) return;
+  if (!mark?.status) {
+    delete target.dataset.recognitionStatus;
+    delete target.dataset.recognitionMessage;
+    if (target.dataset.recognitionTitle === "true") {
+      target.removeAttribute("title");
+      delete target.dataset.recognitionTitle;
+    }
+    return;
+  }
+  target.dataset.recognitionStatus = mark.status;
+  target.dataset.recognitionMessage = mark.message || "";
+  target.title = mark.message || "";
+  target.dataset.recognitionTitle = "true";
+}
+
+function recognitionTargetForInput(input) {
+  return input.closest("label") || input;
+}
+
+function clearRecognitionMarks(root = document) {
+  root.querySelectorAll("[data-recognition-status]").forEach((target) => {
+    delete target.dataset.recognitionStatus;
+    delete target.dataset.recognitionMessage;
+    if (target.dataset.recognitionTitle === "true") {
+      target.removeAttribute("title");
+      delete target.dataset.recognitionTitle;
+    }
+  });
+}
+
+function clearRecognitionForInput(target) {
+  const input = target?.closest?.("input, select, textarea");
+  if (!input) return;
+  const protocolField = protocolFieldForInput(input);
+  deleteRecognitionStateForInput(input);
+  setRecognitionForInput(input, null);
+  if (protocolField === "amountTenThousand") setRecognitionForInput($("#protocolTransferQuantity"), null);
+  if (protocolField === "quantityHands") setRecognitionForInput($("#protocolTransferAmount"), null);
+}
+
+function deleteRecognitionStateForInput(input) {
+  if (input.dataset.projectField) {
+    delete projectRecognitionMarks[input.dataset.projectField];
+    return;
+  }
+  if (input.dataset.inquiryIndex && input.dataset.inquiryBound) {
+    delete projectRecognitionMarks[`inquiryRanges.${input.dataset.inquiryIndex}.${input.dataset.inquiryBound}`];
+    return;
+  }
+  const trancheCard = input.closest("[data-tranche-index]");
+  if (trancheCard && input.dataset.trancheField) {
+    const key = `tranche.${trancheCard.dataset.trancheIndex}.${input.dataset.trancheField}`;
+    delete resultRecognitionMarks[key];
+    return;
+  }
+  const outsourcedResultCard = input.closest("[data-outsourced-result-index]");
+  if (trancheCard && outsourcedResultCard && input.dataset.outsourcedField) {
+    const key = `tranche.${trancheCard.dataset.trancheIndex}.outsourced.${outsourcedResultCard.dataset.outsourcedResultIndex}.${input.dataset.outsourcedField}`;
+    delete resultRecognitionMarks[key];
+    return;
+  }
+  const protocolField = protocolFieldForInput(input);
+  if (protocolField) {
+    delete protocolTransferRecognitionMarks[protocolField];
+    if (protocolField === "amountTenThousand") delete protocolTransferRecognitionMarks.quantityHands;
+    if (protocolField === "quantityHands") delete protocolTransferRecognitionMarks.amountTenThousand;
+  }
+}
+
+function protocolFieldForInput(input) {
+  const entry = Object.entries(protocolTransferInputIds()).find(([, id]) => input.id === id);
+  return entry?.[0] || "";
 }
 
 function localDate(value) {
