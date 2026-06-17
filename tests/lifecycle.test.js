@@ -351,6 +351,43 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(terse.items[0].couponRate, 1.76);
   assert.equal(terse.items[0].marginalMultiple, 1.05);
   assert.equal(terse.items[0].fullMarketMultiple, 1.75);
+
+  const bracketed = parseIssuanceAdvertisement(`【结果-26珠城轨MTN002-F102682259-万一团费】
+【规模】5亿元
+【期限】10年
+【利率】2.24%
+明日缴款，感谢支持~`, new Date("2026-06-17T09:00:00"));
+  assert.equal(bracketed.items.length, 1);
+  assert.equal(bracketed.items[0].shortName, "26珠城轨MTN002");
+  assert.equal(bracketed.items[0].securityCode, "F102682259");
+  assert.equal(bracketed.items[0].issueScale, 5);
+  assert.equal(bracketed.items[0].durationText, "10年");
+  assert.equal(bracketed.items[0].couponRate, 2.24);
+  assert.equal(bracketed.items[0].paymentDate, "2026-06-18");
+});
+
+test("applies bracketed result advertisements to update award status", () => {
+  const ad = `【结果-26珠城轨MTN002-F102682259-万一团费】
+【规模】5亿元
+【期限】10年
+【利率】2.24%
+明日缴款，感谢支持~`;
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26珠城轨MTN002",
+    tranches: [{
+      shortName: "26珠城轨MTN002",
+      durationText: "10Y",
+      bidLevels: [{ bidRate: 2.24, bidAmount: 1 }],
+      pricingMode: "综合定价",
+      pricingRate: 2.33,
+    }],
+  }), ad, new Date("2026-06-17T09:00:00"));
+  assert.equal(project.tranches[0].resultStatus, "中标");
+  assert.equal(project.tranches[0].winningRate, 2.24);
+  assert.equal(project.tranches[0].winningAmountWan, 10000);
+  assert.equal(project.tranches[0].securityCode, "F102682259");
+  assert.equal(project.tranches[0].issueScale, 5);
+  assert.equal(project.tranches[0].paymentDate, "2026-06-18");
 });
 
 test("applies advertisements and builds own and outsourced award report", () => {

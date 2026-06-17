@@ -324,7 +324,8 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
 
 export function parseIssuanceAdvertisement(text, referenceDate = new Date()) {
   const normalized = String(text || "").replace(/\r\n?/g, "\n").trim();
-  const headers = [...normalized.matchAll(/【([^】]+)】/g)];
+  const headers = [...normalized.matchAll(/【([^】]+)】/g)]
+    .filter((header) => isAdvertisementBlockHeader(header[1]));
   const items = [];
   if (headers.length) {
     headers.forEach((header, index) => {
@@ -335,6 +336,16 @@ export function parseIssuanceAdvertisement(text, referenceDate = new Date()) {
     items.push(parseAdvertisementBlock(normalized, "", referenceDate));
   }
   return { issuerName: parseIssuerName(normalized), items };
+}
+
+function isAdvertisementBlockHeader(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^(?:规模|发行规模|期限|债券期限|利率|票面|票面利率|全场|全场倍数|边际|边际倍数|起息|起息日期|缴款|缴款日期|代码|简称|简称代码)$/i.test(text)) {
+    return false;
+  }
+  return /^(?:发行结果|结果|截标通知|簿记结果)/.test(text)
+    || /^\d{2}\S+/.test(text);
 }
 
 function buildTranches(project) {
@@ -533,20 +544,22 @@ function durationMatchKey(value) {
 function parseAdvertisementBlock(block, headerText, referenceDate) {
   const headerParts = headerText.trim().split(/\s+/);
   const labeledShortName = block.match(/简称(?:代码)?[：:\s]*([^\s（(，,]+)/)?.[1] || "";
-  const bodyShortName = block.match(/(?:【发行结果】\s*)?([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1] || "";
+  const bodyShortName = extractAdvertisementShortName(headerText, block);
   const shortName = headerParts.find((part) => /^\d{2}\S+/.test(part)) || labeledShortName || bodyShortName;
-  const securityCode = headerParts.find((part) => /^\d{6,9}(?:\.[A-Z]{2})?$/.test(part))
+  const securityCode = headerParts.find((part) => /^[A-Z]?\d{6,9}(?:\.[A-Z]{2})?$/.test(part))
+    || extractAdvertisementSecurityCode(headerText)
     || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
-    || block.match(/代码[：:]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
+    || block.match(/代码[：:]\s*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || "";
-  const issueScale = numberFrom(block, /(?:发行)?规模[：:，,\s]*(\d+(?:\.\d+)?)\s*亿/)
+  const issueScale = numberFrom(block, /(?:发行)?规模[】：:，,\s]*(\d+(?:\.\d+)?)\s*亿/)
     ?? numberFrom(block, /(?:^|[，,\s])(\d+(?:\.\d+)?)\s*亿(?:元)?(?=[，,\s]|$)/);
   const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/)
     ?? numberFrom(block, /全场[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
-  const couponRate = numberFrom(block, /(?:票面利率|票面)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
-    ?? numberFrom(block, /(?:边际利率|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
-  const durationText = block.match(/(?:债券)?期限[：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:规模|发行规模|票面|全场倍数|缴款|$))/)?.[1]?.trim()
+  const couponRate = numberFrom(block, /(?:票面利率|票面)[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
+    ?? numberFrom(block, /(?:边际利率|边际)[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
+    ?? numberFrom(block, /(?:^|[\n【\s])利率[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
+  const durationText = block.match(/(?:债券)?期限[】：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:【|规模|发行规模|票面|利率|全场倍数|缴款|$))/)?.[1]?.trim()
     || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
     || "";
   const allocationNote = block.includes("全部回拨") ? block.match(/全部回拨至[^\n，,]*/)?.[0] || "全部回拨" : "";
@@ -562,6 +575,19 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     startDate: parseLabeledDate(block, "起息", referenceDate),
     allocationNote,
   };
+}
+
+function extractAdvertisementShortName(headerText, block) {
+  const source = `${headerText}\n${block}`;
+  const explicit = source.match(/(?:简称(?:代码)?|债券简称)[：:\s]*([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1];
+  if (explicit) return explicit;
+  const resultHeader = headerText.match(/(?:结果|发行结果|截标通知)[-_：:\s]*([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1];
+  if (resultHeader) return resultHeader;
+  return source.match(/([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1] || "";
+}
+
+function extractAdvertisementSecurityCode(headerText) {
+  return headerText.match(/(?:^|[-_\s])([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=$|[-_\s])/i)?.[1] || "";
 }
 
 function applyAutoAward(tranche, project = {}) {
