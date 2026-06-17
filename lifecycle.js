@@ -624,7 +624,9 @@ function applyAutoAward(tranche, project = {}) {
 
 function estimateOwnWinningAmountWan(tranche) {
   const levels = ownBidLevels(tranche);
-  if (!levels.length) return null;
+  if (!levels.length) {
+    return tranche.resultStatus === "待出结果" && Number.isFinite(numberOrNull(tranche.winningRate)) ? 0 : null;
+  }
   const estimates = levels.map((level) =>
     estimateWinningAmountWan(level.bidRate, level.bidAmount, tranche.winningRate, tranche.marginalMultiple),
   );

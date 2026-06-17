@@ -546,6 +546,32 @@ test("defaults same-rate bids to full allocation when no marginal multiple is di
   assert.equal(project.tranches[0].resultStatus, "中标");
 });
 
+test("treats empty own bid levels as zero allocation after results arrive", () => {
+  const ad = `【结果-26晋经01-282977.SH】
+【规模】2.5亿元
+【期限】3+2年
+【利率】1.98%
+【缴款】6月22日`;
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26晋经01",
+    resultConfirmed: true,
+    tranches: [{
+      shortName: "26晋经01",
+      durationText: "3+2年",
+      bidLevels: [{ bidRate: null, bidAmount: null }],
+      outsourcedBids: [{ managerName: "华耀证券资管", bidRate: 1.9, bidAmount: 0.2 }],
+      pricingMode: "综合定价",
+      pricingRate: 2,
+    }],
+  }), ad, new Date("2026-06-17T09:00:00"));
+
+  assert.equal(project.tranches[0].resultStatus, "未中标");
+  assert.equal(project.tranches[0].winningAmountWan, 0);
+  assert.equal(project.tranches[0].outsourcedBids[0].winningAmountWan, 2000);
+  assert.equal(project.tranches[0].paymentDate, "2026-06-22");
+  assert.equal(deriveProjectStatus(project, new Date("2026-06-17T09:00:00")), "待缴款");
+});
+
 test("normalizes positive winning amount as won when result status is still pending", () => {
   const project = normalizeProjectRecord({
     shortName: "26测试SCP001",
