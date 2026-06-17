@@ -33,7 +33,7 @@ test("builds Resend mail content with brief and opinion template", () => {
     ],
   }, { date: today });
 
-  assert.equal(report.subject, "流程意见26测试MTN001");
+  assert.equal(report.subject, "流程意见260611");
   assert.match(report.text, /^1\. 26测试MTN001/m);
   assert.match(report.text, /项目简表：\n26测试MTN001 非我行主承 上海分行/);
   assert.match(report.text, /流程意见：\n上海分行申请与资金营运中心一二级联动投资测试债券。/);

@@ -115,7 +115,7 @@ export async function buildReportFromDb(env, options = {}) {
 export function buildTodayMail(state, options = {}) {
   const date = normalizeDate(options.date) || localDate(options.now || new Date(), options.timeZone || DEFAULT_TIME_ZONE);
   const projects = selectTodayBidProjects(state.projects || [], date);
-  const subject = buildSubject(projects);
+  const subject = buildSubject(date);
   const text = buildTextMail(projects);
   const html = buildHtmlMail(projects, date);
   return {
@@ -144,10 +144,14 @@ export function selectTodayBidProjects(projects = [], date) {
     );
 }
 
-function buildSubject(projects) {
-  if (!projects.length) return "流程意见今日无待投标";
-  const first = projects[0].shortName || "待投标项目";
-  return projects.length === 1 ? `流程意见${first}` : `流程意见${first}等${projects.length}笔`;
+function buildSubject(date) {
+  return `流程意见${formatSubjectDate(date)}`;
+}
+
+function formatSubjectDate(date) {
+  const match = String(date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  return `${match[1].slice(2)}${match[2]}${match[3]}`;
 }
 
 function buildTextMail(projects) {
