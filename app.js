@@ -73,6 +73,7 @@ const BLANK_BRIEF_TEMPLATE = `【债券简称】 非我行主承 【分行】分
 【债券简称】 市场估值约【估值】
 如需综合定价，指导价约【指导价】`;
 const BRIEF_PLACEHOLDER_PATTERN = /【([^】]+)】/g;
+const ANY_PLACEHOLDER_PATTERN = /【[^】\r\n]{1,60}】/g;
 const BRIEF_PLACEHOLDER_LABELS = new Set([
   "债券简称",
   "分行",
@@ -148,6 +149,7 @@ if (location.hostname.endsWith(".pages.dev")) {
 initialize();
 
 async function initialize() {
+  bindPlaceholderSelection();
   bindNavigation();
   bindGenerator();
   bindLedger();
@@ -177,6 +179,11 @@ function switchView(viewName) {
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   if (button) $("#pageTitle").textContent = button.textContent;
+}
+
+function bindPlaceholderSelection() {
+  document.addEventListener("mousedown", selectAnyPlaceholderOnMouseDown);
+  document.addEventListener("dblclick", selectAnyPlaceholderOnDoubleClick);
 }
 
 function bindGenerator() {
@@ -513,10 +520,12 @@ function handleBriefTemplateKeydown(event) {
 
 function selectBriefPlaceholderOnMouseDown(event) {
   if (event.button !== 0 || event.detail !== 2) return;
-  const placeholder = findBriefPlaceholderAtSelection(event.currentTarget);
-  if (!placeholder) return;
-  event.preventDefault();
-  selectBriefPlaceholderRange(event.currentTarget, placeholder);
+  const input = event.currentTarget;
+  if (!briefPlaceholderMatches(input.value).length) return;
+  requestAnimationFrame(() => {
+    const placeholder = findBriefPlaceholderAtSelection(input);
+    if (placeholder) selectBriefPlaceholderRange(input, placeholder);
+  });
 }
 
 function selectBriefPlaceholderOnDoubleClick(event) {
@@ -545,12 +554,63 @@ function briefPlaceholderMatches(value) {
   return matches;
 }
 
-function selectBriefPlaceholderRange(input, placeholder) {
+function anyPlaceholderMatches(value) {
+  ANY_PLACEHOLDER_PATTERN.lastIndex = 0;
+  const matches = [...String(value || "").matchAll(ANY_PLACEHOLDER_PATTERN)];
+  ANY_PLACEHOLDER_PATTERN.lastIndex = 0;
+  return matches;
+}
+
+function selectableTextControl(target) {
+  const input = target?.closest?.("textarea,input");
+  if (!input) return null;
+  if (input instanceof HTMLTextAreaElement) return input;
+  if (!(input instanceof HTMLInputElement)) return null;
+  const selectableTypes = new Set(["", "text", "search", "url", "tel", "email", "password"]);
+  if (!selectableTypes.has(input.type)) return null;
+  return input;
+}
+
+function selectAnyPlaceholderOnMouseDown(event) {
+  if (event.button !== 0 || event.detail !== 2) return;
+  const input = selectableTextControl(event.target);
+  if (!input) return;
+  if (!anyPlaceholderMatches(input.value).length) return;
+  requestAnimationFrame(() => {
+    const placeholder = findAnyPlaceholderAtSelection(input);
+    if (placeholder) selectPlaceholderRange(input, placeholder);
+  });
+}
+
+function selectAnyPlaceholderOnDoubleClick(event) {
+  const input = selectableTextControl(event.target);
+  if (!input) return;
+  const placeholder = findAnyPlaceholderAtSelection(input);
+  if (!placeholder) return;
+  event.preventDefault();
+  selectPlaceholderRange(input, placeholder);
+}
+
+function findAnyPlaceholderAtSelection(input) {
+  const selectionStart = Math.min(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+  const selectionEnd = Math.max(input.selectionStart ?? 0, input.selectionEnd ?? 0);
+  return anyPlaceholderMatches(input.value).find((match) => {
+    const start = match.index;
+    const end = start + match[0].length;
+    return selectionStart >= start && selectionStart <= end && selectionEnd >= start && selectionEnd <= end;
+  }) || null;
+}
+
+function selectPlaceholderRange(input, placeholder) {
   const start = placeholder.index;
   const end = start + placeholder[0].length;
   input.focus();
   input.setSelectionRange(start, end);
   requestAnimationFrame(() => input.setSelectionRange(start, end));
+}
+
+function selectBriefPlaceholderRange(input, placeholder) {
+  selectPlaceholderRange(input, placeholder);
 }
 
 function selectBidRateOnDoubleClick(event) {
