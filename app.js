@@ -373,6 +373,7 @@ function bindLedger() {
   });
   $("#markUnbidButton").addEventListener("click", () => setProjectActionStatus("未投标"));
   $("#markBidButton").addEventListener("click", () => setProjectActionStatus("已投标待结果"));
+  $("#terminateProjectButton").addEventListener("click", () => setProjectActionStatus("已结束"));
   $("#openResultButton").addEventListener("click", () => openResultEntryPanel());
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
   $("#resultEntryPanel").addEventListener("click", (event) => {
@@ -2194,19 +2195,27 @@ function saveProjectRecordNow(record) {
 function setProjectActionStatus(status) {
   const draft = readProjectForm();
   draft.status = status;
-  draft.resultConfirmed = status !== "未投标" && status !== "已投标待结果" ? draft.resultConfirmed : false;
+  if (["未投标", "已投标待结果", "已结束"].includes(status)) {
+    draft.resultConfirmed = false;
+  }
   saveProjectRecordNow(draft);
-  if (status === "未投标" || status === "已投标待结果") {
+  if (["未投标", "已投标待结果", "已结束"].includes(status)) {
     closeResultEntryPanel();
     setResultEntryFieldsVisible(false);
   }
-  showToast(status === "未投标" ? "项目已撤回为未投标。" : "项目已确认投标，等待发行结果。");
+  const messages = {
+    未投标: "项目已撤回为未投标。",
+    已投标待结果: "项目已确认投标，等待发行结果。",
+    已结束: "项目已终止，不再进入待投标流程。",
+  };
+  showToast(messages[status] || "项目状态已更新。");
 }
 
 function updateProjectActionButtons(status) {
-  const resultStatuses = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款", "已结束"]);
+  const resultStatuses = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款"]);
   const hasResult = resultStatuses.has(status);
   $("#markUnbidButton").disabled = status === "未投标" || hasResult;
+  $("#terminateProjectButton").disabled = status !== "未投标";
   $("#markBidButton").disabled = status !== "未投标";
   $("#openResultButton").disabled = status === "未投标" || status === "已结束";
 }
