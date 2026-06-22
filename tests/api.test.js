@@ -47,6 +47,9 @@ test("accepts and preserves project ledger records", async () => {
           issuers: [],
           projects: [{ id: "p1", shortName: "26测试01" }],
           protocolTransfers: [{ id: "t1", code: "281926.SH", shortName: "26光交01" }],
+          secondaryInventoryPositions: [{ id: "s1", code: "280680.SH", shortName: "25联投17", quantityWan: 5000 }],
+          secondaryOrders: [{ id: "o1", code: "280680.SH", shortName: "25联投17", side: "offer", quantityWan: 2000 }],
+          secondaryTrades: [{ id: "f1", code: "280680.SH", shortName: "25联投17", side: "sell", quantityWan: 1000 }],
           ftpCurve: { y1: 1.5 },
         },
       }),
@@ -55,5 +58,8 @@ test("accepts and preserves project ledger records", async () => {
   assert.equal(response.status, 200);
   assert.equal(saved.projects[0].shortName, "26测试01");
   assert.equal(saved.protocolTransfers[0].code, "281926.SH");
+  assert.equal(saved.secondaryInventoryPositions[0].quantityWan, 5000);
+  assert.equal(saved.secondaryOrders[0].side, "offer");
+  assert.equal(saved.secondaryTrades[0].side, "sell");
   assert.equal(saved.ftpCurve.y1, 1.5);
 });

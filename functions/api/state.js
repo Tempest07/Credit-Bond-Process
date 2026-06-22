@@ -69,11 +69,20 @@ function validateState(data) {
   if ((data.projects || []).length > 10000) throw new Error("项目数量不能超过10000");
   if (data.protocolTransfers !== undefined && !Array.isArray(data.protocolTransfers)) throw new Error("协议转让台账必须为 protocolTransfers 数组");
   if ((data.protocolTransfers || []).length > 10000) throw new Error("协议转让记录数量不能超过10000");
+  if (data.secondaryInventoryPositions !== undefined && !Array.isArray(data.secondaryInventoryPositions)) throw new Error("二级库存快照必须为 secondaryInventoryPositions 数组");
+  if ((data.secondaryInventoryPositions || []).length > 20000) throw new Error("二级库存快照数量不能超过20000");
+  if (data.secondaryOrders !== undefined && !Array.isArray(data.secondaryOrders)) throw new Error("二级挂单必须为 secondaryOrders 数组");
+  if ((data.secondaryOrders || []).length > 20000) throw new Error("二级挂单数量不能超过20000");
+  if (data.secondaryTrades !== undefined && !Array.isArray(data.secondaryTrades)) throw new Error("二级成交流水必须为 secondaryTrades 数组");
+  if ((data.secondaryTrades || []).length > 20000) throw new Error("二级成交流水数量不能超过20000");
   return {
     version: 3,
     issuers: data.issuers,
     projects: data.projects || [],
     protocolTransfers: data.protocolTransfers || [],
+    secondaryInventoryPositions: data.secondaryInventoryPositions || [],
+    secondaryOrders: data.secondaryOrders || [],
+    secondaryTrades: data.secondaryTrades || [],
     ftpCurve: data.ftpCurve || {},
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };

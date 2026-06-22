@@ -50,6 +50,25 @@ import {
   removeProtocolTransfer,
   upsertProtocolTransfer,
 } from "./protocol-transfer.js?v=20260617-dynamic-inquiry-ranges";
+import {
+  applyCodeMappingText,
+  buildPrimaryAwardTrades,
+  calculateShadowInventory,
+  formatAmountWan,
+  markSecondaryOrderStatus,
+  normalizeSecondaryInventoryPositions,
+  normalizeSecondaryOrders,
+  normalizeSecondaryTrades,
+  parseInventorySnapshotText,
+  parseSecondaryOrderText,
+  parseSecondaryTradeText,
+  pendingCodeTrades,
+  positionKey,
+  secondaryDashboardCounts,
+  upsertInventoryPositions,
+  upsertSecondaryOrders,
+  upsertSecondaryTrades,
+} from "./secondary-inventory.js?v=20260617-dynamic-inquiry-ranges";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -155,6 +174,7 @@ async function initialize() {
   bindGenerator();
   bindLedger();
   bindProtocolTransfer();
+  bindSecondaryInventory();
   bindQuickIssuer();
   bindBatch();
   bindDatabase();
@@ -164,6 +184,7 @@ async function initialize() {
   renderIssuerList();
   renderProjectWorkspace();
   renderProtocolTransferWorkspace();
+  renderSecondaryInventoryWorkspace();
   renderFtpCurveForm();
   clearIssuerForm();
   await loadCloudState();
@@ -1502,6 +1523,235 @@ function completeProtocolTransferStep(id, step) {
   persistState();
   renderProtocolTransferWorkspace();
   showToast(`${next.shortName || next.code} 已完成：${step === "counterparty" ? "对手方用印" : step === "own" ? "本方用印" : "递交上交所"}`);
+}
+
+function bindSecondaryInventory() {
+  if (!$("#secondaryInput")) return;
+  $("#secondarySnapshotDate").value = localDate(new Date());
+  $("#secondaryImportSnapshotButton").addEventListener("click", importSecondarySnapshot);
+  $("#secondaryParseOrdersButton").addEventListener("click", importSecondaryOrders);
+  $("#secondaryParseTradesButton").addEventListener("click", importSecondaryTrades);
+  $("#secondarySyncPrimaryButton").addEventListener("click", syncPrimaryAwardsToSecondaryInventory);
+  $("#secondaryApplyCodesButton").addEventListener("click", applySecondaryCodeMappings);
+  $("#secondaryOrderList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-secondary-order-action]");
+    if (!button) return;
+    updateSecondaryOrderStatus(button.dataset.secondaryOrderId, button.dataset.secondaryOrderAction);
+  });
+}
+
+function renderSecondaryInventoryWorkspace() {
+  if (!$("#secondaryInput")) return;
+  renderSecondaryDashboard();
+  renderSecondaryOrders();
+  renderSecondaryInventory();
+  renderSecondaryPendingCodes();
+  renderSecondaryTrades();
+}
+
+function renderSecondaryDashboard() {
+  const counts = secondaryDashboardCounts(state);
+  $("#secondaryPositionCount").textContent = counts.positions;
+  $("#secondaryOfferCount").textContent = counts.activeOffers;
+  $("#secondaryWarningCount").textContent = counts.warnings;
+  $("#secondaryPendingCodeCount").textContent = counts.pendingCodes;
+}
+
+function renderSecondaryOrders() {
+  const inventoryRows = new Map(calculateShadowInventory(state).map((row) => [positionKey(row), row]));
+  const orders = normalizeSecondaryOrders(state.secondaryOrders || [])
+    .filter((order) => ["active", "partial"].includes(order.status))
+    .slice(0, 80);
+  $("#secondaryOrderList").innerHTML = orders.length
+    ? orders.map((order) => {
+        const row = inventoryRows.get(positionKey(order));
+        const remaining = Math.max(0, order.quantityWan - order.filledWan);
+        const risk = order.side === "offer" && row && row.availableWan < 0 ? row.warning : "";
+        return `
+          <article class="secondary-card ${risk ? "warning" : ""}">
+            <div class="secondary-card-head">
+              <strong>${escapeHtml(order.shortName || order.code || "未命名挂单")}</strong>
+              <span class="status-badge ${order.side === "offer" ? "warning" : ""}">${order.side === "offer" ? "挂卖" : "挂买"}</span>
+            </div>
+            <div class="secondary-meta">
+              <span>${escapeHtml(order.account)}</span>
+              <span>${escapeHtml(order.code || "代码待补")}</span>
+              <span>${escapeHtml(formatAmountWan(remaining))}</span>
+              <span>${escapeHtml(order.price ? `净价${order.price}` : order.yieldRate ? `${formatNumber(order.yieldRate)}%` : "价格待补")}</span>
+              ${risk ? `<span>${escapeHtml(risk)}</span>` : ""}
+            </div>
+            <div class="secondary-card-actions">
+              <button class="button subtle" type="button" data-secondary-order-id="${escapeAttribute(order.id)}" data-secondary-order-action="filled">成交</button>
+              <button class="button subtle" type="button" data-secondary-order-id="${escapeAttribute(order.id)}" data-secondary-order-action="cancelled">撤单</button>
+              <button class="button subtle" type="button" data-secondary-order-id="${escapeAttribute(order.id)}" data-secondary-order-action="expired">过期</button>
+            </div>
+          </article>
+        `;
+      }).join("")
+    : '<div class="empty">暂无有效挂单。粘贴每日 list 后点“解析为挂单”。</div>';
+}
+
+function renderSecondaryInventory() {
+  const rows = calculateShadowInventory(state);
+  $("#secondaryInventoryList").innerHTML = rows.length
+    ? rows.map((row) => `
+        <article class="secondary-card ${row.availableWan < 0 ? "warning" : row.unsettledSellWan > 0 ? "attention" : ""}">
+          <div class="secondary-card-head">
+            <strong>${escapeHtml(row.shortName || row.code || "未命名库存")}</strong>
+            <span class="status-badge ${row.availableWan < 0 ? "warning" : ""}">${escapeHtml(formatAmountWan(row.availableWan))}可卖</span>
+          </div>
+          <div class="secondary-meta">
+            <span>${escapeHtml(row.account)}</span>
+            <span>${escapeHtml(row.code || "代码待补")}</span>
+            <span>快照 ${escapeHtml(row.snapshotDate || "无")}: ${escapeHtml(formatAmountWan(row.snapshotQuantityWan))}</span>
+            <span>已卖 ${escapeHtml(formatAmountWan(row.soldWan))}</span>
+            <span>挂卖 ${escapeHtml(formatAmountWan(row.activeOfferWan))}</span>
+            ${row.pendingBuyWan ? `<span>未交割买入 ${escapeHtml(formatAmountWan(row.pendingBuyWan))}</span>` : ""}
+            ${row.warning ? `<span>${escapeHtml(row.warning)}</span>` : ""}
+          </div>
+        </article>
+      `).join("")
+    : '<div class="empty">暂无库存。请先导入内网余额台账快照。</div>';
+}
+
+function renderSecondaryPendingCodes() {
+  const trades = pendingCodeTrades(state);
+  $("#secondaryPendingCodeList").innerHTML = trades.length
+    ? trades.map((trade) => `
+        <article class="secondary-card attention">
+          <div class="secondary-card-head">
+            <strong>${escapeHtml(trade.shortName || "简称待补")}</strong>
+            <span class="status-badge warning">待补代码</span>
+          </div>
+          <div class="secondary-meta">
+            <span>${escapeHtml(trade.account)}</span>
+            <span>${escapeHtml(formatAmountWan(trade.quantityWan))}</span>
+            <span>${escapeHtml(trade.sourceType === "primary_award" ? "一级中标入库" : "手工流水")}</span>
+            <span>交割 ${escapeHtml(trade.settlementDate)}</span>
+          </div>
+        </article>
+      `).join("")
+    : '<div class="empty">暂无待补代码记录。</div>';
+}
+
+function renderSecondaryTrades() {
+  const trades = normalizeSecondaryTrades(state.secondaryTrades || []).slice(0, 120);
+  $("#secondaryTradeList").innerHTML = trades.length
+    ? trades.map((trade) => `
+        <article class="secondary-card ${trade.codeStatus === "pending" ? "attention" : ""}">
+          <div class="secondary-card-head">
+            <strong>${escapeHtml(trade.shortName || trade.code || "未命名流水")}</strong>
+            <span class="status-badge ${trade.side === "sell" ? "warning" : ""}">${trade.side === "sell" ? "卖出" : "买入"}</span>
+          </div>
+          <div class="secondary-meta">
+            <span>${escapeHtml(trade.account)}</span>
+            <span>${escapeHtml(trade.code || "代码待补")}</span>
+            <span>${escapeHtml(formatAmountWan(trade.quantityWan))}</span>
+            <span>谈判 ${escapeHtml(trade.negotiationDate)}</span>
+            <span>交易 ${escapeHtml(trade.tradeDate)}+${escapeHtml(trade.settlementSpeed)}</span>
+            <span>交割 ${escapeHtml(trade.settlementDate)}</span>
+            ${trade.sourceType === "primary_award" ? "<span>一级中标</span>" : ""}
+          </div>
+        </article>
+      `).join("")
+    : '<div class="empty">暂无成交流水。成交后粘贴要素并点“录入成交”。</div>';
+}
+
+function importSecondarySnapshot() {
+  const text = $("#secondaryInput").value;
+  const positions = parseInventorySnapshotText(text, { snapshotDate: $("#secondarySnapshotDate").value });
+  if (!positions.length) {
+    showToast("没有识别到库存快照。请确认包含代码/简称和持仓面额。");
+    return;
+  }
+  state = upsertInventoryPositions(state, positions);
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(`已导入 ${positions.length} 条库存快照，以实际库存为准。`);
+}
+
+function importSecondaryOrders() {
+  const orders = parseSecondaryOrderText($("#secondaryInput").value);
+  if (!orders.length) {
+    showToast("没有识别到挂单。请确认包含代码/简称、方向和数量。");
+    return;
+  }
+  state = upsertSecondaryOrders(state, orders);
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(`已加入 ${orders.length} 条二级挂单。`);
+}
+
+function importSecondaryTrades() {
+  const trades = parseSecondaryTradeText($("#secondaryInput").value);
+  if (!trades.length) {
+    showToast("没有识别到成交流水。请确认包含代码/简称、数量和买卖方向。");
+    return;
+  }
+  state = upsertSecondaryTrades(state, trades);
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(`已录入 ${trades.length} 条成交流水，卖出已锁定影子库存。`);
+}
+
+function syncPrimaryAwardsToSecondaryInventory() {
+  const trades = buildPrimaryAwardTrades(state.projects || [], state.secondaryTrades || []);
+  if (!trades.length) {
+    showToast("没有新的一级中标可同步，或已同步过。");
+    return;
+  }
+  state = upsertSecondaryTrades(state, trades);
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(`已同步 ${trades.length} 条一级中标入库草稿，缺代码的已进入待补代码池。`);
+}
+
+function applySecondaryCodeMappings() {
+  const result = applyCodeMappingText(state, $("#secondaryInput").value);
+  if (!result.updatedCount) {
+    showToast("没有匹配到可补全的代码。请粘贴“简称 + 代码”格式文本。");
+    return;
+  }
+  state = result.state;
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(`已补全 ${result.updatedCount} 条待代码库存。`);
+}
+
+function updateSecondaryOrderStatus(id, status) {
+  const orders = normalizeSecondaryOrders(state.secondaryOrders || []);
+  const order = orders.find((item) => item.id === id);
+  if (!order) return;
+  const today = localDate(new Date());
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextState = {
+    ...state,
+    secondaryOrders: orders.map((item) => item.id === id ? markSecondaryOrderStatus(item, status, item.quantityWan) : item),
+    updatedAt: new Date().toISOString(),
+  };
+  const remaining = Math.max(0, order.quantityWan - order.filledWan);
+  state = status === "filled" && remaining > 0
+    ? upsertSecondaryTrades(nextState, [{
+        side: order.side === "offer" ? "sell" : "buy",
+        account: order.account,
+        code: order.code,
+        shortName: order.shortName,
+        quantityWan: remaining,
+        price: order.price,
+        yieldRate: order.yieldRate,
+        negotiationDate: today,
+        tradeDate: today,
+        settlementSpeed: 1,
+        settlementDate: localDate(tomorrow),
+        sourceType: "order_fill",
+        codeStatus: order.code ? "confirmed" : "pending",
+        sourceText: order.sourceText || "",
+      }])
+    : nextState;
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(status === "filled" ? "挂单已成交并生成二级流水，影子库存已锁定。" : "挂单状态已更新。");
 }
 
 async function exportProtocolTransferLedger() {
@@ -3541,6 +3791,7 @@ async function loadCloudState() {
   renderFtpCurveForm();
   renderProjectWorkspace();
   renderProtocolTransferWorkspace();
+  renderSecondaryInventoryWorkspace();
   if (batchItems.length) renderBatchResults();
 }
 
@@ -3613,6 +3864,9 @@ function normalizeLoadedState(value) {
     ftpCurve: normalizeFtpCurve(value.ftpCurve),
     projects: (value.projects || []).map(normalizeProjectRecord),
     protocolTransfers: normalizeProtocolTransfers(value.protocolTransfers || []),
+    secondaryInventoryPositions: normalizeSecondaryInventoryPositions(value.secondaryInventoryPositions || []),
+    secondaryOrders: normalizeSecondaryOrders(value.secondaryOrders || []),
+    secondaryTrades: normalizeSecondaryTrades(value.secondaryTrades || []),
   };
 }
 

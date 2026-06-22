@@ -3,6 +3,9 @@ export const DEFAULT_STATE = {
   issuers: [],
   projects: [],
   protocolTransfers: [],
+  secondaryInventoryPositions: [],
+  secondaryOrders: [],
+  secondaryTrades: [],
   ftpCurve: {
     m3: null,
     m4: null,
