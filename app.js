@@ -158,6 +158,7 @@ const LEDGER_FILTER_LABELS = {
   paymentToday: "今日缴款",
 };
 const LEDGER_FILTER_SELECT_VALUES = new Set(["all", "toBid", "awaitingResult", "won", "notWon"]);
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -3743,7 +3744,7 @@ function bindDataActions() {
 }
 
 async function loadCloudState() {
-  if (!getApiToken()) {
+  if (!getApiToken() && !isLocalApiMode()) {
     cloudAvailable = false;
     setSyncStatus("未连接 D1", "请先设置云端口令");
     setCloudGate(true, {
@@ -3753,11 +3754,11 @@ async function loadCloudState() {
     });
     return;
   }
-  setSyncStatus("正在连接", "尝试读取 Cloudflare D1");
+  setSyncStatus("正在连接", isLocalApiMode() ? "尝试读取本地 D1" : "尝试读取 Cloudflare D1");
   setCloudGate(true, {
     state: "connecting",
-    title: "正在连接 Cloudflare D1",
-    detail: "正在校验口令并读取云端资料库。",
+    title: isLocalApiMode() ? "正在连接本地 D1" : "正在连接 Cloudflare D1",
+    detail: isLocalApiMode() ? "正在读取本地开发数据库。" : "正在校验口令并读取云端资料库。",
   });
   try {
     const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
@@ -3769,21 +3770,21 @@ async function loadCloudState() {
     }
     cloudAvailable = true;
     persistLocal();
-    setSyncStatus("D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(isLocalApiMode() ? "本地 D1 已连接" : "D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
     setCloudGate(true, {
       state: "success",
-      title: "D1 连接成功",
+      title: isLocalApiMode() ? "本地 D1 连接成功" : "D1 连接成功",
       detail: `已载入 ${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目。`,
     });
     window.setTimeout(() => setCloudGate(false, { state: "success" }), 850);
     if (shouldMigrateFtpCurve) await saveCloudState();
   } catch {
     cloudAvailable = false;
-    setSyncStatus("D1 未连接", "请检查口令或重新连接");
+    setSyncStatus(isLocalApiMode() ? "本地 D1 未连接" : "D1 未连接", isLocalApiMode() ? "请确认本地 wrangler 正在运行" : "请检查口令或重新连接");
     setCloudGate(true, {
       state: "error",
-      title: "D1 连接失败",
-      detail: "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。",
+      title: isLocalApiMode() ? "本地 D1 连接失败" : "D1 连接失败",
+      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : "D1 暂时无法连接。请点击右上角“设置云端口令”重新输入口令。",
     });
   }
   renderIssuerOptions();
@@ -3797,7 +3798,7 @@ async function loadCloudState() {
 
 async function saveCloudState() {
   persistLocal();
-  if (!getApiToken()) {
+  if (!getApiToken() && !isLocalApiMode()) {
     setSyncStatus("未连接 D1", "请先设置云端口令");
     setCloudGate(true, {
       state: "idle",
@@ -3814,7 +3815,7 @@ async function saveCloudState() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     cloudAvailable = true;
-    setSyncStatus("D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(isLocalApiMode() ? "本地 D1 已同步" : "D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
     setCloudGate(false, { state: "success" });
     return true;
   } catch {
@@ -3924,7 +3925,12 @@ function getApiToken() {
 }
 
 function authHeaders() {
+  if (isLocalApiMode() && !getApiToken()) return {};
   return { Authorization: `Bearer ${getApiToken()}` };
+}
+
+function isLocalApiMode() {
+  return LOCAL_HOSTS.has(location.hostname);
 }
 
 function showToast(message) {

@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare:local": "node tools/prepare-local-dev.mjs",
+    "dev:local": "npm run prepare:local && npx --yes wrangler@latest pages dev . --port 8788 --persist-to .wrangler/state --show-interactive-dev-session=false",
     "test": "node --test"
   }
 }

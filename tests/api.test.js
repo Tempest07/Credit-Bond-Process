@@ -11,6 +11,25 @@ test("requires APP_PASSWORD to be configured", async () => {
   assert.equal(response.status, 503);
 });
 
+test("allows local D1 access without APP_PASSWORD", async () => {
+  const DB = {
+    prepare(sql) {
+      return {
+        async run() {},
+        async first() {
+          if (sql.includes("SELECT data")) return null;
+          return null;
+        },
+      };
+    },
+  };
+  const response = await onRequestGet({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state"),
+  });
+  assert.equal(response.status, 200);
+});
+
 test("rejects an incorrect API password", async () => {
   const response = await onRequestPut({
     env: { APP_PASSWORD: "correct" },

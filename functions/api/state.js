@@ -89,11 +89,17 @@ function validateState(data) {
 }
 
 function authorize(context) {
+  if (isLocalRequest(context.request)) return null;
   const password = context.env.APP_PASSWORD;
   if (!password) return json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503);
   const authorization = context.request.headers.get("Authorization") || "";
   if (authorization !== `Bearer ${password}`) return json({ error: "Unauthorized" }, 401);
   return null;
+}
+
+function isLocalRequest(request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function apiHeaders() {
