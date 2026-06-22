@@ -162,7 +162,7 @@ const LEDGER_FILTER_SELECT_VALUES = new Set(["all", "toBid", "awaitingResult", "
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-if (location.hostname.endsWith(".pages.dev")) {
+if (location.hostname === "credit-bond-process.pages.dev") {
   location.replace(`https://tempest07.com/bond-centre/${location.search}${location.hash}`);
 }
 
