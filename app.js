@@ -120,6 +120,7 @@ let pendingHistoryImport = null;
 let batchItems = [];
 let selectedProjectId = "";
 let selectedProtocolTransferId = "";
+let protocolTransferEditMode = false;
 let ledgerFilter = "all";
 let projectAutoSaveTimer = null;
 let projectRecognitionMarks = {};
@@ -1020,6 +1021,7 @@ function bindProtocolTransfer() {
   $("#protocolTransferExportButton").addEventListener("click", exportProtocolTransferLedger);
   $("#protocolTransferSearch").addEventListener("input", renderProtocolTransferList);
   $("#protocolTransferDateFilter").addEventListener("change", renderProtocolTransferList);
+  $("#protocolTransferInput").addEventListener("input", prepareProtocolTransferInputDraft);
   $("#protocolTransferTodayFilterButton").addEventListener("click", () => {
     $("#protocolTransferDateFilter").value = localDate(new Date());
     renderProtocolTransferList();
@@ -1033,6 +1035,7 @@ function bindProtocolTransfer() {
     const button = event.target.closest("[data-protocol-transfer-id]");
     if (!button) return;
     selectedProtocolTransferId = button.dataset.protocolTransferId;
+    protocolTransferEditMode = true;
     renderProtocolTransferWorkspace();
   });
   $("#protocolTransferTodoList").addEventListener("click", (event) => {
@@ -1057,6 +1060,32 @@ function renderProtocolTransferWorkspace() {
   renderProtocolTransferList();
   if (selected) fillProtocolTransferForm(selected);
   else if (!$("#protocolTransferId").value) clearProtocolTransferForm(false);
+  updateProtocolTransferModeControls();
+}
+
+function protocolTransferRecordExists(id) {
+  return Boolean(id && (state.protocolTransfers || []).some((item) => item.id === id));
+}
+
+function protocolTransferParseTargetId() {
+  const currentId = $("#protocolTransferId").value;
+  if (protocolTransferEditMode && protocolTransferRecordExists(currentId)) return currentId;
+  if (!protocolTransferEditMode && currentId && !protocolTransferRecordExists(currentId)) return currentId;
+  return "";
+}
+
+function prepareProtocolTransferInputDraft() {
+  if (protocolTransferEditMode) return;
+  const currentId = $("#protocolTransferId").value;
+  if (!protocolTransferRecordExists(currentId) && !protocolTransferRecordExists(selectedProtocolTransferId)) return;
+  clearProtocolTransferForm(false);
+}
+
+function updateProtocolTransferModeControls() {
+  const button = $("#protocolTransferParseButton");
+  if (!button) return;
+  const editingExisting = protocolTransferEditMode && protocolTransferRecordExists($("#protocolTransferId").value);
+  button.textContent = editingExisting ? "识别并更新当前记录" : "识别为新记录";
 }
 
 function renderProtocolTransferTodos() {
@@ -1119,10 +1148,12 @@ function parseProtocolTransferInput() {
     return;
   }
   const parsed = parseProtocolTransferText(text);
+  const targetId = protocolTransferParseTargetId();
+  const next = { ...parsed, id: targetId || parsed.id };
   protocolTransferRecognitionMarks = buildProtocolTransferRecognitionMarks(parsed, text);
-  protocolTransferRecognitionId = $("#protocolTransferId").value || parsed.id || "";
-  fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
-  showToast("已识别协议转让要素，请复核后保存。");
+  protocolTransferRecognitionId = next.id || "";
+  fillProtocolTransferForm(next);
+  showToast(targetId ? "已识别并填入当前协议转让记录，请复核后保存。" : "已识别为新的协议转让记录，请复核后保存。");
 }
 
 function formatProtocolPrice(value) {
@@ -1165,11 +1196,13 @@ async function parseProtocolTransferDocument() {
     if (!text.trim()) throw new Error("未识别到文字，请换清晰图片/PDF或直接粘贴交易要素");
     $("#protocolTransferInput").value = text;
     const parsed = parseProtocolTransferText(text);
+    const targetId = protocolTransferParseTargetId();
+    const next = { ...parsed, id: targetId || parsed.id };
     protocolTransferRecognitionMarks = buildProtocolTransferRecognitionMarks(parsed, text);
-    protocolTransferRecognitionId = $("#protocolTransferId").value || parsed.id || "";
-    fillProtocolTransferForm({ ...parsed, id: $("#protocolTransferId").value || parsed.id });
+    protocolTransferRecognitionId = next.id || "";
+    fillProtocolTransferForm(next);
     setProtocolTransferOcrStatus("识别完成，请复核字段后保存。");
-    showToast("单据已识别，请复核后保存。");
+    showToast(targetId ? "单据已识别并填入当前记录，请复核后保存。" : "单据已识别为新记录，请复核后保存。");
   } catch (error) {
     setProtocolTransferOcrStatus(`识别失败：${error.message || "未知错误"}`, true);
     showToast(`单据识别失败：${error.message || "未知错误"}`);
@@ -1349,6 +1382,7 @@ function fillProtocolTransferForm(input) {
   $("#protocolTransferStatusPill").textContent = protocolTransferStatus(record);
   applyProtocolTransferRecognitionMarks(record);
   renderProtocolTransferList();
+  updateProtocolTransferModeControls();
 }
 
 function buildProtocolTransferRecognitionMarks(record, rawText = "") {
@@ -1421,6 +1455,7 @@ function protocolTextHasDate(text = "") {
 
 function clearProtocolTransferForm(resetInput = true) {
   selectedProtocolTransferId = "";
+  protocolTransferEditMode = false;
   protocolTransferRecognitionMarks = {};
   protocolTransferRecognitionId = "";
   $("#protocolTransferForm").reset();
@@ -1429,6 +1464,7 @@ function clearProtocolTransferForm(resetInput = true) {
   $("#protocolTransferDeleteButton").hidden = true;
   $("#protocolTransferStatusPill").textContent = "待录入";
   renderProtocolTransferList();
+  updateProtocolTransferModeControls();
 }
 
 function saveProtocolTransferFromForm() {
@@ -1439,6 +1475,7 @@ function saveProtocolTransferFromForm() {
   }
   state = upsertProtocolTransfer(state, record);
   selectedProtocolTransferId = record.id;
+  protocolTransferEditMode = false;
   persistState();
   renderProtocolTransferWorkspace();
   showToast("协议转让记录已保存，并纳入台账导出。");
