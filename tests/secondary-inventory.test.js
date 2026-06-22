@@ -5,6 +5,7 @@ import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
   calculateShadowInventory,
+  parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
   parseSecondaryTradeText,
@@ -27,6 +28,26 @@ test("parses inventory snapshots and daily offer lists", () => {
   assert.equal(orders[0].side, "offer");
   assert.equal(orders[0].quantityWan, 2000);
   assert.equal(orders[0].price, "100.99");
+});
+
+test("parses internal balance ledger xlsx rows", () => {
+  const rows = [
+    ["机构名称", "联动分行", "会计分类", "交易组合", "表内/委外", "债券代码", "债券标准代码", "债券简称", "票面利率", "名义本金", "投组信息", "数据业务日期"],
+    ["资金营运中心", "南京分行", "AFS", "表内", "表内", "012681333.IB", "012681333", "26苏国信SCP003", 0.0128, 50000000, "BK_BD_AS_SDR", new Date("2026-06-22T00:00:00+08:00")],
+    ["资金营运中心", "三明分行", "RECEIVABLE", "表内", "表内", "102501628.IB", "102501628", "25三明城投MTN001", 0.028, 80000000, "BK_BD_RC_THR", new Date("2026-06-22T00:00:00+08:00")],
+    ["资金营运中心", "", "TRADING", "表内", "表内", "", "SH265871", "G环农2A3", 0.024, 12000000, "BK_BD_AS_TX", "2026-06-22"],
+  ];
+  const positions = parseInventoryLedgerRows(rows);
+
+  assert.equal(positions.length, 3);
+  assert.equal(positions[0].account, "SDR");
+  assert.equal(positions[0].quantityWan, 5000);
+  assert.equal(positions[0].snapshotDate, "2026-06-22");
+  assert.equal(positions[1].account, "THR");
+  assert.equal(positions[1].quantityWan, 8000);
+  assert.equal(positions[2].account, "TX");
+  assert.equal(positions[2].code, "265871.SH");
+  assert.equal(positions[2].quantityWan, 1200);
 });
 
 test("subtracts unsettled sells from available inventory after a real snapshot", () => {

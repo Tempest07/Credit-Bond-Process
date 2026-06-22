@@ -59,6 +59,7 @@ import {
   normalizeSecondaryInventoryPositions,
   normalizeSecondaryOrders,
   normalizeSecondaryTrades,
+  parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
   parseSecondaryTradeText,
@@ -1530,6 +1531,8 @@ function bindSecondaryInventory() {
   if (!$("#secondaryInput")) return;
   $("#secondarySnapshotDate").value = localDate(new Date());
   $("#secondaryImportSnapshotButton").addEventListener("click", importSecondarySnapshot);
+  $("#secondaryUploadSnapshotButton").addEventListener("click", () => $("#secondarySnapshotFileInput").click());
+  $("#secondarySnapshotFileInput").addEventListener("change", importSecondarySnapshotFile);
   $("#secondaryParseOrdersButton").addEventListener("click", importSecondaryOrders);
   $("#secondaryParseTradesButton").addEventListener("click", importSecondaryTrades);
   $("#secondarySyncPrimaryButton").addEventListener("click", syncPrimaryAwardsToSecondaryInventory);
@@ -1669,6 +1672,36 @@ function importSecondarySnapshot() {
   persistState();
   renderSecondaryInventoryWorkspace();
   showToast(`已导入 ${positions.length} 条库存快照，以实际库存为准。`);
+}
+
+async function importSecondarySnapshotFile() {
+  const input = $("#secondarySnapshotFileInput");
+  const file = input.files?.[0];
+  if (!file) return;
+  const button = $("#secondaryUploadSnapshotButton");
+  if (button) button.disabled = true;
+  try {
+    await ensureExcelJsReady();
+    const workbook = new window.ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const sheet = workbook.worksheets[0];
+    if (!sheet) throw new Error("余额台账没有可读取的工作表");
+    const rows = [];
+    sheet.eachRow({ includeEmpty: false }, (row) => {
+      rows.push(row.values.slice(1).map((value) => value?.result ?? value?.text ?? value));
+    });
+    const positions = parseInventoryLedgerRows(rows, { snapshotDate: $("#secondarySnapshotDate").value });
+    if (!positions.length) throw new Error("未识别到债券代码、简称和名义本金列");
+    state = upsertInventoryPositions(state, positions);
+    persistState();
+    renderSecondaryInventoryWorkspace();
+    showToast(`已从 ${file.name} 导入 ${positions.length} 条余额台账库存。`);
+  } catch (error) {
+    showToast(error.message || "余额台账导入失败。");
+  } finally {
+    input.value = "";
+    if (button) button.disabled = false;
+  }
 }
 
 function importSecondaryOrders() {

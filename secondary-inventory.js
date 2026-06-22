@@ -94,6 +94,50 @@ export function parseInventorySnapshotText(text = "", options = {}) {
     .filter(Boolean);
 }
 
+export function parseInventoryLedgerRows(rows = [], options = {}) {
+  const matrix = Array.isArray(rows)
+    ? rows.map((row) => Array.isArray(row) ? row.map(cellText) : [])
+    : [];
+  const headerIndex = matrix.findIndex((row) =>
+    headerColumn(row, ["债券代码"]) >= 0
+    && headerColumn(row, ["债券简称"]) >= 0
+    && headerColumn(row, ["名义本金", "本金", "持仓面额"]) >= 0
+  );
+  if (headerIndex < 0) return [];
+
+  const headers = matrix[headerIndex];
+  const codeIndex = headerColumn(headers, ["债券代码", "代码"]);
+  const standardCodeIndex = headerColumn(headers, ["债券标准代码", "标准代码"]);
+  const shortNameIndex = headerColumn(headers, ["债券简称", "简称"]);
+  const principalIndex = headerColumn(headers, ["名义本金", "本金", "持仓面额"]);
+  const accountingIndex = headerColumn(headers, ["会计分类"]);
+  const portfolioIndex = headerColumn(headers, ["投组信息", "投资组合", "组合"]);
+  const branchIndex = headerColumn(headers, ["联动分行", "分行"]);
+  const businessDateIndex = headerColumn(headers, ["数据业务日期", "业务日期", "报表日期"]);
+  const fallbackDate = normalizeDate(options.snapshotDate) || localDate(new Date());
+
+  return matrix.slice(headerIndex + 1)
+    .map((row) => {
+      const principal = numberOrNull(row[principalIndex]);
+      const quantityWan = principalToWan(principal);
+      const code = normalizeSecurityCode(row[codeIndex] || row[standardCodeIndex]);
+      const shortName = String(row[shortNameIndex] || "").trim();
+      if ((!code && !shortName) || !Number.isFinite(quantityWan) || quantityWan <= 0) return null;
+      const accounting = String(row[accountingIndex] || "").trim();
+      const portfolioInfo = String(row[portfolioIndex] || "").trim();
+      const branch = String(row[branchIndex] || "").trim();
+      return normalizeInventoryPosition({
+        account: mapLedgerAccount(portfolioInfo, accounting),
+        code,
+        shortName,
+        quantityWan,
+        snapshotDate: normalizeDate(row[businessDateIndex]) || fallbackDate,
+        sourceText: [branch, accounting, portfolioInfo, code || shortName, quantityWan].filter(Boolean).join(" "),
+      });
+    })
+    .filter(Boolean);
+}
+
 export function parseSecondaryOrderText(text = "", options = {}) {
   return String(text || "")
     .split(/\r?\n/)
@@ -425,6 +469,42 @@ function normalizeLine(value = "") {
     .trim();
 }
 
+function cellText(value) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return localDate(value);
+  if (typeof value === "object") {
+    if (value.text) return String(value.text).trim();
+    if (value.result !== undefined) return cellText(value.result);
+    if (Array.isArray(value.richText)) return value.richText.map((item) => item.text || "").join("").trim();
+    if (value.hyperlink && value.text) return String(value.text).trim();
+  }
+  return String(value).trim();
+}
+
+function headerColumn(headers = [], names = []) {
+  return headers.findIndex((header) => {
+    const value = String(header || "").replace(/\s+/g, "");
+    return names.some((name) => value === name || value.includes(name));
+  });
+}
+
+function principalToWan(value) {
+  const number = numberOrNull(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.abs(number) >= 1000000 ? round(number / 10000, 4) : round(number, 4);
+}
+
+function mapLedgerAccount(portfolioInfo = "", accounting = "") {
+  const text = `${portfolioInfo} ${accounting}`.toUpperCase();
+  if (/\bTHR\b|BK_BD_RC_THR/.test(text)) return "THR";
+  if (/\bTX\b|BK_BD_AS_TX/.test(text)) return "TX";
+  if (/\bSDR\b|BK_BD_AS_SDR/.test(text)) return "SDR";
+  if (/RECEIVABLE/.test(text)) return "THR";
+  if (/TRADING/.test(text)) return "TX";
+  if (/AFS/.test(text)) return "SDR";
+  return DEFAULT_ACCOUNT;
+}
+
 function extractAccount(line = "") {
   for (const [alias, account] of ACCOUNT_ALIASES.entries()) {
     if (new RegExp(`(^|\\s)${escapeRegExp(alias)}($|\\s)`, "i").test(line)) return account;
@@ -446,6 +526,8 @@ function extractSecurityCode(line = "") {
 function normalizeSecurityCode(value = "") {
   const text = String(value || "").trim().toUpperCase();
   if (!text) return "";
+  const prefixed = text.match(/^(IB|SH|SZ)(\d{6,9})$/i);
+  if (prefixed) return `${prefixed[2]}.${prefixed[1].toUpperCase()}`;
   const match = text.match(/^(\d{6,9})(?:\.(IB|SH|SZ))?$/i);
   if (!match) return text;
   if (match[2]) return `${match[1]}.${match[2].toUpperCase()}`;
