@@ -1580,8 +1580,8 @@ function renderSecondaryOrders() {
             <div class="secondary-meta">
               <span>${escapeHtml(order.account)}</span>
               <span>${escapeHtml(order.code || "代码待补")}</span>
-              <span>${escapeHtml(formatAmountWan(remaining))}</span>
-              <span>${escapeHtml(order.price ? `净价${order.price}` : order.yieldRate ? `${formatNumber(order.yieldRate)}%` : "价格待补")}</span>
+              <span>${escapeHtml(remaining > 0 ? formatAmountWan(remaining) : "数量待定")}</span>
+              <span>${escapeHtml(order.price ? formatSecondaryOrderPrice(order.price) : order.yieldRate ? `${formatNumber(order.yieldRate)}%` : "价格待补")}</span>
               ${risk ? `<span>${escapeHtml(risk)}</span>` : ""}
             </div>
             <div class="secondary-card-actions">
@@ -1593,6 +1593,11 @@ function renderSecondaryOrders() {
         `;
       }).join("")
     : '<div class="empty">暂无有效挂单。粘贴每日 list 后点“解析为挂单”。</div>';
+}
+
+function formatSecondaryOrderPrice(price) {
+  const text = String(price || "").trim();
+  return Number.isFinite(Number(text)) ? `净价${text}` : text;
 }
 
 function renderSecondaryInventory() {

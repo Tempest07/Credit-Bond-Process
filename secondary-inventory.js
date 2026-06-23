@@ -238,7 +238,7 @@ export function calculateShadowInventory(state = {}, options = {}) {
 
   for (const position of positions) {
     const key = positionKey(position);
-    rows.set(key, baseInventoryRow(position));
+    rows.set(key, baseInventoryRow(position, position.quantityWan));
   }
 
   for (const trade of trades) {
@@ -351,7 +351,8 @@ function parseSecondaryOrderLine(rawLine, options = {}) {
   const shortName = extractShortName(line, code);
   const quantityWan = extractAmountWan(line);
   if (!code && !shortName) return null;
-  if (!Number.isFinite(quantityWan)) return null;
+  const hasOrderMarker = /(?:ofr|offer|bid|\bb\b|挂卖|挂买|卖出|买入|收|净价|估值)/i.test(line);
+  if (!Number.isFinite(quantityWan) && !hasOrderMarker) return null;
   const side = /(?:bid|买|收|挂B|挂b|\bb\b)/i.test(line) && !/(?:offer|ofr|卖|出给|挂卖)/i.test(line)
     ? "bid"
     : "offer";
@@ -361,7 +362,7 @@ function parseSecondaryOrderLine(rawLine, options = {}) {
     account: extractAccount(line) || options.account || DEFAULT_ACCOUNT,
     code,
     shortName,
-    quantityWan,
+    quantityWan: Number.isFinite(quantityWan) ? quantityWan : 0,
     price: extractPrice(line),
     yieldRate: rate,
     status: "active",
@@ -417,14 +418,14 @@ function latestInventoryPositions(positions = []) {
   return [...latest.values()];
 }
 
-function baseInventoryRow(input = {}) {
+function baseInventoryRow(input = {}, snapshotQuantityWan = 0) {
   return {
     key: positionKey(input),
     account: normalizeAccount(input.account),
     code: normalizeSecurityCode(input.code),
     shortName: String(input.shortName || "").trim(),
     snapshotDate: input.snapshotDate || "",
-    snapshotQuantityWan: numberOrNull(input.quantityWan) ?? 0,
+    snapshotQuantityWan: numberOrNull(snapshotQuantityWan) ?? 0,
     settledBuyWan: 0,
     pendingBuyWan: 0,
     soldWan: 0,
@@ -570,6 +571,10 @@ function amountToWan(value, unit = "") {
 }
 
 function extractPrice(line = "") {
+  const valuation = line.match(/估值\s*[-+]?\s*\d*(?:\.\d+)?/i)?.[0]?.replace(/\s+/g, "");
+  if (valuation) return valuation;
+  const labeledNet = line.match(/(?:净价|全价|价格|price)\s*[:：]?\s*(\d{2,3}(?:\.\d+)?(?:\/\d{2,3}(?:\.\d+)?)?)/i)?.[1];
+  if (labeledNet && Number(labeledNet.split("/").at(-1)) >= 50) return labeledNet.includes("/") ? labeledNet.split("/").at(-1) : labeledNet;
   const matches = [...line.matchAll(/(?:净价|全价|价格|price)?\s*[:：]?\s*(\d{2,3}(?:\.\d+)?(?:\/\d{2,3}(?:\.\d+)?)?)(?=\s|$)/gi)];
   for (const match of matches) {
     const net = match[1];
@@ -579,9 +584,22 @@ function extractPrice(line = "") {
 }
 
 function extractYieldRate(line = "") {
-  const match = line.match(/(?:收益率|收益|YTM|ytm)?\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?(?=\s|$)/);
-  const value = match ? Number(match[1]) : null;
-  return Number.isFinite(value) && value > 0 && value < 20 ? value : null;
+  if (/估值\s*[-+]\s*\d+(?:\.\d+)?\s*\*?\s*(?:ofr|offer|bid|\bb\b)/i.test(line)) return null;
+  const marked = line.match(/(\d+(?:\.\d+)?)\s*%?\s*\*?\s*(?:ofr|offer|bid|\bb\b)/i)?.[1];
+  if (marked) {
+    const value = Number(marked);
+    if (Number.isFinite(value) && value > 0 && value < 20) return value;
+  }
+  const explicit = line.match(/(?:收益率|收益|YTM|ytm)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?/i)?.[1];
+  if (explicit) {
+    const value = Number(explicit);
+    if (Number.isFinite(value) && value > 0 && value < 20) return value;
+  }
+  for (const match of line.matchAll(/(?:^|\s)(\d+(?:\.\d+)?)\s*%?(?=\s|$)/g)) {
+    const value = Number(match[1]);
+    if (Number.isFinite(value) && value > 0 && value < 20) return value;
+  }
+  return null;
 }
 
 function normalizePrice(value = "") {

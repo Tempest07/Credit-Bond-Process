@@ -50,6 +50,29 @@ test("parses internal balance ledger xlsx rows", () => {
   assert.equal(positions[2].quantityWan, 1200);
 });
 
+test("parses regional OFR quote lists with optional amount", () => {
+  const orders = parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr
+012681284.IB，26陕西金控SCP003，3000，净价100*ofr
+24广越04，OFR估值
+25广越03，OFR净价100
+24华阳新材MTN010B，估值-2*ofr`);
+
+  assert.equal(orders.length, 5);
+  assert.equal(orders[0].code, "281640.SH");
+  assert.equal(orders[0].shortName, "26西轨03");
+  assert.equal(orders[0].quantityWan, 0);
+  assert.equal(orders[0].yieldRate, 1.93);
+  assert.equal(orders[1].quantityWan, 3000);
+  assert.equal(orders[1].price, "100");
+  assert.equal(orders[2].shortName, "24广越04");
+  assert.equal(orders[2].price, "估值");
+  assert.equal(orders[3].price, "100");
+  assert.equal(orders[4].price, "估值-2");
+  assert.equal(orders[4].yieldRate, null);
+});
+
 test("subtracts unsettled sells from available inventory after a real snapshot", () => {
   let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
   state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 280680.SH 25联投17 余额5000万", {
@@ -96,6 +119,26 @@ test("warns when active offers exceed inventory after confirmed sells", () => {
   const row = calculateShadowInventory(state, { asOfDate: "2026-06-18" })[0];
   assert.equal(row.availableWan, -500);
   assert.match(row.warning, /可能卖空\s*500万/);
+});
+
+test("does not treat order quantity as available inventory", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryOrders(state, parseSecondaryOrderText("102681284.IB 26陕西金控SCP003 3000 净价100*ofr"));
+
+  const rowWithoutSnapshot = calculateShadowInventory(state, { asOfDate: "2026-06-23" })[0];
+  assert.equal(rowWithoutSnapshot.snapshotQuantityWan, 0);
+  assert.equal(rowWithoutSnapshot.activeOfferWan, 3000);
+  assert.equal(rowWithoutSnapshot.availableWan, -3000);
+  assert.match(rowWithoutSnapshot.warning, /可能卖空\s*3000万/);
+
+  state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 102681284.IB 26陕西金控SCP003 余额1000万", {
+    snapshotDate: "2026-06-23",
+  }));
+  const rowWithSnapshot = calculateShadowInventory(state, { asOfDate: "2026-06-23" })[0];
+  assert.equal(rowWithSnapshot.snapshotQuantityWan, 1000);
+  assert.equal(rowWithSnapshot.activeOfferWan, 3000);
+  assert.equal(rowWithSnapshot.availableWan, -2000);
+  assert.match(rowWithSnapshot.warning, /可能卖空\s*2000万/);
 });
 
 test("creates primary award inventory drafts and lets code mapping fill missing codes", () => {
