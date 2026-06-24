@@ -419,7 +419,7 @@ test("applies advertisements and builds own and outsourced award report", () => 
   assert.equal(project.tranches[0].paymentDate, "2026-06-11");
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标1.2亿，综合定价至1.48%，营收3.5BP\n委外一号委外中标5000万，未综`,
+    `${ad}\n\n表内中标1.2亿，综合定价至1.48%，营收4BP\n委外一号委外中标5000万，未综`,
   );
 });
 
@@ -458,7 +458,7 @@ test("auto-calculates winning amounts from bid positions and marginal multiple",
   assert.equal(project.tranches[0].outsourcedBids[1].winningAmountWan, 0);
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标1.2亿，未综，营收90.36BP\n委外一号委外中标1亿，未综`,
+    `${ad}\n\n表内中标1.2亿，未综，营收90BP\n委外一号委外中标1亿，未综`,
   );
 });
 
@@ -514,7 +514,7 @@ test("maps single base-name result to dual-tranche duration and infers payment d
   assert.equal(deriveProjectStatus({ ...project, resultConfirmed: true }, new Date("2026-06-11T09:00:00")), "待缴款");
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标1.5亿，综合定价至1.85%，营收-7.16BP`,
+    `${ad}\n\n表内中标1.5亿，综合定价至1.85%，营收-7BP`,
   );
 });
 
