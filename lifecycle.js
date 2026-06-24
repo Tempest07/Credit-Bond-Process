@@ -847,7 +847,10 @@ function formatPricing(mode, rate) {
 }
 
 function formatBp(value) {
-  return Number.isFinite(numberOrNull(value)) ? `${formatNumber(value)}BP` : "【待补】BP";
+  const bp = numberOrNull(value);
+  if (!Number.isFinite(bp)) return "【待补】BP";
+  const rounded = bp < 0 ? -Math.round(Math.abs(bp)) : Math.round(bp);
+  return `${rounded}BP`;
 }
 
 function formatWanAmount(value) {
