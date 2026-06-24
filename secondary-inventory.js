@@ -9,6 +9,8 @@ const ACCOUNT_ALIASES = new Map([
 const DEFAULT_ACCOUNT = "SDR";
 const SECURITY_CODE_PATTERN = /\b(\d{6,9})(?:\.(IB|SH|SZ))?\b/i;
 const SHORT_NAME_PATTERN = /\b(\d{2}[\u4e00-\u9fa5A-Za-z0-9]+?(?:SCP|CP|MTN|PPN|PRN|ABN|ABS)?[A-Za-z]?\d{0,3}(?:\/\d{2}[\u4e00-\u9fa5A-Za-z0-9]+?(?:SCP|CP|MTN|PPN|PRN|ABN|ABS)?[A-Za-z]?\d{0,3})?)\b/i;
+const SECONDARY_TRADE_STAGES = new Set(["negotiated", "front_office_done", "ledgered", "sent"]);
+const SECONDARY_TRADE_CATEGORIES = new Set(["protocol", "non_protocol", "primary_award"]);
 
 export function normalizeSecondaryInventoryPositions(input = []) {
   return Array.isArray(input) ? input.map(normalizeInventoryPosition).filter((item) => item.code || item.shortName) : [];
@@ -61,6 +63,10 @@ export function normalizeSecondaryTrade(input = {}) {
   const tradeDate = normalizeDate(input.tradeDate) || localDate(new Date());
   const settlementSpeed = normalizeSettlementSpeed(input.settlementSpeed);
   const settlementDate = normalizeDate(input.settlementDate) || inferSettlementDate(tradeDate, settlementSpeed);
+  const ledgerSentAt = String(input.ledgerSentAt || "").trim();
+  const frontOfficeDone = Boolean(input.frontOfficeDone)
+    || Boolean(String(input.frontOfficeAt || "").trim())
+    || ["front_office_done", "ledgered", "sent"].includes(input.tradeStage);
   return {
     id: input.id || crypto.randomUUID(),
     side: ["buy", "sell"].includes(input.side) ? input.side : "sell",
@@ -79,6 +85,15 @@ export function normalizeSecondaryTrade(input = {}) {
     sourceType: String(input.sourceType || "manual").trim(),
     sourceProjectId: String(input.sourceProjectId || "").trim(),
     sourceTrancheId: String(input.sourceTrancheId || "").trim(),
+    orderId: String(input.orderId || "").trim(),
+    protocolTransferId: String(input.protocolTransferId || "").trim(),
+    tradeCategory: normalizeSecondaryTradeCategory(input.tradeCategory, input.sourceType, input.code),
+    tradeStage: normalizeSecondaryTradeStage(input.tradeStage, frontOfficeDone, ledgerSentAt),
+    frontOfficeDone,
+    frontOfficePrice: normalizePrice(input.frontOfficePrice ?? (frontOfficeDone ? input.price : "")),
+    frontOfficeAt: String(input.frontOfficeAt || "").trim(),
+    ledgerDate: normalizeDate(input.ledgerDate) || tradeDate,
+    ledgerSentAt,
     codeStatus: input.codeStatus === "pending" || !normalizeSecurityCode(input.code) ? "pending" : "confirmed",
     sourceText: String(input.sourceText || "").trim(),
     createdAt: input.createdAt || now,
@@ -196,6 +211,30 @@ export function markSecondaryOrderStatus(order, status, filledWan = null) {
   });
 }
 
+export function markSecondaryTradeFrontOffice(trade, input = {}) {
+  const now = String(input.frontOfficeAt || input.now || new Date().toISOString());
+  const tradeDate = normalizeDate(input.tradeDate) || trade.tradeDate;
+  return normalizeSecondaryTrade({
+    ...trade,
+    tradeDate,
+    frontOfficeDone: true,
+    frontOfficePrice: normalizePrice(input.frontOfficePrice ?? trade.frontOfficePrice ?? trade.price),
+    frontOfficeAt: now,
+    ledgerDate: normalizeDate(input.ledgerDate) || tradeDate,
+    tradeStage: "front_office_done",
+    updatedAt: now,
+  });
+}
+
+export function markSecondaryTradesLedgerSent(trades = [], ids = [], sentAt = new Date().toISOString()) {
+  const selectedIds = new Set(ids);
+  return normalizeSecondaryTrades(trades).map((trade) =>
+    selectedIds.has(trade.id)
+      ? normalizeSecondaryTrade({ ...trade, ledgerSentAt: sentAt, tradeStage: "sent", updatedAt: sentAt })
+      : trade,
+  );
+}
+
 export function buildPrimaryAwardTrades(projects = [], existingTrades = []) {
   const existingKeys = new Set(existingTrades.map(primaryAwardKey).filter(Boolean));
   const trades = [];
@@ -287,6 +326,17 @@ export function pendingCodeTrades(state = {}) {
   return normalizeSecondaryTrades(state.secondaryTrades || [])
     .filter((trade) => !trade.code || trade.codeStatus === "pending")
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function secondaryTradesForLedger(state = {}, date = localDate(new Date())) {
+  const ledgerDate = normalizeDate(date) || localDate(new Date());
+  return normalizeSecondaryTrades(state.secondaryTrades || [])
+    .filter((trade) => trade.frontOfficeDone && (trade.ledgerDate || trade.tradeDate) === ledgerDate)
+    .sort((left, right) =>
+      left.tradeDate.localeCompare(right.tradeDate)
+      || left.shortName.localeCompare(right.shortName)
+      || left.createdAt.localeCompare(right.createdAt)
+    );
 }
 
 export function applyCodeMappingText(state = {}, text = "") {
@@ -604,6 +654,19 @@ function extractYieldRate(line = "") {
 
 function normalizePrice(value = "") {
   return String(value ?? "").trim();
+}
+
+function normalizeSecondaryTradeStage(stage, frontOfficeDone, ledgerSentAt) {
+  if (ledgerSentAt) return "sent";
+  if (SECONDARY_TRADE_STAGES.has(stage)) return stage;
+  return frontOfficeDone ? "front_office_done" : "negotiated";
+}
+
+function normalizeSecondaryTradeCategory(category, sourceType = "", code = "") {
+  if (SECONDARY_TRADE_CATEGORIES.has(category)) return category;
+  if (sourceType === "primary_award") return "primary_award";
+  if (sourceType === "protocol_transfer") return "protocol";
+  return normalizeSecurityCode(code).endsWith(".SH") && sourceType === "protocol" ? "protocol" : "non_protocol";
 }
 
 function extractTradeDateAndSpeed(line = "", options = {}) {

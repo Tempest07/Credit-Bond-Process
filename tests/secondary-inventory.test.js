@@ -5,11 +5,13 @@ import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
   calculateShadowInventory,
+  markSecondaryTradeFrontOffice,
   parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
   parseSecondaryTradeText,
   pendingCodeTrades,
+  secondaryTradesForLedger,
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
@@ -170,4 +172,31 @@ test("creates primary award inventory drafts and lets code mapping fill missing 
   assert.equal(result.updatedCount, 1);
   assert.equal(result.state.secondaryTrades[0].code, "012681999.IB");
   assert.equal(result.state.secondaryTrades[0].codeStatus, "confirmed");
+});
+
+test("adds front-office confirmed secondary trades to the daily ledger", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryTrades(state, parseSecondaryTradeText(
+    "SDR 280680.SH 25联投17 3000万 06.18 兴业银行 出给 首创证券 100.990",
+    { referenceDate: new Date("2026-06-18T09:00:00+08:00") },
+  ));
+
+  assert.equal(secondaryTradesForLedger(state, "2026-06-18").length, 0);
+
+  state = {
+    ...state,
+    secondaryTrades: [
+      markSecondaryTradeFrontOffice(state.secondaryTrades[0], {
+        frontOfficePrice: "100.98",
+        now: "2026-06-18T10:20:00.000Z",
+      }),
+    ],
+  };
+
+  const rows = secondaryTradesForLedger(state, "2026-06-18");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].frontOfficeDone, true);
+  assert.equal(rows[0].tradeStage, "front_office_done");
+  assert.equal(rows[0].frontOfficePrice, "100.98");
+  assert.equal(rows[0].ledgerDate, "2026-06-18");
 });

@@ -1,6 +1,7 @@
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
 const REPORT_KIND = "today-bid-opinions";
+const SECONDARY_LEDGER_REPORT_KIND = "secondary-trade-ledger";
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 
 export default {
@@ -52,6 +53,23 @@ export async function handleRequest(request, env) {
 
   if (url.pathname === "/send-today" && request.method === "POST") {
     const result = await sendTodayReport(env, {
+      source: "manual",
+      date: url.searchParams.get("date") || "",
+      now: new Date(),
+    });
+    return jsonResponse(result, result.status === "sent" ? 200 : 202);
+  }
+
+  if (url.pathname === "/preview-secondary-ledger" && request.method === "GET") {
+    const report = await buildSecondaryLedgerReportFromDb(env, {
+      date: url.searchParams.get("date") || "",
+      now: new Date(),
+    });
+    return jsonResponse(report);
+  }
+
+  if (url.pathname === "/send-secondary-ledger" && request.method === "POST") {
+    const result = await sendSecondaryLedgerReport(env, {
       source: "manual",
       date: url.searchParams.get("date") || "",
       now: new Date(),
@@ -112,6 +130,58 @@ export async function buildReportFromDb(env, options = {}) {
   });
 }
 
+export async function sendSecondaryLedgerReport(env, options = {}) {
+  validateMailEnv(env);
+  await ensureMailLogSchema(env.DB);
+
+  const report = await buildSecondaryLedgerReportFromDb(env, options);
+  const sendEmpty = stringFlag(env.MAIL_SEND_EMPTY);
+  if (!report.rows.length && !sendEmpty) {
+    return {
+      status: "skipped",
+      reason: "当日没有二级成交台账记录",
+      date: report.date,
+      rowCount: 0,
+    };
+  }
+
+  const sent = await sendWithResend(env, report);
+  const logId = `${SECONDARY_LEDGER_REPORT_KIND}:${report.date}:${crypto.randomUUID()}`;
+  const sentAt = new Date().toISOString();
+  await env.DB.prepare(`
+    INSERT INTO mail_log (id, report_date, sent_at, subject, project_count, resend_id, source)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+  `).bind(
+    logId,
+    report.date,
+    sentAt,
+    report.subject,
+    report.rows.length,
+    sent.id || "",
+    options.source || "manual",
+  ).run();
+
+  return {
+    status: "sent",
+    date: report.date,
+    subject: report.subject,
+    rowCount: report.rows.length,
+    tradeCount: report.tradeCount,
+    protocolCount: report.protocolCount,
+    resendId: sent.id || "",
+    sentAt,
+  };
+}
+
+export async function buildSecondaryLedgerReportFromDb(env, options = {}) {
+  const state = await loadState(env.DB);
+  return buildSecondaryLedgerMail(state, {
+    date: normalizeDate(options.date) || localDate(options.now || new Date(), env.TIME_ZONE || DEFAULT_TIME_ZONE),
+    timeZone: env.TIME_ZONE || DEFAULT_TIME_ZONE,
+    now: options.now || new Date(),
+  });
+}
+
 export function buildTodayMail(state, options = {}) {
   const date = normalizeDate(options.date) || localDate(options.now || new Date(), options.timeZone || DEFAULT_TIME_ZONE);
   const projects = selectTodayBidProjects(state.projects || [], date);
@@ -130,6 +200,67 @@ export function buildTodayMail(state, options = {}) {
     text,
     html,
   };
+}
+
+export function buildSecondaryLedgerMail(state, options = {}) {
+  const date = normalizeDate(options.date) || localDate(options.now || new Date(), options.timeZone || DEFAULT_TIME_ZONE);
+  const rows = selectSecondaryLedgerRows(state, date);
+  const subject = `二级成交台账${formatSubjectDate(date)}`;
+  return {
+    date,
+    subject,
+    rowCount: rows.length,
+    tradeCount: rows.filter((row) => row.source === "secondary").length,
+    protocolCount: rows.filter((row) => row.source === "protocol").length,
+    rows,
+    text: buildSecondaryLedgerText(rows, date),
+    html: buildSecondaryLedgerHtml(rows, date),
+  };
+}
+
+export function selectSecondaryLedgerRows(state = {}, date) {
+  const secondaryTrades = Array.isArray(state.secondaryTrades) ? state.secondaryTrades : [];
+  const protocolTransfers = Array.isArray(state.protocolTransfers) ? state.protocolTransfers : [];
+  const secondaryRows = secondaryTrades
+    .filter((trade) => isFrontOfficeDoneTrade(trade) && String(trade.ledgerDate || trade.tradeDate || "").slice(0, 10) === date)
+    .map((trade) => ({
+      id: String(trade.id || ""),
+      source: "secondary",
+      kind: trade.tradeCategory === "primary_award" ? "一级入库" : trade.tradeCategory === "protocol" ? "协议转让" : "非协议",
+      side: trade.side === "buy" ? "买入" : "卖出",
+      account: String(trade.account || ""),
+      code: String(trade.code || ""),
+      shortName: String(trade.shortName || ""),
+      amountText: formatWan(trade.quantityWan),
+      priceText: String(trade.frontOfficePrice || trade.price || ""),
+      tradeDate: String(trade.tradeDate || ""),
+      settlementText: trade.settlementDate ? `交割 ${trade.settlementDate}` : "",
+      counterparty: String(trade.counterparty || trade.intermediary || ""),
+      status: trade.ledgerSentAt ? "已发送" : "待发送",
+      sortKey: `${trade.tradeDate || ""}:${trade.shortName || ""}:${trade.id || ""}`,
+    }));
+
+  const linkedProtocolIds = new Set(secondaryTrades.map((trade) => String(trade.protocolTransferId || "")).filter(Boolean));
+  const protocolRows = protocolTransfers
+    .filter((record) => String(record.tradeDate || "").slice(0, 10) === date && !linkedProtocolIds.has(String(record.id || "")))
+    .map((record) => ({
+      id: String(record.id || ""),
+      source: "protocol",
+      kind: "协议转让",
+      side: "协议转让",
+      account: "SSE",
+      code: String(record.code || ""),
+      shortName: String(record.shortName || ""),
+      amountText: formatWan(record.amountTenThousand),
+      priceText: record.price ? `净价${record.price}` : "",
+      tradeDate: String(record.tradeDate || ""),
+      settlementText: "协议流程",
+      counterparty: protocolTransferFlow(record),
+      status: protocolTransferStatus(record),
+      sortKey: `${record.tradeDate || ""}:${record.shortName || ""}:${record.id || ""}`,
+    }));
+
+  return [...secondaryRows, ...protocolRows].sort((left, right) => left.sortKey.localeCompare(right.sortKey));
 }
 
 export function selectTodayBidProjects(projects = [], date) {
@@ -203,6 +334,105 @@ function buildHtmlMail(projects, date) {
   </main>
 </body>
 </html>`;
+}
+
+function buildSecondaryLedgerText(rows, date) {
+  if (!rows.length) return `${date} 暂无二级成交台账记录。`;
+  const header = ["序号", "类型", "方向", "账户", "代码", "简称", "金额", "价格", "交易日", "交割/流程", "对手方", "状态"];
+  const body = rows.map((row, index) => [
+    index + 1,
+    row.kind,
+    row.side,
+    row.account,
+    row.code || "代码待补",
+    row.shortName || "简称待补",
+    row.amountText || "金额待补",
+    row.priceText || "价格待补",
+    row.tradeDate,
+    row.settlementText,
+    row.counterparty || "对手方待补",
+    row.status,
+  ].join("\t"));
+  return [`二级成交台账 ${date}`, header.join("\t"), ...body].join("\n");
+}
+
+function buildSecondaryLedgerHtml(rows, date) {
+  const body = rows.length
+    ? `
+      <table>
+        <thead>
+          <tr>
+            <th>序号</th><th>类型</th><th>方向</th><th>账户</th><th>代码</th><th>简称</th><th>金额</th><th>价格</th><th>交易日</th><th>交割/流程</th><th>对手方</th><th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${escapeHtml(row.kind)}</td>
+              <td>${escapeHtml(row.side)}</td>
+              <td>${escapeHtml(row.account)}</td>
+              <td>${escapeHtml(row.code || "代码待补")}</td>
+              <td>${escapeHtml(row.shortName || "简称待补")}</td>
+              <td>${escapeHtml(row.amountText || "金额待补")}</td>
+              <td>${escapeHtml(row.priceText || "价格待补")}</td>
+              <td>${escapeHtml(row.tradeDate)}</td>
+              <td>${escapeHtml(row.settlementText)}</td>
+              <td>${escapeHtml(row.counterparty || "对手方待补")}</td>
+              <td>${escapeHtml(row.status)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`
+    : "<p>当日暂无二级成交台账记录。</p>";
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { margin: 0; padding: 24px; color: #202124; background: #f6f7f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.7; }
+    main { max-width: 1080px; margin: 0 auto; padding: 24px; border: 1px solid #e6e8ef; border-radius: 14px; background: #fff; }
+    h1 { margin: 0 0 8px; font-size: 20px; }
+    .date { margin: 0 0 18px; color: #64748b; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 8px 9px; border: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+    th { color: #1f3a8a; background: #f8fafc; }
+    tbody tr:nth-child(even) { background: #fbfdff; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>二级成交台账</h1>
+    <p class="date">日期：${escapeHtml(date)}</p>
+    ${body}
+  </main>
+</body>
+</html>`;
+}
+
+function isFrontOfficeDoneTrade(trade = {}) {
+  return Boolean(trade.frontOfficeDone)
+    || ["front_office_done", "ledgered", "sent"].includes(String(trade.tradeStage || ""));
+}
+
+function protocolTransferFlow(record = {}) {
+  return [record.seller || "卖方待补", record.buyer || "买方/做市商待补", record.finalBuyer]
+    .filter(Boolean)
+    .join(" → ");
+}
+
+function protocolTransferStatus(record = {}) {
+  if (record.exchangeSubmitted) return "已递交";
+  if (record.ownSealed) return "待递交上交所";
+  if (record.counterpartySealed) return "待本方用印";
+  return "待对手方用印";
+}
+
+function formatWan(value) {
+  const number = numberOrNull(value);
+  if (!Number.isFinite(number)) return "";
+  return Math.abs(number) >= 10000 ? `${formatNumber(number / 10000)}亿` : `${formatNumber(number)}万`;
 }
 
 function formatProjectBrief(project) {

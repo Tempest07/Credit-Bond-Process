@@ -56,6 +56,8 @@ import {
   calculateShadowInventory,
   formatAmountWan,
   markSecondaryOrderStatus,
+  markSecondaryTradeFrontOffice,
+  markSecondaryTradesLedgerSent,
   normalizeSecondaryInventoryPositions,
   normalizeSecondaryOrders,
   normalizeSecondaryTrades,
@@ -66,6 +68,7 @@ import {
   pendingCodeTrades,
   positionKey,
   secondaryDashboardCounts,
+  secondaryTradesForLedger,
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
@@ -148,6 +151,7 @@ let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
+let activeSecondaryWorkspacePanel = "inventory";
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -1501,6 +1505,7 @@ function saveProtocolTransferFromForm() {
   protocolTransferEditMode = false;
   persistState();
   renderProtocolTransferWorkspace();
+  renderSecondaryLedger();
   showToast("协议转让记录已保存，并纳入台账导出。");
 }
 
@@ -1513,6 +1518,7 @@ function deleteSelectedProtocolTransfer() {
   persistState();
   clearProtocolTransferForm();
   renderProtocolTransferWorkspace();
+  renderSecondaryLedger();
   showToast("协议转让记录已删除。");
 }
 
@@ -1524,12 +1530,17 @@ function completeProtocolTransferStep(id, step) {
   selectedProtocolTransferId = next.id;
   persistState();
   renderProtocolTransferWorkspace();
+  renderSecondaryLedger();
   showToast(`${next.shortName || next.code} 已完成：${step === "counterparty" ? "对手方用印" : step === "own" ? "本方用印" : "递交上交所"}`);
 }
 
 function bindSecondaryInventory() {
   if (!$("#secondaryInput")) return;
   $("#secondarySnapshotDate").value = localDate(new Date());
+  $("#secondaryLedgerDate").value = localDate(new Date());
+  $$(".secondary-workspace-tab").forEach((button) => {
+    button.addEventListener("click", () => switchSecondaryWorkspacePanel(button.dataset.secondaryWorkspaceTab));
+  });
   $("#secondaryImportSnapshotButton").addEventListener("click", importSecondarySnapshot);
   $("#secondaryUploadSnapshotButton").addEventListener("click", () => $("#secondarySnapshotFileInput").click());
   $("#secondarySnapshotFileInput").addEventListener("change", importSecondarySnapshotFile);
@@ -1537,20 +1548,45 @@ function bindSecondaryInventory() {
   $("#secondaryParseTradesButton").addEventListener("click", importSecondaryTrades);
   $("#secondarySyncPrimaryButton").addEventListener("click", syncPrimaryAwardsToSecondaryInventory);
   $("#secondaryApplyCodesButton").addEventListener("click", applySecondaryCodeMappings);
+  $("#secondaryLedgerDate").addEventListener("change", renderSecondaryLedger);
+  $("#secondaryLedgerTodayButton").addEventListener("click", () => {
+    $("#secondaryLedgerDate").value = localDate(new Date());
+    renderSecondaryLedger();
+  });
+  $("#secondaryLedgerPreviewButton").addEventListener("click", () => callSecondaryLedgerMailer("preview"));
+  $("#secondaryLedgerSendButton").addEventListener("click", () => callSecondaryLedgerMailer("send"));
+  $("#secondaryLedgerOutputCloseButton").addEventListener("click", hideSecondaryLedgerOutput);
   $("#secondaryOrderList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-secondary-order-action]");
     if (!button) return;
     updateSecondaryOrderStatus(button.dataset.secondaryOrderId, button.dataset.secondaryOrderAction);
   });
+  $("#secondaryTradeList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-secondary-trade-action]");
+    if (!button) return;
+    confirmSecondaryFrontOffice(button.dataset.secondaryTradeId);
+  });
+}
+
+function switchSecondaryWorkspacePanel(panelName) {
+  activeSecondaryWorkspacePanel = panelName || "inventory";
+  $$(".secondary-workspace-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.secondaryWorkspaceTab === activeSecondaryWorkspacePanel);
+  });
+  $$(".secondary-workspace-panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.secondaryWorkspacePanel === activeSecondaryWorkspacePanel);
+  });
 }
 
 function renderSecondaryInventoryWorkspace() {
   if (!$("#secondaryInput")) return;
+  switchSecondaryWorkspacePanel(activeSecondaryWorkspacePanel);
   renderSecondaryDashboard();
   renderSecondaryOrders();
   renderSecondaryInventory();
   renderSecondaryPendingCodes();
   renderSecondaryTrades();
+  renderSecondaryLedger();
 }
 
 function renderSecondaryDashboard() {
@@ -1646,24 +1682,268 @@ function renderSecondaryPendingCodes() {
 function renderSecondaryTrades() {
   const trades = normalizeSecondaryTrades(state.secondaryTrades || []).slice(0, 120);
   $("#secondaryTradeList").innerHTML = trades.length
-    ? trades.map((trade) => `
+    ? trades.map((trade) => {
+        const stageLabel = secondaryTradeStageLabel(trade);
+        const categoryLabel = secondaryTradeCategoryLabel(trade);
+        return `
         <article class="secondary-card ${trade.codeStatus === "pending" ? "attention" : ""}">
           <div class="secondary-card-head">
             <strong>${escapeHtml(trade.shortName || trade.code || "未命名流水")}</strong>
-            <span class="status-badge ${trade.side === "sell" ? "warning" : ""}">${trade.side === "sell" ? "卖出" : "买入"}</span>
+            <span class="status-badge ${trade.frontOfficeDone ? "" : "muted"}">${escapeHtml(stageLabel)}</span>
           </div>
           <div class="secondary-meta">
+            <span>${escapeHtml(trade.side === "sell" ? "卖出" : "买入")}</span>
+            <span>${escapeHtml(categoryLabel)}</span>
             <span>${escapeHtml(trade.account)}</span>
             <span>${escapeHtml(trade.code || "代码待补")}</span>
             <span>${escapeHtml(formatAmountWan(trade.quantityWan))}</span>
             <span>谈判 ${escapeHtml(trade.negotiationDate)}</span>
             <span>交易 ${escapeHtml(trade.tradeDate)}+${escapeHtml(trade.settlementSpeed)}</span>
             <span>交割 ${escapeHtml(trade.settlementDate)}</span>
+            ${trade.frontOfficeDone ? `<span>前台净价 ${escapeHtml(trade.frontOfficePrice || trade.price || "未填")}</span>` : ""}
+            ${trade.ledgerSentAt ? "<span>台账已发送</span>" : ""}
             ${trade.sourceType === "primary_award" ? "<span>一级中标</span>" : ""}
           </div>
+          <div class="secondary-card-actions">
+            ${trade.frontOfficeDone
+              ? `<span class="secondary-card-note">已进入 ${escapeHtml(trade.ledgerDate || trade.tradeDate)} 台账</span>`
+              : `
+                <label class="secondary-inline-input">
+                  <span>净价</span>
+                  <input type="text" value="${escapeAttribute(trade.frontOfficePrice || trade.price || "")}" data-secondary-front-price="${escapeAttribute(trade.id)}">
+                </label>
+                <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">前台成交</button>
+              `}
+          </div>
         </article>
-      `).join("")
+      `;
+      }).join("")
     : '<div class="empty">暂无成交流水。成交后粘贴要素并点“录入成交”。</div>';
+}
+
+function secondaryTradeStageLabel(trade) {
+  if (trade.ledgerSentAt || trade.tradeStage === "sent") return "台账已发送";
+  if (trade.frontOfficeDone || trade.tradeStage === "front_office_done") return "前台成交";
+  return "谈判成交";
+}
+
+function secondaryTradeCategoryLabel(trade) {
+  if (trade.tradeCategory === "protocol") return "协议转让";
+  if (trade.tradeCategory === "primary_award") return "一级入库";
+  return "非协议";
+}
+
+function confirmSecondaryFrontOffice(id) {
+  const trades = normalizeSecondaryTrades(state.secondaryTrades || []);
+  const trade = trades.find((item) => item.id === id);
+  if (!trade) return;
+  const priceInput = $$("[data-secondary-front-price]").find((input) => input.dataset.secondaryFrontPrice === id);
+  const frontOfficePrice = String(priceInput?.value || trade.frontOfficePrice || trade.price || "").trim();
+  if (!frontOfficePrice) {
+    showToast("请先输入前台成交净价。");
+    return;
+  }
+  state = {
+    ...state,
+    secondaryTrades: trades.map((item) =>
+      item.id === id ? markSecondaryTradeFrontOffice(item, { frontOfficePrice }) : item,
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+  persistState();
+  renderSecondaryInventoryWorkspace();
+  showToast(`${trade.shortName || trade.code || "该笔交易"} 已进入当日成交台账。`);
+}
+
+function renderSecondaryLedger() {
+  if (!$("#secondaryLedgerList")) return;
+  const date = secondaryLedgerDateValue();
+  const rows = buildSecondaryLedgerRows(date);
+  $("#secondaryLedgerCountPill").textContent = `${rows.length}笔`;
+  $("#secondaryLedgerList").innerHTML = rows.length
+    ? rows.map((row, index) => `
+      <article class="secondary-card secondary-ledger-row ${row.sent ? "" : "attention"}">
+        <div class="secondary-card-head">
+          <strong>${index + 1}. ${escapeHtml(row.shortName || row.code || "未命名成交")}</strong>
+          <span class="status-badge ${row.kind === "协议转让" ? "warning" : ""}">${escapeHtml(row.kind)}</span>
+        </div>
+        <div class="secondary-meta">
+          <span>${escapeHtml(row.sideLabel)}</span>
+          <span>${escapeHtml(row.account)}</span>
+          <span>${escapeHtml(row.code || "代码待补")}</span>
+          <span>${escapeHtml(row.amountText || "金额待补")}</span>
+          <span>${escapeHtml(row.priceText || "价格待补")}</span>
+          <span>交易 ${escapeHtml(row.tradeDate)}</span>
+          <span>${escapeHtml(row.settlementText)}</span>
+          <span>${escapeHtml(row.counterparty || "对手方待补")}</span>
+          <span>${escapeHtml(row.statusLabel)}</span>
+        </div>
+      </article>
+    `).join("")
+    : '<div class="empty">暂无当日已前台成交记录。</div>';
+}
+
+function buildSecondaryLedgerRows(date = "") {
+  const ledgerDate = date || localDate(new Date());
+  const secondaryRows = secondaryTradesForLedger(state, ledgerDate);
+  const linkedProtocolIds = new Set(secondaryRows.map((trade) => trade.protocolTransferId).filter(Boolean));
+  const rows = secondaryRows.map((trade) => ({
+    id: trade.id,
+    kind: secondaryTradeCategoryLabel(trade),
+    sideLabel: trade.side === "sell" ? "卖出" : "买入",
+    account: trade.account,
+    code: trade.code,
+    shortName: trade.shortName,
+    amountText: formatAmountWan(trade.quantityWan),
+    amountWan: trade.quantityWan,
+    priceText: trade.frontOfficePrice || trade.price,
+    tradeDate: trade.tradeDate,
+    settlementText: `交割 ${trade.settlementDate}`,
+    counterparty: trade.counterparty || trade.intermediary,
+    statusLabel: trade.ledgerSentAt ? "已发送" : "待发送",
+    sent: Boolean(trade.ledgerSentAt),
+    sortKey: `${trade.tradeDate}:${trade.shortName}:${trade.id}`,
+  }));
+
+  for (const record of protocolTransferRecordsForDate(ledgerDate)) {
+    if (linkedProtocolIds.has(record.id)) continue;
+    rows.push({
+      id: record.id,
+      kind: "协议转让",
+      sideLabel: "协议转让",
+      account: "SSE",
+      code: record.code,
+      shortName: record.shortName,
+      amountText: record.amountTenThousand ? `${formatNumber(record.amountTenThousand)}万` : "",
+      amountWan: record.amountTenThousand || 0,
+      priceText: record.price ? `净价${formatProtocolPrice(record.price)}` : "",
+      tradeDate: record.tradeDate,
+      settlementText: "协议流程",
+      counterparty: formatProtocolTransferFlow(record),
+      statusLabel: protocolTransferStatus(record),
+      sent: true,
+      sortKey: `${record.tradeDate}:${record.shortName}:${record.id}`,
+    });
+  }
+
+  return rows.sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+}
+
+function secondaryLedgerDateValue() {
+  const input = $("#secondaryLedgerDate");
+  if (!input.value) input.value = localDate(new Date());
+  return input.value;
+}
+
+function buildSecondaryLedgerPreviewText(rows, date) {
+  if (!rows.length) return `${date} 暂无二级成交台账记录。`;
+  const header = ["序号", "类型", "方向", "账户", "代码", "简称", "金额", "价格", "交易日", "交割/流程", "对手方", "状态"];
+  const body = rows.map((row, index) => [
+    index + 1,
+    row.kind,
+    row.sideLabel,
+    row.account,
+    row.code || "代码待补",
+    row.shortName || "简称待补",
+    row.amountText || "金额待补",
+    row.priceText || "价格待补",
+    row.tradeDate,
+    row.settlementText,
+    row.counterparty || "对手方待补",
+    row.statusLabel,
+  ].join("\t"));
+  return [`二级成交台账 ${date}`, header.join("\t"), ...body].join("\n");
+}
+
+async function callSecondaryLedgerMailer(action) {
+  const date = secondaryLedgerDateValue();
+  const rows = buildSecondaryLedgerRows(date);
+  const isSend = action === "send";
+  if (!rows.length) {
+    showSecondaryLedgerOutput("暂无可发送台账", "warning", `${date} 暂无二级成交台账记录。`);
+    showToast("当日暂无二级成交台账记录。");
+    return;
+  }
+
+  if (!isSend) {
+    showSecondaryLedgerOutput("二级台账邮件预览", "preview", buildSecondaryLedgerPreviewText(rows, date));
+    showToast(`已生成 ${rows.length} 笔二级成交台账预览。`);
+    return;
+  }
+
+  const token = getApiToken();
+  if (!token) {
+    showSecondaryLedgerOutput("需要云端口令", "warning", "请先点击右上角“设置云端口令”，输入 APP_PASSWORD 后再发送邮件。");
+    return;
+  }
+
+  const button = $("#secondaryLedgerSendButton");
+  button.disabled = true;
+  showSecondaryLedgerOutput("正在发送", "loading", "正在发送二级成交台账邮件...");
+  try {
+    const query = new URLSearchParams({ date });
+    const response = await fetch(`${MAILER_URL}/send-secondary-ledger?${query.toString()}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const text = await response.text();
+    const payload = parseJson(text);
+    if (!response.ok) {
+      showSecondaryLedgerOutput("二级台账发送失败", "error", JSON.stringify({
+        ok: false,
+        httpStatus: response.status,
+        ...(payload || { error: text.slice(0, 1000) }),
+      }, null, 2));
+      showToast("二级台账邮件发送失败，请查看输出详情。");
+      return;
+    }
+
+    if (payload?.status === "sent") {
+      const tradeIds = secondaryTradesForLedger(state, date).map((trade) => trade.id);
+      if (tradeIds.length) {
+        state = {
+          ...state,
+          secondaryTrades: markSecondaryTradesLedgerSent(state.secondaryTrades || [], tradeIds, payload.sentAt || new Date().toISOString()),
+          updatedAt: new Date().toISOString(),
+        };
+        persistState();
+        renderSecondaryInventoryWorkspace();
+      }
+      showSecondaryLedgerOutput("二级台账已发送", "success", buildSecondaryLedgerSuccessMessage(payload));
+      showToast("二级成交台账邮件已发送。");
+    } else {
+      showSecondaryLedgerOutput("发送结果", "info", payload?.reason || "二级台账发送请求已完成。");
+      showToast(payload?.reason || "二级台账发送请求已完成。");
+    }
+  } catch (error) {
+    showSecondaryLedgerOutput("邮件服务异常", "error", JSON.stringify({
+      status: "error",
+      error: error.message || String(error),
+      hint: "请确认 credit-bond-mailer Worker 已部署二级成交台账接口。",
+    }, null, 2));
+    showToast("邮件服务暂时无法访问。");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function buildSecondaryLedgerSuccessMessage(payload = {}) {
+  const subject = payload.subject ? `主题：${payload.subject}` : "";
+  const count = Number.isFinite(Number(payload.rowCount)) ? `台账数量：${payload.rowCount} 笔` : "";
+  return ["二级成交台账邮件已成功发送。", subject, count].filter(Boolean).join("\n");
+}
+
+function showSecondaryLedgerOutput(title, status, text) {
+  const panel = $("#secondaryLedgerOutputPanel");
+  panel.hidden = false;
+  panel.dataset.status = status || "info";
+  $("#secondaryLedgerOutputTitle").textContent = title || "邮件输出";
+  $("#secondaryLedgerOutput").textContent = text || "";
+}
+
+function hideSecondaryLedgerOutput() {
+  $("#secondaryLedgerOutputPanel").hidden = true;
+  $("#secondaryLedgerOutput").textContent = "";
 }
 
 function importSecondarySnapshot() {
@@ -1784,6 +2064,10 @@ function updateSecondaryOrderStatus(id, status) {
         settlementSpeed: 1,
         settlementDate: localDate(tomorrow),
         sourceType: "order_fill",
+        orderId: order.id,
+        tradeCategory: "non_protocol",
+        tradeStage: "negotiated",
+        frontOfficeDone: false,
         codeStatus: order.code ? "confirmed" : "pending",
         sourceText: order.sourceText || "",
       }])
