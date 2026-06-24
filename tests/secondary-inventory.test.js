@@ -79,7 +79,7 @@ test("parses regional OFR quote lists with optional amount", () => {
 });
 
 test("exports active offer orders as grouped OFR text", () => {
-  const orders = parseSecondaryOrderText(`OFR
+  const cleanOrders = parseSecondaryOrderText(`OFR
 陕西（西安）
 281640.SH，26西轨03，1.93*ofr
 012681284.IB，26陕西金控SCP003，3000，净价100*ofr
@@ -87,8 +87,12 @@ test("exports active offer orders as grouped OFR text", () => {
 广东（广州）
 25广越03，OFR净价100
 24广越04，OFR估值`);
+  const dirtyOldOrders = [
+    { side: "offer", code: "281640.SH", shortName: "26??03", quantityWan: 0, yieldRate: 1.93, status: "active", sourceText: "281640.SH，26??03，1.93*ofr" },
+    { side: "offer", code: "", shortName: "24????", quantityWan: 0, price: "??-2", status: "active", sourceText: "24????，??-2*ofr" },
+  ];
 
-  const text = buildSecondaryOfferListText(orders);
+  const text = buildSecondaryOfferListText([...cleanOrders, ...dirtyOldOrders]);
 
   assert.equal(text, [
     "OFR",
@@ -101,6 +105,33 @@ test("exports active offer orders as grouped OFR text", () => {
     "25广越03，净价100*ofr",
     "24广越04，OFR估值",
   ].join("\n"));
+});
+
+test("updates existing secondary offer by code when a grouped quote is re-imported", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryOrders(state, [{ code: "281640.SH", shortName: "26??03", yieldRate: 1.93, status: "active" }]);
+  state = upsertSecondaryOrders(state, parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr`));
+
+  assert.equal(state.secondaryOrders.length, 1);
+  assert.equal(state.secondaryOrders[0].shortName, "26西轨03");
+  assert.equal(state.secondaryOrders[0].region, "陕西（西安）");
+});
+
+test("re-imported secondary offer list controls export order", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryOrders(state, [
+    { code: "524474.SZ", shortName: "25??K2", yieldRate: 1.84, status: "active" },
+    { code: "281640.SH", shortName: "26??03", yieldRate: 1.93, status: "active" },
+  ]);
+  state = upsertSecondaryOrders(state, parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr
+524474.SZ，25长汇K2，1.84*ofr`));
+
+  const text = buildSecondaryOfferListText(state.secondaryOrders);
+  assert.match(text, /281640\.SH，26西轨03，1\.93\*ofr\n524474\.SZ，25长汇K2，1\.84\*ofr/);
 });
 
 test("subtracts unsettled sells from available inventory after a real snapshot", () => {

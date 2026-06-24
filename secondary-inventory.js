@@ -194,9 +194,10 @@ export function upsertSecondaryOrders(state, orders = []) {
   const existing = [...(state.secondaryOrders || [])];
   const additions = [];
   for (const order of incoming) {
-    const index = existing.findIndex((item) => item.id === order.id);
-    if (index >= 0) existing[index] = order;
-    else additions.push(order);
+    const incomingKey = secondaryOrderUpsertKey(order);
+    const index = existing.findIndex((item) => item.id === order.id || secondaryOrderUpsertKey(item) === incomingKey);
+    if (index >= 0) existing.splice(index, 1);
+    additions.push(order);
   }
   return { ...state, secondaryOrders: [...additions, ...existing], updatedAt: new Date().toISOString() };
 }
@@ -353,8 +354,13 @@ export function buildSecondaryOfferListText(orders = [], options = {}) {
   const defaultRegion = String(options.defaultRegion || "未分组").trim();
   const groups = [];
   const groupMap = new Map();
+  const seen = new Set();
   for (const order of normalizeSecondaryOrders(orders)) {
     if (order.side !== "offer" || !["active", "partial"].includes(order.status)) continue;
+    if (isGarbledSecondaryOrder(order)) continue;
+    const key = secondaryOrderExportKey(order);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const region = order.region || defaultRegion;
     if (!groupMap.has(region)) {
       const group = { region, orders: [] };
@@ -465,6 +471,26 @@ function normalizeRegionHeading(value = "") {
     .replace(/\u00a0|\u3000/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function secondaryOrderUpsertKey(order = {}) {
+  const normalized = normalizeSecondaryOrder(order);
+  if (normalized.code) return `${normalized.side}:${normalized.account}:code:${normalized.code}`;
+  return `${normalized.side}:${normalized.account}:name:${normalizeTextKey(normalized.shortName)}:${normalizeTextKey(normalized.price)}:${normalized.yieldRate ?? ""}:${normalized.quantityWan}`;
+}
+
+function secondaryOrderExportKey(order = {}) {
+  const normalized = normalizeSecondaryOrder(order);
+  if (normalized.code) return `code:${normalized.code}`;
+  return `name:${normalizeTextKey(normalized.shortName)}:${normalizeTextKey(formatSecondaryOfferQuote(normalized))}:${normalized.quantityWan}`;
+}
+
+function isGarbledSecondaryOrder(order = {}) {
+  return /\?{2,}/.test(`${order.shortName || ""} ${order.sourceText || ""} ${order.price || ""}`);
+}
+
+function normalizeTextKey(value = "") {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
 }
 
 function formatSecondaryOfferListLine(order) {
