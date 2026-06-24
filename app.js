@@ -422,6 +422,7 @@ function bindLedger() {
     showToast("中标汇报已复制。");
   });
   $("#parseAdvertisementButton").addEventListener("click", () => {
+    clearTimeout(projectAutoSaveTimer);
     const draft = readProjectForm();
     const advertisement = $("#projectResultAdvertisement").value;
     if (!advertisement.trim()) {
@@ -434,9 +435,8 @@ function bindLedger() {
     parsed.status = deriveProjectStatus(parsed);
     resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, parsedAdvertisement);
     resultRecognitionProjectId = parsed.id || draft.id || "";
-    fillProjectForm(parsed);
     saveProjectRecordNow(parsed);
-    closeResultEntryPanel();
+    fillProjectForm(parsed);
     setResultEntryFieldsVisible(true);
     showToast("已解析发行结果，并按标位自动推算中标量和营收，请复核明细。");
   });

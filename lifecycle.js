@@ -330,12 +330,44 @@ export function parseIssuanceAdvertisement(text, referenceDate = new Date()) {
   if (headers.length) {
     headers.forEach((header, index) => {
       const block = normalized.slice(header.index, headers[index + 1]?.index ?? normalized.length);
-      items.push(parseAdvertisementBlock(block, header[1], referenceDate));
+      items.push(...parseAdvertisementBlockItems(block, header[1], referenceDate));
     });
   } else if (normalized) {
-    items.push(parseAdvertisementBlock(normalized, "", referenceDate));
+    items.push(...parseAdvertisementBlockItems(normalized, "", referenceDate));
   }
   return { issuerName: parseIssuerName(normalized), items };
+}
+
+function parseAdvertisementBlockItems(block, headerText, referenceDate) {
+  const numberedRows = splitNumberedAdvertisementRows(block);
+  if (numberedRows.length > 1) {
+    return numberedRows.map((itemBlock) => parseAdvertisementBlock(itemBlock, headerText, referenceDate));
+  }
+  return [parseAdvertisementBlock(block, headerText, referenceDate)];
+}
+
+function splitNumberedAdvertisementRows(block) {
+  const lines = String(block || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rowIndexes = [];
+  lines.forEach((line, index) => {
+    if (/^(?:\d+[.、．)]|[（(]\d+[）)])\s*[0-9]{2}\S+/.test(line)) {
+      rowIndexes.push(index);
+    }
+  });
+  if (rowIndexes.length <= 1) return [];
+
+  const leadingSharedLines = lines.slice(0, rowIndexes[0]);
+  const trailingSharedStart = rowIndexes.at(-1) + 1;
+  const trailingSharedLines = lines.slice(trailingSharedStart);
+  return rowIndexes.map((lineIndex, index) => {
+    const nextIndex = rowIndexes[index + 1] ?? trailingSharedStart;
+    const rowLines = lines.slice(lineIndex, nextIndex);
+    const rowText = rowLines.join("\n").replace(/^(?:\d+[.、．)]|[（(]\d+[）)])\s*/, "");
+    return [rowText, ...leadingSharedLines, ...trailingSharedLines].join("\n");
+  });
 }
 
 function isAdvertisementBlockHeader(value = "") {
@@ -551,7 +583,7 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || block.match(/代码[：:]\s*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || "";
-  const issueScale = numberFrom(block, /(?:发行)?规模[】：:，,\s]*(\d+(?:\.\d+)?)\s*亿/)
+  const issueScale = numberFrom(block, /(?:发行)?规模(?:调整为|调整至|为|[】：:，,\s])*(?:不超过|约|合计)?\s*(\d+(?:\.\d+)?)\s*亿/)
     ?? numberFrom(block, /(?:^|[，,\s])(\d+(?:\.\d+)?)\s*亿(?:元)?(?=[，,\s]|$)/);
   const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/)
     ?? numberFrom(block, /全场[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
@@ -627,11 +659,8 @@ function estimateOwnWinningAmountWan(tranche) {
   if (!levels.length) {
     return tranche.resultStatus === "待出结果" && Number.isFinite(numberOrNull(tranche.winningRate)) ? 0 : null;
   }
-  const estimates = levels.map((level) =>
-    estimateWinningAmountWan(level.bidRate, level.bidAmount, tranche.winningRate, tranche.marginalMultiple),
-  );
-  if (estimates.some((value) => value === null)) return null;
-  return roundToNearest(estimates.reduce((sum, value) => sum + value, 0), 1000);
+  const estimated = estimateWinningLevelsWan(levels, tranche.winningRate, tranche.marginalMultiple, trancheAwardCapWan(tranche));
+  return estimated === null ? null : roundToNearest(estimated, 1000);
 }
 
 function estimateWinningAmountWan(bidRate, bidAmountYi, couponRate, marginalMultiple) {
@@ -646,6 +675,39 @@ function estimateWinningAmountWan(bidRate, bidAmountYi, couponRate, marginalMult
     ? marginal
     : 1;
   return round((amountYi / divisor) * 10000, 2);
+}
+
+function estimateWinningLevelsWan(levels = [], couponRate, marginalMultiple, capWan = null) {
+  const coupon = numberOrNull(couponRate);
+  if (!Number.isFinite(coupon)) return null;
+  const cap = numberOrNull(capWan);
+  let remainingCap = Number.isFinite(cap) && cap > 0 ? cap : Infinity;
+  let total = 0;
+  for (const level of levels) {
+    const rate = numberOrNull(level.bidRate);
+    const amountYi = numberOrNull(level.bidAmount);
+    if (!Number.isFinite(rate) || !Number.isFinite(amountYi) || amountYi <= 0) return null;
+    if (rate - coupon > RATE_EPSILON) continue;
+    if (remainingCap <= 0) continue;
+
+    const requestedWan = amountYi * 10000;
+    const cappedWan = Math.min(requestedWan, remainingCap);
+    const isMarginal = Math.abs(rate - coupon) <= RATE_EPSILON;
+    const marginal = numberOrNull(marginalMultiple);
+    const divisor = isMarginal && Number.isFinite(marginal) && marginal > 0
+      ? marginal
+      : 1;
+    total += cappedWan / divisor;
+    remainingCap -= cappedWan;
+  }
+  return round(total, 2);
+}
+
+function trancheAwardCapWan(tranche = {}) {
+  const issueScale = numberOrNull(tranche.issueScale);
+  const ratio = numberOrNull(tranche.suggestedRatio);
+  if (!Number.isFinite(issueScale) || issueScale <= 0 || !Number.isFinite(ratio) || ratio <= 0) return null;
+  return round(issueScale * 10000 * ratio / 100, 2);
 }
 
 export function calculateFtpForDuration(durationText, ftpCurve = {}) {

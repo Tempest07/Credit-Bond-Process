@@ -352,6 +352,16 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(terse.items[0].marginalMultiple, 1.05);
   assert.equal(terse.items[0].fullMarketMultiple, 1.75);
 
+  const numberedDual = parseIssuanceAdvertisement(`【结果】
+1.26越秀交通MTN003A：规模调整为12亿，票面1.64%，全场2.39倍，边际1.18倍
+2.26越秀交通MTN003B：规模调整为3亿，票面2.29%，全场2.87倍，边际1倍
+感谢各位投资人大力支持！`, new Date("2026-06-11T09:00:00"));
+  assert.equal(numberedDual.items.length, 2);
+  assert.equal(numberedDual.items[0].shortName, "26越秀交通MTN003A");
+  assert.equal(numberedDual.items[0].issueScale, 12);
+  assert.equal(numberedDual.items[1].shortName, "26越秀交通MTN003B");
+  assert.equal(numberedDual.items[1].issueScale, 3);
+
   const bracketed = parseIssuanceAdvertisement(`【结果-26珠城轨MTN002-F102682259-万一团费】
 【规模】5亿元
 【期限】10年
@@ -506,6 +516,38 @@ test("maps single base-name result to dual-tranche duration and infers payment d
     buildAwardResultText(project),
     `${ad}\n\n表内中标1.5亿，综合定价至1.85%，营收-7.16BP`,
   );
+});
+
+test("caps dual-tranche marginal awards by each tranche scale and ratio", () => {
+  const ad = `【结果】
+1.26越秀交通MTN003A：规模调整为12亿，票面1.64%，全场2.39倍，边际1倍
+2.26越秀交通MTN003B：规模调整为3亿，票面2.29%，全场2.87倍，边际2倍
+缴款日期：6月24日`;
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26越秀交通MTN003A/B",
+    tranches: [
+      {
+        shortName: "26越秀交通MTN003A",
+        durationText: "3年",
+        suggestedRatio: 20,
+        bidRate: 1.64,
+        bidAmount: 3,
+      },
+      {
+        shortName: "26越秀交通MTN003B",
+        durationText: "10年",
+        suggestedRatio: 20,
+        bidRate: 2.29,
+        bidAmount: 3,
+      },
+    ],
+  }), ad, new Date("2026-06-24T09:00:00"));
+
+  assert.equal(project.tranches[0].issueScale, 12);
+  assert.equal(project.tranches[0].winningAmountWan, 24000);
+  assert.equal(project.tranches[1].issueScale, 3);
+  assert.equal(project.tranches[1].marginalMultiple, 2);
+  assert.equal(project.tranches[1].winningAmountWan, 3000);
 });
 
 test("uses FTP curve to calculate revenue from tranche duration", () => {
