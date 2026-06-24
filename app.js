@@ -52,6 +52,7 @@ import {
 } from "./protocol-transfer.js?v=20260617-dynamic-inquiry-ranges";
 import {
   applyCodeMappingText,
+  buildSecondaryOfferListText,
   buildPrimaryAwardTrades,
   calculateShadowInventory,
   formatAmountWan,
@@ -1545,6 +1546,7 @@ function bindSecondaryInventory() {
   $("#secondaryUploadSnapshotButton").addEventListener("click", () => $("#secondarySnapshotFileInput").click());
   $("#secondarySnapshotFileInput").addEventListener("change", importSecondarySnapshotFile);
   $("#secondaryParseOrdersButton").addEventListener("click", importSecondaryOrders);
+  $("#secondaryExportOffersButton").addEventListener("click", exportSecondaryOffers);
   $("#secondaryParseTradesButton").addEventListener("click", importSecondaryTrades);
   $("#secondarySyncPrimaryButton").addEventListener("click", syncPrimaryAwardsToSecondaryInventory);
   $("#secondaryApplyCodesButton").addEventListener("click", applySecondaryCodeMappings);
@@ -1616,6 +1618,7 @@ function renderSecondaryOrders() {
             <div class="secondary-meta">
               <span>${escapeHtml(order.account)}</span>
               <span>${escapeHtml(order.code || "代码待补")}</span>
+              ${order.region ? `<span>${escapeHtml(order.region)}</span>` : ""}
               <span>${escapeHtml(remaining > 0 ? formatAmountWan(remaining) : "数量待定")}</span>
               <span>${escapeHtml(order.price ? formatSecondaryOrderPrice(order.price) : order.yieldRate ? `${formatNumber(order.yieldRate)}%` : "价格待补")}</span>
               ${risk ? `<span>${escapeHtml(risk)}</span>` : ""}
@@ -1999,6 +2002,23 @@ function importSecondaryOrders() {
   persistState();
   renderSecondaryInventoryWorkspace();
   showToast(`已加入 ${orders.length} 条二级挂单。`);
+}
+
+async function exportSecondaryOffers() {
+  const orders = normalizeSecondaryOrders(state.secondaryOrders || [])
+    .filter((order) => order.side === "offer" && ["active", "partial"].includes(order.status));
+  if (!orders.length) {
+    showToast("暂无有效挂卖可导出。");
+    return;
+  }
+  const text = buildSecondaryOfferListText(orders);
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(`已复制 ${orders.length} 条 OFR 挂单列表。`);
+  } catch {
+    downloadBlob("二级挂单OFR.txt", new Blob([text], { type: "text/plain;charset=utf-8" }));
+    showToast(`已导出 ${orders.length} 条 OFR 挂单 txt。`);
+  }
 }
 
 function importSecondaryTrades() {

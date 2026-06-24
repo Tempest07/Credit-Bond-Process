@@ -47,6 +47,7 @@ export function normalizeSecondaryOrder(input = {}) {
     account: normalizeAccount(input.account),
     code: normalizeSecurityCode(input.code),
     shortName: String(input.shortName || "").trim(),
+    region: String(input.region || input.groupName || "").trim(),
     quantityWan: numberOrNull(input.quantityWan ?? input.quantity) ?? 0,
     price: normalizePrice(input.price),
     yieldRate: numberOrNull(input.yieldRate),
@@ -154,10 +155,18 @@ export function parseInventoryLedgerRows(rows = [], options = {}) {
 }
 
 export function parseSecondaryOrderText(text = "", options = {}) {
-  return String(text || "")
-    .split(/\r?\n/)
-    .map((line) => parseSecondaryOrderLine(line, options))
-    .filter(Boolean);
+  const orders = [];
+  let region = String(options.region || "").trim();
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const line = normalizeLine(rawLine);
+    if (isSecondaryOrderRegionLine(line)) {
+      region = normalizeRegionHeading(rawLine);
+      continue;
+    }
+    const order = parseSecondaryOrderLine(rawLine, { ...options, region });
+    if (order) orders.push(order);
+  }
+  return orders;
 }
 
 export function parseSecondaryTradeText(text = "", options = {}) {
@@ -183,12 +192,13 @@ export function upsertInventoryPositions(state, positions = []) {
 export function upsertSecondaryOrders(state, orders = []) {
   const incoming = normalizeSecondaryOrders(Array.isArray(orders) ? orders : [orders]);
   const existing = [...(state.secondaryOrders || [])];
+  const additions = [];
   for (const order of incoming) {
     const index = existing.findIndex((item) => item.id === order.id);
     if (index >= 0) existing[index] = order;
-    else existing.unshift(order);
+    else additions.push(order);
   }
-  return { ...state, secondaryOrders: existing, updatedAt: new Date().toISOString() };
+  return { ...state, secondaryOrders: [...additions, ...existing], updatedAt: new Date().toISOString() };
 }
 
 export function upsertSecondaryTrades(state, trades = []) {
@@ -339,6 +349,26 @@ export function secondaryTradesForLedger(state = {}, date = localDate(new Date()
     );
 }
 
+export function buildSecondaryOfferListText(orders = [], options = {}) {
+  const defaultRegion = String(options.defaultRegion || "未分组").trim();
+  const groups = [];
+  const groupMap = new Map();
+  for (const order of normalizeSecondaryOrders(orders)) {
+    if (order.side !== "offer" || !["active", "partial"].includes(order.status)) continue;
+    const region = order.region || defaultRegion;
+    if (!groupMap.has(region)) {
+      const group = { region, orders: [] };
+      groupMap.set(region, group);
+      groups.push(group);
+    }
+    groupMap.get(region).orders.push(order);
+  }
+  const sections = groups
+    .map((group) => [group.region, ...group.orders.map(formatSecondaryOfferListLine)].join("\n"))
+    .filter(Boolean);
+  return sections.length ? ["OFR", "", sections.join("\n\n")].join("\n") : "OFR";
+}
+
 export function applyCodeMappingText(state = {}, text = "") {
   const mappings = parseCodeMappingText(text);
   if (!mappings.length) return { state, updatedCount: 0 };
@@ -412,12 +442,55 @@ function parseSecondaryOrderLine(rawLine, options = {}) {
     account: extractAccount(line) || options.account || DEFAULT_ACCOUNT,
     code,
     shortName,
+    region: options.region || "",
     quantityWan: Number.isFinite(quantityWan) ? quantityWan : 0,
     price: extractPrice(line),
     yieldRate: rate,
     status: "active",
     sourceText: rawLine,
   });
+}
+
+function isSecondaryOrderRegionLine(line = "") {
+  const text = String(line || "").trim();
+  if (!text || /^OFR$/i.test(text)) return false;
+  if (SECURITY_CODE_PATTERN.test(text)) return false;
+  if (/(?:ofr|offer|bid|\bb\b|挂卖|挂买|卖出|买入|净价|估值|收益率|收益|YTM)/i.test(text)) return false;
+  if (/\d+(?:\.\d+)?\s*(?:亿|万|w|kw|k|千万|手)?/i.test(text)) return false;
+  return /[\u4e00-\u9fa5]/.test(text) && text.length <= 40;
+}
+
+function normalizeRegionHeading(value = "") {
+  return String(value || "")
+    .replace(/\u00a0|\u3000/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatSecondaryOfferListLine(order) {
+  const parts = [
+    order.code,
+    order.shortName,
+    order.quantityWan > 0 ? formatNumber(order.quantityWan) : "",
+    formatSecondaryOfferQuote(order),
+  ].filter(Boolean);
+  return parts.join("，");
+}
+
+function formatSecondaryOfferQuote(order) {
+  const price = normalizePrice(order.price);
+  if (price && /(?:净价|估值)/i.test(`${order.sourceText || ""} ${price}`)) return formatSecondaryOfferPriceQuote(price);
+  if (Number.isFinite(order.yieldRate)) return `${formatNumber(order.yieldRate)}*ofr`;
+  if (!price) return "ofr";
+  return formatSecondaryOfferPriceQuote(price);
+}
+
+function formatSecondaryOfferPriceQuote(price) {
+  if (/^估值$/i.test(price)) return "OFR估值";
+  if (/^估值/i.test(price)) return `${price}*ofr`;
+  if (/^净价/i.test(price)) return `${price}*ofr`;
+  if (Number.isFinite(Number(price)) && Number(price) >= 50) return `净价${formatNumber(price)}*ofr`;
+  return /ofr/i.test(price) ? price : `${price}*ofr`;
 }
 
 function parseSecondaryTradeLine(rawLine, options = {}) {
@@ -589,8 +662,18 @@ function normalizeSecurityCode(value = "") {
 function extractShortName(line = "", code = "") {
   let text = line;
   if (code) text = text.replace(code.replace(/\.(IB|SH|SZ)$/i, ""), " ").replace(code, " ");
+  const token = text.split(/\s+/).find((item) => isShortNameToken(item));
+  if (token) return token;
   const match = text.match(SHORT_NAME_PATTERN);
   return match?.[1]?.trim() || "";
+}
+
+function isShortNameToken(value = "") {
+  const text = String(value || "").trim();
+  if (!text || SECURITY_CODE_PATTERN.test(text)) return false;
+  if (/^(?:ofr|offer|bid|净价|全价|价格|估值|收益|收益率)/i.test(text)) return false;
+  if (/^\d+(?:\.\d+)?(?:亿|万|w|kw|k|千万|手)?$/i.test(text)) return false;
+  return /^\d{2}[\u4e00-\u9fa5A-Za-z0-9()（）/.-]+$/.test(text);
 }
 
 function extractAmountWan(line = "") {

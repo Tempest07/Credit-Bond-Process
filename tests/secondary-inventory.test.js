@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
+  buildSecondaryOfferListText,
   calculateShadowInventory,
   markSecondaryTradeFrontOffice,
   parseInventoryLedgerRows,
@@ -66,13 +67,40 @@ test("parses regional OFR quote lists with optional amount", () => {
   assert.equal(orders[0].shortName, "26西轨03");
   assert.equal(orders[0].quantityWan, 0);
   assert.equal(orders[0].yieldRate, 1.93);
+  assert.equal(orders[0].region, "陕西（西安）");
   assert.equal(orders[1].quantityWan, 3000);
   assert.equal(orders[1].price, "100");
   assert.equal(orders[2].shortName, "24广越04");
   assert.equal(orders[2].price, "估值");
   assert.equal(orders[3].price, "100");
+  assert.equal(orders[4].shortName, "24华阳新材MTN010B");
   assert.equal(orders[4].price, "估值-2");
   assert.equal(orders[4].yieldRate, null);
+});
+
+test("exports active offer orders as grouped OFR text", () => {
+  const orders = parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr
+012681284.IB，26陕西金控SCP003，3000，净价100*ofr
+
+广东（广州）
+25广越03，OFR净价100
+24广越04，OFR估值`);
+
+  const text = buildSecondaryOfferListText(orders);
+
+  assert.equal(text, [
+    "OFR",
+    "",
+    "陕西（西安）",
+    "281640.SH，26西轨03，1.93*ofr",
+    "012681284.IB，26陕西金控SCP003，3000，净价100*ofr",
+    "",
+    "广东（广州）",
+    "25广越03，净价100*ofr",
+    "24广越04，OFR估值",
+  ].join("\n"));
 });
 
 test("subtracts unsettled sells from available inventory after a real snapshot", () => {
