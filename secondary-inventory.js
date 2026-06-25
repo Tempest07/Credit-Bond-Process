@@ -128,18 +128,22 @@ export function parseInventoryLedgerRows(rows = [], options = {}) {
   const matrix = Array.isArray(rows)
     ? rows.map((row) => Array.isArray(row) ? row.map(cellText) : [])
     : [];
+  const codeHeaders = ["债券代码", "证券代码", "债券标准代码", "标准代码", "代码"];
+  const standardCodeHeaders = ["债券标准代码", "证券标准代码", "标准代码"];
+  const shortNameHeaders = ["债券简称", "证券简称", "简称", "债券名称", "证券名称"];
+  const principalHeaders = ["名义本金", "本金", "持仓面额", "持仓面值", "面额", "余额", "持仓数量", "数量"];
   const headerIndex = matrix.findIndex((row) =>
-    headerColumn(row, ["债券代码"]) >= 0
-    && headerColumn(row, ["债券简称"]) >= 0
-    && headerColumn(row, ["名义本金", "本金", "持仓面额"]) >= 0
+    headerColumn(row, codeHeaders) >= 0
+    && headerColumn(row, shortNameHeaders) >= 0
+    && headerColumn(row, principalHeaders) >= 0
   );
   if (headerIndex < 0) return [];
 
   const headers = matrix[headerIndex];
-  const codeIndex = headerColumn(headers, ["债券代码", "代码"]);
-  const standardCodeIndex = headerColumn(headers, ["债券标准代码", "标准代码"]);
-  const shortNameIndex = headerColumn(headers, ["债券简称", "简称"]);
-  const principalIndex = headerColumn(headers, ["名义本金", "本金", "持仓面额"]);
+  const codeIndex = headerColumn(headers, codeHeaders);
+  const standardCodeIndex = headerColumn(headers, standardCodeHeaders);
+  const shortNameIndex = headerColumn(headers, shortNameHeaders);
+  const principalIndex = headerColumn(headers, principalHeaders);
   const accountingIndex = headerColumn(headers, ["会计分类"]);
   const portfolioIndex = headerColumn(headers, ["投组信息", "投资组合", "组合"]);
   const branchIndex = headerColumn(headers, ["联动分行", "分行"]);
@@ -333,7 +337,12 @@ export function calculateShadowInventory(state = {}, options = {}) {
   for (const row of rows.values()) {
     row.shadowQuantityWan = round(row.snapshotQuantityWan + row.settledBuyWan - row.soldWan, 4);
     row.availableWan = round(row.shadowQuantityWan - row.activeOfferWan, 4);
-    row.warning = row.availableWan < 0
+    row.needsSnapshot = !row.snapshotDate
+      && row.snapshotQuantityWan === 0
+      && (row.activeOfferWan > 0 || row.soldWan > 0 || row.unsettledSellWan > 0);
+    row.warning = row.needsSnapshot
+      ? "缺少库存快照，请先导入余额台账"
+      : row.availableWan < 0
       ? `可能卖空 ${formatAmountWan(Math.abs(row.availableWan))}`
       : row.unsettledSellWan > 0
         ? `含未交割卖出 ${formatAmountWan(row.unsettledSellWan)}`
@@ -410,7 +419,7 @@ export function secondaryDashboardCounts(state = {}) {
   return {
     positions: rows.length,
     activeOffers: orders.filter((item) => item.status === "active" && item.side === "offer").length,
-    warnings: rows.filter((item) => item.availableWan < 0).length,
+    warnings: rows.filter((item) => !item.needsSnapshot && item.availableWan < 0).length,
     pendingCodes: pendingCodeTrades(state).length,
     unsettledSells: trades.filter((item) => item.side === "sell" && item.settlementDate > localDate(new Date())).length,
   };
@@ -597,6 +606,7 @@ function baseInventoryRow(input = {}, snapshotQuantityWan = 0) {
     activeBidWan: 0,
     shadowQuantityWan: 0,
     availableWan: 0,
+    needsSnapshot: false,
     warning: "",
   };
 }
@@ -855,6 +865,12 @@ function localDate(value = new Date()) {
 
 function numberOrNull(value) {
   if (value === "" || value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const text = value.trim().replace(/,/g, "").replace(/，/g, "");
+    const amount = text.match(/^([-+]?\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|千万|手)$/i);
+    if (amount) return amountToWan(amount[1], amount[2]);
+    if (/^[-+]?\d+(?:\.\d+)?%?$/.test(text)) return Number(text.replace(/%$/, ""));
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }

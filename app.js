@@ -1641,23 +1641,32 @@ function formatSecondaryOrderPrice(price) {
 function renderSecondaryInventory() {
   const rows = calculateShadowInventory(state);
   $("#secondaryInventoryList").innerHTML = rows.length
-    ? rows.map((row) => `
-        <article class="secondary-card ${row.availableWan < 0 ? "warning" : row.unsettledSellWan > 0 ? "attention" : ""}">
+    ? rows.map((row) => {
+        const needsSnapshot = Boolean(row.needsSnapshot);
+        const cardClass = needsSnapshot ? "attention" : row.availableWan < 0 ? "warning" : row.unsettledSellWan > 0 ? "attention" : "";
+        const badgeClass = !needsSnapshot && row.availableWan < 0 ? "warning" : needsSnapshot ? "muted" : "";
+        const badgeText = needsSnapshot ? "待核库存" : `${formatAmountWan(row.availableWan)}可卖`;
+        const snapshotText = row.snapshotDate
+          ? `快照 ${row.snapshotDate}: ${formatAmountWan(row.snapshotQuantityWan)}`
+          : "快照 待导入";
+        return `
+        <article class="secondary-card ${cardClass}">
           <div class="secondary-card-head">
             <strong>${escapeHtml(row.shortName || row.code || "未命名库存")}</strong>
-            <span class="status-badge ${row.availableWan < 0 ? "warning" : ""}">${escapeHtml(formatAmountWan(row.availableWan))}可卖</span>
+            <span class="status-badge ${badgeClass}">${escapeHtml(badgeText)}</span>
           </div>
           <div class="secondary-meta">
             <span>${escapeHtml(row.account)}</span>
             <span>${escapeHtml(row.code || "代码待补")}</span>
-            <span>快照 ${escapeHtml(row.snapshotDate || "无")}: ${escapeHtml(formatAmountWan(row.snapshotQuantityWan))}</span>
+            <span>${escapeHtml(snapshotText)}</span>
             <span>已卖 ${escapeHtml(formatAmountWan(row.soldWan))}</span>
             <span>挂卖 ${escapeHtml(formatAmountWan(row.activeOfferWan))}</span>
             ${row.pendingBuyWan ? `<span>未交割买入 ${escapeHtml(formatAmountWan(row.pendingBuyWan))}</span>` : ""}
             ${row.warning ? `<span>${escapeHtml(row.warning)}</span>` : ""}
           </div>
         </article>
-      `).join("")
+      `;
+      }).join("")
     : '<div class="empty">暂无库存。请先导入内网余额台账快照。</div>';
 }
 

@@ -14,6 +14,7 @@ import {
   parseSecondaryOrderText,
   parseSecondaryTradeText,
   pendingCodeTrades,
+  secondaryDashboardCounts,
   secondaryTradesForLedger,
   upsertInventoryPositions,
   upsertSecondaryOrders,
@@ -53,6 +54,23 @@ test("parses internal balance ledger xlsx rows", () => {
   assert.equal(positions[2].account, "TX");
   assert.equal(positions[2].code, "265871.SH");
   assert.equal(positions[2].quantityWan, 1200);
+});
+
+test("parses balance ledger rows with alternate headers and comma amounts", () => {
+  const rows = [
+    ["证券代码", "证券简称", "持仓面值", "投资组合", "业务日期"],
+    ["245129.SH", "26南控01", "50,000,000.00", "BK_BD_AS_SDR", "2026-06-25"],
+    ["SZ524746", "26工控K2", "3,000万", "BK_BD_AS_TX", "2026-06-25"],
+  ];
+  const positions = parseInventoryLedgerRows(rows);
+
+  assert.equal(positions.length, 2);
+  assert.equal(positions[0].code, "245129.SH");
+  assert.equal(positions[0].quantityWan, 5000);
+  assert.equal(positions[0].account, "SDR");
+  assert.equal(positions[1].code, "524746.SZ");
+  assert.equal(positions[1].quantityWan, 3000);
+  assert.equal(positions[1].account, "TX");
 });
 
 test("parses regional OFR quote lists with optional amount", () => {
@@ -249,16 +267,33 @@ test("does not treat order quantity as available inventory", () => {
   assert.equal(rowWithoutSnapshot.snapshotQuantityWan, 0);
   assert.equal(rowWithoutSnapshot.activeOfferWan, 3000);
   assert.equal(rowWithoutSnapshot.availableWan, -3000);
-  assert.match(rowWithoutSnapshot.warning, /可能卖空\s*3000万/);
+  assert.equal(rowWithoutSnapshot.needsSnapshot, true);
+  assert.equal(rowWithoutSnapshot.warning, "缺少库存快照，请先导入余额台账");
 
   state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 102681284.IB 26陕西金控SCP003 余额1000万", {
     snapshotDate: "2026-06-23",
   }));
   const rowWithSnapshot = calculateShadowInventory(state, { asOfDate: "2026-06-23" })[0];
+  assert.equal(rowWithSnapshot.needsSnapshot, false);
   assert.equal(rowWithSnapshot.snapshotQuantityWan, 1000);
   assert.equal(rowWithSnapshot.activeOfferWan, 3000);
   assert.equal(rowWithSnapshot.availableWan, -2000);
   assert.match(rowWithSnapshot.warning, /可能卖空\s*2000万/);
+});
+
+test("marks order-only rows as missing snapshots instead of true sell-empty warnings", () => {
+  const state = {
+    secondaryInventoryPositions: [],
+    secondaryOrders: parseSecondaryOrderText("245129.SH 26南控01 3000 1.76*ofr"),
+    secondaryTrades: [],
+  };
+  const row = calculateShadowInventory(state, { asOfDate: "2026-06-25" })[0];
+  const counts = secondaryDashboardCounts(state);
+
+  assert.equal(row.needsSnapshot, true);
+  assert.equal(row.availableWan, -3000);
+  assert.equal(row.warning, "缺少库存快照，请先导入余额台账");
+  assert.equal(counts.warnings, 0);
 });
 
 test("creates primary award inventory drafts and lets code mapping fill missing codes", () => {
