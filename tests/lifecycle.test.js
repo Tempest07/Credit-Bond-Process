@@ -257,7 +257,8 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
     shortName: "26测试SCP001",
     venue: "银行间",
     sponsorStatus: "牵头",
-    tranches: [{ shortName: "26测试SCP001", suggestedRatio: 20, bidRate: 1.5, bidAmount: 2 }],
+    leadUnderwriter: "兴业银行",
+    tranches: [{ shortName: "26测试SCP001", suggestedRatio: 20, bidAction: "投标", bidRate: 1.5, bidAmount: 2 }],
   });
   assert.equal(buildBidPositionText(lead), "【投标】26测试SCP001，1.50%投2亿，不超20%");
 
@@ -273,9 +274,10 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
     shortName: "26测试MTN002A/B",
     venue: "银行间",
     sponsorStatus: "联席",
+    leadUnderwriter: "兴业银行",
     tranches: [
-      { shortName: "26测试MTN002A", durationText: "2年", suggestedRatio: 20, bidRate: 1.6, bidAmount: 2 },
-      { shortName: "26测试MTN002B", durationText: "5年", suggestedRatio: 15, bidRate: 1.8, bidAmount: 1 },
+      { shortName: "26测试MTN002A", durationText: "2年", suggestedRatio: 20, bidAction: "投标", bidRate: 1.6, bidAmount: 2 },
+      { shortName: "26测试MTN002B", durationText: "5年", suggestedRatio: 15, bidAction: "投标", bidRate: 1.8, bidAmount: 1 },
     ],
   });
   assert.equal(

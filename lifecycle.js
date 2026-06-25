@@ -524,7 +524,7 @@ function formatBidRatio(tranche, dual, aggregate) {
 function shouldShowUnderwriter(project, tranche, isOutsourced) {
   return !isOutsourced
     && project.venue === "银行间"
-    && (project.sponsorStatus === "非我行主承" || ["改标", "参团+投标"].includes(tranche.bidAction));
+    && project.sponsorStatus === "非我行主承";
 }
 
 function ownBidLevels(tranche = {}) {
