@@ -166,6 +166,40 @@ test("keeps negotiated T+1 sells locked before settlement and applies same-day s
   assert.equal(sameDayTrade.settlementDate, "2026-06-18");
 });
 
+test("parses Trade-Phraser style trade elements into pending secondary trades", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 102682346.IB 26酒钢MTN002 余额6000万", {
+    snapshotDate: "2026-06-25",
+  }));
+  const trades = parseSecondaryTradeText(
+    "【上海】06.26+0 26酒钢MTN002  102682346.IB 1.9% 5k 兴业银行 出给 建信基金 对话发俞维谦",
+    {
+      referenceDate: new Date("2026-06-25T09:00:00+08:00"),
+      negotiationDate: "2026-06-25",
+    },
+  );
+  state = upsertSecondaryTrades(state, trades);
+
+  assert.equal(trades.length, 1);
+  assert.equal(trades[0].intermediary, "上海");
+  assert.equal(trades[0].side, "sell");
+  assert.equal(trades[0].counterparty, "建信基金");
+  assert.equal(trades[0].shortName, "26酒钢MTN002");
+  assert.equal(trades[0].code, "102682346.IB");
+  assert.equal(trades[0].yieldRate, 1.9);
+  assert.equal(trades[0].quantityWan, 5000);
+  assert.equal(trades[0].tradeDate, "2026-06-26");
+  assert.equal(trades[0].settlementSpeed, 0);
+  assert.equal(trades[0].settlementDate, "2026-06-26");
+  assert.equal(trades[0].tradeStage, "negotiated");
+  assert.equal(trades[0].frontOfficeDone, false);
+
+  const row = calculateShadowInventory(state, { asOfDate: "2026-06-25" })[0];
+  assert.equal(row.snapshotQuantityWan, 6000);
+  assert.equal(row.soldWan, 5000);
+  assert.equal(row.availableWan, 1000);
+});
+
 test("warns when active offers exceed inventory after confirmed sells", () => {
   let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
   state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 280680.SH 25联投17 余额5000万", {

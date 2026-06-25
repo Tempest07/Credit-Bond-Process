@@ -411,7 +411,7 @@
               <input id="secondarySnapshotFileInput" type="file" accept=".xlsx" hidden>
               <button class="button subtle" id="secondaryParseOrdersButton" type="button">解析为挂单</button>
               <button class="button subtle" id="secondaryExportOffersButton" type="button">导出OFR列表</button>
-              <button class="button subtle" id="secondaryParseTradesButton" type="button">录入成交</button>
+              <button class="button subtle" id="secondaryParseTradesButton" type="button">录入待成交</button>
               <button class="button subtle" id="secondarySyncPrimaryButton" type="button">同步一级中标入库</button>
               <button class="button subtle" id="secondaryApplyCodesButton" type="button">补全代码</button>
             </div>
@@ -423,7 +423,7 @@
           <section class="panel secondary-panel">
             <div class="panel-head">
               <div><span class="step">ORDER</span><h2>有效挂单</h2></div>
-              <span class="pill">成交后立即锁库存</span>
+              <span class="pill">成交以交易要素录入为准</span>
             </div>
             <div class="secondary-list" id="secondaryOrderList"></div>
           </section>
@@ -446,7 +446,7 @@
 
           <section class="panel secondary-panel secondary-trade-panel">
             <div class="panel-head">
-              <div><span class="step">FLOW</span><h2>二级 / 一级入库流水</h2></div>
+              <div><span class="step">FLOW</span><h2>待成交台账 / 一级入库流水</h2></div>
               <span class="pill">谈判即占用</span>
             </div>
             <div class="secondary-list" id="secondaryTradeList"></div>

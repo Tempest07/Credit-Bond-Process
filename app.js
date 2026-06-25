@@ -1624,7 +1624,6 @@ function renderSecondaryOrders() {
               ${risk ? `<span>${escapeHtml(risk)}</span>` : ""}
             </div>
             <div class="secondary-card-actions">
-              <button class="button subtle" type="button" data-secondary-order-id="${escapeAttribute(order.id)}" data-secondary-order-action="filled">成交</button>
               <button class="button subtle" type="button" data-secondary-order-id="${escapeAttribute(order.id)}" data-secondary-order-action="cancelled">撤单</button>
               <button class="button subtle" type="button" data-secondary-order-id="${escapeAttribute(order.id)}" data-secondary-order-action="expired">过期</button>
             </div>
@@ -1703,6 +1702,8 @@ function renderSecondaryTrades() {
             <span>谈判 ${escapeHtml(trade.negotiationDate)}</span>
             <span>交易 ${escapeHtml(trade.tradeDate)}+${escapeHtml(trade.settlementSpeed)}</span>
             <span>交割 ${escapeHtml(trade.settlementDate)}</span>
+            ${trade.counterparty ? `<span>对手方 ${escapeHtml(trade.counterparty)}</span>` : ""}
+            ${trade.intermediary ? `<span>中介 ${escapeHtml(trade.intermediary)}</span>` : ""}
             ${trade.frontOfficeDone ? `<span>前台净价 ${escapeHtml(trade.frontOfficePrice || trade.price || "未填")}</span>` : ""}
             ${trade.ledgerSentAt ? "<span>台账已发送</span>" : ""}
             ${trade.sourceType === "primary_award" ? "<span>一级中标</span>" : ""}
@@ -2061,40 +2062,18 @@ function updateSecondaryOrderStatus(id, status) {
   const orders = normalizeSecondaryOrders(state.secondaryOrders || []);
   const order = orders.find((item) => item.id === id);
   if (!order) return;
-  const today = localDate(new Date());
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const nextState = {
+  if (status === "filled") {
+    showToast("请粘贴交易要素并点“录入待成交”，成交不再从挂单卡片触发。");
+    return;
+  }
+  state = {
     ...state,
     secondaryOrders: orders.map((item) => item.id === id ? markSecondaryOrderStatus(item, status, item.quantityWan) : item),
     updatedAt: new Date().toISOString(),
   };
-  const remaining = Math.max(0, order.quantityWan - order.filledWan);
-  state = status === "filled" && remaining > 0
-    ? upsertSecondaryTrades(nextState, [{
-        side: order.side === "offer" ? "sell" : "buy",
-        account: order.account,
-        code: order.code,
-        shortName: order.shortName,
-        quantityWan: remaining,
-        price: order.price,
-        yieldRate: order.yieldRate,
-        negotiationDate: today,
-        tradeDate: today,
-        settlementSpeed: 1,
-        settlementDate: localDate(tomorrow),
-        sourceType: "order_fill",
-        orderId: order.id,
-        tradeCategory: "non_protocol",
-        tradeStage: "negotiated",
-        frontOfficeDone: false,
-        codeStatus: order.code ? "confirmed" : "pending",
-        sourceText: order.sourceText || "",
-      }])
-    : nextState;
   persistState();
   renderSecondaryInventoryWorkspace();
-  showToast(status === "filled" ? "挂单已成交并生成二级流水，影子库存已锁定。" : "挂单状态已更新。");
+  showToast("挂单状态已更新。");
 }
 
 async function exportProtocolTransferLedger() {
