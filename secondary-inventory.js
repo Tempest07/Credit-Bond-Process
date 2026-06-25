@@ -13,15 +13,29 @@ const SECONDARY_TRADE_STAGES = new Set(["negotiated", "front_office_done", "ledg
 const SECONDARY_TRADE_CATEGORIES = new Set(["protocol", "non_protocol", "primary_award"]);
 
 export function normalizeSecondaryInventoryPositions(input = []) {
-  return Array.isArray(input) ? input.map(normalizeInventoryPosition).filter((item) => item.code || item.shortName) : [];
+  return Array.isArray(input) ? input.map(normalizeInventoryPosition).filter(isUsableSecondaryRecord) : [];
 }
 
 export function normalizeSecondaryOrders(input = []) {
-  return Array.isArray(input) ? input.map(normalizeSecondaryOrder).filter((item) => item.code || item.shortName) : [];
+  return Array.isArray(input) ? input.map(normalizeSecondaryOrder).filter(isUsableSecondaryRecord) : [];
 }
 
 export function normalizeSecondaryTrades(input = []) {
-  return Array.isArray(input) ? input.map(normalizeSecondaryTrade).filter((item) => item.code || item.shortName) : [];
+  return Array.isArray(input) ? input.map(normalizeSecondaryTrade).filter(isUsableSecondaryRecord) : [];
+}
+
+export function hasGarbledSecondaryText(record = {}) {
+  return /\?{2,}/.test([
+    record.shortName,
+    record.region,
+    record.groupName,
+    record.price,
+    record.sourceText,
+  ].filter(Boolean).join(" "));
+}
+
+function isUsableSecondaryRecord(record = {}) {
+  return Boolean(record.code || record.shortName) && !hasGarbledSecondaryText(record);
 }
 
 export function normalizeInventoryPosition(input = {}) {
@@ -486,7 +500,7 @@ function secondaryOrderExportKey(order = {}) {
 }
 
 function isGarbledSecondaryOrder(order = {}) {
-  return /\?{2,}/.test(`${order.shortName || ""} ${order.sourceText || ""} ${order.price || ""}`);
+  return hasGarbledSecondaryText(order);
 }
 
 function normalizeTextKey(value = "") {

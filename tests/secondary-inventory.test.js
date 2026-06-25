@@ -7,6 +7,8 @@ import {
   buildSecondaryOfferListText,
   calculateShadowInventory,
   markSecondaryTradeFrontOffice,
+  normalizeSecondaryInventoryPositions,
+  normalizeSecondaryOrders,
   parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
@@ -132,6 +134,29 @@ test("re-imported secondary offer list controls export order", () => {
 
   const text = buildSecondaryOfferListText(state.secondaryOrders);
   assert.match(text, /281640\.SH，26西轨03，1\.93\*ofr\n524474\.SZ，25长汇K2，1\.84\*ofr/);
+});
+
+test("drops garbled secondary records from loaded state", () => {
+  const positions = normalizeSecondaryInventoryPositions([
+    { code: "281640.SH", shortName: "26??03", quantityWan: 3000, sourceText: "???? AFS ?? 281640.SH 3000" },
+    { code: "102682346.IB", shortName: "26JSGMTN002", quantityWan: 6000 },
+  ]);
+  const orders = normalizeSecondaryOrders([
+    { code: "281640.SH", shortName: "26??03", region: "??(??)", yieldRate: 1.93, sourceText: "281640.SH,26??03,1.93*ofr" },
+    { code: "102682346.IB", shortName: "26JSGMTN002", yieldRate: 1.9 },
+  ]);
+
+  assert.equal(positions.length, 1);
+  assert.equal(positions[0].code, "102682346.IB");
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0].code, "102682346.IB");
+
+  const rows = calculateShadowInventory({
+    secondaryInventoryPositions: [{ code: "281640.SH", shortName: "26??03", quantityWan: 3000 }],
+    secondaryOrders: [{ code: "281640.SH", shortName: "26??03", status: "active", quantityWan: 1000 }],
+    secondaryTrades: [],
+  });
+  assert.equal(rows.length, 0);
 });
 
 test("subtracts unsettled sells from available inventory after a real snapshot", () => {
