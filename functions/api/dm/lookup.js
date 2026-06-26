@@ -89,7 +89,7 @@ export async function onRequestOptions() {
 async function lookupBasicInfo(dm, { shortName, securityId }) {
   const payload = securityId
     ? { securityIdList: [securityId] }
-    : { secShortName: shortName };
+    : { secShortNameList: [shortName] };
   const raw = await dm.post(BASIC_INFO_PATH, payload);
   return { raw, rows: rowsFromDm(raw) };
 }
@@ -116,7 +116,7 @@ async function lookupPrimaryData(dm, { shortName, securityId, issuerName, startD
 }
 
 async function lookupCompanyInfo(dm, issuerName) {
-  const raw = await dm.post(COMPANY_INFO_PATH, { comFullNameList: issuerName });
+  const raw = await dm.post(COMPANY_INFO_PATH, { comFullNameList: [issuerName] });
   return { raw, rows: rowsFromDm(raw) };
 }
 

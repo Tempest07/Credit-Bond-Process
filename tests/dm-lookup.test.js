@@ -20,7 +20,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
     const request = JSON.parse(body);
     let data;
     if (url.includes("/bond/basic-info/info")) {
-      assert.equal(request.secShortName, "26测试SCP001");
+      assert.deepEqual(request.secShortNameList, ["26测试SCP001"]);
       data = [{
         security_id: "012681111.IB",
         sec_short_name: "26测试SCP001",
@@ -48,6 +48,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
         }],
       };
     } else {
+      assert.deepEqual(request.comFullNameList, ["测试集团有限公司"]);
       data = [{ com_full_name: "测试集团有限公司", is_city_annex: 1 }];
     }
     const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
