@@ -1,0 +1,488 @@
+const DM_BASE_URL = "https://gapi-ext.innodealing.com";
+const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
+const PRIMARY_PATH = "/dm-quant-func-service/api/v1/bond/primary/data";
+const COMPANY_INFO_PATH = "/dm-quant-func-service/api/v1/company/basic-info/info";
+
+const SBOX = [
+  0xd6, 0x90, 0xe9, 0xfe, 0xcc, 0xe1, 0x3d, 0xb7, 0x16, 0xb6, 0x14, 0xc2, 0x28, 0xfb, 0x2c, 0x05,
+  0x2b, 0x67, 0x9a, 0x76, 0x2a, 0xbe, 0x04, 0xc3, 0xaa, 0x44, 0x13, 0x26, 0x49, 0x86, 0x06, 0x99,
+  0x9c, 0x42, 0x50, 0xf4, 0x91, 0xef, 0x98, 0x7a, 0x33, 0x54, 0x0b, 0x43, 0xed, 0xcf, 0xac, 0x62,
+  0xe4, 0xb3, 0x1c, 0xa9, 0xc9, 0x08, 0xe8, 0x95, 0x80, 0xdf, 0x94, 0xfa, 0x75, 0x8f, 0x3f, 0xa6,
+  0x47, 0x07, 0xa7, 0xfc, 0xf3, 0x73, 0x17, 0xba, 0x83, 0x59, 0x3c, 0x19, 0xe6, 0x85, 0x4f, 0xa8,
+  0x68, 0x6b, 0x81, 0xb2, 0x71, 0x64, 0xda, 0x8b, 0xf8, 0xeb, 0x0f, 0x4b, 0x70, 0x56, 0x9d, 0x35,
+  0x1e, 0x24, 0x0e, 0x5e, 0x63, 0x58, 0xd1, 0xa2, 0x25, 0x22, 0x7c, 0x3b, 0x01, 0x21, 0x78, 0x87,
+  0xd4, 0x00, 0x46, 0x57, 0x9f, 0xd3, 0x27, 0x52, 0x4c, 0x36, 0x02, 0xe7, 0xa0, 0xc4, 0xc8, 0x9e,
+  0xea, 0xbf, 0x8a, 0xd2, 0x40, 0xc7, 0x38, 0xb5, 0xa3, 0xf7, 0xf2, 0xce, 0xf9, 0x61, 0x15, 0xa1,
+  0xe0, 0xae, 0x5d, 0xa4, 0x9b, 0x34, 0x1a, 0x55, 0xad, 0x93, 0x32, 0x30, 0xf5, 0x8c, 0xb1, 0xe3,
+  0x1d, 0xf6, 0xe2, 0x2e, 0x82, 0x66, 0xca, 0x60, 0xc0, 0x29, 0x23, 0xab, 0x0d, 0x53, 0x4e, 0x6f,
+  0xd5, 0xdb, 0x37, 0x45, 0xde, 0xfd, 0x8e, 0x2f, 0x03, 0xff, 0x6a, 0x72, 0x6d, 0x6c, 0x5b, 0x51,
+  0x8d, 0x1b, 0xaf, 0x92, 0xbb, 0xdd, 0xbc, 0x7f, 0x11, 0xd9, 0x5c, 0x41, 0x1f, 0x10, 0x5a, 0xd8,
+  0x0a, 0xc1, 0x31, 0x88, 0xa5, 0xcd, 0x7b, 0xbd, 0x2d, 0x74, 0xd0, 0x12, 0xb8, 0xe5, 0xb4, 0xb0,
+  0x89, 0x69, 0x97, 0x4a, 0x0c, 0x96, 0x77, 0x7e, 0x65, 0xb9, 0xf1, 0x09, 0xc5, 0x6e, 0xc6, 0x84,
+  0x18, 0xf0, 0x7d, 0xec, 0x3a, 0xdc, 0x4d, 0x20, 0x79, 0xee, 0x5f, 0x3e, 0xd7, 0xcb, 0x39, 0x48,
+];
+
+const FK = [0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc];
+const CK = [
+  0x00070e15, 0x1c232a31, 0x383f464d, 0x545b6269, 0x70777e85, 0x8c939aa1, 0xa8afb6bd, 0xc4cbd2d9,
+  0xe0e7eef5, 0xfc030a11, 0x181f262d, 0x343b4249, 0x50575e65, 0x6c737a81, 0x888f969d, 0xa4abb2b9,
+  0xc0c7ced5, 0xdce3eaf1, 0xf8ff060d, 0x141b2229, 0x30373e45, 0x4c535a61, 0x686f767d, 0x848b9299,
+  0xa0a7aeb5, 0xbcc3cad1, 0xd8dfe6ed, 0xf4fb0209, 0x10171e25, 0x2c333a41, 0x484f565d, 0x646b7279,
+];
+
+export async function onRequestGet(context) {
+  const denied = authorize(context);
+  if (denied) return denied;
+
+  const url = new URL(context.request.url);
+  const shortName = (url.searchParams.get("shortName") || url.searchParams.get("short_name") || "").trim();
+  const securityId = (url.searchParams.get("securityId") || url.searchParams.get("security_id") || "").trim();
+  const startDate = (url.searchParams.get("startDate") || url.searchParams.get("start_date") || "").trim();
+  const endDate = (url.searchParams.get("endDate") || url.searchParams.get("end_date") || "").trim();
+
+  if (!shortName && !securityId) {
+    return json({ error: "请提供 shortName 或 securityId" }, 400);
+  }
+  const missingConfig = validateDmConfig(context.env);
+  if (missingConfig) return missingConfig;
+
+  try {
+    const dm = makeDmClient(context.env, context.request);
+    const basic = await lookupBasicInfo(dm, { shortName, securityId });
+    const primary = await lookupPrimaryData(dm, {
+      shortName,
+      securityId,
+      issuerName: pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]),
+      startDate,
+      endDate,
+    });
+    const issuerName = pickFirstString(firstRow(primary), ["issuer_full_name", "issuerFullName"])
+      || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
+    const company = issuerName ? await lookupCompanyInfo(dm, issuerName) : null;
+    const normalized = normalizeDmLookup({ shortName, securityId, basic, primary, company });
+
+    return json({
+      ok: true,
+      query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
+      normalized,
+      fieldCandidates: collectFieldCandidates([basic.raw, primary.raw, company?.raw].filter(Boolean)),
+      raw: {
+        basicInfo: basic.raw,
+        primaryData: primary.raw,
+        companyInfo: company?.raw || null,
+      },
+    });
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error.message || "DM 查询失败",
+      hint: "请检查 INNO_APP_KEY/INNO_APP_SECRET、DM 套餐权限、Cloudflare 到 DM 的网络访问以及简称是否能匹配。",
+    }, 502);
+  }
+}
+
+export async function onRequestOptions() {
+  return new Response(null, { status: 204, headers: apiHeaders() });
+}
+
+async function lookupBasicInfo(dm, { shortName, securityId }) {
+  const payload = securityId
+    ? { securityIdList: [securityId] }
+    : { secShortName: shortName };
+  const raw = await dm.post(BASIC_INFO_PATH, payload);
+  return { raw, rows: rowsFromDm(raw) };
+}
+
+async function lookupPrimaryData(dm, { shortName, securityId, issuerName, startDate, endDate }) {
+  const window = resolvePrimaryWindow(startDate, endDate);
+  const payload = {
+    startDate: window.startDate,
+    endDate: window.endDate,
+    bond_category: "1",
+  };
+  if (issuerName) payload.issuerFullName = issuerName;
+
+  const raw = await dm.post(PRIMARY_PATH, payload);
+  const rows = rowsFromDm(raw);
+  const filtered = rows.filter((row) => {
+    const rowShortName = String(row.sec_short_name ?? row.secShortName ?? "").trim();
+    const rowSecurityId = String(row.security_id ?? row.securityId ?? "").trim();
+    if (securityId && rowSecurityId === securityId) return true;
+    if (shortName && normalizeName(rowShortName) === normalizeName(shortName)) return true;
+    return false;
+  });
+  return { raw, rows: filtered.length ? filtered : rows, window };
+}
+
+async function lookupCompanyInfo(dm, issuerName) {
+  const raw = await dm.post(COMPANY_INFO_PATH, { comFullNameList: issuerName });
+  return { raw, rows: rowsFromDm(raw) };
+}
+
+function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
+  const basicRow = firstRow(basic);
+  const primaryRow = bestPrimaryRow(primary, shortName, securityId);
+  const companyRow = firstRow(company);
+  const issuerName = pickFirstString(primaryRow, ["issuer_full_name", "issuerFullName"])
+    || pickFirstString(basicRow, ["issuer_name", "issuerName"])
+    || pickFirstString(companyRow, ["com_full_name", "comFullName"]);
+  const leadUnderwriter = pickFirstString(primaryRow, ["unde_name", "undeName"]);
+  const scaleWan = numberFromRow(primaryRow, ["plan_issue_amount", "planIssueAmount"])
+    ?? numberFromRow(primaryRow, ["actu_issue_amount", "actuIssueAmount"]);
+  const scaleYi = Number.isFinite(scaleWan) ? round(scaleWan / 10000, 4) : numberFromRow(basicRow, ["actu_iss_amut", "actuIssAmut", "new_size", "newSize"]);
+  return {
+    securityId: pickFirstString(primaryRow, ["security_id", "securityId"]) || pickFirstString(basicRow, ["security_id", "securityId"]) || securityId,
+    shortName: pickFirstString(primaryRow, ["sec_short_name", "secShortName"]) || pickFirstString(basicRow, ["sec_short_name", "secShortName"]) || shortName,
+    fullName: pickFirstString(primaryRow, ["sec_full_name", "secFullName"]) || pickFirstString(basicRow, ["sec_full_name", "secFullName"]),
+    issuerName,
+    durationText: pickFirstString(primaryRow, ["bond_issue_tenor", "bondIssueTenor"]) || pickFirstString(basicRow, ["bond_matu", "bondMatu"]),
+    issueScaleYi: scaleYi,
+    inquiryRange: pickFirstString(primaryRow, ["subscribe_rate", "subscribeRate"]),
+    venue: pickFirstString(primaryRow, ["tender_market_desc", "tenderMarketDesc"]) || inferVenue(pickFirstString(primaryRow, ["security_id", "securityId"]) || securityId),
+    offeringType: pickFirstString(primaryRow, ["public_offering_status", "publicOfferingStatus"]),
+    leadUnderwriter,
+    sponsorStatus: inferSponsorStatus(leadUnderwriter),
+    subscribeDate: pickFirstString(primaryRow, ["subscribe_date", "subscribeDate"]),
+    subscribeTime: pickFirstString(primaryRow, ["subscribe_time", "subscribeTime"]),
+    paymentDate: pickFirstString(primaryRow, ["pay_date", "payDate"]),
+    issueStartDate: pickFirstString(primaryRow, ["issue_start_date", "issueStartDate"]) || pickFirstString(basicRow, ["iss_start_date", "issStartDate"]),
+    issueEndDate: pickFirstString(primaryRow, ["issue_end_date", "issueEndDate"]) || pickFirstString(basicRow, ["iss_end_date", "issEndDate"]),
+    subjectRating: pickRatingLike([basicRow, primaryRow, companyRow], "subject"),
+    ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
+    impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
+  };
+}
+
+function bestPrimaryRow(primary, shortName, securityId) {
+  const rows = primary?.rows || [];
+  return rows.find((row) => securityId && String(row.security_id ?? row.securityId ?? "") === securityId)
+    || rows.find((row) => shortName && normalizeName(row.sec_short_name ?? row.secShortName) === normalizeName(shortName))
+    || rows[0]
+    || {};
+}
+
+function firstRow(result) {
+  return result?.rows?.[0] || {};
+}
+
+function rowsFromDm(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.list)) return raw.list;
+  if (Array.isArray(raw?.data)) return raw.data;
+  if (raw && typeof raw === "object") return [raw];
+  return [];
+}
+
+function collectFieldCandidates(rawItems) {
+  const candidates = [];
+  for (const raw of rawItems) {
+    for (const row of rowsFromDm(raw).slice(0, 5)) {
+      for (const [key, value] of Object.entries(row || {})) {
+        const valueText = String(value ?? "");
+        const keyText = String(key);
+        if (/(rating|agency|credit|grade|level|implied|rate|评级|隐含|等级|级别|主体|机构)/i.test(`${keyText} ${valueText}`)) {
+          candidates.push({ key, value });
+        }
+      }
+    }
+  }
+  return candidates.slice(0, 200);
+}
+
+function pickRatingLike(rows, kind) {
+  const keyPatterns = {
+    subject: [/subject.*rating/i, /issuer.*rating/i, /main.*rating/i, /主体.*评/i],
+    agency: [/rating.*agency/i, /agency/i, /评.*机构/i],
+    implied: [/implied/i, /隐含/i, /cbc.*rating/i, /中债.*评/i],
+  }[kind] || [];
+  const valuePattern = /^(?:AAA|AA\+?|AA\(2\)|AA-?|A\+?|A-?|BBB\+?|BBB-?|BB\+?|BB-?|B\+?|B-?)(?:\(.+?\))?$/i;
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row || {})) {
+      const keyText = String(key);
+      const valueText = String(value ?? "").trim();
+      if (!valueText) continue;
+      if (keyPatterns.some((pattern) => pattern.test(keyText))) return valueText;
+      if (kind === "subject" && valuePattern.test(valueText) && /(rating|grade|level|评级|等级|级别)/i.test(keyText)) return valueText;
+    }
+  }
+  return "";
+}
+
+function pickFirstString(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
+function numberFromRow(row, keys) {
+  for (const key of keys) {
+    const value = Number(row?.[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function inferVenue(securityId = "") {
+  const value = String(securityId || "").toUpperCase();
+  if (value.endsWith(".IB")) return "银行间";
+  if (value.endsWith(".SH")) return "上交所";
+  if (value.endsWith(".SZ")) return "深交所";
+  return "";
+}
+
+function inferSponsorStatus(leadUnderwriter = "") {
+  return /兴业银行/.test(String(leadUnderwriter || "")) ? "牵头" : "非我行主承";
+}
+
+function normalizeName(value = "") {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
+}
+
+function resolvePrimaryWindow(startDate, endDate) {
+  if (startDate && endDate) return { startDate, endDate };
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - 15);
+  const end = new Date(today);
+  end.setDate(today.getDate() + 15);
+  return { startDate: localDate(start), endDate: localDate(end) };
+}
+
+function localDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function round(value, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function makeDmClient(env, request) {
+  const appKey = env.INNO_APP_KEY;
+  const appSecret = env.INNO_APP_SECRET || env.INNO_SM4_KEY;
+  const baseUrl = (env.INNO_BASE_URL || DM_BASE_URL).replace(/\/+$/, "");
+  return {
+    async post(path, data) {
+      const payload = sm4EncryptToBase64Url(JSON.stringify(data), appSecret);
+      const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": request.headers.get("User-Agent") || "Mozilla/5.0 Cloudflare Pages",
+          "X-Dm-App-Key": appKey,
+        },
+        body: payload,
+      });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`DM HTTP ${response.status}: ${text.slice(0, 300)}`);
+      let encrypted;
+      try {
+        encrypted = JSON.parse(text);
+      } catch {
+        encrypted = text;
+      }
+      const decrypted = sm4DecryptFromBase64Url(encrypted, appSecret);
+      const parsed = JSON.parse(decrypted);
+      if (parsed && typeof parsed === "object" && "code" in parsed && parsed.code !== 0) {
+        throw new Error(`DM API ${parsed.code}: ${parsed.message || "unknown error"}`);
+      }
+      return parsed?.data ?? parsed;
+    },
+  };
+}
+
+function validateDmConfig(env) {
+  if (!env.INNO_APP_KEY) return json({ error: "Cloudflare Secret INNO_APP_KEY 尚未配置" }, 503);
+  if (!env.INNO_APP_SECRET && !env.INNO_SM4_KEY) return json({ error: "Cloudflare Secret INNO_APP_SECRET 尚未配置" }, 503);
+  return null;
+}
+
+function authorize(context) {
+  if (isLocalRequest(context.request)) return null;
+  const password = context.env.APP_PASSWORD;
+  if (!password) return json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503);
+  const authorization = context.request.headers.get("Authorization") || "";
+  if (authorization !== `Bearer ${password}`) return json({ error: "Unauthorized" }, 401);
+  return null;
+}
+
+function isLocalRequest(request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function apiHeaders() {
+  return {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
+}
+
+function sm4EncryptToBase64Url(plaintext, key) {
+  const bytes = pkcs7Pad(utf8Encode(plaintext));
+  const roundKeys = sm4RoundKeys(prepareSm4Key(key));
+  const output = new Uint8Array(bytes.length);
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    output.set(sm4CryptBlock(bytes.subarray(offset, offset + 16), roundKeys), offset);
+  }
+  return base64UrlEncode(output);
+}
+
+function sm4DecryptFromBase64Url(value, key) {
+  const bytes = base64UrlDecode(String(value || ""));
+  if (!bytes.length || bytes.length % 16 !== 0) throw new Error("DM 返回密文长度不正确");
+  const roundKeys = sm4RoundKeys(prepareSm4Key(key)).reverse();
+  const output = new Uint8Array(bytes.length);
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    output.set(sm4CryptBlock(bytes.subarray(offset, offset + 16), roundKeys), offset);
+  }
+  return utf8Decode(pkcs7Unpad(output));
+}
+
+function prepareSm4Key(key) {
+  const source = utf8Encode(String(key || ""));
+  const result = new Uint8Array(16);
+  result.set(source.slice(0, 16));
+  return result;
+}
+
+function sm4RoundKeys(keyBytes) {
+  const mk = [
+    readUint32(keyBytes, 0),
+    readUint32(keyBytes, 4),
+    readUint32(keyBytes, 8),
+    readUint32(keyBytes, 12),
+  ];
+  const k = [mk[0] ^ FK[0], mk[1] ^ FK[1], mk[2] ^ FK[2], mk[3] ^ FK[3]];
+  const rk = [];
+  for (let i = 0; i < 32; i += 1) {
+    const next = (k[i] ^ sm4KeyTransform((k[i + 1] ^ k[i + 2] ^ k[i + 3] ^ CK[i]) >>> 0)) >>> 0;
+    k.push(next);
+    rk.push(next);
+  }
+  return rk;
+}
+
+function sm4CryptBlock(block, roundKeys) {
+  const x = [
+    readUint32(block, 0),
+    readUint32(block, 4),
+    readUint32(block, 8),
+    readUint32(block, 12),
+  ];
+  for (let i = 0; i < 32; i += 1) {
+    x.push((x[i] ^ sm4RoundTransform((x[i + 1] ^ x[i + 2] ^ x[i + 3] ^ roundKeys[i]) >>> 0)) >>> 0);
+  }
+  const output = new Uint8Array(16);
+  writeUint32(output, 0, x[35]);
+  writeUint32(output, 4, x[34]);
+  writeUint32(output, 8, x[33]);
+  writeUint32(output, 12, x[32]);
+  return output;
+}
+
+function sm4RoundTransform(value) {
+  const b = sm4Substitute(value);
+  return (b ^ rotl32(b, 2) ^ rotl32(b, 10) ^ rotl32(b, 18) ^ rotl32(b, 24)) >>> 0;
+}
+
+function sm4KeyTransform(value) {
+  const b = sm4Substitute(value);
+  return (b ^ rotl32(b, 13) ^ rotl32(b, 23)) >>> 0;
+}
+
+function sm4Substitute(value) {
+  return (
+    (SBOX[(value >>> 24) & 0xff] << 24)
+    | (SBOX[(value >>> 16) & 0xff] << 16)
+    | (SBOX[(value >>> 8) & 0xff] << 8)
+    | SBOX[value & 0xff]
+  ) >>> 0;
+}
+
+function rotl32(value, bits) {
+  return ((value << bits) | (value >>> (32 - bits))) >>> 0;
+}
+
+function readUint32(bytes, offset) {
+  return (
+    ((bytes[offset] << 24) >>> 0)
+    | (bytes[offset + 1] << 16)
+    | (bytes[offset + 2] << 8)
+    | bytes[offset + 3]
+  ) >>> 0;
+}
+
+function writeUint32(bytes, offset, value) {
+  bytes[offset] = (value >>> 24) & 0xff;
+  bytes[offset + 1] = (value >>> 16) & 0xff;
+  bytes[offset + 2] = (value >>> 8) & 0xff;
+  bytes[offset + 3] = value & 0xff;
+}
+
+function pkcs7Pad(bytes) {
+  const padding = 16 - (bytes.length % 16 || 16);
+  const padLength = bytes.length % 16 === 0 ? 16 : padding;
+  const result = new Uint8Array(bytes.length + padLength);
+  result.set(bytes);
+  result.fill(padLength, bytes.length);
+  return result;
+}
+
+function pkcs7Unpad(bytes) {
+  const padLength = bytes[bytes.length - 1];
+  if (padLength < 1 || padLength > 16 || padLength > bytes.length) throw new Error("SM4 padding 不正确");
+  for (let i = bytes.length - padLength; i < bytes.length; i += 1) {
+    if (bytes[i] !== padLength) throw new Error("SM4 padding 不正确");
+  }
+  return bytes.slice(0, bytes.length - padLength);
+}
+
+function utf8Encode(value) {
+  return new TextEncoder().encode(value);
+}
+
+function utf8Decode(bytes) {
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function base64UrlEncode(bytes) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlDecode(value) {
+  const padded = String(value || "").replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(padded, "base64"));
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export const __test__ = {
+  sm4RoundKeys,
+  sm4CryptBlock,
+  prepareSm4Key,
+  sm4EncryptToBase64Url,
+  sm4DecryptFromBase64Url,
+  bytesToHex,
+};
