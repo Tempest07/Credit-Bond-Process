@@ -76,6 +76,7 @@ export async function onRequestGet(context) {
     return json({
       ok: false,
       error: error.message || "DM 查询失败",
+      diagnostic: error.diagnostic || null,
       hint: "请检查 INNO_APP_KEY/INNO_APP_SECRET、DM 套餐权限、Cloudflare 到 DM 的网络访问以及简称是否能匹配。",
     }, 502);
   }
@@ -288,7 +289,7 @@ function makeDmClient(env, request) {
       }
       const encrypted = extractDmEncryptedPayload(content);
       const parsed = typeof encrypted === "string"
-        ? JSON.parse(sm4DecryptFromBase64Url(encrypted, appSecret))
+        ? JSON.parse(decryptDmPayload(encrypted, appSecret, { content, response, text }))
         : encrypted;
       if (parsed && typeof parsed === "object" && "code" in parsed && parsed.code !== 0) {
         throw new Error(`DM API ${parsed.code}: ${parsed.message || "unknown error"}`);
@@ -330,12 +331,24 @@ function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
 }
 
-function extractDmEncryptedPayload(content) {
-  if (typeof content === "string") return content.trim();
+function extractDmEncryptedPayload(content, depth = 0) {
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    if (depth < 4 && looksLikeJson(trimmed)) {
+      try {
+        return extractDmEncryptedPayload(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
 
   if (content && typeof content === "object") {
     for (const key of ["data", "result", "content", "payload", "cipherText", "ciphertext"]) {
-      if (typeof content[key] === "string" && content[key].trim()) return content[key].trim();
+      if (typeof content[key] === "string" && content[key].trim()) {
+        return extractDmEncryptedPayload(content[key], depth + 1);
+      }
     }
 
     if ("code" in content && content.code !== 0) {
@@ -351,6 +364,55 @@ function extractDmEncryptedPayload(content) {
   }
 
   throw new Error(`DM response shape unsupported: ${typeof content}`);
+}
+
+function decryptDmPayload(encrypted, key, context = {}) {
+  if (!looksLikeBase64(encrypted)) {
+    throw withDmDiagnostic(
+      new Error("DM response is not encrypted base64/base64url text"),
+      context,
+      encrypted,
+    );
+  }
+
+  try {
+    return sm4DecryptFromBase64Url(encrypted, key);
+  } catch (error) {
+    throw withDmDiagnostic(error, context, encrypted);
+  }
+}
+
+function withDmDiagnostic(error, context, encrypted) {
+  error.diagnostic = {
+    responseContentType: context.response?.headers?.get?.("content-type") || "",
+    responsePreview: previewText(context.text),
+    extractedPayloadPreview: previewText(encrypted),
+    extractedPayloadLength: typeof encrypted === "string" ? encrypted.length : null,
+    responseShape: describeShape(context.content),
+  };
+  return error;
+}
+
+function looksLikeJson(value) {
+  return (value.startsWith("{") && value.endsWith("}"))
+    || (value.startsWith("[") && value.endsWith("]"))
+    || (value.startsWith('"') && value.endsWith('"'));
+}
+
+function looksLikeBase64(value) {
+  const text = String(value || "").trim();
+  return Boolean(text) && /^[A-Za-z0-9+/_=\-\s]+$/.test(text);
+}
+
+function describeShape(value) {
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (value && typeof value === "object") return `object(${Object.keys(value).slice(0, 12).join(",")})`;
+  return typeof value;
+}
+
+function previewText(value, limit = 300) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
 function sm4EncryptToBase64Url(plaintext, key) {
@@ -510,5 +572,6 @@ export const __test__ = {
   sm4EncryptToBase64Url,
   sm4DecryptFromBase64Url,
   extractDmEncryptedPayload,
+  decryptDmPayload,
   bytesToHex,
 };

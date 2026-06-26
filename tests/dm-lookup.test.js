@@ -85,6 +85,26 @@ test("DM lookup still accepts direct encrypted string responses", () => {
   assert.equal(__test__.extractDmEncryptedPayload(encrypted), encrypted);
 });
 
+test("DM lookup unwraps double-encoded encrypted response payloads", () => {
+  const secret = "1234567890abcdef";
+  const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data: { ok: true } }), secret);
+  const content = { data: JSON.stringify(encrypted) };
+  assert.equal(__test__.extractDmEncryptedPayload(content), encrypted);
+  assert.equal(JSON.parse(__test__.decryptDmPayload(encrypted, secret)).data.ok, true);
+});
+
+test("DM lookup reports diagnostics for unencrypted upstream responses", () => {
+  assert.throws(
+    () => __test__.decryptDmPayload("这不是密文", "1234567890abcdef", { text: '{"data":"这不是密文"}', content: { data: "这不是密文" } }),
+    (error) => {
+      assert.match(error.message, /not encrypted/);
+      assert.equal(error.diagnostic.responseShape, "object(data)");
+      assert.match(error.diagnostic.extractedPayloadPreview, /不是密文/);
+      return true;
+    },
+  );
+});
+
 function hexToBytes(hex) {
   return new Uint8Array(hex.match(/.{2}/g).map((part) => parseInt(part, 16)));
 }
