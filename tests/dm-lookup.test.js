@@ -106,6 +106,14 @@ test("DM lookup reports diagnostics for unencrypted upstream responses", () => {
   );
 });
 
+test("DM primary default window stays within the 30 calendar day limit", () => {
+  const window = __test__.resolvePrimaryWindow("", "");
+  const start = Date.parse(`${window.startDate}T00:00:00Z`);
+  const end = Date.parse(`${window.endDate}T00:00:00Z`);
+  const inclusiveDays = Math.floor((end - start) / 86400000) + 1;
+  assert.ok(inclusiveDays <= 30);
+});
+
 function hexToBytes(hex) {
   return new Uint8Array(hex.match(/.{2}/g).map((part) => parseInt(part, 16)));
 }

@@ -245,7 +245,7 @@ function resolvePrimaryWindow(startDate, endDate) {
   if (startDate && endDate) return { startDate, endDate };
   const today = new Date();
   const start = new Date(today);
-  start.setDate(today.getDate() - 15);
+  start.setDate(today.getDate() - 14);
   const end = new Date(today);
   end.setDate(today.getDate() + 15);
   return { startDate: localDate(start), endDate: localDate(end) };
@@ -573,5 +573,6 @@ export const __test__ = {
   sm4DecryptFromBase64Url,
   extractDmEncryptedPayload,
   decryptDmPayload,
+  resolvePrimaryWindow,
   bytesToHex,
 };
