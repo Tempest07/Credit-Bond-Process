@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260617-dynamic-inquiry-ranges">
+  <link rel="stylesheet" href="./styles.css?v=20260627-dm-test">
 </head>
 <body>
   <div class="app-shell">
@@ -23,6 +23,7 @@
         <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch">批量撰写</button>
         <button class="nav-item" data-view-target="database">主体与授信库</button>
+        <button class="nav-item" data-view-target="dm-test">DM 测试</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
       </nav>
 
@@ -625,6 +626,62 @@
         </div>
       </section>
 
+      <section class="view" data-view="dm-test">
+        <section class="panel dm-test-panel">
+          <div class="panel-head">
+            <div><span class="step">DM</span><h2>DM 查询测试</h2></div>
+            <span class="pill">读取 INNO_APP_KEY / INNO_APP_SECRET</span>
+          </div>
+          <p class="dm-test-note">输入债券简称或代码，直接调用云端 DM 查询接口。结果会显示结构化字段、候选字段、诊断信息和完整 JSON，方便继续调接口。</p>
+          <form class="dm-test-form" id="dmLookupForm">
+            <label>债券简称或代码<input id="dmLookupInput" placeholder="例如：26张家城投SCP002 或 012681567.IB" autocomplete="off"></label>
+            <label>起始日期（可选）<input id="dmLookupStartDate" type="date"></label>
+            <label>结束日期（可选）<input id="dmLookupEndDate" type="date"></label>
+            <div class="dm-test-actions">
+              <button class="button primary" type="submit" id="dmLookupButton">查询 DM</button>
+              <button class="button subtle" type="button" id="dmLookupClearButton">清空</button>
+              <button class="button subtle" type="button" id="dmLookupCopyButton" disabled>复制 JSON</button>
+            </div>
+          </form>
+        </section>
+
+        <div class="dm-test-grid">
+          <section class="panel dm-result-panel">
+            <div class="panel-head compact">
+              <div><span class="step">01</span><h2>结构化字段</h2></div>
+              <span class="status-badge muted" id="dmLookupStatus">等待查询</span>
+            </div>
+            <div class="dm-normalized-grid" id="dmNormalizedOutput">
+              <div class="empty">暂无查询结果。</div>
+            </div>
+          </section>
+
+          <section class="panel dm-result-panel">
+            <div class="panel-head compact">
+              <div><span class="step">02</span><h2>诊断信息</h2></div>
+            </div>
+            <pre class="dm-json-output compact-json" id="dmDiagnosticOutput">暂无诊断。</pre>
+          </section>
+        </div>
+
+        <section class="panel dm-result-panel">
+          <div class="panel-head compact">
+            <div><span class="step">03</span><h2>候选字段</h2></div>
+            <span class="pill" id="dmCandidateCount">0 项</span>
+          </div>
+          <div class="dm-candidate-list" id="dmCandidateOutput">
+            <div class="empty">暂无候选字段。</div>
+          </div>
+        </section>
+
+        <section class="panel dm-result-panel">
+          <div class="panel-head compact">
+            <div><span class="step">RAW</span><h2>完整 JSON</h2></div>
+          </div>
+          <pre class="dm-json-output" id="dmRawOutput">暂无返回。</pre>
+        </section>
+      </section>
+
       <section class="view" data-view="rules">
         <div class="rules-grid">
           <article class="rule-card"><span>比例规则 01</span><h2>授信比例为默认值</h2><p>建议投资比例默认采用主体最新授信记录中的批复比例。</p></article>
@@ -650,6 +707,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260617-dynamic-inquiry-ranges"></script>
+  <script type="module" src="./app.js?v=20260627-dm-test"></script>
 </body>
 </html>

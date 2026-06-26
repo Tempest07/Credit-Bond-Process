@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260617-dynamic-inquiry-ranges";
+} from "./core.js?v=20260627-dm-test";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260617-dynamic-inquiry-ranges";
+} from "./lifecycle.js?v=20260627-dm-test";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260617-dynamic-inquiry-ranges";
+} from "./history-parser.js?v=20260627-dm-test";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260617-dynamic-inquiry-ranges";
+} from "./protocol-transfer.js?v=20260627-dm-test";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260617-dynamic-inquiry-ranges";
+} from "./secondary-inventory.js?v=20260627-dm-test";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -148,6 +148,7 @@ let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
+let dmLastPayload = null;
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -180,6 +181,7 @@ async function initialize() {
   bindQuickIssuer();
   bindBatch();
   bindDatabase();
+  bindDmTest();
   initializeHistoryImport();
   bindDataActions();
   renderIssuerOptions();
@@ -3178,6 +3180,181 @@ function bindDatabase() {
     showToast(`已导入并归并 ${imported.baseIssuers.length + imported.reviewedIssuers.length} 个主体。`);
     clearHistoryImport();
   });
+}
+
+function bindDmTest() {
+  const form = $("#dmLookupForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runDmLookup();
+  });
+  $("#dmLookupClearButton").addEventListener("click", clearDmLookup);
+  $("#dmLookupCopyButton").addEventListener("click", async () => {
+    if (!dmLastPayload) return;
+    await navigator.clipboard.writeText(JSON.stringify(dmLastPayload, null, 2));
+    showToast("DM 返回 JSON 已复制。");
+  });
+}
+
+async function runDmLookup() {
+  const query = $("#dmLookupInput").value.trim();
+  if (!query) {
+    showToast("请先输入债券简称或代码。");
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (looksLikeSecurityId(query)) params.set("securityId", query);
+  else params.set("shortName", query);
+  const startDate = $("#dmLookupStartDate").value;
+  const endDate = $("#dmLookupEndDate").value;
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
+
+  setDmLookupBusy(true);
+  const startedAt = performance.now();
+  try {
+    const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+    });
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
+    }
+    renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs });
+    showToast(payload.ok ? "DM 查询成功。" : "DM 查询失败，请看诊断信息。");
+  } catch (error) {
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    renderDmLookupResult({
+      ok: false,
+      error: error.message || "DM 查询请求失败",
+      diagnostic: { responsePreview: "浏览器请求失败，未收到接口响应。" },
+      elapsedMs,
+    });
+    showToast("DM 查询请求失败。");
+  } finally {
+    setDmLookupBusy(false);
+  }
+}
+
+function clearDmLookup() {
+  dmLastPayload = null;
+  $("#dmLookupInput").value = "";
+  $("#dmLookupStartDate").value = "";
+  $("#dmLookupEndDate").value = "";
+  $("#dmLookupStatus").textContent = "等待查询";
+  $("#dmLookupStatus").className = "status-badge muted";
+  $("#dmNormalizedOutput").innerHTML = `<div class="empty">暂无查询结果。</div>`;
+  $("#dmDiagnosticOutput").textContent = "暂无诊断。";
+  $("#dmCandidateOutput").innerHTML = `<div class="empty">暂无候选字段。</div>`;
+  $("#dmCandidateCount").textContent = "0 项";
+  $("#dmRawOutput").textContent = "暂无返回。";
+  $("#dmLookupCopyButton").disabled = true;
+}
+
+function setDmLookupBusy(isBusy) {
+  $("#dmLookupButton").disabled = isBusy;
+  $("#dmLookupButton").textContent = isBusy ? "查询中..." : "查询 DM";
+}
+
+function renderDmLookupResult(payload) {
+  dmLastPayload = payload;
+  $("#dmLookupCopyButton").disabled = false;
+
+  const ok = Boolean(payload?.ok);
+  const statusParts = [
+    ok ? "查询成功" : "查询失败",
+    payload?.httpStatus ? `HTTP ${payload.httpStatus}` : "",
+    Number.isFinite(payload?.elapsedMs) ? `${payload.elapsedMs}ms` : "",
+  ].filter(Boolean);
+  $("#dmLookupStatus").textContent = statusParts.join(" · ");
+  $("#dmLookupStatus").className = `status-badge ${ok ? "" : "warning"}`;
+
+  renderDmNormalized(payload?.normalized || null);
+  renderDmDiagnostic(payload);
+  renderDmCandidates(payload?.fieldCandidates || []);
+  $("#dmRawOutput").textContent = JSON.stringify(payload, null, 2);
+}
+
+function renderDmNormalized(normalized) {
+  const fields = [
+    ["securityId", "债券代码"],
+    ["shortName", "债券简称"],
+    ["fullName", "债券全称"],
+    ["issuerName", "发行人"],
+    ["durationText", "期限"],
+    ["issueScaleYi", "规模（亿）"],
+    ["inquiryRange", "询价区间"],
+    ["venue", "发行场所"],
+    ["offeringType", "发行方式"],
+    ["leadUnderwriter", "主承销商"],
+    ["sponsorStatus", "我行主承身份"],
+    ["subjectRating", "主体评级"],
+    ["ratingAgency", "评级机构"],
+    ["impliedRating", "市场隐含评级"],
+    ["subscribeDate", "簿记日期"],
+    ["subscribeTime", "簿记时间"],
+    ["paymentDate", "缴款日"],
+  ];
+  if (!normalized) {
+    $("#dmNormalizedOutput").innerHTML = `<div class="empty">暂无结构化字段。</div>`;
+    return;
+  }
+  $("#dmNormalizedOutput").innerHTML = fields.map(([key, label]) => {
+    const value = normalized[key];
+    const text = value === null || value === undefined || value === "" ? "未返回" : String(value);
+    return `
+      <div class="dm-normalized-item ${text === "未返回" ? "empty-field" : ""}">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(text)}</strong>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDmDiagnostic(payload) {
+  const diagnostic = payload?.diagnostic || null;
+  if (!payload) {
+    $("#dmDiagnosticOutput").textContent = "暂无诊断。";
+    return;
+  }
+  const summary = {
+    ok: payload.ok,
+    error: payload.error || "",
+    hint: payload.hint || "",
+    diagnostic,
+  };
+  $("#dmDiagnosticOutput").textContent = JSON.stringify(summary, null, 2);
+}
+
+function renderDmCandidates(candidates) {
+  $("#dmCandidateCount").textContent = `${candidates.length} 项`;
+  if (!candidates.length) {
+    $("#dmCandidateOutput").innerHTML = `<div class="empty">暂无候选字段。</div>`;
+    return;
+  }
+  $("#dmCandidateOutput").innerHTML = candidates.slice(0, 120).map((item) => `
+    <div class="dm-candidate-item">
+      <span>${escapeHtml(item.key || "")}</span>
+      <strong>${escapeHtml(formatDmCandidateValue(item.value))}</strong>
+    </div>
+  `).join("");
+}
+
+function formatDmCandidateValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function looksLikeSecurityId(value) {
+  return /^\d{6,9}\.(IB|SH|SZ)$/i.test(String(value || "").trim());
 }
 
 function initializeHistoryImport() {
