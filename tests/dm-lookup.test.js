@@ -39,12 +39,13 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
           issuer_full_name: "测试集团有限公司",
           bond_issue_tenor: "270D",
           plan_issue_amount: 70000,
-          subscribe_rate: "1.30-1.50",
-          tender_market_desc: "银行间",
+          subscribe_rate: "1.300000 ~ 1.500000",
+          tender_market_desc: null,
           public_offering_status: "公募",
-          unde_name: "兴业银行",
-          subscribe_date: "2026-06-26",
+          unde_name: "平安银行股份有限公司,兴业银行股份有限公司",
+          subscribe_date: 1782662400000,
           subscribe_time: "18:00",
+          pay_date: 1782748800000,
         }],
       };
     } else {
@@ -68,8 +69,12 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
     assert.equal(payload.normalized.shortName, "26测试SCP001");
     assert.equal(payload.normalized.issuerName, "测试集团有限公司");
     assert.equal(payload.normalized.issueScaleYi, 7);
-    assert.equal(payload.normalized.leadUnderwriter, "兴业银行");
-    assert.equal(payload.normalized.sponsorStatus, "牵头");
+    assert.equal(payload.normalized.inquiryRange, "1.3-1.5");
+    assert.equal(payload.normalized.venue, "银行间");
+    assert.equal(payload.normalized.leadUnderwriter, "平安银行股份有限公司,兴业银行股份有限公司");
+    assert.equal(payload.normalized.sponsorStatus, "联席");
+    assert.equal(payload.normalized.subscribeDate, "2026-06-29");
+    assert.equal(payload.normalized.paymentDate, "2026-06-30");
     assert.equal(payload.normalized.subjectRating, "AAA");
     assert.equal(payload.normalized.ratingAgency, "中诚信国际");
     assert.equal(payload.normalized.impliedRating, "AA+");

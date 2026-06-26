@@ -131,23 +131,29 @@ function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
   const scaleWan = numberFromRow(primaryRow, ["plan_issue_amount", "planIssueAmount"])
     ?? numberFromRow(primaryRow, ["actu_issue_amount", "actuIssueAmount"]);
   const scaleYi = Number.isFinite(scaleWan) ? round(scaleWan / 10000, 4) : numberFromRow(basicRow, ["actu_iss_amut", "actuIssAmut", "new_size", "newSize"]);
+  const primarySecurityId = pickFirstString(primaryRow, ["security_id", "securityId"]);
+  const basicSecurityId = pickFirstString(basicRow, ["security_id", "securityId"]);
+  const resolvedShortName = pickFirstString(primaryRow, ["sec_short_name", "secShortName"])
+    || pickFirstString(basicRow, ["sec_short_name", "secShortName"])
+    || shortName;
   return {
-    securityId: pickFirstString(primaryRow, ["security_id", "securityId"]) || pickFirstString(basicRow, ["security_id", "securityId"]) || securityId,
-    shortName: pickFirstString(primaryRow, ["sec_short_name", "secShortName"]) || pickFirstString(basicRow, ["sec_short_name", "secShortName"]) || shortName,
+    securityId: primarySecurityId || basicSecurityId || securityId,
+    shortName: resolvedShortName,
     fullName: pickFirstString(primaryRow, ["sec_full_name", "secFullName"]) || pickFirstString(basicRow, ["sec_full_name", "secFullName"]),
     issuerName,
     durationText: pickFirstString(primaryRow, ["bond_issue_tenor", "bondIssueTenor"]) || pickFirstString(basicRow, ["bond_matu", "bondMatu"]),
     issueScaleYi: scaleYi,
-    inquiryRange: pickFirstString(primaryRow, ["subscribe_rate", "subscribeRate"]),
-    venue: pickFirstString(primaryRow, ["tender_market_desc", "tenderMarketDesc"]) || inferVenue(pickFirstString(primaryRow, ["security_id", "securityId"]) || securityId),
+    inquiryRange: normalizeInquiryRange(pickFirstString(primaryRow, ["subscribe_rate", "subscribeRate"])),
+    venue: pickFirstString(primaryRow, ["tender_market_desc", "tenderMarketDesc"])
+      || inferVenue(primarySecurityId || basicSecurityId || securityId, resolvedShortName, pickFirstString(primaryRow, ["bond_type_desc", "bondTypeDesc"]) || pickFirstString(basicRow, ["bond_type_desc", "bondTypeDesc"])),
     offeringType: pickFirstString(primaryRow, ["public_offering_status", "publicOfferingStatus"]),
     leadUnderwriter,
     sponsorStatus: inferSponsorStatus(leadUnderwriter),
-    subscribeDate: pickFirstString(primaryRow, ["subscribe_date", "subscribeDate"]),
+    subscribeDate: pickFirstDateString(primaryRow, ["subscribe_date", "subscribeDate"]),
     subscribeTime: pickFirstString(primaryRow, ["subscribe_time", "subscribeTime"]),
-    paymentDate: pickFirstString(primaryRow, ["pay_date", "payDate"]),
-    issueStartDate: pickFirstString(primaryRow, ["issue_start_date", "issueStartDate"]) || pickFirstString(basicRow, ["iss_start_date", "issStartDate"]),
-    issueEndDate: pickFirstString(primaryRow, ["issue_end_date", "issueEndDate"]) || pickFirstString(basicRow, ["iss_end_date", "issEndDate"]),
+    paymentDate: pickFirstDateString(primaryRow, ["pay_date", "payDate"]),
+    issueStartDate: pickFirstDateString(primaryRow, ["issue_start_date", "issueStartDate"]) || pickFirstDateString(basicRow, ["iss_start_date", "issStartDate"]),
+    issueEndDate: pickFirstDateString(primaryRow, ["issue_end_date", "issueEndDate"]) || pickFirstDateString(basicRow, ["iss_end_date", "issEndDate"]),
     subjectRating: pickRatingLike([basicRow, primaryRow, companyRow], "subject"),
     ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
     impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
@@ -217,6 +223,15 @@ function pickFirstString(row, keys) {
   return "";
 }
 
+function pickFirstDateString(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    const text = formatDmDate(value);
+    if (text) return text;
+  }
+  return "";
+}
+
 function numberFromRow(row, keys) {
   for (const key of keys) {
     const value = Number(row?.[key]);
@@ -225,16 +240,51 @@ function numberFromRow(row, keys) {
   return null;
 }
 
-function inferVenue(securityId = "") {
+function normalizeInquiryRange(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const matches = text.match(/\d+(?:\.\d+)?/g);
+  if (matches?.length >= 2) return `${formatDecimal(matches[0])}-${formatDecimal(matches[1])}`;
+  return text.replace(/\s*~\s*/g, "-");
+}
+
+function formatDecimal(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value || "");
+  return String(Number(number.toFixed(6)));
+}
+
+function formatDmDate(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "number" && Number.isFinite(value)) return chinaDate(new Date(value));
+  const text = String(value).trim();
+  if (!text) return "";
+  if (/^\d{13}$/.test(text)) return chinaDate(new Date(Number(text)));
+  const dateMatch = text.match(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/);
+  if (dateMatch) {
+    const [year, month, day] = dateMatch[0].split(/[-/]/);
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  return text;
+}
+
+function inferVenue(securityId = "", shortName = "", bondTypeDesc = "") {
   const value = String(securityId || "").toUpperCase();
   if (value.endsWith(".IB")) return "银行间";
   if (value.endsWith(".SH")) return "上交所";
   if (value.endsWith(".SZ")) return "深交所";
+  if (/(SCP|CP|MTN|PPN|ABN|短期融资券|中期票据|定向工具|资产支持票据)/i.test(`${shortName} ${bondTypeDesc}`)) return "银行间";
   return "";
 }
 
 function inferSponsorStatus(leadUnderwriter = "") {
-  return /兴业银行/.test(String(leadUnderwriter || "")) ? "牵头" : "非我行主承";
+  const names = String(leadUnderwriter || "")
+    .split(/[,\uFF0C、;；]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const xingyeIndex = names.findIndex((name) => /兴业银行/.test(name));
+  if (xingyeIndex < 0) return "非我行主承";
+  return xingyeIndex === 0 ? "牵头" : "联席";
 }
 
 function normalizeName(value = "") {
@@ -255,6 +305,14 @@ function localDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function chinaDate(date) {
+  const adjusted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  const year = adjusted.getUTCFullYear();
+  const month = String(adjusted.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(adjusted.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
