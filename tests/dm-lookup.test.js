@@ -51,7 +51,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
       data = [{ com_full_name: "测试集团有限公司", is_city_annex: 1 }];
     }
     const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
-    return new Response(JSON.stringify(encrypted), { status: 200 });
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
   };
 
   try {
@@ -77,6 +77,12 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("DM lookup still accepts direct encrypted string responses", () => {
+  const secret = "1234567890abcdef";
+  const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data: { ok: true } }), secret);
+  assert.equal(__test__.extractDmEncryptedPayload(encrypted), encrypted);
 });
 
 function hexToBytes(hex) {

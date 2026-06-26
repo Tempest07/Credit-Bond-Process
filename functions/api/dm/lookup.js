@@ -280,14 +280,16 @@ function makeDmClient(env, request) {
       });
       const text = await response.text();
       if (!response.ok) throw new Error(`DM HTTP ${response.status}: ${text.slice(0, 300)}`);
-      let encrypted;
+      let content;
       try {
-        encrypted = JSON.parse(text);
+        content = JSON.parse(text);
       } catch {
-        encrypted = text;
+        content = text;
       }
-      const decrypted = sm4DecryptFromBase64Url(encrypted, appSecret);
-      const parsed = JSON.parse(decrypted);
+      const encrypted = extractDmEncryptedPayload(content);
+      const parsed = typeof encrypted === "string"
+        ? JSON.parse(sm4DecryptFromBase64Url(encrypted, appSecret))
+        : encrypted;
       if (parsed && typeof parsed === "object" && "code" in parsed && parsed.code !== 0) {
         throw new Error(`DM API ${parsed.code}: ${parsed.message || "unknown error"}`);
       }
@@ -326,6 +328,29 @@ function apiHeaders() {
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
+}
+
+function extractDmEncryptedPayload(content) {
+  if (typeof content === "string") return content.trim();
+
+  if (content && typeof content === "object") {
+    for (const key of ["data", "result", "content", "payload", "cipherText", "ciphertext"]) {
+      if (typeof content[key] === "string" && content[key].trim()) return content[key].trim();
+    }
+
+    if ("code" in content && content.code !== 0) {
+      throw new Error(`DM API ${content.code}: ${content.message || content.msg || "unknown error"}`);
+    }
+
+    if (Array.isArray(content)) return content;
+    if (content.data && typeof content.data === "object") return content.data;
+    if (content.result && typeof content.result === "object") return content.result;
+
+    const keys = Object.keys(content).slice(0, 12).join(", ");
+    throw new Error(`DM response shape unsupported: object keys [${keys}]`);
+  }
+
+  throw new Error(`DM response shape unsupported: ${typeof content}`);
 }
 
 function sm4EncryptToBase64Url(plaintext, key) {
@@ -484,5 +509,6 @@ export const __test__ = {
   prepareSm4Key,
   sm4EncryptToBase64Url,
   sm4DecryptFromBase64Url,
+  extractDmEncryptedPayload,
   bytesToHex,
 };
