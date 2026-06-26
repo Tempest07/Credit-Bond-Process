@@ -3264,22 +3264,74 @@ function setDmLookupBusy(isBusy) {
 }
 
 function renderDmLookupResult(payload) {
-  dmLastPayload = payload;
+  const enrichedPayload = enrichDmLookupWithLocalIssuer(payload);
+  dmLastPayload = enrichedPayload;
   $("#dmLookupCopyButton").disabled = false;
 
-  const ok = Boolean(payload?.ok);
+  const ok = Boolean(enrichedPayload?.ok);
   const statusParts = [
     ok ? "查询成功" : "查询失败",
-    payload?.httpStatus ? `HTTP ${payload.httpStatus}` : "",
-    Number.isFinite(payload?.elapsedMs) ? `${payload.elapsedMs}ms` : "",
+    enrichedPayload?.httpStatus ? `HTTP ${enrichedPayload.httpStatus}` : "",
+    Number.isFinite(enrichedPayload?.elapsedMs) ? `${enrichedPayload.elapsedMs}ms` : "",
   ].filter(Boolean);
   $("#dmLookupStatus").textContent = statusParts.join(" · ");
   $("#dmLookupStatus").className = `status-badge ${ok ? "" : "warning"}`;
 
-  renderDmNormalized(payload?.normalized || null);
-  renderDmDiagnostic(payload);
-  renderDmCandidates(payload?.fieldCandidates || []);
-  $("#dmRawOutput").textContent = JSON.stringify(payload, null, 2);
+  renderDmNormalized(enrichedPayload?.normalized || null);
+  renderDmDiagnostic(enrichedPayload);
+  renderDmCandidates(enrichedPayload?.fieldCandidates || []);
+  $("#dmRawOutput").textContent = JSON.stringify(enrichedPayload, null, 2);
+}
+
+function enrichDmLookupWithLocalIssuer(payload) {
+  const normalized = payload?.normalized;
+  if (!payload?.ok || !normalized) return payload;
+  if (normalized.subjectRating && normalized.ratingAgency && normalized.impliedRating) return payload;
+
+  const issuer = findIssuerForDmNormalized(normalized);
+  if (!issuer) return payload;
+
+  const nextNormalized = { ...normalized };
+  const ratingSource = { ...(nextNormalized.ratingSource || {}) };
+  let changed = false;
+  if (!nextNormalized.subjectRating && issuer.subjectRating) {
+    nextNormalized.subjectRating = issuer.subjectRating;
+    ratingSource.subjectRating = "local-issuer-db";
+    changed = true;
+  }
+  if (!nextNormalized.ratingAgency && issuer.ratingAgency) {
+    nextNormalized.ratingAgency = issuer.ratingAgency;
+    ratingSource.ratingAgency = "local-issuer-db";
+    changed = true;
+  }
+  if (!nextNormalized.impliedRating && issuer.hiddenRating) {
+    nextNormalized.impliedRating = issuer.hiddenRating;
+    ratingSource.impliedRating = "local-issuer-db";
+    changed = true;
+  }
+  if (!changed) return payload;
+
+  nextNormalized.ratingSource = ratingSource;
+  return {
+    ...payload,
+    normalized: nextNormalized,
+    diagnostic: {
+      ...(payload.diagnostic || {}),
+      localIssuerRating: {
+        matchedIssuer: issuer.legalName || "",
+        filled: Object.keys(ratingSource).filter((key) => ratingSource[key] === "local-issuer-db"),
+      },
+    },
+  };
+}
+
+function findIssuerForDmNormalized(normalized) {
+  const targets = [normalized.issuerName, normalized.fullName, normalized.shortName].filter(Boolean);
+  for (const target of targets) {
+    const issuer = findIssuer(String(target), state.issuers || []);
+    if (issuer) return issuer;
+  }
+  return null;
 }
 
 function renderDmNormalized(normalized) {

@@ -2,6 +2,7 @@ const DM_BASE_URL = "https://gapi-ext.innodealing.com";
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const PRIMARY_PATH = "/dm-quant-func-service/api/v1/bond/primary/data";
 const COMPANY_INFO_PATH = "/dm-quant-func-service/api/v1/company/basic-info/info";
+const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
 
 const SBOX = [
   0xd6, 0x90, 0xe9, 0xfe, 0xcc, 0xe1, 0x3d, 0xb7, 0x16, 0xb6, 0x14, 0xc2, 0x28, 0xfb, 0x2c, 0x05,
@@ -60,16 +61,29 @@ export async function onRequestGet(context) {
       || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
     const company = issuerName ? await lookupCompanyInfo(dm, issuerName) : null;
     const normalized = normalizeDmLookup({ shortName, securityId, basic, primary, company });
+    const dmRatingDiscovery = await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company });
+    const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
+    const issuerRatingFallback = await lookupIssuerRatingFallback(context.env.DB, dmEnrichedNormalized);
+    const enrichedNormalized = applyIssuerRatingFallback(dmEnrichedNormalized, issuerRatingFallback);
 
     return json({
       ok: true,
       query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
-      normalized,
-      fieldCandidates: collectFieldCandidates([basic.rows, primary.rows, company?.rows].filter(Boolean)),
+      normalized: enrichedNormalized,
+      diagnostic: {
+        rating: ratingDiagnostic(normalized, dmRatingDiscovery, issuerRatingFallback, enrichedNormalized, Boolean(context.env.DB)),
+      },
+      fieldCandidates: collectFieldCandidates([
+        basic.rows,
+        primary.rows,
+        company?.rows,
+        ...(dmRatingDiscovery.sources || []).map((source) => source.rows),
+      ].filter(Boolean)),
       raw: {
         basicInfo: basic.raw,
         primaryData: primary.raw,
         companyInfo: company?.raw || null,
+        dmRatingDiscovery: Object.fromEntries((dmRatingDiscovery.sources || []).map((source) => [source.name, source.raw])),
       },
     });
   } catch (error) {
@@ -151,6 +165,254 @@ function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
     subjectRating: pickRatingLike([basicRow, primaryRow, companyRow], "subject"),
     ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
     impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
+  };
+}
+
+async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }) {
+  const sources = [
+    { name: "basicInfo", raw: basic.raw, rows: basic.rows || [] },
+    { name: "primaryData", raw: primary.raw, rows: primary.rows || [] },
+    { name: "companyInfo", raw: company?.raw || null, rows: company?.rows || [] },
+  ];
+  const errors = [];
+  const initial = extractRatingsFromDmSources(sources);
+  if (ratingsComplete({ ...normalized, ...initial.values })) return { ...initial, sources, errors };
+
+  const issuerName = normalized?.issuerName || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
+  const societyCode = pickFirstString(firstRow(basic), ["society_code", "societyCode"])
+    || pickFirstString(firstRow(company), ["society_code", "societyCode"]);
+  const outstandingPayloads = [];
+  if (issuerName) outstandingPayloads.push({ issuerFullName: issuerName });
+  if (societyCode) outstandingPayloads.push({ societyCode });
+
+  for (const payload of outstandingPayloads) {
+    const sourceName = payload.issuerFullName ? "outstandingBondsByIssuer" : "outstandingBondsBySocietyCode";
+    try {
+      const raw = await dm.post(OUTSTANDING_BONDS_PATH, payload);
+      const source = { name: sourceName, raw, rows: rowsFromDm(raw) };
+      sources.push(source);
+      const discovered = extractRatingsFromDmSources(sources);
+      if (ratingsComplete({ ...normalized, ...discovered.values })) {
+        return { ...discovered, sources, errors };
+      }
+    } catch (error) {
+      errors.push({
+        source: sourceName,
+        payloadKeys: Object.keys(payload),
+        error: error.message || "DM rating discovery failed",
+      });
+    }
+  }
+
+  return { ...extractRatingsFromDmSources(sources), sources, errors };
+}
+
+function extractRatingsFromDmSources(sources) {
+  const values = {};
+  const matches = {};
+  for (const source of sources) {
+    for (const row of rowsFromDm(source.rows)) {
+      for (const item of flattenDmValues(row)) {
+        applyRatingCandidate(values, matches, item, source.name);
+        if (values.subjectRating && values.ratingAgency && values.impliedRating) return { values, matches };
+      }
+    }
+  }
+  return { values, matches };
+}
+
+function flattenDmValues(value, path = "") {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => flattenDmValues(item, path ? `${path}[${index}]` : `[${index}]`));
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([key, child]) => flattenDmValues(child, path ? `${path}.${key}` : key));
+  }
+  return [{ key: path.split(".").pop() || path, path, value }];
+}
+
+function applyRatingCandidate(values, matches, item, source) {
+  const keyText = String(item.key || "");
+  const path = item.path || keyText;
+  const valueText = String(item.value ?? "").trim();
+  if (!valueText) return;
+
+  const ratingWithAgency = parseRatingWithAgency(valueText);
+  if (!values.subjectRating && ratingWithAgency.rating && ratingKeyMatches(keyText, "subject")) {
+    values.subjectRating = ratingWithAgency.rating;
+    matches.subjectRating = { source, path, value: valueText };
+  }
+  if (!values.ratingAgency && ratingWithAgency.agency && ratingKeyMatches(keyText, "subject")) {
+    values.ratingAgency = ratingWithAgency.agency;
+    matches.ratingAgency = { source, path, value: valueText };
+  }
+  if (!values.ratingAgency && ratingKeyMatches(keyText, "agency") && !ratingValuePattern().test(valueText)) {
+    values.ratingAgency = valueText;
+    matches.ratingAgency = { source, path, value: valueText };
+  }
+  if (!values.impliedRating && ratingWithAgency.rating && ratingKeyMatches(keyText, "implied")) {
+    values.impliedRating = ratingWithAgency.rating;
+    matches.impliedRating = { source, path, value: valueText };
+  }
+}
+
+function ratingKeyMatches(key, kind) {
+  const text = String(key || "");
+  const patterns = {
+    subject: [
+      /subject.*rating/i,
+      /issuer.*rating/i,
+      /main.*rating/i,
+      /credit.*rating/i,
+      /rating.*level/i,
+      /主体.*评/i,
+      /发行人.*评/i,
+      /信用.*评/i,
+    ],
+    agency: [
+      /rating.*agency/i,
+      /agency/i,
+      /rating.*(?:org|inst)/i,
+      /(?:org|inst).*rating/i,
+      /评.*机构/i,
+      /评级.*公司/i,
+    ],
+    implied: [
+      /implied/i,
+      /hidden.*rating/i,
+      /market.*rating/i,
+      /cbc.*rating/i,
+      /隐含/i,
+      /中债.*评/i,
+      /市场.*评/i,
+    ],
+  }[kind] || [];
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function parseRatingWithAgency(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/(?:^|[^A-Z0-9])(AAA|AA\+|AA\(2\)|AA-|AA|A\+|A-|A|BBB\+|BBB-|BBB|BB\+|BB-|BB|B\+|B-|B)(?:\s*[\(（]\s*([^)）]+?)\s*[\)）])?/i);
+  return {
+    rating: match?.[1]?.toUpperCase() || "",
+    agency: match?.[2]?.trim() || "",
+  };
+}
+
+function ratingValuePattern() {
+  return /^(?:AAA|AA\+|AA\(2\)|AA-|AA|A\+|A-|A|BBB\+|BBB-|BBB|BB\+|BB-|BB|B\+|B-|B)$/i;
+}
+
+function ratingsComplete(value) {
+  return Boolean(value?.subjectRating && value?.ratingAgency && value?.impliedRating);
+}
+
+function applyDmRatingDiscovery(normalized, discovery) {
+  const values = discovery?.values || {};
+  const next = { ...normalized };
+  const ratingSource = { ...(next.ratingSource || {}) };
+  for (const [field, value] of Object.entries(values)) {
+    if (!next[field] && value) {
+      next[field] = value;
+      ratingSource[field] = "dm-discovery";
+    }
+  }
+  if (Object.keys(ratingSource).length) next.ratingSource = ratingSource;
+  return next;
+}
+
+async function lookupIssuerRatingFallback(db, normalized) {
+  if (!db) return null;
+  if (normalized?.subjectRating && normalized?.ratingAgency && normalized?.impliedRating) return null;
+  try {
+    const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
+    const data = row?.data ? JSON.parse(row.data) : null;
+    const issuers = Array.isArray(data?.issuers) ? data.issuers : [];
+    return matchIssuerForRating(normalized, issuers);
+  } catch {
+    return null;
+  }
+}
+
+function matchIssuerForRating(normalized, issuers) {
+  const targets = uniqueStrings([
+    normalized?.issuerName,
+    normalized?.fullName,
+    normalized?.shortName,
+  ]).map((value) => ({ raw: value, normalized: normalizeIssuerMatchText(value) }));
+
+  let best = null;
+  for (const issuer of issuers) {
+    const names = uniqueStrings([issuer?.legalName, ...(issuer?.aliases || [])]);
+    for (const name of names) {
+      const normalizedName = normalizeIssuerMatchText(name);
+      if (!normalizedName) continue;
+      for (const target of targets) {
+        const score = issuerMatchScore(normalizedName, target.normalized);
+        if (score > (best?.score || 0)) best = { issuer, matchedBy: name, matchedTarget: target.raw, score };
+      }
+    }
+  }
+  return best?.issuer ? { ...best.issuer, matchedBy: best.matchedBy, matchedTarget: best.matchedTarget } : null;
+}
+
+function issuerMatchScore(name, target) {
+  if (!name || !target) return 0;
+  if (name === target) return 100 + name.length;
+  if (name.length >= 4 && target.includes(name)) return 80 + name.length;
+  if (target.length >= 4 && name.includes(target)) return 60 + target.length;
+  return 0;
+}
+
+function normalizeIssuerMatchText(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .replace(/[()（）【】\[\]{}]/g, "")
+    .toUpperCase();
+}
+
+function applyIssuerRatingFallback(normalized, issuer) {
+  if (!issuer) return normalized;
+  const next = { ...normalized };
+  const ratingSource = { ...(next.ratingSource || {}) };
+  if (!next.subjectRating && issuer.subjectRating) {
+    next.subjectRating = String(issuer.subjectRating).trim().toUpperCase();
+    ratingSource.subjectRating = "issuer-db";
+  }
+  if (!next.ratingAgency && issuer.ratingAgency) {
+    next.ratingAgency = String(issuer.ratingAgency).trim();
+    ratingSource.ratingAgency = "issuer-db";
+  }
+  if (!next.impliedRating && issuer.hiddenRating) {
+    next.impliedRating = String(issuer.hiddenRating).trim().toUpperCase();
+    ratingSource.impliedRating = "issuer-db";
+  }
+  if (Object.keys(ratingSource).length) next.ratingSource = ratingSource;
+  return next;
+}
+
+function ratingDiagnostic(original, dmDiscovery, issuerFallback, enriched, hasDb) {
+  const fields = ["subjectRating", "ratingAgency", "impliedRating"];
+  const filledFromDm = fields.filter((field) => Boolean(original?.[field]));
+  const filledFromDmDiscovery = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-discovery");
+  const filledFromIssuerDb = fields.filter((field) => enriched?.ratingSource?.[field] === "issuer-db");
+  return {
+    filledFromDm,
+    filledFromDmDiscovery,
+    filledFromIssuerDb,
+    missing: fields.filter((field) => !enriched?.[field]),
+    dmDiscoverySources: (dmDiscovery?.sources || []).map((source) => source.name),
+    dmDiscoveryMatches: dmDiscovery?.matches || {},
+    dmDiscoveryErrors: dmDiscovery?.errors || [],
+    issuerDbAvailable: hasDb,
+    matchedIssuer: issuerFallback?.legalName || "",
+    matchedBy: issuerFallback?.matchedBy || "",
+    matchedTarget: issuerFallback?.matchedTarget || "",
+    note: filledFromDmDiscovery.length
+      ? "Rating fields were not present in the initially selected DM row, but were found by scanning additional DM results before D1 fallback."
+      : filledFromIssuerDb.length
+      ? "DM did not return every rating field; missing values were filled from the issuer database."
+      : "DM rating discovery did not find rating fields; no issuer-database fallback was available for the remaining fields.",
   };
 }
 

@@ -85,6 +85,156 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
   }
 });
 
+test("DM lookup searches additional DM issuer data before falling back to D1", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(url);
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "012681333.IB",
+        sec_short_name: "26DMFIND001",
+        sec_full_name: "DM Rating Issuer 2026 SCP001",
+        issuer_name: "DM Rating Issuer",
+        society_code: "91330000123456789X",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [{
+          security_id: "012681333.IB",
+          sec_short_name: "26DMFIND001",
+          issuer_full_name: "DM Rating Issuer",
+          bond_issue_tenor: "180D",
+          plan_issue_amount: 50000,
+        }],
+      };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "DM Rating Issuer", society_code: "91330000123456789X" }];
+    } else if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      data = {
+        list: [{
+          security_id: "012681000.IB",
+          sec_short_name: "26DMOTHER001",
+          issuer_name: "DM Rating Issuer",
+          subject_rating: "AA+",
+          rating_agency: "DM Agency",
+          implied_rating: "AA",
+        }],
+      };
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare() {
+      throw new Error("D1 should not be queried when DM discovery finds ratings");
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26DMFIND001", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.subjectRating, "AA+");
+    assert.equal(payload.normalized.ratingAgency, "DM Agency");
+    assert.equal(payload.normalized.impliedRating, "AA");
+    assert.deepEqual(payload.normalized.ratingSource, {
+      subjectRating: "dm-discovery",
+      ratingAgency: "dm-discovery",
+      impliedRating: "dm-discovery",
+    });
+    assert.ok(payload.diagnostic.rating.dmDiscoverySources.includes("outstandingBondsByIssuer"));
+    assert.deepEqual(payload.diagnostic.rating.filledFromIssuerDb, []);
+    assert.ok(calls.some((url) => url.includes("/bond/basic-info/outstanding-bonds")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM lookup fills missing ratings from the issuer database", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url, init) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "012681222.IB",
+        sec_short_name: "26TARGETSCP001",
+        sec_full_name: "Target Issuer 2026 SCP001",
+        issuer_name: "Target Issuer",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [{
+          security_id: "012681222.IB",
+          sec_short_name: "26TARGETSCP001",
+          issuer_full_name: "Target Issuer",
+          bond_issue_tenor: "180D",
+          plan_issue_amount: 50000,
+        }],
+      };
+    } else {
+      data = [{ com_full_name: "Target Issuer" }];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [{
+                legalName: "Target Issuer",
+                aliases: ["TARGET"],
+                subjectRating: "AAA",
+                ratingAgency: "Agency One",
+                hiddenRating: "AA+",
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26TARGETSCP001", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.subjectRating, "AAA");
+    assert.equal(payload.normalized.ratingAgency, "Agency One");
+    assert.equal(payload.normalized.impliedRating, "AA+");
+    assert.deepEqual(payload.normalized.ratingSource, {
+      subjectRating: "issuer-db",
+      ratingAgency: "issuer-db",
+      impliedRating: "issuer-db",
+    });
+    assert.equal(payload.diagnostic.rating.matchedIssuer, "Target Issuer");
+    assert.deepEqual(payload.diagnostic.rating.missing, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup matches primary cross-market aliases before normalization", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
@@ -117,9 +267,14 @@ test("DM lookup matches primary cross-market aliases before normalization", asyn
           },
         ],
       };
-    } else {
+    } else if (url.includes("/company/basic-info/info")) {
       assert.deepEqual(request.comFullNameList, ["Target Issuer"]);
       data = [{ com_full_name: "Target Issuer" }];
+    } else if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      assert.equal(request.issuerFullName, "Target Issuer");
+      data = { list: [] };
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
     }
     const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
     return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
@@ -142,7 +297,7 @@ test("DM lookup matches primary cross-market aliases before normalization", asyn
     assert.equal(payload.raw.primaryData.list.length, 2);
     assert.ok(payload.fieldCandidates.some((item) => item.key === "subscribe_rate" && item.value === "1.800000 ~ 2.100000"));
     assert.ok(!payload.fieldCandidates.some((item) => item.value === "9.000000 ~ 9.100000"));
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
   } finally {
     globalThis.fetch = originalFetch;
   }
