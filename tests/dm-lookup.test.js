@@ -85,6 +85,114 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
   }
 });
 
+test("DM lookup matches primary cross-market aliases before normalization", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(url);
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      assert.deepEqual(request.secShortNameList, ["26ALIAS07"]);
+      data = [];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [
+          {
+            security_id: "999999.IB",
+            sec_short_name: "26WRONG01",
+            issuer_full_name: "Wrong Issuer",
+            subscribe_rate: "9.000000 ~ 9.100000",
+          },
+          {
+            security_id: "2600007.IB",
+            sec_short_name: "26MAIN07",
+            cros_mar_bond: "26ALIAS07(123456.SH),MAIN2607(654321.SZ),26MAIN07(2600007.BJ)",
+            issuer_full_name: "Target Issuer",
+            bond_issue_tenor: "10Y",
+            plan_issue_amount: 20000,
+            subscribe_rate: "1.800000 ~ 2.100000",
+            unde_name: "Target Bank",
+          },
+        ],
+      };
+    } else {
+      assert.deepEqual(request.comFullNameList, ["Target Issuer"]);
+      data = [{ com_full_name: "Target Issuer" }];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26ALIAS07&startDate=2026-06-12&endDate=2026-07-11", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.securityId, "2600007.IB");
+    assert.equal(payload.normalized.shortName, "26MAIN07");
+    assert.equal(payload.normalized.issuerName, "Target Issuer");
+    assert.equal(payload.normalized.issueScaleYi, 2);
+    assert.equal(payload.normalized.inquiryRange, "1.8-2.1");
+    assert.equal(payload.raw.primaryData.list.length, 2);
+    assert.ok(payload.fieldCandidates.some((item) => item.key === "subscribe_rate" && item.value === "1.800000 ~ 2.100000"));
+    assert.ok(!payload.fieldCandidates.some((item) => item.value === "9.000000 ~ 9.100000"));
+    assert.equal(calls.length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM lookup does not fall back to the first primary row when no row matches", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(url);
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [{
+          security_id: "999999.IB",
+          sec_short_name: "26WRONG01",
+          issuer_full_name: "Wrong Issuer",
+          subscribe_rate: "9.000000 ~ 9.100000",
+        }],
+      };
+    } else {
+      throw new Error("company lookup should not run without a matched issuer");
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26MISSING&startDate=2026-06-12&endDate=2026-07-11", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.securityId, "");
+    assert.equal(payload.normalized.shortName, "26MISSING");
+    assert.equal(payload.normalized.issuerName, "");
+    assert.deepEqual(payload.fieldCandidates, []);
+    assert.equal(payload.raw.primaryData.list[0].sec_short_name, "26WRONG01");
+    assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup still accepts direct encrypted string responses", () => {
   const secret = "1234567890abcdef";
   const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data: { ok: true } }), secret);

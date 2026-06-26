@@ -65,7 +65,7 @@ export async function onRequestGet(context) {
       ok: true,
       query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
       normalized,
-      fieldCandidates: collectFieldCandidates([basic.raw, primary.raw, company?.raw].filter(Boolean)),
+      fieldCandidates: collectFieldCandidates([basic.rows, primary.rows, company?.rows].filter(Boolean)),
       raw: {
         basicInfo: basic.raw,
         primaryData: primary.raw,
@@ -105,14 +105,8 @@ async function lookupPrimaryData(dm, { shortName, securityId, issuerName, startD
 
   const raw = await dm.post(PRIMARY_PATH, payload);
   const rows = rowsFromDm(raw);
-  const filtered = rows.filter((row) => {
-    const rowShortName = String(row.sec_short_name ?? row.secShortName ?? "").trim();
-    const rowSecurityId = String(row.security_id ?? row.securityId ?? "").trim();
-    if (securityId && rowSecurityId === securityId) return true;
-    if (shortName && normalizeName(rowShortName) === normalizeName(shortName)) return true;
-    return false;
-  });
-  return { raw, rows: filtered.length ? filtered : rows, window };
+  const filtered = rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId }));
+  return { raw, rows: shortName || securityId ? filtered : rows, window };
 }
 
 async function lookupCompanyInfo(dm, issuerName) {
@@ -162,10 +156,82 @@ function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
 
 function bestPrimaryRow(primary, shortName, securityId) {
   const rows = primary?.rows || [];
-  return rows.find((row) => securityId && String(row.security_id ?? row.securityId ?? "") === securityId)
-    || rows.find((row) => shortName && normalizeName(row.sec_short_name ?? row.secShortName) === normalizeName(shortName))
+  return rows.find((row) => rowMatchesSecurityId(row, securityId))
+    || rows.find((row) => rowMatchesShortName(row, shortName))
     || rows[0]
     || {};
+}
+
+function primaryRowMatchesQuery(row, { shortName, securityId }) {
+  return rowMatchesSecurityId(row, securityId) || rowMatchesShortName(row, shortName);
+}
+
+function rowMatchesSecurityId(row, securityId) {
+  const query = normalizeSecurityId(securityId);
+  if (!query) return false;
+  return rowSecurityIds(row).some((candidate) => securityIdMatches(candidate, query));
+}
+
+function rowMatchesShortName(row, shortName) {
+  const query = normalizeLookupName(shortName);
+  if (!query) return false;
+  return rowShortNames(row).some((candidate) => normalizeLookupName(candidate) === query);
+}
+
+function rowSecurityIds(row) {
+  return uniqueStrings([
+    row?.security_id,
+    row?.securityId,
+    ...parseCrossMarketEntries(row).map((item) => item.securityId),
+  ]);
+}
+
+function rowShortNames(row) {
+  return uniqueStrings([
+    row?.sec_short_name,
+    row?.secShortName,
+    ...parseCrossMarketEntries(row).map((item) => item.shortName),
+  ]);
+}
+
+function parseCrossMarketEntries(row) {
+  const text = String(row?.cros_mar_bond ?? row?.crosMarBond ?? "").trim();
+  if (!text) return [];
+  return text.split(/[,，、;]/).map((part) => {
+    const item = part.trim();
+    const securityId = [...item.matchAll(/\(([^()]+)\)/g)]
+      .map((match) => normalizeSecurityId(match[1]))
+      .find(Boolean) || "";
+    const shortName = item.replace(/\([^()]*\)/g, "").trim();
+    return { shortName, securityId };
+  }).filter((item) => item.shortName || item.securityId);
+}
+
+function securityIdMatches(candidate, query) {
+  const candidateId = normalizeSecurityId(candidate);
+  if (!candidateId || !query) return false;
+  if (candidateId === query) return true;
+  if (candidateId.includes(".") && query.includes(".")) return false;
+  return stripSecuritySuffix(candidateId) === stripSecuritySuffix(query);
+}
+
+function normalizeSecurityId(value = "") {
+  const text = String(value || "").trim().toUpperCase();
+  return /^[A-Z]*\d+(?:\.[A-Z]+)?$/.test(text) ? text : "";
+}
+
+function stripSecuritySuffix(value = "") {
+  return String(value || "").replace(/\.[A-Z]+$/i, "");
+}
+
+function normalizeLookupName(value = "") {
+  return normalizeName(value)
+    .replace(/_BC$/i, "")
+    .replace(/债(?=\d+$)/g, "");
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
 }
 
 function firstRow(result) {
