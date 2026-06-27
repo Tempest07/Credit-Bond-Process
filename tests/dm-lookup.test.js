@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { onRequestGet, __test__ } from "../functions/api/dm/lookup.js";
-import { onRequestGet as onValuationRequestGet } from "../functions/api/dm/valuation.js";
+import { onRequestGet as onValuationRequestGet, __test__ as valuationTest } from "../functions/api/dm/valuation.js";
 
 test("SM4 block encryption matches the official test vector", () => {
   const key = hexToBytes("0123456789abcdeffedcba9876543210");
@@ -299,6 +299,67 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("DM valuation assistant centers on the nearest duration cluster", () => {
+  const profile = {
+    bondClass: "MTN",
+    market: "interbank",
+    exchangeTech: false,
+    perpetual: false,
+    subordinated: false,
+    structured: false,
+  };
+  const candidates = [
+    valuationCandidate("near-1", 4.61, 1.9546, profile),
+    valuationCandidate("near-2", 4.59, 1.9525, profile),
+    valuationCandidate("short-1", 3.78, 1.8381, profile),
+    valuationCandidate("short-2", 3.72, 1.8361, profile),
+    valuationCandidate("short-3", 3.69, 1.8351, profile),
+  ];
+  const suggestion = valuationTest.buildTrancheSuggestion(
+    { durationText: "5+10Y", years: 5 },
+    0,
+    candidates,
+    profile,
+    true,
+  );
+
+  assert.equal(suggestion.center, 1.97);
+  assert.equal(suggestion.clusterMode, "nearestCluster");
+  assert.equal(suggestion.confidence, "中等");
+  assert.deepEqual(suggestion.comparableItems.map((item) => item.shortName), ["near-1", "near-2"]);
+  assert.ok(!suggestion.comparableItems.some((item) => item.shortName.startsWith("short-")));
+});
+
+test("DM valuation assistant falls back cautiously when target duration lacks nearby bonds", () => {
+  const profile = {
+    bondClass: "MTN",
+    market: "interbank",
+    exchangeTech: false,
+    perpetual: false,
+    subordinated: false,
+    structured: false,
+  };
+  const candidates = [
+    valuationCandidate("short-1", 3.78, 1.8381, profile),
+    valuationCandidate("short-2", 3.72, 1.8361, profile),
+    valuationCandidate("short-3", 3.69, 1.8351, profile),
+  ];
+  const suggestion = valuationTest.buildTrancheSuggestion(
+    { durationText: "5+10Y", years: 5 },
+    0,
+    candidates,
+    profile,
+    true,
+  );
+
+  assert.equal(suggestion.clusterMode, "oneSidedExtrapolation");
+  assert.equal(suggestion.confidence, "较低");
+  assert.ok(suggestion.clusterNote.includes("单侧最近期限外推"));
+  assert.deepEqual(suggestion.comparableItems.map((item) => item.shortName), ["short-1", "short-2", "short-3"]);
+  assert.ok(suggestion.low < suggestion.center);
+  assert.ok(suggestion.high > suggestion.center);
 });
 
 test("DM lookup searches additional DM issuer data before falling back to D1", async () => {
@@ -919,4 +980,20 @@ test("DM primary default window stays within the 30 calendar day limit", () => {
 
 function hexToBytes(hex) {
   return new Uint8Array(hex.match(/.{2}/g).map((part) => parseInt(part, 16)));
+}
+
+function valuationCandidate(shortName, years, rate, profile) {
+  return {
+    shortName,
+    securityId: `${shortName}.IB`,
+    durationText: `${years.toFixed(2)}Y`,
+    years,
+    profile,
+    valuation: {
+      rate,
+      source: "中债行权估值",
+      reliability: "推荐度推荐",
+      valuationDate: "2026-06-26",
+    },
+  };
 }

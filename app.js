@@ -1533,12 +1533,13 @@ function renderValuationSuggestionCard(item) {
   const range = item.low === item.high
     ? formatValuationRate(item.center)
     : `${formatValuationRate(item.low)}-${formatValuationRate(item.high)}`;
+  const confidenceText = [item.confidence, item.clusterNote].filter(Boolean).join(" · ");
   return `
     <article class="valuation-suggestion-card">
       <div class="valuation-suggestion-main">
         <div>
           <strong>${escapeHtml(item.durationText || "目标期限")} 参考 ${formatValuationRate(item.center)}</strong>
-          <span>${escapeHtml(item.profileLabel || "同类债券")} · 置信度${escapeHtml(item.confidence)}</span>
+          <span>${escapeHtml(item.profileLabel || "同类债券")} · 置信度${escapeHtml(confidenceText)}</span>
         </div>
         <span>${escapeHtml(range)}</span>
       </div>

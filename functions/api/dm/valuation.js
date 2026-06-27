@@ -19,6 +19,8 @@ const MARKET_DATA_DATE_PATH = "/dm-quant-func-service/api/v1/bond/market-data/da
 const MAX_MARKET_DATA_SECURITIES = 25;
 const MARKET_DATA_BATCH_SIZE = 5;
 const DURATION_SLOPE_BP_PER_YEAR = 5;
+const PRIMARY_DURATION_CLUSTER_MIN_ITEMS = 2;
+const MAX_DISPLAY_COMPARABLES = 5;
 const DATA_SOURCE_LIST = [1, 2, 3, 4, 7];
 const MARKET_DATA_FIELDS = [
   "securityId",
@@ -253,7 +255,7 @@ function candidatesForMarketData(candidates, targets) {
 
 function buildTrancheSuggestion(target, index, candidates, targetProfile, preferExercise) {
   const maxGap = maxDurationGapYears(target.years);
-  const comparableItems = candidates
+  const allComparableItems = candidates
     .map((candidate) => {
       const durationGapYears = target.years - candidate.years;
       const absoluteGapYears = Math.abs(durationGapYears);
@@ -275,17 +277,19 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
         marketAdjustment: round(marketAdjustment, 4),
         adjustment: round(adjustment, 4),
         adjustedRate: round(candidate.valuation.rate + adjustment, 4),
+        absoluteGapYears: round(absoluteGapYears, 4),
         weight: 1 / (0.35 + absoluteGapYears),
       };
     })
     .filter(Boolean)
-    .sort((left, right) => Math.abs(left.durationGapYears) - Math.abs(right.durationGapYears) || left.shortName.localeCompare(right.shortName, "zh-Hans-CN"))
-    .slice(0, 5);
+    .sort(compareDurationGapThenName);
 
+  const cluster = selectPrimaryDurationCluster(allComparableItems, target.years);
+  const comparableItems = cluster.items;
   if (!comparableItems.length) return null;
   const totalWeight = comparableItems.reduce((sum, item) => sum + item.weight, 0);
   const center = round(comparableItems.reduce((sum, item) => sum + item.adjustedRate * item.weight, 0) / totalWeight, 2);
-  const spread = comparableItems.length === 1 ? 0.05 : Math.max(0.03, Math.min(0.15, weightedDeviation(comparableItems, center)));
+  const spread = suggestionSpread(comparableItems, center, cluster);
   return {
     index,
     durationText: target.durationText,
@@ -293,14 +297,96 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
     center,
     low: round(center - spread, 2),
     high: round(center + spread, 2),
-    confidence: confidenceLabel(comparableItems),
+    confidence: confidenceLabel(comparableItems, cluster),
+    clusterMode: cluster.mode,
+    clusterNote: cluster.note,
     comparableCount: comparableItems.length,
     profileLabel: comparableProfileLabel(targetProfile),
     valuationDate: comparableItems[0]?.valuationDate || "",
     preferredYield: preferExercise ? "行权收益率" : "到期收益率",
-    method: `DM 存续债上一日估值；期限差按约 ${DURATION_SLOPE_BP_PER_YEAR}bp/年机械调整，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
+    method: `DM 存续债上一日估值；${cluster.note}；期限差按约 ${DURATION_SLOPE_BP_PER_YEAR}bp/年机械调整，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
     comparableItems,
   };
+}
+
+function selectPrimaryDurationCluster(items, targetYears) {
+  const sorted = [...items].sort(compareDurationGapThenName);
+  if (!sorted.length) return { items: [], mode: "empty", note: "暂无可用期限簇" };
+
+  const tightGap = primaryDurationClusterGapYears(targetYears);
+  const tightCluster = sorted.filter((item) => itemAbsoluteGap(item) <= tightGap);
+  if (tightCluster.length >= PRIMARY_DURATION_CLUSTER_MIN_ITEMS) {
+    return {
+      items: tightCluster.slice(0, MAX_DISPLAY_COMPARABLES),
+      mode: "nearestCluster",
+      note: "中心值优先采用最近期限簇",
+    };
+  }
+  if (tightCluster.length === 1) {
+    const expandedGap = Math.min(maxDurationGapYears(targetYears), tightGap + fallbackDurationClusterGapYears(targetYears));
+    const expanded = sorted.filter((item) => itemAbsoluteGap(item) <= expandedGap).slice(0, MAX_DISPLAY_COMPARABLES);
+    return {
+      items: expanded.length ? expanded : tightCluster,
+      mode: expanded.length >= PRIMARY_DURATION_CLUSTER_MIN_ITEMS ? "sparseNearCluster" : "singleAnchor",
+      note: expanded.length >= PRIMARY_DURATION_CLUSTER_MIN_ITEMS
+        ? "目标附近可比券不足，采用最近锚点并有限扩展相邻期限"
+        : "目标附近仅1只可比券，采用最近锚点并降低置信度",
+    };
+  }
+
+  const shorter = sorted.filter((item) => item.durationGapYears > 0).sort(compareDurationGapThenName);
+  const longer = sorted.filter((item) => item.durationGapYears < 0).sort(compareDurationGapThenName);
+  if (shorter.length && longer.length) {
+    return {
+      items: [shorter[0], longer[0]].sort(compareDurationGapThenName),
+      mode: "bracketInterpolation",
+      note: "目标附近无足够券，采用上下相邻期限插值并降低置信度",
+    };
+  }
+
+  const nearestGap = itemAbsoluteGap(sorted[0]);
+  const fallbackGap = Math.min(maxDurationGapYears(targetYears), nearestGap + fallbackDurationClusterGapYears(targetYears));
+  const oneSideItems = sorted
+    .filter((item) => itemAbsoluteGap(item) <= fallbackGap)
+    .slice(0, MAX_DISPLAY_COMPARABLES);
+  return {
+    items: oneSideItems.length ? oneSideItems : [sorted[0]],
+    mode: "oneSidedExtrapolation",
+    note: "目标附近无足够券，采用单侧最近期限外推，置信度较低",
+  };
+}
+
+function suggestionSpread(items, center, cluster) {
+  const baseSpread = items.length === 1 ? 0.05 : Math.max(0.03, Math.min(0.15, weightedDeviation(items, center)));
+  if (cluster.mode === "nearestCluster") return baseSpread;
+  if (cluster.mode === "sparseNearCluster") return Math.max(baseSpread, 0.05);
+  if (cluster.mode === "singleAnchor") return Math.max(baseSpread, 0.08);
+  if (cluster.mode === "bracketInterpolation") return Math.max(baseSpread, 0.06);
+  if (cluster.mode === "oneSidedExtrapolation") return Math.max(baseSpread, 0.08);
+  return baseSpread;
+}
+
+function primaryDurationClusterGapYears(years) {
+  if (years <= 1) return 0.15;
+  if (years <= 3) return 0.35;
+  if (years <= 5) return 0.5;
+  return 0.75;
+}
+
+function fallbackDurationClusterGapYears(years) {
+  if (years <= 1) return 0.2;
+  if (years <= 3) return 0.4;
+  if (years <= 5) return 0.5;
+  return 0.75;
+}
+
+function compareDurationGapThenName(left, right) {
+  return itemAbsoluteGap(left) - itemAbsoluteGap(right)
+    || left.shortName.localeCompare(right.shortName, "zh-Hans-CN");
+}
+
+function itemAbsoluteGap(item) {
+  return Number.isFinite(item.absoluteGapYears) ? item.absoluteGapYears : Math.abs(item.durationGapYears || 0);
 }
 
 function pickDmValuationRate(rows, preferExercise) {
@@ -547,7 +633,9 @@ function normalizeName(value = "") {
   return String(value || "").toUpperCase().replace(/\s+/g, "").trim();
 }
 
-function confidenceLabel(items = []) {
+function confidenceLabel(items = [], cluster = {}) {
+  if (cluster.mode === "singleAnchor" || cluster.mode === "oneSidedExtrapolation") return "较低";
+  if (cluster.mode === "bracketInterpolation" || cluster.mode === "sparseNearCluster") return "中等";
   if (items.length >= 4 && items.every((item) => Math.abs(item.durationGapYears) <= 1)) return "较高";
   if (items.length >= 2) return "中等";
   return "较低";
@@ -569,7 +657,9 @@ function previousChinaBusinessDate(reference = new Date()) {
 }
 
 export const __test__ = {
+  buildTrancheSuggestion,
   durationToYears,
   previousChinaBusinessDate,
   pickDmValuationRate,
+  selectPrimaryDurationCluster,
 };
