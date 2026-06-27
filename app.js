@@ -8,11 +8,12 @@ import {
   formatNumber,
   generateOpinion,
   mergeImportedIssuers,
+  normalizeBondFullNameForProject,
   normalizeIssuer,
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-linked-branch";
+} from "./core.js?v=20260627-dm-project-polish";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-linked-branch";
+} from "./lifecycle.js?v=20260627-dm-project-polish";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-linked-branch";
+} from "./history-parser.js?v=20260627-dm-project-polish";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-linked-branch";
+} from "./protocol-transfer.js?v=20260627-dm-project-polish";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +70,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-linked-branch";
+} from "./secondary-inventory.js?v=20260627-dm-project-polish";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -292,6 +293,7 @@ function bindGenerator() {
       }
       if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
       if (field === "exchangeIssueNumber") applyExchangeIssueNumberChoice(project, project.exchangeIssueNumber, true);
+      if (field === "venue") syncProjectConditionalFields();
       if (field === "shortName" && $("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
       project.sourceText = buildDmProjectSourceText(project);
       $("#briefInput").value = project.sourceText;
@@ -684,7 +686,7 @@ function projectPatchFromDmLookup(payload) {
   }
 
   assignProjectDmValue(patch, "shortName", normalized.shortName);
-  assignProjectDmValue(patch, "fullName", normalized.fullName);
+  assignProjectDmValue(patch, "fullName", dmProjectFullNameForProject(normalized.fullName, patch, issueGroup));
   assignProjectDmValue(patch, "issuerName", normalized.issuerName);
   assignProjectDmValue(patch, "durationText", normalizeDmTenor(normalized.durationText));
   assignProjectDmValue(patch, "issueScale", normalized.issueScaleYi);
@@ -721,6 +723,20 @@ function projectPatchFromDmLookup(payload) {
 
   patch.warnings = warnings;
   return patch;
+}
+
+function dmProjectFullNameForProject(fullName, patch, issueGroup) {
+  const text = String(fullName || "").trim();
+  if (!text) return "";
+  const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
+  const projectLike = tranches.length > 1
+    ? {
+        ...patch,
+        durationParts: patch.durationParts?.length ? patch.durationParts : tranches.map((tranche) => normalizeDmTenor(tranche.tenor)).filter(Boolean),
+        shortNames: patch.shortNames?.length ? patch.shortNames : uniqueNonEmpty(tranches.map((tranche) => tranche.shortName)),
+      }
+    : patch;
+  return normalizeBondFullNameForProject(text, projectLike);
 }
 
 function assignProjectDmValue(target, field, value) {
@@ -1170,7 +1186,13 @@ function fillProjectFields() {
   if ($("#projectGuidancePriceInput")) $("#projectGuidancePriceInput").value = formatRateListInput(project.guidancePrices?.length ? project.guidancePrices : [project.guidancePrice]);
   ensureInquiryRangeCapacity(project);
   renderTrancheInquiryFields();
+  syncProjectConditionalFields();
   applyProjectRecognitionMarks();
+}
+
+function syncProjectConditionalFields() {
+  const exchangeIssueField = $("#exchangeIssueNumberField");
+  if (exchangeIssueField) exchangeIssueField.hidden = !isExchangeProject(project);
 }
 
 function clearProjectRecognitionMarks() {
@@ -1269,6 +1291,12 @@ function commonFieldMismatchWarning(projectValue, field) {
 
 function regenerate() {
   const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
+  const normalizedFullName = normalizeBondFullNameForProject(project.fullName, project);
+  if (project.fullName && normalizedFullName && normalizedFullName !== project.fullName) {
+    project.fullName = normalizedFullName;
+    const input = $('[data-project-field="fullName"]');
+    if (input) input.value = normalizedFullName;
+  }
   if (!project.fullName && issuer) {
     const fullName = buildBondFullName(project.shortName, issuer.legalName, project);
     const input = $('[data-project-field="fullName"]');

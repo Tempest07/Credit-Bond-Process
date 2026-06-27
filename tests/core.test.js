@@ -287,6 +287,24 @@ test("parses and generates interbank dual-tranche mutual-allocation projects", (
   assert.match(generated.opinion, /2年期一级投标利率不低于1.65%、5年期一级投标利率不低于1.83%/);
 });
 
+test("strips DM variety suffix from dual-tranche project full names", () => {
+  const project = {
+    ...parseProjectBrief(`26越秀集团MTN003 非我行主承 广州分行
+3/10年期 规模15亿 AAA(中诚信国际)/隐含AAA
+询价区间1.2-2.2/1.7-2.7 银行间 兴业银行股份有限公司,广发银行股份有限公司`),
+    fullName: "广州越秀集团股份有限公司2026年度第三期中期票据(品种一)",
+  };
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "广州越秀集团股份有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1825, rawText: "总行批40亿，公募，30%，5年" },
+  });
+
+  assert.equal(generated.fullName, "广州越秀集团股份有限公司2026年度第三期中期票据");
+  assert.doesNotMatch(generated.opinion, /品种一/);
+  assert.match(generated.opinion, /发行期限3年\/10年（双向互拨）/);
+});
+
 test("requires explicit exchange issue number and generates dual-tranche exchange opinion", () => {
   const withoutIssue = parseProjectBrief("26广越05\n26广越06 非我行主承 广州分行\n3/5年期 规模20亿 AAA(中诚信国际)/隐含AAA 公开\n询价区间1.3-2.3/1.5-2.5 上交所 中信证券");
   assert.equal(withoutIssue.exchangeIssueNumber, null);

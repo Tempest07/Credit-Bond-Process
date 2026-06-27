@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260627-linked-branch">
+  <link rel="stylesheet" href="./styles.css?v=20260627-dm-project-polish">
 </head>
 <body>
   <div class="app-shell">
@@ -131,7 +131,7 @@
                   <option value="私募">非公开发行 / 私募</option>
                 </select>
               </label>
-              <label>交易所发行期次<input data-project-field="exchangeIssueNumber" type="number" min="1" step="1" placeholder="例如：第三期填 3"></label>
+              <label id="exchangeIssueNumberField">交易所发行期次<input data-project-field="exchangeIssueNumber" type="number" min="1" step="1" placeholder="例如：第三期填 3"></label>
               <label>牵头主承销商<input data-project-field="leadUnderwriter"></label>
               <label class="span-2">匹配主体
                 <select id="issuerSelect"><option value="">未匹配主体</option></select>
@@ -712,6 +712,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260627-linked-branch"></script>
+  <script type="module" src="./app.js?v=20260627-dm-project-polish"></script>
 </body>
 </html>

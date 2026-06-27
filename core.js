@@ -527,6 +527,16 @@ export function buildBondFullName(shortName, legalName, project = {}) {
   return `${legalName}${year}年面向专业投资者${issuance}发行公司债券(第${issueNumberText}期)`;
 }
 
+export function normalizeBondFullNameForProject(fullName, project = {}) {
+  const text = String(fullName || "").trim();
+  if (!text) return "";
+  if (!isDualTranche(project)) return text;
+  return text
+    .replace(/\s*[（(]\s*品种(?:[一二三四五六七八九十]+|\d+)\s*[）)]\s*$/u, "")
+    .replace(/\s*品种(?:[一二三四五六七八九十]+|\d+)\s*$/u, "")
+    .trim();
+}
+
 export function calculateSuggestion(project, issuer) {
   const warnings = [];
   const credit = issuer?.credit || {};
@@ -633,7 +643,8 @@ export function formatCreditSentence(issuer) {
 
 export function generateOpinion(project, issuer) {
   const suggestion = calculateSuggestion(project, issuer);
-  const fullName = project.fullName || buildBondFullName(project.shortName, issuer?.legalName, project);
+  const fullName = normalizeBondFullNameForProject(project.fullName, project)
+    || buildBondFullName(project.shortName, issuer?.legalName, project);
   const branch = project.branch || issuer?.linkedBranch || issuer?.defaultBranch || "【待补充联动分行】";
   const underwriter = buildUnderwriter(project);
   const rating = project.subjectRating
