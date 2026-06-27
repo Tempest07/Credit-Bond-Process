@@ -88,6 +88,7 @@ h3 { margin: 24px 0 12px; font-size: 13px; }
 .step { display: grid; place-items: center; min-width: 30px; height: 24px; padding: 0 6px; border-radius: 5px; color: var(--accent); background: var(--accent-soft); font-size: 10px; font-weight: 800; }
 .pill { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: var(--panel-soft); font-size: 10px; font-weight: 800; line-height: 1.35; }
 .pill.accent { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); color: var(--accent); background: var(--accent-soft); }
+.pill.warning { border-color: color-mix(in srgb, var(--warning) 30%, var(--line)); color: var(--warning); background: var(--warning-soft); }
 
 .button { min-height: 36px; padding: 0 13px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text); background: #fff; font-size: 12px; font-weight: 700; }
 .button:hover { border-color: var(--accent); }
@@ -161,6 +162,13 @@ label[data-recognition-status="attention"] textarea {
 .tranche-inquiry-row > span { align-self: center; color: var(--text); font-size: 11px; font-weight: 800; }
 .tranche-inquiry-row label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .tranche-inquiry-row input { min-height: 34px; padding: 6px 8px; font-size: 11px; }
+.project-dm-assist { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, var(--accent-soft), #fff); }
+.project-dm-assist[hidden] { display: none; }
+.project-dm-assist-head { display: grid; gap: 4px; min-width: 0; }
+.project-dm-assist-head.compact { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; }
+.project-dm-assist-head strong { color: var(--text); font-size: 12px; }
+.project-dm-assist-head span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.project-dm-issue-group { display: grid; gap: 8px; }
 
 .issuer-list-panel { min-height: 610px; }
 .issuer-list { display: grid; gap: 7px; margin-top: 12px; }

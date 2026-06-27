@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-issue-group";
+} from "./core.js?v=20260627-project-dm";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-issue-group";
+} from "./lifecycle.js?v=20260627-project-dm";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-issue-group";
+} from "./history-parser.js?v=20260627-project-dm";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-issue-group";
+} from "./protocol-transfer.js?v=20260627-project-dm";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-issue-group";
+} from "./secondary-inventory.js?v=20260627-project-dm";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -229,6 +229,24 @@ function bindGenerator() {
   });
 
   $("#parseButton").addEventListener("click", parseAndRender);
+  $("#projectDmLookupButton").addEventListener("click", () => runProjectDmLookup());
+  $("#projectDmAssist").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-project-dm-query]");
+    if (!button) return;
+    const query = button.dataset.projectDmQuery?.trim();
+    if (!query) return;
+    await runProjectDmLookup(query);
+  });
+  $("#projectDmAssist").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.target.closest("button")) return;
+    const card = event.target.closest(".dm-issue-tranche[data-project-dm-query]");
+    if (!card) return;
+    const query = card.dataset.projectDmQuery?.trim();
+    if (!query) return;
+    event.preventDefault();
+    await runProjectDmLookup(query);
+  });
   $("#issuerSelect").addEventListener("change", () => {
     delete projectRecognitionMarks.issuerSelect;
     setRecognitionForInput($("#issuerSelect"), null);
@@ -510,6 +528,396 @@ function parseAndRender() {
   fillProjectFields();
   renderIssuerOptions();
   regenerate();
+}
+
+async function runProjectDmLookup(queryOverride = "") {
+  const input = $('[data-project-field="shortName"]');
+  const query = String(queryOverride || input?.value || project.shortName || "").trim();
+  if (!query || briefTemplatePlaceholders(query).length) {
+    showToast("请先填写债券简称或代码。");
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (looksLikeSecurityId(query)) params.set("securityId", query);
+  else params.set("shortName", query);
+
+  setProjectDmLookupBusy(true);
+  try {
+    const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+    });
+    const payload = await response.json();
+    renderProjectDmAssist(payload);
+    if (!payload.ok) {
+      $("#projectDmStatus").textContent = payload.noResult ? "DM 无结果" : "DM 查询失败";
+      $("#projectDmStatus").className = "pill warning";
+      showToast(payload.noResult ? "DM 无结果，可查看相近候选。" : "DM 查询失败，请看提示。");
+      return;
+    }
+    applyDmLookupToCurrentProject(payload);
+    const sourceLabel = dmPayloadSourceLabel(payload);
+    $("#projectDmStatus").textContent = `已读取 ${sourceLabel}`;
+    $("#projectDmStatus").className = "pill accent";
+    showToast(`已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
+  } catch (error) {
+    renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });
+    $("#projectDmStatus").textContent = "DM 查询失败";
+    $("#projectDmStatus").className = "pill warning";
+    showToast(error.message || "DM 查询失败。");
+  } finally {
+    setProjectDmLookupBusy(false);
+  }
+}
+
+function setProjectDmLookupBusy(isBusy) {
+  const button = $("#projectDmLookupButton");
+  if (!button) return;
+  button.disabled = isBusy;
+  button.textContent = isBusy ? "读取中..." : "读取 DM";
+  if (isBusy) {
+    $("#projectDmStatus").textContent = "正在读取 DM";
+    $("#projectDmStatus").className = "pill";
+  }
+}
+
+function applyDmLookupToCurrentProject(payload) {
+  const patch = projectPatchFromDmLookup(payload);
+  const warnings = [...(project.warnings || []), ...(patch.warnings || [])];
+  project = {
+    ...project,
+    ...patch,
+    warnings,
+  };
+  if (!String(project.sourceText || "").trim() || briefTemplatePlaceholders(project.sourceText).length) {
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
+  }
+  const matched = findIssuerForProject(project)
+    || findIssuer(patch.issuerName || "", state.issuers)
+    || null;
+  selectedIssuerId = matched?.id || "";
+  project = applyIssuerCommonFields(project, matched);
+  projectRecognitionMarks = {
+    ...buildProjectDmRecognitionMarks(patch),
+    ...buildProjectRecognitionMarks(project, matched),
+  };
+  fillProjectFields();
+  renderIssuerOptions();
+  regenerate();
+}
+
+function projectPatchFromDmLookup(payload) {
+  const normalized = payload?.normalized || {};
+  const issueGroup = payload?.issueGroup || normalized.issueGroup || null;
+  const tranches = projectDmUsableTranches(issueGroup);
+  const patch = {};
+  const warnings = [];
+
+  if (tranches.length) {
+    const names = uniqueNonEmpty(tranches.map((tranche) => tranche.shortName || tranche.securityId));
+    const durations = tranches.map((tranche) => normalizeDmTenor(tranche.tenor)).filter(Boolean);
+    const ranges = tranches.map((tranche) => parseDmInquiryRange(tranche.inquiryRange));
+    const scale = sumFinite(tranches.map((tranche) => numberOrNull(tranche.actualScale) ?? numberOrNull(tranche.planScale)));
+    if (names.length) {
+      patch.shortNames = names;
+      patch.shortName = compactProjectShortNames(names);
+    }
+    if (durations.length) {
+      patch.durationParts = durations;
+      patch.durationText = compactProjectDurations(durations);
+      patch.durationDays = durationToDays(patch.durationText);
+    }
+    if (Number.isFinite(scale)) patch.issueScale = scale;
+    const completeRanges = ranges.filter((range) => Number.isFinite(range.low) && Number.isFinite(range.high));
+    if (completeRanges.length) {
+      patch.inquiryRanges = completeRanges;
+      patch.inquiryLow = completeRanges[0].low;
+      patch.inquiryHigh = completeRanges[0].high;
+      patch.inquiryLow2 = completeRanges[1]?.low ?? null;
+      patch.inquiryHigh2 = completeRanges[1]?.high ?? null;
+    }
+  }
+
+  assignProjectDmValue(patch, "shortName", normalized.shortName);
+  assignProjectDmValue(patch, "fullName", normalized.fullName);
+  assignProjectDmValue(patch, "issuerName", normalized.issuerName);
+  assignProjectDmValue(patch, "durationText", normalizeDmTenor(normalized.durationText));
+  assignProjectDmValue(patch, "issueScale", normalized.issueScaleYi);
+  assignProjectDmValue(patch, "venue", normalized.venue);
+  assignProjectDmValue(patch, "offeringType", normalized.offeringType);
+  assignProjectDmValue(patch, "leadUnderwriter", normalized.leadUnderwriter);
+  assignProjectDmValue(patch, "sponsorStatus", normalized.sponsorStatus);
+  assignProjectDmValue(patch, "subjectRating", normalized.subjectRating);
+  assignProjectDmValue(patch, "ratingAgency", normalized.ratingAgency);
+  assignProjectDmValue(patch, "hiddenRating", normalized.impliedRating);
+
+  if (!patch.inquiryRanges?.length) {
+    const range = parseDmInquiryRange(normalized.inquiryRange);
+    if (Number.isFinite(range.low) && Number.isFinite(range.high)) {
+      patch.inquiryLow = range.low;
+      patch.inquiryHigh = range.high;
+      patch.inquiryRanges = [range];
+    }
+  }
+  if (patch.durationText && !patch.durationParts?.length) {
+    patch.durationParts = durationParts(patch.durationText);
+    patch.durationDays = durationToDays(patch.durationText);
+  }
+
+  const reallocated = (issueGroup?.tranches || []).filter((tranche) => tranche.status === "reallocated");
+  const confirmed = reallocated.filter((tranche) => tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId);
+  if (confirmed.length) {
+    warnings.push(...confirmed.map((tranche) =>
+      `${tranche.shortName || "本期债券"}已全部回拨至${tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId}，新增项目已默认使用回拨目标。`,
+    ));
+  } else if (reallocated.length) {
+    warnings.push("同次发行组中存在待确认回拨期限，保存前请确认最终入项品种。");
+  }
+
+  patch.warnings = warnings;
+  return patch;
+}
+
+function assignProjectDmValue(target, field, value) {
+  if (value === null || value === undefined || value === "") return;
+  if (valueHasContent(target[field])) return;
+  target[field] = value;
+}
+
+function buildProjectDmRecognitionMarks(patch) {
+  const marks = {};
+  const dmFields = [
+    ["shortName", "债券简称"],
+    ["durationText", "债券期限"],
+    ["issueScale", "发行规模"],
+    ["subjectRating", "主体评级"],
+    ["ratingAgency", "评级机构"],
+    ["hiddenRating", "隐含评级"],
+    ["inquiryLow", "询价区间"],
+    ["inquiryHigh", "询价区间"],
+    ["venue", "发行场所"],
+    ["offeringType", "发行方式"],
+    ["leadUnderwriter", "牵头主承销商"],
+    ["fullName", "债券全称"],
+  ];
+  for (const [field, label] of dmFields) {
+    if (valueHasContent(patch[field])) marks[field] = recognitionMark("success", `${label}已由 DM/云端数据库预填`);
+  }
+  if (Array.isArray(patch.inquiryRanges)) {
+    patch.inquiryRanges.forEach((range, index) => {
+      if (!index) return;
+      if (Number.isFinite(numberOrNull(range.low))) marks[`inquiryRanges.${index}.low`] = recognitionMark("success", "询价下限已由 DM/云端数据库预填");
+      if (Number.isFinite(numberOrNull(range.high))) marks[`inquiryRanges.${index}.high`] = recognitionMark("success", "询价上限已由 DM/云端数据库预填");
+    });
+  }
+  return marks;
+}
+
+function projectDmUsableTranches(issueGroup) {
+  const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
+  if (!tranches.length) return [];
+  const usable = tranches.filter((tranche) => tranche.status !== "reallocated");
+  return usable.length ? usable : tranches;
+}
+
+function buildDmProjectSourceText(projectValue) {
+  const rating = projectValue.subjectRating
+    ? `${projectValue.subjectRating}${projectValue.ratingAgency ? `(${projectValue.ratingAgency})` : ""}`
+    : "主体评级待补";
+  const hidden = projectValue.hiddenRating ? `/隐含${projectValue.hiddenRating}` : "";
+  const scale = Number.isFinite(numberOrNull(projectValue.issueScale)) ? `规模${formatNumber(projectValue.issueScale)}亿` : "规模待补";
+  const inquiry = Number.isFinite(numberOrNull(projectValue.inquiryLow)) && Number.isFinite(numberOrNull(projectValue.inquiryHigh))
+    ? `询价区间${formatNumber(projectValue.inquiryLow)}-${formatNumber(projectValue.inquiryHigh)}`
+    : "询价区间待补";
+  return [
+    `${projectValue.shortName || "债券简称待补"} ${projectValue.sponsorStatus || "主承身份待补"} ${projectValue.branch || "分行待补"}`,
+    `${projectValue.durationText || "期限待补"} ${scale} ${rating}${hidden}`,
+    `${inquiry} ${projectValue.venue || "发行场所待补"} ${projectValue.leadUnderwriter || "牵头主承待补"}`,
+  ].join("\n");
+}
+
+function renderProjectDmAssist(payload) {
+  const output = $("#projectDmAssist");
+  if (!output) return;
+  output.hidden = false;
+  if (!payload?.ok) {
+    const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+    output.innerHTML = `
+      <div class="project-dm-assist-head">
+        <strong>${escapeHtml(payload?.noResult ? "未查询到匹配债券" : "DM 查询失败")}</strong>
+        <span>${escapeHtml(payload?.hint || payload?.error || "请检查简称、代码或查询窗口。")}</span>
+      </div>
+      ${suggestions.length ? `<div class="dm-suggestion-list">${suggestions.map(renderProjectDmSuggestion).join("")}</div>` : ""}
+    `;
+    return;
+  }
+
+  const issueGroup = payload.issueGroup || payload.normalized?.issueGroup || null;
+  const normalized = payload.normalized || {};
+  const facts = [
+    normalized.shortName,
+    normalized.issuerName,
+    normalized.durationText ? `期限 ${normalized.durationText}` : "",
+    Number.isFinite(numberOrNull(normalized.issueScaleYi)) ? `规模 ${formatNumber(normalized.issueScaleYi)}亿` : "",
+    normalized.inquiryRange ? `区间 ${normalized.inquiryRange}` : "",
+  ].filter(Boolean);
+  output.innerHTML = `
+    <div class="project-dm-assist-head">
+      <strong>DM 已带入新增项目</strong>
+      <span>${escapeHtml(facts.join(" · ") || "已读取结构化字段，请复核后保存。")}</span>
+    </div>
+    ${renderProjectDmIssueGroup(issueGroup)}
+  `;
+}
+
+function renderProjectDmSuggestion(item) {
+  const query = item.shortName || item.securityId || "";
+  const facts = [
+    item.securityId ? `代码 ${item.securityId}` : "",
+    item.issuerName || "",
+    item.tenor ? `期限 ${item.tenor}` : "",
+    Number.isFinite(numberOrNull(item.issueScaleYi)) ? `规模 ${formatNumber(item.issueScaleYi)}亿` : "",
+    item.inquiryRange ? `区间 ${item.inquiryRange}` : "",
+  ].filter(Boolean);
+  return `
+    <button class="dm-suggestion-card" type="button" data-project-dm-query="${escapeAttribute(query)}" aria-label="读取 ${escapeAttribute(query || "候选债券")}">
+      <span>${escapeHtml(item.shortName || item.securityId || "未命名候选")}</span>
+      <small>${escapeHtml(facts.join(" · ") || "点击用该候选继续读取 DM")}</small>
+    </button>
+  `;
+}
+
+function renderProjectDmIssueGroup(issueGroup) {
+  const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
+  if (tranches.length < 2) return "";
+  const usable = projectDmUsableTranches(issueGroup);
+  const summary = [
+    `${tranches.length} 个期限`,
+    dmIssueGroupSourceLabel(issueGroup.source),
+    usable.length !== tranches.length ? `默认入项 ${usable.length} 个可发行期限` : "",
+  ].filter(Boolean).join(" · ");
+  return `
+    <div class="project-dm-issue-group">
+      <div class="project-dm-assist-head compact">
+        <strong>同次发行组</strong>
+        <span>${escapeHtml(summary)}</span>
+      </div>
+      <div class="dm-issue-group-list">
+        ${tranches.map(renderProjectDmIssueTranche).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderProjectDmIssueTranche(tranche) {
+  const status = dmIssueTrancheStatusMeta(tranche);
+  const targetQuery = tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId || "";
+  const query = targetQuery || tranche.shortName || tranche.securityId || "";
+  const facts = [
+    tranche.tenor ? `期限 ${tranche.tenor}` : "",
+    Number.isFinite(numberOrNull(tranche.planScale)) ? `计划 ${formatNumber(tranche.planScale)}亿` : "",
+    Number.isFinite(numberOrNull(tranche.actualScale)) ? `发行 ${formatNumber(tranche.actualScale)}亿` : "",
+    tranche.inquiryRange ? `区间 ${tranche.inquiryRange}` : "",
+    Number.isFinite(numberOrNull(tranche.couponRate)) ? `票面 ${formatNumber(tranche.couponRate)}%` : "",
+  ].filter(Boolean);
+  return `
+    <article class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}" role="button" tabindex="0" data-project-dm-query="${escapeAttribute(query)}" aria-label="读取 ${escapeAttribute(query || "该品种")}">
+      <div class="dm-issue-tranche-head">
+        <strong>${escapeHtml(tranche.shortName || "未命名品种")}</strong>
+        <span class="status-badge ${status.className}">${escapeHtml(status.label)}</span>
+      </div>
+      <div class="dm-issue-tranche-tags">
+        ${tranche.isQueriedInput ? `<span>当前查询</span>` : ""}
+        ${tranche.isDmMatched ? `<span>DM命中</span>` : ""}
+        <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.source))}</span>
+      </div>
+      <p>${facts.length ? escapeHtml(facts.join(" · ")) : "暂无结构化发行要素"}</p>
+      ${renderProjectDmReallocationReason(tranche)}
+    </article>
+  `;
+}
+
+function renderProjectDmReallocationReason(tranche) {
+  const target = tranche?.reallocationTargetShortName || tranche?.reallocationTargetSecurityId || "";
+  if (tranche?.status === "reallocated" && target) {
+    return `
+      <small class="dm-reallocation-note">
+        <span>本期债券已全部回拨至${escapeHtml(target)}，请点击</span>
+        <button class="dm-reallocation-target" type="button" data-project-dm-query="${escapeAttribute(target)}">${escapeHtml(target)}</button>
+        <span>查看详情</span>
+      </small>
+    `;
+  }
+  return tranche?.statusReason ? `<small>${escapeHtml(tranche.statusReason)}</small>` : "";
+}
+
+function dmPayloadSourceLabel(payload) {
+  const fields = Object.values(payload?.normalized?.ratingSource || {});
+  if (fields.includes("issuer-db")) return "DM+云端数据库";
+  if (payload?.issueGroup?.source === "cloud-db") return "云端数据库";
+  if (payload?.issueGroup?.source === "mixed") return "DM+云端数据库";
+  return "DM";
+}
+
+function parseDmInquiryRange(value = "") {
+  const numbers = String(value || "").match(/\d+(?:\.\d+)?/g)?.map(Number).filter(Number.isFinite) || [];
+  if (!numbers.length) return { low: null, high: null };
+  if (numbers.length === 1) return { low: numbers[0], high: numbers[0] };
+  return { low: Math.min(numbers[0], numbers[1]), high: Math.max(numbers[0], numbers[1]) };
+}
+
+function normalizeDmTenor(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const match = text.match(/^(\d+(?:\.\d+)?)(D|M|Y)$/i);
+  if (!match) return text;
+  const unit = match[2].toUpperCase() === "D" ? "D" : match[2].toUpperCase() === "M" ? "M" : "Y";
+  return `${match[1]}${unit}`;
+}
+
+function compactProjectDurations(values) {
+  const durations = uniqueNonEmpty(values);
+  if (!durations.length) return "";
+  if (durations.length === 1) return durations[0];
+  const units = durations.map((item) => item.match(/(D|M|Y|天|月|年)$/i)?.[1] || "");
+  if (units.every((unit) => unit && unit.toUpperCase() === units[0].toUpperCase())) {
+    const unit = units[0];
+    return `${durations.map((item) => item.slice(0, -unit.length)).join("/")}${unit}`;
+  }
+  return durations.join("/");
+}
+
+function compactProjectShortNames(names) {
+  const values = uniqueNonEmpty(names);
+  if (!values.length) return "";
+  if (values.length === 1) return values[0];
+  const first = values[0];
+  const letter = first.match(/^(.*?)([A-Z])$/i);
+  if (letter) {
+    const suffixes = values.map((name) => name.match(new RegExp(`^${escapeRegExpForPattern(letter[1])}([A-Z])$`, "i"))?.[1]?.toUpperCase());
+    if (suffixes.every(Boolean)) return `${first}/${suffixes.slice(1).join("/")}`;
+  }
+  const number = first.match(/^(.*?)(\d+)$/);
+  if (number) {
+    const suffixes = values.map((name) => name.match(new RegExp(`^${escapeRegExpForPattern(number[1])}(\\d+)$`))?.[1]);
+    if (suffixes.every(Boolean)) return `${number[1]}${suffixes.join("/")}`;
+  }
+  return values.join("/");
+}
+
+function uniqueNonEmpty(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function sumFinite(values) {
+  const numbers = values.map(numberOrNull).filter(Number.isFinite);
+  return numbers.length ? round(numbers.reduce((sum, value) => sum + value, 0), 4) : null;
+}
+
+function escapeRegExpForPattern(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function findIssuerForProject(projectValue) {

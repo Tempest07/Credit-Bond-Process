@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260627-issue-group">
+  <link rel="stylesheet" href="./styles.css?v=20260627-project-dm">
 </head>
 <body>
   <div class="app-shell">
@@ -97,6 +97,8 @@
             <div class="panel-head">
               <div><span class="step">02</span><h2>确认结构化字段</h2></div>
               <div class="result-actions">
+                <span class="pill muted" id="projectDmStatus">未读取 DM</span>
+                <button class="button subtle" id="projectDmLookupButton" type="button">读取 DM</button>
                 <span class="pill" id="matchedIssuerPill">未匹配主体</span>
                 <button class="button subtle" id="quickIssuerButton">录入/更新主体授信</button>
               </div>
@@ -142,6 +144,7 @@
               </label>
               <label class="span-2">债券全称（可覆盖自动生成结果）<input data-project-field="fullName"></label>
             </div>
+            <div class="project-dm-assist" id="projectDmAssist" hidden></div>
           </section>
         </div>
 
@@ -715,6 +718,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260627-issue-group"></script>
+  <script type="module" src="./app.js?v=20260627-project-dm"></script>
 </body>
 </html>

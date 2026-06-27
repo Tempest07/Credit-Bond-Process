@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260627-issue-group";
+const VERSION = "20260627-project-dm";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser] = await Promise.all([
