@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-dm-cloud-mobile";
+} from "./core.js?v=20260627-dm-source-badge";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-dm-cloud-mobile";
+} from "./lifecycle.js?v=20260627-dm-source-badge";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-dm-cloud-mobile";
+} from "./history-parser.js?v=20260627-dm-source-badge";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-dm-cloud-mobile";
+} from "./protocol-transfer.js?v=20260627-dm-source-badge";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-dm-cloud-mobile";
+} from "./secondary-inventory.js?v=20260627-dm-source-badge";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -3499,6 +3499,18 @@ function projectDmShortNames(projectRecord) {
   ].filter(Boolean);
 }
 
+const DM_RATING_SOURCE_FIELDS = new Set(["subjectRating", "ratingAgency", "impliedRating"]);
+
+function dmNormalizedSourceBadge(normalized, key, isMissing) {
+  if (isMissing || !DM_RATING_SOURCE_FIELDS.has(key)) return null;
+  const source = normalized?.ratingSource?.[key] || "";
+  const isCloudDb = source === "issuer-db" || source === "local-issuer-db";
+  return {
+    label: isCloudDb ? "云端数据库" : "DM",
+    className: isCloudDb ? "cloud" : "dm",
+  };
+}
+
 function renderDmNormalized(normalized) {
   const fields = [
     ["securityId", "债券代码"],
@@ -3525,10 +3537,15 @@ function renderDmNormalized(normalized) {
   }
   $("#dmNormalizedOutput").innerHTML = fields.map(([key, label]) => {
     const value = normalized[key];
-    const text = value === null || value === undefined || value === "" ? "未返回" : String(value);
+    const isMissing = value === null || value === undefined || value === "";
+    const text = isMissing ? "未返回" : String(value);
+    const sourceBadge = dmNormalizedSourceBadge(normalized, key, isMissing);
     return `
-      <div class="dm-normalized-item ${text === "未返回" ? "empty-field" : ""}">
-        <span>${escapeHtml(label)}</span>
+      <div class="dm-normalized-item ${isMissing ? "empty-field" : ""} ${sourceBadge?.className === "cloud" ? "source-cloud" : ""}">
+        <div class="dm-normalized-label">
+          <span>${escapeHtml(label)}</span>
+          ${sourceBadge ? `<small class="dm-source-badge ${escapeAttribute(sourceBadge.className)}">${escapeHtml(sourceBadge.label)}</small>` : ""}
+        </div>
         <strong>${escapeHtml(text)}</strong>
       </div>
     `;
