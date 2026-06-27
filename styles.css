@@ -159,6 +159,21 @@ label[data-recognition-source="cloud"]::after {
 .project-dm-entry-form input, .project-pricing-grid input { min-height: 40px; padding: 9px 11px; font-size: 13px; }
 .project-dm-entry-form .button { min-height: 40px; white-space: nowrap; }
 .project-pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.valuation-assist { display: grid; gap: 9px; margin-top: 10px; padding: 11px; border: 1px solid color-mix(in srgb, var(--secondary) 24%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, #f7fffc, #fff); }
+.valuation-assist[hidden] { display: none; }
+.valuation-assist-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.valuation-assist-head strong { color: var(--text); font-size: 12px; }
+.valuation-assist-head span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.5; text-align: right; }
+.valuation-assist-list { display: grid; gap: 8px; }
+.valuation-suggestion-card { display: grid; gap: 7px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.valuation-suggestion-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+.valuation-suggestion-main > div { display: grid; gap: 3px; min-width: 0; }
+.valuation-suggestion-main strong { color: var(--text); font-size: 13px; line-height: 1.35; }
+.valuation-suggestion-main span { color: var(--muted); font-size: 10px; font-weight: 800; line-height: 1.35; }
+.valuation-suggestion-main > span { flex: 0 0 auto; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--secondary) 28%, var(--line)); border-radius: 5px; color: var(--secondary); background: var(--secondary-soft); }
+.valuation-suggestion-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.valuation-comparable-list { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.valuation-comparable-list span { max-width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: var(--panel-soft); font-size: 9px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
 .opinion-output { min-height: 210px; padding: 15px; resize: vertical; font-size: 13px; line-height: 1.9; }
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .field-grid label { display: grid; min-width: 0; max-width: 100%; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -680,6 +695,8 @@ label[data-recognition-source="cloud"]::after {
     max-width: 100%;
   }
   .field-grid, .rules-grid, .secondary-summary-grid, .project-dm-entry-form, .project-pricing-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list { grid-template-columns: 1fr; }
+  .valuation-assist-head, .valuation-suggestion-main { flex-direction: column; }
+  .valuation-assist-head span { text-align: left; }
   .tranche-inquiry-row { grid-template-columns: 1fr; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
   .tranche-grid .span-3 { grid-column: span 1; }

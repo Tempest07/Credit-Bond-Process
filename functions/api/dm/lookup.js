@@ -1248,7 +1248,7 @@ function securityIdMatches(candidate, query) {
   return stripSecuritySuffix(candidateId) === stripSecuritySuffix(query);
 }
 
-function normalizeSecurityId(value = "") {
+export function normalizeSecurityId(value = "") {
   const text = String(value || "").trim().toUpperCase();
   return /^[A-Z]*\d+(?:\.[A-Z]+)?$/.test(text) ? text : "";
 }
@@ -1271,7 +1271,7 @@ function firstRow(result) {
   return result?.rows?.[0] || {};
 }
 
-function rowsFromDm(raw) {
+export function rowsFromDm(raw) {
   if (Array.isArray(raw)) return raw;
   if (Array.isArray(raw?.list)) return raw.list;
   if (Array.isArray(raw?.data)) return raw.data;
@@ -1314,7 +1314,7 @@ function pickRatingLike(rows, kind) {
   return "";
 }
 
-function pickFirstString(row, keys) {
+export function pickFirstString(row, keys) {
   for (const key of keys) {
     const value = row?.[key];
     if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
@@ -1322,7 +1322,7 @@ function pickFirstString(row, keys) {
   return "";
 }
 
-function pickFirstDateString(row, keys) {
+export function pickFirstDateString(row, keys) {
   for (const key of keys) {
     const value = row?.[key];
     const text = formatDmDate(value);
@@ -1331,15 +1331,15 @@ function pickFirstDateString(row, keys) {
   return "";
 }
 
-function numberFromRow(row, keys) {
+export function numberFromRow(row, keys) {
   for (const key of keys) {
-    const value = Number(row?.[key]);
+    const value = numberOrNull(row?.[key]);
     if (Number.isFinite(value)) return value;
   }
   return null;
 }
 
-function numberOrNull(value) {
+export function numberOrNull(value) {
   if (value === "" || value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -1406,14 +1406,14 @@ function resolvePrimaryWindow(startDate, endDate) {
   return { startDate: localDate(start), endDate: localDate(end) };
 }
 
-function localDate(date) {
+export function localDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-function chinaDate(date) {
+export function chinaDate(date) {
   const adjusted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
   const year = adjusted.getUTCFullYear();
   const month = String(adjusted.getUTCMonth() + 1).padStart(2, "0");
@@ -1421,12 +1421,12 @@ function chinaDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-function round(value, digits = 2) {
+export function round(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
 
-function makeDmClient(env, request) {
+export function makeDmClient(env, request) {
   const appKey = env.INNO_APP_KEY;
   const appSecret = env.INNO_APP_SECRET || env.INNO_SM4_KEY;
   const baseUrl = (env.INNO_BASE_URL || DM_BASE_URL).replace(/\/+$/, "");
@@ -1462,13 +1462,13 @@ function makeDmClient(env, request) {
   };
 }
 
-function validateDmConfig(env) {
+export function validateDmConfig(env) {
   if (!env.INNO_APP_KEY) return json({ error: "Cloudflare Secret INNO_APP_KEY 尚未配置" }, 503);
   if (!env.INNO_APP_SECRET && !env.INNO_SM4_KEY) return json({ error: "Cloudflare Secret INNO_APP_SECRET 尚未配置" }, 503);
   return null;
 }
 
-function authorize(context) {
+export function authorize(context) {
   if (isLocalRequest(context.request)) return null;
   const password = context.env.APP_PASSWORD;
   if (!password) return json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503);
@@ -1482,7 +1482,7 @@ function isLocalRequest(request) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
-function apiHeaders() {
+export function apiHeaders() {
   return {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
@@ -1490,7 +1490,7 @@ function apiHeaders() {
   };
 }
 
-function json(data, status = 200) {
+export function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
 }
 

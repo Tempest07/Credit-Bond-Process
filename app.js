@@ -13,7 +13,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-required-issuer";
+} from "./core.js?v=20260627-dm-valuation";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-required-issuer";
+} from "./lifecycle.js?v=20260627-dm-valuation";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-required-issuer";
+} from "./history-parser.js?v=20260627-dm-valuation";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-required-issuer";
+} from "./protocol-transfer.js?v=20260627-dm-valuation";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,11 +70,12 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-required-issuer";
+} from "./secondary-inventory.js?v=20260627-dm-valuation";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
 const API_URL = "./api/state";
+const DM_VALUATION_URL = "./api/dm/valuation";
 const MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
 const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
@@ -157,6 +158,9 @@ let resultRecognitionProjectId = "";
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
 let dmLastPayload = null;
+let valuationAssistTimer = null;
+let valuationAssistController = null;
+let valuationAssistRequestKey = "";
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -1418,8 +1422,154 @@ function regenerate() {
     ? `${suggestion.trancheSuggestions.length > 1 ? "建议合计" : "建议"} ${formatSuggestionRatios(suggestion)} / ${formatNumber(suggestion.investmentAmount)}亿元`
     : "建议比例待补充";
 
+  scheduleDmValuationAssist(project, issuer);
   renderWarnings(generated.warnings);
   renderRuleTrace(generated, issuer);
+}
+
+function scheduleDmValuationAssist(projectValue, issuer) {
+  const output = $("#valuationAssist");
+  if (!output) return;
+  const issuerName = issuer?.legalName || projectValue?.issuerName || "";
+  if (!issuerName || !projectValue?.durationText || !projectValue?.shortName) {
+    clearTimeout(valuationAssistTimer);
+    if (valuationAssistController) valuationAssistController.abort();
+    valuationAssistController = null;
+    valuationAssistRequestKey = "";
+    output.hidden = true;
+    output.innerHTML = "";
+    return;
+  }
+
+  const key = JSON.stringify({
+    issuerName,
+    durationText: projectValue.durationText || "",
+    shortName: projectValue.shortName || "",
+    fullName: projectValue.fullName || "",
+    offeringType: projectValue.offeringType || "",
+    venue: projectValue.venue || "",
+  });
+  if (valuationAssistRequestKey === key) return;
+  valuationAssistRequestKey = key;
+  clearTimeout(valuationAssistTimer);
+  valuationAssistTimer = setTimeout(() => fetchDmValuationAssist(key, projectValue, issuerName), 420);
+  output.hidden = false;
+  output.innerHTML = `
+    <div class="valuation-assist-head">
+      <strong>估值助手</strong>
+      <span>正在读取 DM 存续债上一日估值...</span>
+    </div>
+  `;
+}
+
+async function fetchDmValuationAssist(key, projectValue, issuerName) {
+  if (valuationAssistController) valuationAssistController.abort();
+  valuationAssistController = new AbortController();
+  const params = new URLSearchParams({
+    issuerName,
+    durationText: projectValue.durationText || "",
+    shortName: projectValue.shortName || "",
+    fullName: projectValue.fullName || "",
+    offeringType: projectValue.offeringType || "",
+    venue: projectValue.venue || "",
+  });
+  try {
+    const response = await fetch(`${DM_VALUATION_URL}?${params.toString()}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+      signal: valuationAssistController.signal,
+    });
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = { ok: false, reason: "badResponse", hint: `DM 估值接口返回不是 JSON（HTTP ${response.status}）。` };
+    }
+    if (valuationAssistRequestKey !== key) return;
+    if (payload.ok) renderDmValuationAssist(payload);
+    else renderDmValuationEmpty(payload);
+  } catch (error) {
+    if (error.name === "AbortError" || valuationAssistRequestKey !== key) return;
+    renderDmValuationEmpty({ ok: false, reason: "requestFailed", hint: error.message || "DM 估值助手请求失败。" });
+  } finally {
+    if (valuationAssistRequestKey === key) valuationAssistController = null;
+  }
+}
+
+function renderDmValuationEmpty(payload) {
+  const output = $("#valuationAssist");
+  if (!output) return;
+  output.hidden = false;
+  output.innerHTML = `
+    <div class="valuation-assist-head">
+      <strong>估值助手</strong>
+      <span>${escapeHtml(payload?.hint || "暂无 DM 存续债可比估值。")}</span>
+    </div>
+  `;
+}
+
+function renderDmValuationAssist(payload) {
+  const output = $("#valuationAssist");
+  if (!output) return;
+  const suggestions = Array.isArray(payload.trancheSuggestions) ? payload.trancheSuggestions : [];
+  if (!suggestions.length) {
+    renderDmValuationEmpty({ hint: payload?.hint || "暂无 DM 存续债可比估值。" });
+    return;
+  }
+  const summary = `${suggestions.length} 个期限 · ${payload.pricedCandidateCount || 0}/${payload.candidateCount || 0} 条 DM 可比券 · ${payload.valuationDate || "上一日"}`;
+  output.hidden = false;
+  output.innerHTML = `
+    <div class="valuation-assist-head">
+      <strong>估值助手</strong>
+      <span>${escapeHtml(summary)}</span>
+    </div>
+    <div class="valuation-assist-list">
+      ${suggestions.map(renderValuationSuggestionCard).join("")}
+    </div>
+  `;
+}
+
+function renderValuationSuggestionCard(item) {
+  const range = item.low === item.high
+    ? formatValuationRate(item.center)
+    : `${formatValuationRate(item.low)}-${formatValuationRate(item.high)}`;
+  return `
+    <article class="valuation-suggestion-card">
+      <div class="valuation-suggestion-main">
+        <div>
+          <strong>${escapeHtml(item.durationText || "目标期限")} 参考 ${formatValuationRate(item.center)}</strong>
+          <span>${escapeHtml(item.profileLabel || "同类债券")} · 置信度${escapeHtml(item.confidence)}</span>
+        </div>
+        <span>${escapeHtml(range)}</span>
+      </div>
+      <p>${escapeHtml(item.method)}。建议值仅作框旁提示，估值和综合定价仍由手工填写。</p>
+      <div class="valuation-comparable-list">
+        ${item.comparableItems.map(renderValuationComparable).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderValuationComparable(item) {
+  const adjustmentBp = round((item.adjustment || 0) * 100, 1);
+  const adjustmentText = Math.abs(adjustmentBp) < 0.1
+    ? "同期限"
+    : `${adjustmentBp > 0 ? "+" : ""}${formatNumber(adjustmentBp)}bp`;
+  const facts = [
+    item.durationText,
+    `${formatValuationRate(item.rate)} ${item.source}`,
+    item.reliability ? `推荐度${item.reliability}` : "",
+    adjustmentText,
+  ].filter(Boolean);
+  return `
+    <span title="${escapeAttribute(`${item.shortName || ""} ${facts.join(" · ")}`)}">
+      ${escapeHtml(item.shortName || "可比券")} · ${escapeHtml(facts.join(" · "))}
+    </span>
+  `;
+}
+
+function formatValuationRate(value) {
+  return Number.isFinite(numberOrNull(value)) ? `${formatNumber(value)}%` : "待补";
 }
 
 function renderWarnings(warnings) {

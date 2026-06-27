@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { onRequestGet, __test__ } from "../functions/api/dm/lookup.js";
+import { onRequestGet as onValuationRequestGet } from "../functions/api/dm/valuation.js";
 
 test("SM4 block encryption matches the official test vector", () => {
   const key = hexToBytes("0123456789abcdeffedcba9876543210");
@@ -136,6 +137,116 @@ test("DM lookup prefers callable tenor from basic bond fields over final issue t
     assert.equal(payload.normalized.specialItem, "调整票面利率选择权、投资者回售选择权");
     assert.equal(payload.normalized.nextOptionDate, "2029-06-27");
     assert.ok(payload.fieldCandidates.some((item) => item.key === "special_item"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM valuation assistant uses current DM valuations and cross-market tech adjustments", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      assert.equal(request.issuerFullName, "青岛城市建设投资集团有限公司");
+      assert.deepEqual(request.bondStatusList, [2]);
+      data = {
+        list: [
+          {
+            security_id: "102600001.IB",
+            sec_short_name: "25青岛城投MTN001",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年度第一期中期票据",
+            issuer_name: "青岛城市建设投资集团有限公司",
+            remaining_tenor: "4.9Y",
+            bond_issue_tenor: "5Y",
+            bond_type_desc: "中期票据",
+          },
+          {
+            security_id: "2520001.SH",
+            sec_short_name: "25青岛城投KJ01",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年面向专业投资者公开发行科技创新公司债券(第一期)",
+            issuer_name: "青岛城市建设投资集团有限公司",
+            remaining_tenor: "5.1Y",
+            bond_issue_tenor: "5Y",
+            bond_type_desc: "公司债券",
+          },
+          {
+            security_id: "2520002.SH",
+            sec_short_name: "25青岛城投私募01",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年非公开发行公司债券(第一期)",
+            issuer_name: "青岛城市建设投资集团有限公司",
+            remaining_tenor: "5Y",
+            bond_issue_tenor: "5Y",
+            bond_type_desc: "公司债券",
+          },
+        ],
+        maxOffset: null,
+      };
+    } else if (url.includes("/bond/basic-info/info")) {
+      assert.ok(request.securityIdList.includes("102600001.IB"));
+      data = request.securityIdList.map((securityId) => {
+        if (securityId === "2520001.SH") {
+          return {
+            security_id: securityId,
+            sec_short_name: "25青岛城投KJ01",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年面向专业投资者公开发行科技创新公司债券(第一期)",
+            remaining_tenor: "5.1Y",
+            bond_type_desc: "公司债券",
+            payment_order: "普通债权",
+            special_item: "",
+          };
+        }
+        return {
+          security_id: securityId,
+          sec_short_name: securityId === "102600001.IB" ? "25青岛城投MTN001" : "25青岛城投私募01",
+          sec_full_name: securityId === "102600001.IB"
+            ? "青岛城市建设投资集团有限公司2025年度第一期中期票据"
+            : "青岛城市建设投资集团有限公司2025年非公开发行公司债券(第一期)",
+          remaining_tenor: securityId === "102600001.IB" ? "4.9Y" : "5Y",
+          bond_type_desc: securityId === "102600001.IB" ? "中期票据" : "公司债券",
+          payment_order: "普通债权",
+          special_item: "",
+        };
+      });
+    } else if (url.includes("/bond/market-data/date")) {
+      assert.deepEqual(request.startDate, "2026-06-26");
+      assert.ok(request.securityIdList.length <= 5);
+      data = request.securityIdList.map((securityId) => ({
+        security_id: securityId,
+        sec_short_name: securityId === "2520001.SH" ? "25青岛城投KJ01" : "25青岛城投MTN001",
+        issue_date: "2026-06-26",
+        cb_ytm: securityId === "2520001.SH" ? 2.46 : 2.5,
+        cb_yte: null,
+        cb_reliability: "推荐",
+      }));
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onValuationRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/valuation?issuerName=%E9%9D%92%E5%B2%9B%E5%9F%8E%E5%B8%82%E5%BB%BA%E8%AE%BE%E6%8A%95%E8%B5%84%E9%9B%86%E5%9B%A2%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&durationText=5%2B5%2B5Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26%E9%9D%92%E5%B2%9B%E5%9F%8E%E6%8A%95MTN001&valuationDate=2026-06-26", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.source, "DM market-data/date");
+    assert.equal(payload.trancheSuggestions[0].years, 5);
+    assert.ok(payload.trancheSuggestions[0].method.includes("交易所科创债约4bp"));
+    const techComparable = payload.trancheSuggestions[0].comparableItems.find((item) => item.shortName === "25青岛城投KJ01");
+    assert.ok(techComparable);
+    assert.ok(techComparable.marketAdjustment > 0.03);
+    assert.ok(payload.trancheSuggestions[0].center > 2.48 && payload.trancheSuggestions[0].center < 2.52);
+    assert.ok(calls.some((url) => url.includes("/bond/market-data/date")));
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260627-required-issuer">
+  <link rel="stylesheet" href="./styles.css?v=20260627-dm-valuation">
 </head>
 <body>
   <div class="app-shell">
@@ -81,6 +81,7 @@
               <label>市场估值（%）<input id="projectValuationInput" inputmode="decimal" placeholder="如 1.65；多期限用 1.65/1.83"></label>
               <label>综合定价至（%）<input id="projectGuidancePriceInput" inputmode="decimal" placeholder="留空为未综；多期限用 1.68/1.85"></label>
             </div>
+            <div class="valuation-assist" id="valuationAssist" hidden></div>
             <textarea id="briefInput" hidden></textarea>
 
             <div class="warning-box" id="warningBox" hidden>
@@ -712,6 +713,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260627-required-issuer"></script>
+  <script type="module" src="./app.js?v=20260627-dm-valuation"></script>
 </body>
 </html>
