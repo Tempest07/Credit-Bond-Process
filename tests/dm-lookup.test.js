@@ -425,9 +425,72 @@ test("DM lookup marks a queried cancelled tranche from D1 issue group", async ()
     assert.equal(payload.issueGroup.tranches[0].shortName, "26ACME01");
     assert.equal(payload.issueGroup.tranches[0].status, "reallocated");
     assert.equal(payload.issueGroup.tranches[0].isQueriedInput, true);
+    assert.equal(payload.issueGroup.tranches[0].reallocationTargetShortName, "26ACME02");
+    assert.equal(payload.issueGroup.tranches[0].reallocationTargetSecurityId, "260002.SH");
+    assert.match(payload.issueGroup.tranches[0].statusReason, /已全部回拨至26ACME02/);
     assert.equal(payload.issueGroup.tranches[1].status, "issued");
     assert.equal(payload.issueGroup.tranches[1].actualScale, 5);
     assert.equal(payload.diagnostic.issueGroup.statuses[0].status, "reallocated");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM lookup points A/B reallocated tranches to the final issued MTN tranche", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    const data = url.includes("/bond/primary/data") ? { list: [] } : [];
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                id: "project-jinchuan",
+                shortName: "26金川MTN001A/B",
+                shortNames: ["26金川MTN001", "26金川MTN001A", "26金川MTN001B"],
+                issuerName: "金川集团股份有限公司",
+                resultConfirmed: true,
+                tranches: [
+                  { shortName: "26金川MTN001", durationText: "5Y", securityCode: "102681001.IB", issueScale: 10, winningRate: 1.96 },
+                  { shortName: "26金川MTN001A", durationText: "3Y" },
+                  { shortName: "26金川MTN001B", durationText: "5Y" },
+                ],
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26%E9%87%91%E5%B7%9DMTN001A", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26金川MTN001", "26金川MTN001A", "26金川MTN001B"]);
+    assert.equal(payload.issueGroup.tranches[0].status, "issued");
+    assert.equal(payload.issueGroup.tranches[1].status, "reallocated");
+    assert.equal(payload.issueGroup.tranches[1].isQueriedInput, true);
+    assert.equal(payload.issueGroup.tranches[1].reallocationTargetShortName, "26金川MTN001");
+    assert.equal(payload.issueGroup.tranches[1].reallocationTargetSecurityId, "102681001.IB");
+    assert.match(payload.issueGroup.tranches[1].statusReason, /已全部回拨至26金川MTN001/);
+    assert.equal(payload.issueGroup.tranches[2].status, "reallocated");
+    assert.equal(payload.issueGroup.tranches[2].reallocationTargetShortName, "26金川MTN001");
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -253,7 +253,7 @@ label[data-recognition-status="attention"] textarea {
 .dm-suggestion-card small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 1.55; }
 .dm-issue-group-panel[hidden] { display: none; }
 .dm-issue-group-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.dm-issue-tranche { display: grid; gap: 7px; width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: #fff; text-align: left; }
+.dm-issue-tranche { display: grid; gap: 7px; width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: #fff; text-align: left; cursor: pointer; }
 .dm-issue-tranche:hover { border-color: color-mix(in srgb, var(--accent) 36%, var(--line)); background: linear-gradient(135deg, #fff, var(--panel-soft)); }
 .dm-issue-tranche:focus-visible { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 .dm-issue-tranche.queried { border-color: color-mix(in srgb, var(--accent) 36%, var(--line)); box-shadow: inset 3px 0 0 var(--accent); }
@@ -264,6 +264,10 @@ label[data-recognition-status="attention"] textarea {
 .dm-issue-tranche-tags span { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--panel-soft); font-size: 9px; font-weight: 800; line-height: 1.25; }
 .dm-issue-tranche p { margin: 0; color: var(--text); font-size: 11px; line-height: 1.65; }
 .dm-issue-tranche small { color: var(--muted); font-size: 10px; line-height: 1.55; }
+.dm-reallocation-note { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.dm-reallocation-target { min-width: 0; max-width: 100%; padding: 0; border: 0; color: var(--accent); background: transparent; overflow-wrap: anywhere; font: inherit; font-weight: 900; text-align: left; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.dm-reallocation-target:hover { color: var(--accent-strong); }
+.dm-reallocation-target:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent); outline-offset: 2px; border-radius: 3px; }
 .dm-json-output { max-height: 460px; margin: 0; overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: #0f172a; white-space: pre-wrap; word-break: break-word; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 11px; line-height: 1.65; color: #e5e7eb; }
 .dm-json-output.compact-json { max-height: 260px; }
 .dm-candidate-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

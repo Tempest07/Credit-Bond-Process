@@ -3204,6 +3204,17 @@ function bindDmTest() {
     $("#dmLookupInput").value = query;
     await runDmLookup();
   });
+  $("#dmIssueGroupOutput").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.target.closest("button")) return;
+    const card = event.target.closest(".dm-issue-tranche[data-dm-issue-query]");
+    if (!card) return;
+    const query = card.dataset.dmIssueQuery?.trim();
+    if (!query) return;
+    event.preventDefault();
+    $("#dmLookupInput").value = query;
+    await runDmLookup();
+  });
   $("#dmNormalizedOutput").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-dm-suggestion-query]");
     if (!button) return;
@@ -3629,11 +3640,18 @@ function renderDmIssueGroup(issueGroup) {
   }
   panel.hidden = false;
   const sourceLabel = dmIssueGroupSourceLabel(issueGroup.source);
-  const reallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated").length;
-  summary.textContent = `${tranches.length} 个期限 · ${sourceLabel}${reallocatedCount ? ` · ${reallocatedCount} 个待确认回拨` : ""}`;
+  const confirmedReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && (tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId)).length;
+  const uncertainReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && !tranche.reallocationTargetShortName && !tranche.reallocationTargetSecurityId).length;
+  summary.textContent = [
+    `${tranches.length} 个期限`,
+    sourceLabel,
+    confirmedReallocatedCount ? `${confirmedReallocatedCount} 个已回拨` : "",
+    uncertainReallocatedCount ? `${uncertainReallocatedCount} 个待确认回拨` : "",
+  ].filter(Boolean).join(" · ");
   output.innerHTML = tranches.map((tranche) => {
-    const status = dmIssueTrancheStatusMeta(tranche.status);
-    const queryValue = tranche.shortName || tranche.securityId || "";
+    const status = dmIssueTrancheStatusMeta(tranche);
+    const targetQuery = tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId || "";
+    const queryValue = (tranche.status === "reallocated" && targetQuery) ? targetQuery : (tranche.shortName || tranche.securityId || "");
     const facts = [
       tranche.tenor ? `期限 ${tranche.tenor}` : "",
       Number.isFinite(numberOrNull(tranche.planScale)) ? `计划 ${formatNumber(tranche.planScale)}亿` : "",
@@ -3643,7 +3661,7 @@ function renderDmIssueGroup(issueGroup) {
       tranche.securityId ? `代码 ${tranche.securityId}` : "",
     ].filter(Boolean);
     return `
-      <button class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}" type="button" data-dm-issue-query="${escapeAttribute(queryValue)}" aria-label="查询 ${escapeAttribute(queryValue || "该品种")}">
+      <article class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}" role="button" tabindex="0" data-dm-issue-query="${escapeAttribute(queryValue)}" aria-label="查询 ${escapeAttribute(queryValue || "该品种")}">
         <div class="dm-issue-tranche-head">
           <strong>${escapeHtml(tranche.shortName || "未命名品种")}</strong>
           <span class="status-badge ${status.className}">${escapeHtml(status.label)}</span>
@@ -3654,15 +3672,35 @@ function renderDmIssueGroup(issueGroup) {
           <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.source))}</span>
         </div>
         <p>${facts.length ? escapeHtml(facts.join(" · ")) : "暂无结构化发行要素"}</p>
-        ${tranche.statusReason ? `<small>${escapeHtml(tranche.statusReason)}</small>` : ""}
-      </button>
+        ${renderDmReallocationReason(tranche)}
+      </article>
     `;
   }).join("");
 }
 
-function dmIssueTrancheStatusMeta(status) {
+function renderDmReallocationReason(tranche) {
+  const target = tranche?.reallocationTargetShortName || tranche?.reallocationTargetSecurityId || "";
+  if (tranche?.status === "reallocated" && target) {
+    return `
+      <small class="dm-reallocation-note">
+        <span>本期债券已全部回拨至${escapeHtml(target)}，请点击</span>
+        <button class="dm-reallocation-target" type="button" data-dm-issue-query="${escapeAttribute(target)}">${escapeHtml(target)}</button>
+        <span>查看详情</span>
+      </small>
+    `;
+  }
+  return tranche?.statusReason ? `<small>${escapeHtml(tranche.statusReason)}</small>` : "";
+}
+
+function dmIssueTrancheStatusMeta(trancheOrStatus) {
+  const status = typeof trancheOrStatus === "string" ? trancheOrStatus : trancheOrStatus?.status;
   if (status === "issued") return { label: "已发行", className: "" };
-  if (status === "reallocated") return { label: "待确认回拨", className: "warning" };
+  if (status === "reallocated") {
+    return {
+      label: (trancheOrStatus?.reallocationTargetShortName || trancheOrStatus?.reallocationTargetSecurityId) ? "已回拨" : "待确认回拨",
+      className: "warning",
+    };
+  }
   return { label: "待确认", className: "muted" };
 }
 

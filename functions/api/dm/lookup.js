@@ -693,7 +693,8 @@ function lookupIssueGroup(data, normalized, query, primary) {
     dbGroup = buildIssueGroupFromProjects(normalized, query, projects);
   }
   const group = mergeIssueGroups(dbGroup, dmGroup) || dbGroup || dmGroup;
-  return shouldExposeIssueGroup(group, query, normalized) ? group : null;
+  const annotatedGroup = annotateIssueGroupReallocationTargets(group);
+  return shouldExposeIssueGroup(annotatedGroup, query, normalized) ? annotatedGroup : null;
 }
 
 function buildIssueGroupFromProjects(normalized, query, projects) {
@@ -926,6 +927,34 @@ function mergeIssueGroups(primaryGroup, secondaryGroup) {
   };
 }
 
+function annotateIssueGroupReallocationTargets(group) {
+  if (!group?.tranches?.length) return group;
+  const issued = group.tranches.filter((tranche) => tranche.status === "issued");
+  if (!issued.length) return group;
+  const tranches = group.tranches.map((tranche) => {
+    if (tranche.status !== "reallocated") return tranche;
+    const target = reallocationTargetForTranche(tranche, issued);
+    if (!target) return tranche;
+    const targetShortName = target.shortName || "";
+    return {
+      ...tranche,
+      reallocationTargetShortName: targetShortName,
+      reallocationTargetSecurityId: target.securityId || "",
+      statusReason: issueTrancheStatusReason(tranche.status, targetShortName),
+    };
+  });
+  return { ...group, tranches };
+}
+
+function reallocationTargetForTranche(tranche, issuedTranches) {
+  if (issuedTranches.length === 1) return issuedTranches[0];
+  const family = issueShortNameFamily(tranche.shortName);
+  if (!family) return null;
+  const sameFamily = issuedTranches.filter((item) => issueShortNameFamily(item.shortName) === family);
+  if (sameFamily.length === 1) return sameFamily[0];
+  return null;
+}
+
 function issueTranchesMatch(a, b) {
   if (a?.securityId && b?.securityId && securityIdMatches(a.securityId, normalizeSecurityId(b.securityId))) return true;
   const aName = normalizeLookupName(a?.shortName);
@@ -964,8 +993,9 @@ function entryHasIssuedFields(entry) {
   );
 }
 
-function issueTrancheStatusReason(status) {
+function issueTrancheStatusReason(status, targetShortName = "") {
   if (status === "issued") return "已取得发行结果字段";
+  if (status === "reallocated" && targetShortName) return `本期债券已全部回拨至${targetShortName}`;
   if (status === "reallocated") return "同组其他期限已有发行结果，本期限未见发行结果，可能全额回拨或未发行";
   return "已识别同次发行关系，发行结果待确认";
 }
@@ -982,6 +1012,8 @@ function cleanIssueTranche(tranche) {
     couponRate: numberOrNull(tranche.couponRate),
     status: tranche.status || "unknown",
     statusReason: tranche.statusReason || "",
+    reallocationTargetShortName: tranche.reallocationTargetShortName || "",
+    reallocationTargetSecurityId: tranche.reallocationTargetSecurityId || "",
     source: tranche.source || "",
     isQueriedInput: Boolean(tranche.isQueriedInput),
     isDmMatched: Boolean(tranche.isDmMatched),
