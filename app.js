@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-direct-dm";
+} from "./core.js?v=20260627-linked-branch";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-direct-dm";
+} from "./lifecycle.js?v=20260627-linked-branch";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-direct-dm";
+} from "./history-parser.js?v=20260627-linked-branch";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-direct-dm";
+} from "./protocol-transfer.js?v=20260627-linked-branch";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-direct-dm";
+} from "./secondary-inventory.js?v=20260627-linked-branch";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -269,6 +269,8 @@ function bindGenerator() {
     selectedIssuerId = $("#issuerSelect").value;
     const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
     project = applyIssuerCommonFields(project, issuer);
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
     fillProjectFields();
     regenerate();
   });
@@ -620,13 +622,13 @@ function applyDmLookupToCurrentProject(payload) {
     warnings,
   };
   updateProjectPricingFromInputs(false);
-  project.sourceText = buildDmProjectSourceText(project);
-  $("#briefInput").value = project.sourceText;
   const matched = findIssuerForProject(project)
     || findIssuer(patch.issuerName || "", state.issuers)
     || null;
   selectedIssuerId = matched?.id || "";
   project = applyIssuerCommonFields(project, matched);
+  project.sourceText = buildDmProjectSourceText(project);
+  $("#briefInput").value = project.sourceText;
   projectRecognitionMarks = {
     ...buildProjectDmRecognitionMarks(patch),
     ...buildProjectRecognitionMarks(project, matched),
@@ -775,7 +777,7 @@ function buildDmProjectSourceText(projectValue) {
   const valuationText = formatRateListInput(projectValue.valuations?.length ? projectValue.valuations : [projectValue.valuation]);
   const guidanceText = formatRateListInput(projectValue.guidancePrices?.length ? projectValue.guidancePrices : [projectValue.guidancePrice]);
   const lines = [
-    `${projectValue.shortName || "债券简称待补"} ${projectValue.sponsorStatus || "主承身份待补"} ${projectValue.branch || "分行待补"}`,
+    `${projectValue.shortName || "债券简称待补"} ${projectValue.sponsorStatus || "主承身份待补"} ${projectValue.branch || "联动分行待补"}`,
     `${projectValue.durationText || "期限待补"} ${scale} ${rating}${hidden}`,
     `${inquiry} ${projectValue.venue || "发行场所待补"} ${projectValue.leadUnderwriter || "牵头主承待补"}`,
   ];
@@ -1189,7 +1191,7 @@ function buildProjectRecognitionMarks(projectValue, issuer) {
   [
     ["shortName", "债券简称"],
     ["sponsorStatus", "主承身份"],
-    ["branch", "申报分行"],
+    ["branch", "联动分行"],
     ["durationText", "债券期限"],
     ["issueScale", "发行规模"],
     ["subjectRating", "主体评级"],
@@ -2517,7 +2519,7 @@ function fillProjectForm(input) {
   $("#projectId").value = record.id;
   $("#projectStatus").value = record.status;
   $("#projectSummaryIssuer").textContent = record.issuerName || "主体待补";
-  $("#projectSummaryBranch").textContent = record.branch || "分行待补";
+  $("#projectSummaryBranch").textContent = record.branch || "联动分行待补";
   $("#projectSummaryVenue").textContent = record.venue || "场所待补";
   $("#projectSummarySponsor").textContent = record.sponsorStatus || "身份待补";
   $("#projectSummaryLead").textContent = record.leadUnderwriter || "主承待补";
@@ -3311,6 +3313,8 @@ function bindQuickIssuer() {
       selectedIssuerId = issuer.id;
       const saved = state.issuers.find((item) => item.id === issuer.id) || issuer;
       project = applyIssuerCommonFields(project, saved);
+      project.sourceText = buildDmProjectSourceText(project);
+      $("#briefInput").value = project.sourceText;
       persistState();
       renderIssuerOptions();
       renderIssuerList();
@@ -3466,7 +3470,7 @@ function renderBatchIssuerEditor(draft, index, shouldOpen) {
         <label class="full review-toggle"><input type="checkbox" data-batch-index="${index}" data-batch-field="include" ${draft.include ? "checked" : ""}>录入/更新此主体授信</label>
         <label class="wide">主体正式名称<input data-batch-index="${index}" data-batch-field="legalName" value="${escapeAttribute(draft.legalName)}"></label>
         <label class="wide">常用简称<input data-batch-index="${index}" data-batch-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
-        <label>默认分行<input data-batch-index="${index}" data-batch-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
+        <label>联动分行<input data-batch-index="${index}" data-batch-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
         <label>企业性质<select data-batch-index="${index}" data-batch-field="enterpriseType">${enterpriseTypeOptions(draft.enterpriseType)}</select></label>
         <label>主体评级<input data-batch-index="${index}" data-batch-field="subjectRating" value="${escapeAttribute(draft.subjectRating)}"></label>
         <label>评级机构<input data-batch-index="${index}" data-batch-field="ratingAgency" value="${escapeAttribute(draft.ratingAgency)}"></label>
@@ -4322,7 +4326,7 @@ function renderHistoryReviewEditor(record, index) {
       <div class="review-grid">
         <label class="wide">主体正式名称<input data-review-field="legalName" value="${escapeAttribute(draft.legalName)}"></label>
         <label class="wide">常用简称<input data-review-field="aliases" value="${escapeAttribute(draft.aliases)}"></label>
-        <label>默认分行<input data-review-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
+        <label>联动分行<input data-review-field="defaultBranch" value="${escapeAttribute(draft.defaultBranch)}"></label>
         <label>企业性质<select data-review-field="enterpriseType">${enterpriseTypeOptions(draft.enterpriseType)}</select></label>
         <label>主体评级<input data-review-field="subjectRating" value="${escapeAttribute(draft.subjectRating)}"></label>
         <label>评级机构<input data-review-field="ratingAgency" value="${escapeAttribute(draft.ratingAgency)}"></label>
@@ -4379,7 +4383,7 @@ function createIssuerDraft(projectValue, issuer = null) {
     include: !issuer,
     legalName: issuer?.legalName || projectValue?.issuerName || extractIssuerLegalName(projectValue?.fullName || ""),
     aliases: (issuer?.aliases?.length ? issuer.aliases : derivedAliases).join("，"),
-    defaultBranch: issuer?.defaultBranch || projectValue?.branch || "",
+    defaultBranch: issuer?.linkedBranch || issuer?.defaultBranch || projectValue?.branch || "",
     enterpriseType: issuer?.enterpriseType || "",
     subjectRating: issuer?.subjectRating || projectValue?.subjectRating || "",
     ratingAgency: issuer?.ratingAgency || projectValue?.ratingAgency || "",
@@ -4695,7 +4699,7 @@ function readIssuerForm() {
 function renderIssuerList() {
   const query = $("#issuerSearch").value.trim().toLowerCase();
   const issuers = state.issuers
-    .filter((issuer) => `${issuer.legalName} ${(issuer.aliases || []).join(" ")}`.toLowerCase().includes(query))
+    .filter((issuer) => `${issuer.legalName} ${(issuer.aliases || []).join(" ")} ${issuer.linkedBranch || issuer.defaultBranch || ""}`.toLowerCase().includes(query))
     .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"));
 
   $("#issuerList").innerHTML = issuers.length
@@ -4716,7 +4720,8 @@ function issuerCommonSummary(issuer) {
   const rating = issuer.subjectRating
     ? `${issuer.subjectRating}${issuer.ratingAgency ? `(${issuer.ratingAgency})` : ""}`
     : "主体评级待补";
-  return `${rating} / 隐含${issuer.hiddenRating || "待补"}`;
+  const branch = issuer.linkedBranch || issuer.defaultBranch || "";
+  return `${branch ? `联动${branch} / ` : ""}${rating} / 隐含${issuer.hiddenRating || "待补"}`;
 }
 
 function renderIssuerOptions() {
@@ -4756,7 +4761,7 @@ function fillIssuerForm(issuer) {
   $("#issuerId").value = issuer.id;
   $("#legalName").value = issuer.legalName || "";
   $("#aliases").value = (issuer.aliases || []).join("，");
-  $("#defaultBranch").value = issuer.defaultBranch || "";
+  $("#defaultBranch").value = issuer.linkedBranch || issuer.defaultBranch || "";
   $("#enterpriseType").value = issuer.enterpriseType || "";
   $("#subjectRating").value = issuer.subjectRating || "";
   $("#ratingAgency").value = issuer.ratingAgency || "";
@@ -4844,6 +4849,7 @@ async function loadCloudState() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const remote = await response.json();
     const shouldMigrateFtpCurve = ftpCurveNeedsMigration(remote.data?.ftpCurve);
+    const shouldMigrateIssuerBranch = issuerBranchNeedsMigration(remote.data);
     if (remote.data?.issuers) {
       state = normalizeLoadedState(remote.data);
     }
@@ -4856,7 +4862,7 @@ async function loadCloudState() {
       detail: `已载入 ${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目。`,
     });
     window.setTimeout(() => setCloudGate(false, { state: "success" }), 850);
-    if (shouldMigrateFtpCurve) await saveCloudState();
+    if (shouldMigrateFtpCurve || shouldMigrateIssuerBranch) await saveCloudState();
   } catch {
     cloudAvailable = false;
     setSyncStatus(isLocalApiMode() ? "本地 D1 未连接" : "D1 未连接", isLocalApiMode() ? "请确认本地 wrangler 正在运行" : "请检查口令或重新连接");
@@ -4948,6 +4954,14 @@ function normalizeLoadedState(value) {
     secondaryOrders: normalizeSecondaryOrders(value.secondaryOrders || []),
     secondaryTrades: normalizeSecondaryTrades(value.secondaryTrades || []),
   };
+}
+
+function issuerBranchNeedsMigration(data = {}) {
+  return (data.issuers || []).some((issuer) =>
+    issuer?.legalName
+    && !String(issuer.linkedBranch || "").trim()
+    && String(issuer.defaultBranch || issuer.branch || "").trim(),
+  );
 }
 
 function normalizeFtpCurve(input = {}) {

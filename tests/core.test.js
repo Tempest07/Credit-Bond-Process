@@ -22,13 +22,21 @@ test("preserves supported enterprise types in issuer records", () => {
 test("preserves common issuer fields in issuer records", () => {
   const normalized = normalizeIssuer({
     legalName: "测试主体有限公司",
+    linkedBranch: "苏州分行",
     subjectRating: "aa+",
     ratingAgency: "联合资信",
     hiddenRating: "aa(2)",
   });
+  assert.equal(normalized.linkedBranch, "苏州分行");
+  assert.equal(normalized.defaultBranch, "苏州分行");
   assert.equal(normalized.subjectRating, "AA+");
   assert.equal(normalized.ratingAgency, "联合资信");
   assert.equal(normalized.hiddenRating, "AA(2)");
+});
+
+test("migrates legacy issuer branch fields into linked branch", () => {
+  assert.equal(normalizeIssuer({ legalName: "测试主体有限公司", defaultBranch: "广州" }).linkedBranch, "广州分行");
+  assert.equal(normalizeIssuer({ legalName: "测试主体有限公司", branch: "南京分行" }).defaultBranch, "南京分行");
 });
 
 const issuer = {
@@ -145,14 +153,17 @@ test("uses stored common issuer fields and warns on mismatches", () => {
 26测试MTN001 市场估值约1.8`);
   const applied = applyIssuerCommonFields(parsed, {
     legalName: "测试集团有限公司",
+    linkedBranch: "苏州分行",
     subjectRating: "AAA",
     ratingAgency: "中诚信国际",
     hiddenRating: "AAA-",
   });
 
+  assert.equal(applied.branch, "苏州分行");
   assert.equal(applied.subjectRating, "AAA");
   assert.equal(applied.ratingAgency, "中诚信国际");
   assert.equal(applied.hiddenRating, "AAA-");
+  assert.match(applied.warnings.join("；"), /主体库要素联动分行为“苏州分行”，输入简表为“上海分行”/);
   assert.match(applied.warnings.join("；"), /主体库要素主体评级为“AAA”，输入简表为“AA\+”/);
   assert.match(applied.warnings.join("；"), /主体库要素评级机构为“中诚信国际”，输入简表为“联合资信”/);
   assert.match(applied.warnings.join("；"), /主体库要素市场隐含评级为“AAA-”，输入简表为“AA\+”/);

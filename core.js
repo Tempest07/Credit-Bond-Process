@@ -142,7 +142,7 @@ export function parseProjectBrief(rawText) {
 
   if (!result.shortName) result.warnings.push("未识别债券简称。");
   if (!result.sponsorStatus) result.warnings.push("未识别主承身份（非我行主承、联席或牵头）。");
-  if (!result.branch) result.warnings.push("未识别申报分行。");
+  if (!result.branch) result.warnings.push("未识别联动分行。");
   if (!result.durationDays) result.warnings.push("未识别债券期限。");
   if (!Number.isFinite(result.issueScale)) result.warnings.push("未识别发行规模。");
   if (!result.hiddenRating) result.warnings.push("未识别隐含评级。");
@@ -276,7 +276,7 @@ function parseStructuredProjectAdvertisement(lines, result) {
   const sponsorStatus = parseSponsorStatus(readStructuredField(lines, ["主承身份", "承销身份"]));
   if (sponsorStatus) result.sponsorStatus = sponsorStatus;
 
-  const branch = readStructuredField(lines, ["分行", "申报分行"]);
+  const branch = readStructuredField(lines, ["联动分行", "分行", "申报分行"]);
   if (branch) result.branch = normalizeBranchName(branch);
 
   const durationValue = readStructuredField(lines, ["发行期限", "债券期限", "期限"]);
@@ -634,7 +634,7 @@ export function formatCreditSentence(issuer) {
 export function generateOpinion(project, issuer) {
   const suggestion = calculateSuggestion(project, issuer);
   const fullName = project.fullName || buildBondFullName(project.shortName, issuer?.legalName, project);
-  const branch = project.branch || issuer?.defaultBranch || "【待补充分行】";
+  const branch = project.branch || issuer?.linkedBranch || issuer?.defaultBranch || "【待补充联动分行】";
   const underwriter = buildUnderwriter(project);
   const rating = project.subjectRating
     ? `${project.subjectRating}${project.ratingAgency ? `(${project.ratingAgency})` : ""}`
@@ -684,6 +684,7 @@ export function generateOpinion(project, issuer) {
 
 export function applyIssuerCommonFields(project, issuer) {
   const sourceCommonFields = project.sourceCommonFields || {
+    branch: project.branch || "",
     subjectRating: project.subjectRating || "",
     ratingAgency: project.ratingAgency || "",
     hiddenRating: project.hiddenRating || "",
@@ -702,6 +703,7 @@ export function applyIssuerCommonFields(project, issuer) {
     warnings: (project.warnings || []).filter((warning) => !warning.startsWith("主体库要素")),
   };
 
+  applyIssuerCommonField(next, { branch: issuer.linkedBranch || issuer.defaultBranch }, "branch", "联动分行", normalizeBranchName);
   applyIssuerCommonField(next, issuer, "subjectRating", "主体评级", normalizeRatingValue);
   applyIssuerCommonField(next, issuer, "ratingAgency", "评级机构", normalizeTextValue);
   applyIssuerCommonField(next, issuer, "hiddenRating", "市场隐含评级", normalizeRatingValue);
@@ -728,11 +730,13 @@ function normalizeTextValue(value = "") {
 }
 
 export function normalizeIssuer(input) {
+  const linkedBranch = normalizeBranchName(input.linkedBranch || input.defaultBranch || input.branch || "");
   const issuer = {
     id: input.id || crypto.randomUUID(),
     legalName: String(input.legalName || "").trim(),
     aliases: [...new Set((input.aliases || []).map((value) => String(value).trim()).filter(Boolean))],
-    defaultBranch: String(input.defaultBranch || "").trim(),
+    linkedBranch,
+    defaultBranch: linkedBranch,
     enterpriseType: ["央企", "地方国企", "民营企业", "其他"].includes(input.enterpriseType) ? input.enterpriseType : "",
     subjectRating: String(input.subjectRating || "").trim().toUpperCase(),
     ratingAgency: String(input.ratingAgency || "").trim(),

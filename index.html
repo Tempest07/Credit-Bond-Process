@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260627-direct-dm">
+  <link rel="stylesheet" href="./styles.css?v=20260627-linked-branch">
 </head>
 <body>
   <div class="app-shell">
@@ -108,7 +108,7 @@
                   <option>牵头</option>
                 </select>
               </label>
-              <label>申报分行<input data-project-field="branch"></label>
+              <label>联动分行<input data-project-field="branch"></label>
               <label>债券期限<input data-project-field="durationText" placeholder="如 270D、3Y"></label>
               <label>发行规模（亿元）<input data-project-field="issueScale" type="number" step="0.0001"></label>
               <label>主体评级<input data-project-field="subjectRating"></label>
@@ -152,7 +152,7 @@
             <div class="field-grid">
               <label class="span-2">主体正式名称<input id="quickLegalName" required placeholder="例如：广州交通投资集团有限公司"></label>
               <label class="span-2">常用简称<input id="quickAliases" placeholder="自动带入债券简称衍生简称，可用逗号分隔"></label>
-              <label>默认申报分行<input id="quickDefaultBranch"></label>
+              <label>联动分行<input id="quickDefaultBranch"></label>
               <label>企业性质<select id="quickEnterpriseType"><option value="">待选择</option><option>央企</option><option>地方国企</option><option>民营企业</option><option>其他</option></select></label>
               <label>主体评级<input id="quickSubjectRating" placeholder="如 AAA"></label>
               <label>评级机构<input id="quickRatingAgency" placeholder="如 中诚信国际"></label>
@@ -252,7 +252,7 @@
               <button class="button primary" id="newProjectButton">新增项目</button>
             </div>
             <div class="project-list-tools">
-              <input class="search-input" id="projectSearch" type="search" placeholder="搜索简称、主体、分行或主承">
+              <input class="search-input" id="projectSearch" type="search" placeholder="搜索简称、主体、联动分行或主承">
               <select id="projectStatusFilter">
                 <option value="">全部状态</option>
                 <option>未投标</option>
@@ -298,7 +298,7 @@
               </div>
               <div class="project-summary-grid" id="projectSummary">
                 <div class="project-summary-item"><span>主体</span><strong id="projectSummaryIssuer">待补</strong></div>
-                <div class="project-summary-item"><span>分行</span><strong id="projectSummaryBranch">待补</strong></div>
+                <div class="project-summary-item"><span>联动分行</span><strong id="projectSummaryBranch">待补</strong></div>
                 <div class="project-summary-item"><span>发行场所</span><strong id="projectSummaryVenue">待补</strong></div>
                 <div class="project-summary-item"><span>主承身份</span><strong id="projectSummarySponsor">待补</strong></div>
                 <div class="project-summary-item wide"><span>主承销商</span><strong id="projectSummaryLead">待补</strong></div>
@@ -527,7 +527,7 @@
             <div><span class="step">BATCH</span><h2>一次粘贴多笔项目简表</h2></div>
             <span class="pill">按每笔项目简表首行自动分组</span>
           </div>
-          <textarea id="batchInput" class="batch-input" spellcheck="false" placeholder="连续粘贴多笔项目简表。每笔以“债券简称 + 主承身份 + 分行”首行开始，无需手动添加特殊分隔符。"></textarea>
+          <textarea id="batchInput" class="batch-input" spellcheck="false" placeholder="连续粘贴多笔项目简表。每笔以“债券简称 + 主承身份 + 联动分行”首行开始，无需手动添加特殊分隔符。"></textarea>
           <div class="batch-actions">
             <button class="button primary" id="batchParseButton">批量解析并生成</button>
             <button class="button subtle" id="batchSaveIssuersButton" disabled>批量录入已填写主体授信</button>
@@ -593,7 +593,7 @@
               <div class="field-grid">
                 <label class="span-2">主体正式名称<input id="legalName" required></label>
                 <label class="span-2">常用简称（逗号或换行分隔）<textarea id="aliases" rows="3"></textarea></label>
-                <label>默认申报分行<input id="defaultBranch"></label>
+                <label>联动分行<input id="defaultBranch"></label>
                 <label>企业性质<select id="enterpriseType"><option value="">待选择</option><option>央企</option><option>地方国企</option><option>民营企业</option><option>其他</option></select></label>
                 <label>主体评级<input id="subjectRating" placeholder="如 AAA"></label>
                 <label>评级机构<input id="ratingAgency" placeholder="如 中诚信国际"></label>
@@ -712,6 +712,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260627-direct-dm"></script>
+  <script type="module" src="./app.js?v=20260627-linked-branch"></script>
 </body>
 </html>
