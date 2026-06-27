@@ -13,7 +13,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-option-tenor";
+} from "./core.js?v=20260627-source-tags";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-option-tenor";
+} from "./lifecycle.js?v=20260627-source-tags";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-option-tenor";
+} from "./history-parser.js?v=20260627-source-tags";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-option-tenor";
+} from "./protocol-transfer.js?v=20260627-source-tags";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,7 +70,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-option-tenor";
+} from "./secondary-inventory.js?v=20260627-source-tags";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -617,10 +617,11 @@ function setProjectDmLookupBusy(isBusy) {
 
 function applyDmLookupToCurrentProject(payload) {
   const patch = projectPatchFromDmLookup(payload);
+  const { sourceMap: _sourceMap, ...projectPatch } = patch;
   const warnings = [...(project.warnings || []), ...(patch.warnings || [])];
   project = {
     ...project,
-    ...patch,
+    ...projectPatch,
     warnings,
   };
   updateProjectPricingFromInputs(false);
@@ -631,9 +632,12 @@ function applyDmLookupToCurrentProject(payload) {
   project = applyIssuerCommonFields(project, matched);
   project.sourceText = buildDmProjectSourceText(project);
   $("#briefInput").value = project.sourceText;
+  const genericMarks = buildProjectRecognitionMarks(project, matched);
+  const dmMarks = buildProjectDmRecognitionMarks(patch);
   projectRecognitionMarks = {
-    ...buildProjectDmRecognitionMarks(patch),
-    ...buildProjectRecognitionMarks(project, matched),
+    ...genericMarks,
+    ...dmMarks,
+    ...buildIssuerCloudRecognitionMarks(project, matched, dmMarks),
   };
   fillProjectFields();
   renderIssuerOptions();
@@ -659,6 +663,12 @@ function projectPatchFromDmLookup(payload) {
   const tranches = projectDmUsableTranches(issueGroup);
   const patch = {};
   const warnings = [];
+  const sourceMap = {};
+  const markSource = (field, source) => {
+    if (!source) return;
+    if (source === "cloud" || !sourceMap[field]) sourceMap[field] = source;
+  };
+  const groupSource = projectSourceFromDmIssueGroup(issueGroup);
 
   if (tranches.length) {
     const names = uniqueNonEmpty(tranches.map((tranche) => tranche.shortName || tranche.securityId));
@@ -668,13 +678,18 @@ function projectPatchFromDmLookup(payload) {
     if (names.length) {
       patch.shortNames = names;
       patch.shortName = compactProjectShortNames(names);
+      markSource("shortName", groupSource);
     }
     if (durations.length) {
       patch.durationParts = durations;
       patch.durationText = compactProjectDurations(durations);
       patch.durationDays = durationToDays(patch.durationText);
+      markSource("durationText", groupSource);
     }
-    if (Number.isFinite(scale)) patch.issueScale = scale;
+    if (Number.isFinite(scale)) {
+      patch.issueScale = scale;
+      markSource("issueScale", groupSource);
+    }
     const completeRanges = ranges.filter((range) => Number.isFinite(range.low) && Number.isFinite(range.high));
     if (completeRanges.length) {
       patch.inquiryRanges = completeRanges;
@@ -682,21 +697,27 @@ function projectPatchFromDmLookup(payload) {
       patch.inquiryHigh = completeRanges[0].high;
       patch.inquiryLow2 = completeRanges[1]?.low ?? null;
       patch.inquiryHigh2 = completeRanges[1]?.high ?? null;
+      markSource("inquiryLow", groupSource);
+      markSource("inquiryHigh", groupSource);
+      completeRanges.forEach((range, index) => {
+        markSource(`inquiryRanges.${index}.low`, groupSource);
+        markSource(`inquiryRanges.${index}.high`, groupSource);
+      });
     }
   }
 
-  assignProjectDmValue(patch, "shortName", normalized.shortName);
-  assignProjectDmValue(patch, "fullName", dmProjectFullNameForProject(normalized.fullName, patch, issueGroup));
-  assignProjectDmValue(patch, "issuerName", normalized.issuerName);
-  assignProjectDmValue(patch, "durationText", normalizeDmTenor(normalized.durationText));
-  assignProjectDmValue(patch, "issueScale", normalized.issueScaleYi);
-  assignProjectDmValue(patch, "venue", normalized.venue);
-  assignProjectDmValue(patch, "offeringType", normalized.offeringType);
-  assignProjectDmValue(patch, "leadUnderwriter", normalized.leadUnderwriter);
-  assignProjectDmValue(patch, "sponsorStatus", normalized.sponsorStatus);
-  assignProjectDmValue(patch, "subjectRating", normalized.subjectRating);
-  assignProjectDmValue(patch, "ratingAgency", normalized.ratingAgency);
-  assignProjectDmValue(patch, "hiddenRating", normalized.impliedRating);
+  assignProjectDmValueWithSource(patch, sourceMap, "shortName", normalized.shortName);
+  assignProjectDmValueWithSource(patch, sourceMap, "fullName", dmProjectFullNameForProject(normalized.fullName, patch, issueGroup));
+  assignProjectDmValueWithSource(patch, sourceMap, "issuerName", normalized.issuerName);
+  assignProjectDmValueWithSource(patch, sourceMap, "durationText", normalizeDmTenor(normalized.durationText));
+  assignProjectDmValueWithSource(patch, sourceMap, "issueScale", normalized.issueScaleYi);
+  assignProjectDmValueWithSource(patch, sourceMap, "venue", normalized.venue);
+  assignProjectDmValueWithSource(patch, sourceMap, "offeringType", normalized.offeringType);
+  assignProjectDmValueWithSource(patch, sourceMap, "leadUnderwriter", normalized.leadUnderwriter);
+  assignProjectDmValueWithSource(patch, sourceMap, "sponsorStatus", normalized.sponsorStatus);
+  assignProjectDmValueWithSource(patch, sourceMap, "subjectRating", normalized.subjectRating, normalizedProjectFieldSource(normalized, "subjectRating"));
+  assignProjectDmValueWithSource(patch, sourceMap, "ratingAgency", normalized.ratingAgency, normalizedProjectFieldSource(normalized, "ratingAgency"));
+  assignProjectDmValueWithSource(patch, sourceMap, "hiddenRating", normalized.impliedRating, normalizedProjectFieldSource(normalized, "impliedRating"));
 
   if (!patch.inquiryRanges?.length) {
     const range = parseDmInquiryRange(normalized.inquiryRange);
@@ -704,6 +725,10 @@ function projectPatchFromDmLookup(payload) {
       patch.inquiryLow = range.low;
       patch.inquiryHigh = range.high;
       patch.inquiryRanges = [range];
+      markSource("inquiryLow", "dm");
+      markSource("inquiryHigh", "dm");
+      markSource("inquiryRanges.0.low", "dm");
+      markSource("inquiryRanges.0.high", "dm");
     }
   }
   if (patch.durationText && !patch.durationParts?.length) {
@@ -721,8 +746,28 @@ function projectPatchFromDmLookup(payload) {
     warnings.push("同次发行组中存在待确认回拨期限，保存前请确认最终入项品种。");
   }
 
+  patch.sourceMap = sourceMap;
   patch.warnings = warnings;
   return patch;
+}
+
+function assignProjectDmValueWithSource(target, sourceMap, field, value, source = "dm") {
+  if (assignProjectDmValue(target, field, value)) {
+    sourceMap[field] = source;
+  }
+}
+
+function projectSourceFromDmIssueGroup(issueGroup) {
+  const sources = [
+    issueGroup?.source,
+    ...(Array.isArray(issueGroup?.tranches) ? issueGroup.tranches.map((tranche) => tranche.source) : []),
+  ];
+  return sources.some((source) => source === "cloud-db" || source === "mixed") ? "cloud" : "dm";
+}
+
+function normalizedProjectFieldSource(normalized, key) {
+  const source = normalized?.ratingSource?.[key] || "";
+  return source === "issuer-db" || source === "local-issuer-db" ? "cloud" : "dm";
 }
 
 function dmProjectFullNameForProject(fullName, patch, issueGroup) {
@@ -740,13 +785,15 @@ function dmProjectFullNameForProject(fullName, patch, issueGroup) {
 }
 
 function assignProjectDmValue(target, field, value) {
-  if (value === null || value === undefined || value === "") return;
-  if (valueHasContent(target[field])) return;
+  if (value === null || value === undefined || value === "") return false;
+  if (valueHasContent(target[field])) return false;
   target[field] = value;
+  return true;
 }
 
 function buildProjectDmRecognitionMarks(patch) {
   const marks = {};
+  const sourceMap = patch.sourceMap || {};
   const dmFields = [
     ["shortName", "债券简称"],
     ["durationText", "债券期限"],
@@ -762,16 +809,43 @@ function buildProjectDmRecognitionMarks(patch) {
     ["fullName", "债券全称"],
   ];
   for (const [field, label] of dmFields) {
-    if (valueHasContent(patch[field])) marks[field] = recognitionMark("success", `${label}已由 DM/云端数据库预填`);
+    if (valueHasContent(patch[field])) marks[field] = sourcedRecognitionMark(label, sourceMap[field]);
   }
   if (Array.isArray(patch.inquiryRanges)) {
     patch.inquiryRanges.forEach((range, index) => {
       if (!index) return;
-      if (Number.isFinite(numberOrNull(range.low))) marks[`inquiryRanges.${index}.low`] = recognitionMark("success", "询价下限已由 DM/云端数据库预填");
-      if (Number.isFinite(numberOrNull(range.high))) marks[`inquiryRanges.${index}.high`] = recognitionMark("success", "询价上限已由 DM/云端数据库预填");
+      if (Number.isFinite(numberOrNull(range.low))) marks[`inquiryRanges.${index}.low`] = sourcedRecognitionMark("询价下限", sourceMap[`inquiryRanges.${index}.low`]);
+      if (Number.isFinite(numberOrNull(range.high))) marks[`inquiryRanges.${index}.high`] = sourcedRecognitionMark("询价上限", sourceMap[`inquiryRanges.${index}.high`]);
     });
   }
   return marks;
+}
+
+function sourcedRecognitionMark(label, source) {
+  if (source === "cloud") return recognitionMark("success", `${label}已由云端数据库预填`, "cloud");
+  return recognitionMark("success", `${label}已由 DM 预填`, "dm");
+}
+
+function buildIssuerCloudRecognitionMarks(projectValue, issuer, existingMarks = {}) {
+  if (!issuer) return {};
+  const marks = {};
+  const fields = [
+    { field: "branch", label: "联动分行", value: issuer.linkedBranch || issuer.defaultBranch },
+    { field: "subjectRating", label: "主体评级", value: issuer.subjectRating },
+    { field: "ratingAgency", label: "评级机构", value: issuer.ratingAgency },
+    { field: "hiddenRating", label: "隐含评级", value: issuer.hiddenRating },
+  ];
+  for (const item of fields) {
+    if (existingMarks[item.field]?.source === "dm") continue;
+    if (!valueHasContent(item.value) || !valueHasContent(projectValue[item.field])) continue;
+    if (normalizeSourceComparable(projectValue[item.field]) !== normalizeSourceComparable(item.value)) continue;
+    marks[item.field] = recognitionMark("success", `${item.label}已由云端数据库预填`, "cloud");
+  }
+  return marks;
+}
+
+function normalizeSourceComparable(value) {
+  return String(value || "").trim().toUpperCase();
 }
 
 function projectDmUsableTranches(issueGroup) {
@@ -3230,8 +3304,8 @@ function statusBadgeClass(status) {
   return "";
 }
 
-function recognitionMark(status, message) {
-  return { status, message };
+function recognitionMark(status, message, source = "") {
+  return { status, message, source };
 }
 
 function valueHasContent(value) {
@@ -3247,6 +3321,7 @@ function setRecognitionForInput(input, mark) {
   if (!mark?.status) {
     delete target.dataset.recognitionStatus;
     delete target.dataset.recognitionMessage;
+    delete target.dataset.recognitionSource;
     if (target.dataset.recognitionTitle === "true") {
       target.removeAttribute("title");
       delete target.dataset.recognitionTitle;
@@ -3255,6 +3330,8 @@ function setRecognitionForInput(input, mark) {
   }
   target.dataset.recognitionStatus = mark.status;
   target.dataset.recognitionMessage = mark.message || "";
+  if (mark.source) target.dataset.recognitionSource = mark.source;
+  else delete target.dataset.recognitionSource;
   target.title = mark.message || "";
   target.dataset.recognitionTitle = "true";
 }
@@ -3267,6 +3344,7 @@ function clearRecognitionMarks(root = document) {
   root.querySelectorAll("[data-recognition-status]").forEach((target) => {
     delete target.dataset.recognitionStatus;
     delete target.dataset.recognitionMessage;
+    delete target.dataset.recognitionSource;
     if (target.dataset.recognitionTitle === "true") {
       target.removeAttribute("title");
       delete target.dataset.recognitionTitle;
