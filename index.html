@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260627-project-dm">
+  <link rel="stylesheet" href="./styles.css?v=20260627-direct-dm">
 </head>
 <body>
   <div class="app-shell">
@@ -70,22 +70,18 @@
         <div class="generator-grid">
           <section class="panel input-panel">
             <div class="panel-head">
-              <div><span class="step">01</span><h2>填写项目简表</h2></div>
-              <div class="brief-template-actions">
-                <button class="text-button" id="blankTemplateButton" type="button">空白模板</button>
-                <button class="text-button" id="sampleButton" type="button">载入示例</button>
-              </div>
+              <div><span class="step">01</span><h2>读取 DM 建项</h2></div>
+              <span class="pill muted" id="projectDmStatus">未读取 DM</span>
             </div>
-            <textarea id="briefInput" class="brief-input" spellcheck="false" placeholder="填写项目简表，或直接导入已有简表，例如：
-26粤交投SCP002 非我行主承 广州分行
-270D 规模7亿 AAA(中诚信国际)/隐含AAA
-询价区间1.25-1.45 银行间 中信银行"></textarea>
-            <div class="brief-template-guide">
-              <strong>必填占位</strong>
-              <span>债券简称</span><span>主承身份</span><span>分行</span><span>期限</span><span>规模</span><span>主体评级</span><span>隐含评级</span><span>询价区间</span><span>发行场所</span><span>牵头主承销商</span><span>估值</span><span>指导价/不综</span>
-              <small>分行只填“苏州/广州”这类名称，询价只填数字；按 Tab / Shift+Tab 可在占位符之间跳转。不执行综合定价时，删除指导价行或改写为“不执行综合定价”。</small>
+            <form class="project-dm-entry-form" id="projectDmEntryForm">
+              <label>债券简称或代码<input id="projectDmSeedInput" placeholder="例如：26金川MTN001 或 102681001.IB" autocomplete="off"></label>
+              <button class="button primary" id="projectDmLookupButton" type="submit">读取 DM</button>
+            </form>
+            <div class="project-pricing-grid">
+              <label>市场估值（%）<input id="projectValuationInput" inputmode="decimal" placeholder="如 1.65；多期限用 1.65/1.83"></label>
+              <label>综合定价至（%）<input id="projectGuidancePriceInput" inputmode="decimal" placeholder="留空为未综；多期限用 1.68/1.85"></label>
             </div>
-            <button class="button primary wide" id="parseButton">解析并生成</button>
+            <textarea id="briefInput" hidden></textarea>
 
             <div class="warning-box" id="warningBox" hidden>
               <strong>提交前需要确认</strong>
@@ -97,8 +93,6 @@
             <div class="panel-head">
               <div><span class="step">02</span><h2>确认结构化字段</h2></div>
               <div class="result-actions">
-                <span class="pill muted" id="projectDmStatus">未读取 DM</span>
-                <button class="button subtle" id="projectDmLookupButton" type="button">读取 DM</button>
                 <span class="pill" id="matchedIssuerPill">未匹配主体</span>
                 <button class="button subtle" id="quickIssuerButton">录入/更新主体授信</button>
               </div>
@@ -718,6 +712,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260627-project-dm"></script>
+  <script type="module" src="./app.js?v=20260627-direct-dm"></script>
 </body>
 </html>

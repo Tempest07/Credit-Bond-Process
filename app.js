@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-project-dm";
+} from "./core.js?v=20260627-direct-dm";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-project-dm";
+} from "./lifecycle.js?v=20260627-direct-dm";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-project-dm";
+} from "./history-parser.js?v=20260627-direct-dm";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-project-dm";
+} from "./protocol-transfer.js?v=20260627-direct-dm";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-project-dm";
+} from "./secondary-inventory.js?v=20260627-direct-dm";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -213,11 +213,11 @@ function bindPlaceholderSelection() {
 }
 
 function bindGenerator() {
-  $("#blankTemplateButton").addEventListener("click", loadBlankBriefTemplate);
-  $("#briefInput").addEventListener("keydown", handleBriefTemplateKeydown);
-  $("#briefInput").addEventListener("mousedown", selectBriefPlaceholderOnMouseDown);
-  $("#briefInput").addEventListener("dblclick", selectBriefPlaceholderOnDoubleClick);
-  $("#sampleButton").addEventListener("click", () => {
+  $("#blankTemplateButton")?.addEventListener("click", loadBlankBriefTemplate);
+  $("#briefInput")?.addEventListener("keydown", handleBriefTemplateKeydown);
+  $("#briefInput")?.addEventListener("mousedown", selectBriefPlaceholderOnMouseDown);
+  $("#briefInput")?.addEventListener("dblclick", selectBriefPlaceholderOnDoubleClick);
+  $("#sampleButton")?.addEventListener("click", () => {
     if (!state.issuers.some((issuer) => issuer.id === SAMPLE_ISSUER.id)) {
       state = upsertIssuer(state, SAMPLE_ISSUER);
       persistState();
@@ -228,8 +228,24 @@ function bindGenerator() {
     parseAndRender();
   });
 
-  $("#parseButton").addEventListener("click", parseAndRender);
-  $("#projectDmLookupButton").addEventListener("click", () => runProjectDmLookup());
+  $("#parseButton")?.addEventListener("click", parseAndRender);
+  $("#projectDmEntryForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runProjectDmLookup();
+  });
+  $("#projectDmSeedInput").addEventListener("input", () => {
+    project.shortName = $("#projectDmSeedInput").value.trim();
+    $('[data-project-field="shortName"]').value = project.shortName;
+    regenerate();
+  });
+  $("#projectValuationInput").addEventListener("input", () => {
+    updateProjectPricingFromInputs();
+    regenerate();
+  });
+  $("#projectGuidancePriceInput").addEventListener("input", () => {
+    updateProjectPricingFromInputs();
+    regenerate();
+  });
   $("#projectDmAssist").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-project-dm-query]");
     if (!button) return;
@@ -274,6 +290,9 @@ function bindGenerator() {
       }
       if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
       if (field === "exchangeIssueNumber") applyExchangeIssueNumberChoice(project, project.exchangeIssueNumber, true);
+      if (field === "shortName" && $("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
+      project.sourceText = buildDmProjectSourceText(project);
+      $("#briefInput").value = project.sourceText;
       regenerate();
     });
   });
@@ -282,6 +301,8 @@ function bindGenerator() {
     if (!input) return;
     clearRecognitionForInput(input);
     updateDynamicInquiryRange(input);
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
     regenerate();
   });
 
@@ -375,12 +396,17 @@ function bindLedger() {
   $("#newProjectButton").addEventListener("click", () => {
     project = parseProjectBrief("");
     selectedIssuerId = "";
-    $("#briefInput").value = BLANK_BRIEF_TEMPLATE;
+    $("#briefInput").value = "";
+    $("#projectDmStatus").textContent = "未读取 DM";
+    $("#projectDmStatus").className = "pill muted";
+    $("#projectDmAssist").hidden = true;
+    $("#projectDmAssist").innerHTML = "";
+    renderWarnings([]);
     fillProjectFields();
     renderIssuerOptions();
     regenerate();
     switchView("generator");
-    focusFirstBriefPlaceholder();
+    $("#projectDmSeedInput").focus();
   });
   $$("[data-ledger-filter]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -531,12 +557,15 @@ function parseAndRender() {
 }
 
 async function runProjectDmLookup(queryOverride = "") {
-  const input = $('[data-project-field="shortName"]');
-  const query = String(queryOverride || input?.value || project.shortName || "").trim();
+  const seedInput = $("#projectDmSeedInput");
+  const fieldInput = $('[data-project-field="shortName"]');
+  const query = String(queryOverride || seedInput?.value || fieldInput?.value || project.shortName || "").trim();
   if (!query || briefTemplatePlaceholders(query).length) {
     showToast("请先填写债券简称或代码。");
     return;
   }
+  if (seedInput) seedInput.value = query;
+  if (fieldInput && !looksLikeSecurityId(query)) fieldInput.value = query;
 
   const params = new URLSearchParams();
   if (looksLikeSecurityId(query)) params.set("securityId", query);
@@ -590,10 +619,9 @@ function applyDmLookupToCurrentProject(payload) {
     ...patch,
     warnings,
   };
-  if (!String(project.sourceText || "").trim() || briefTemplatePlaceholders(project.sourceText).length) {
-    project.sourceText = buildDmProjectSourceText(project);
-    $("#briefInput").value = project.sourceText;
-  }
+  updateProjectPricingFromInputs(false);
+  project.sourceText = buildDmProjectSourceText(project);
+  $("#briefInput").value = project.sourceText;
   const matched = findIssuerForProject(project)
     || findIssuer(patch.issuerName || "", state.issuers)
     || null;
@@ -606,6 +634,19 @@ function applyDmLookupToCurrentProject(payload) {
   fillProjectFields();
   renderIssuerOptions();
   regenerate();
+}
+
+function updateProjectPricingFromInputs(updateSourceText = true) {
+  const valuations = parseRateListInput($("#projectValuationInput")?.value || "");
+  const guidancePrices = parseRateListInput($("#projectGuidancePriceInput")?.value || "");
+  project.valuations = valuations;
+  project.valuation = valuations[0] ?? null;
+  project.guidancePrices = guidancePrices;
+  project.guidancePrice = guidancePrices[0] ?? null;
+  if (updateSourceText) {
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
+  }
 }
 
 function projectPatchFromDmLookup(payload) {
@@ -731,11 +772,16 @@ function buildDmProjectSourceText(projectValue) {
   const inquiry = Number.isFinite(numberOrNull(projectValue.inquiryLow)) && Number.isFinite(numberOrNull(projectValue.inquiryHigh))
     ? `询价区间${formatNumber(projectValue.inquiryLow)}-${formatNumber(projectValue.inquiryHigh)}`
     : "询价区间待补";
-  return [
+  const valuationText = formatRateListInput(projectValue.valuations?.length ? projectValue.valuations : [projectValue.valuation]);
+  const guidanceText = formatRateListInput(projectValue.guidancePrices?.length ? projectValue.guidancePrices : [projectValue.guidancePrice]);
+  const lines = [
     `${projectValue.shortName || "债券简称待补"} ${projectValue.sponsorStatus || "主承身份待补"} ${projectValue.branch || "分行待补"}`,
     `${projectValue.durationText || "期限待补"} ${scale} ${rating}${hidden}`,
     `${inquiry} ${projectValue.venue || "发行场所待补"} ${projectValue.leadUnderwriter || "牵头主承待补"}`,
-  ].join("\n");
+  ];
+  if (valuationText) lines.push(`${projectValue.shortName || "债券简称待补"} 市场估值约${valuationText}`);
+  if (guidanceText) lines.push(`如需综合定价，指导价约${guidanceText}`);
+  return lines.join("\n");
 }
 
 function renderProjectDmAssist(payload) {
@@ -866,6 +912,19 @@ function parseDmInquiryRange(value = "") {
   if (!numbers.length) return { low: null, high: null };
   if (numbers.length === 1) return { low: numbers[0], high: numbers[0] };
   return { low: Math.min(numbers[0], numbers[1]), high: Math.max(numbers[0], numbers[1]) };
+}
+
+function parseRateListInput(value = "") {
+  return (String(value || "").match(/\d+(?:\.\d+)?/g) || [])
+    .map(Number)
+    .filter(Number.isFinite);
+}
+
+function formatRateListInput(values = []) {
+  const numbers = (Array.isArray(values) ? values : [values])
+    .map(numberOrNull)
+    .filter(Number.isFinite);
+  return numbers.map(formatNumber).join("/");
 }
 
 function normalizeDmTenor(value = "") {
@@ -1104,6 +1163,9 @@ function fillProjectFields() {
     const field = input.dataset.projectField;
     input.value = project[field] ?? "";
   });
+  if ($("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
+  if ($("#projectValuationInput")) $("#projectValuationInput").value = formatRateListInput(project.valuations?.length ? project.valuations : [project.valuation]);
+  if ($("#projectGuidancePriceInput")) $("#projectGuidancePriceInput").value = formatRateListInput(project.guidancePrices?.length ? project.guidancePrices : [project.guidancePrice]);
   ensureInquiryRangeCapacity(project);
   renderTrancheInquiryFields();
   applyProjectRecognitionMarks();

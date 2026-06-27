@@ -139,6 +139,11 @@ label[data-recognition-status="attention"] textarea {
 .brief-template-guide strong { margin-right: 2px; color: var(--accent); }
 .brief-template-guide span { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .brief-template-guide small { flex-basis: 100%; color: var(--warning); }
+.project-dm-entry-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.project-dm-entry-form label, .project-pricing-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.project-dm-entry-form input, .project-pricing-grid input { min-height: 40px; padding: 9px 11px; font-size: 13px; }
+.project-dm-entry-form .button { min-height: 40px; white-space: nowrap; }
+.project-pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .opinion-output { min-height: 210px; padding: 15px; resize: vertical; font-size: 13px; line-height: 1.9; }
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .field-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -642,6 +647,8 @@ label[data-recognition-status="attention"] textarea {
     flex: 1 1 96px;
   }
   .field-grid > *,
+  .project-dm-entry-form > *,
+  .project-pricing-grid > *,
   .dm-test-form > *,
   .review-grid > *,
   .batch-issuer-grid > *,
@@ -656,7 +663,7 @@ label[data-recognition-status="attention"] textarea {
     min-width: 0;
     max-width: 100%;
   }
-  .field-grid, .rules-grid, .secondary-summary-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list { grid-template-columns: 1fr; }
+  .field-grid, .rules-grid, .secondary-summary-grid, .project-dm-entry-form, .project-pricing-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list { grid-template-columns: 1fr; }
   .tranche-inquiry-row { grid-template-columns: 1fr; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
   .tranche-grid .span-3 { grid-column: span 1; }
