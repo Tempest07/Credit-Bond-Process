@@ -3196,6 +3196,14 @@ function bindDmTest() {
     await navigator.clipboard.writeText(JSON.stringify(dmLastPayload, null, 2));
     showToast("DM 返回 JSON 已复制。");
   });
+  $("#dmIssueGroupOutput").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-dm-issue-query]");
+    if (!button) return;
+    const query = button.dataset.dmIssueQuery?.trim();
+    if (!query) return;
+    $("#dmLookupInput").value = query;
+    await runDmLookup();
+  });
 }
 
 async function runDmLookup() {
@@ -3573,6 +3581,7 @@ function renderDmIssueGroup(issueGroup) {
   summary.textContent = `${tranches.length} 个期限 · ${sourceLabel}${reallocatedCount ? ` · ${reallocatedCount} 个待确认回拨` : ""}`;
   output.innerHTML = tranches.map((tranche) => {
     const status = dmIssueTrancheStatusMeta(tranche.status);
+    const queryValue = tranche.shortName || tranche.securityId || "";
     const facts = [
       tranche.tenor ? `期限 ${tranche.tenor}` : "",
       Number.isFinite(numberOrNull(tranche.planScale)) ? `计划 ${formatNumber(tranche.planScale)}亿` : "",
@@ -3582,7 +3591,7 @@ function renderDmIssueGroup(issueGroup) {
       tranche.securityId ? `代码 ${tranche.securityId}` : "",
     ].filter(Boolean);
     return `
-      <article class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}">
+      <button class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}" type="button" data-dm-issue-query="${escapeAttribute(queryValue)}" aria-label="查询 ${escapeAttribute(queryValue || "该品种")}">
         <div class="dm-issue-tranche-head">
           <strong>${escapeHtml(tranche.shortName || "未命名品种")}</strong>
           <span class="status-badge ${status.className}">${escapeHtml(status.label)}</span>
@@ -3594,7 +3603,7 @@ function renderDmIssueGroup(issueGroup) {
         </div>
         <p>${facts.length ? escapeHtml(facts.join(" · ")) : "暂无结构化发行要素"}</p>
         ${tranche.statusReason ? `<small>${escapeHtml(tranche.statusReason)}</small>` : ""}
-      </article>
+      </button>
     `;
   }).join("");
 }
