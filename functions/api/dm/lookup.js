@@ -57,6 +57,7 @@ export async function onRequestGet(context) {
       startDate,
       endDate,
     });
+    const dmMatched = hasMatchedDmLookupResult(basic, primary);
     const issuerName = pickFirstString(firstRow(primary), ["issuer_full_name", "issuerFullName"])
       || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
     const company = issuerName ? await lookupCompanyInfo(dm, issuerName) : null;
@@ -67,6 +68,9 @@ export async function onRequestGet(context) {
     const issuerRatingFallback = lookupIssuerRatingFallback(d1State, dmEnrichedNormalized);
     const enrichedNormalized = applyIssuerRatingFallback(dmEnrichedNormalized, issuerRatingFallback);
     const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId }, primary);
+    if (!dmMatched && !issuerRatingFallback && !issueGroup) {
+      return json(dmNoResultPayload({ shortName, securityId, basic, primary }));
+    }
     const normalizedWithIssueGroup = issueGroup ? { ...enrichedNormalized, issueGroup } : enrichedNormalized;
 
     return json({
@@ -131,6 +135,37 @@ async function lookupPrimaryData(dm, { shortName, securityId, issuerName, startD
 async function lookupCompanyInfo(dm, issuerName) {
   const raw = await dm.post(COMPANY_INFO_PATH, { comFullNameList: [issuerName] });
   return { raw, rows: rowsFromDm(raw) };
+}
+
+function hasMatchedDmLookupResult(basic, primary) {
+  return Boolean((basic?.rows || []).length || (primary?.rows || []).length);
+}
+
+function dmNoResultPayload({ shortName, securityId, basic, primary }) {
+  return {
+    ok: false,
+    noResult: true,
+    error: "未查询到匹配债券",
+    hint: "请确认债券简称、债券代码或查询日期窗口；DM 接口已返回，但没有匹配到该债券。",
+    query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
+    normalized: null,
+    issueGroup: null,
+    diagnostic: {
+      noResult: {
+        basicRows: (basic?.rows || []).length,
+        matchedPrimaryRows: (primary?.rows || []).length,
+        rawPrimaryRows: rowsFromDm(primary?.raw).length,
+        reason: "DM basic-info returned no row and primary-data had no row matching the requested short name or security id.",
+      },
+    },
+    fieldCandidates: [],
+    raw: {
+      basicInfo: basic.raw,
+      primaryData: primary.raw,
+      companyInfo: null,
+      dmRatingDiscovery: {},
+    },
+  };
 }
 
 function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {

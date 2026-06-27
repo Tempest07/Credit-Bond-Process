@@ -535,11 +535,13 @@ test("DM lookup does not fall back to the first primary row when no row matches"
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.normalized.securityId, "");
-    assert.equal(payload.normalized.shortName, "26MISSING");
-    assert.equal(payload.normalized.issuerName, "");
+    assert.equal(payload.ok, false);
+    assert.equal(payload.noResult, true);
+    assert.equal(payload.error, "未查询到匹配债券");
+    assert.equal(payload.normalized, null);
     assert.deepEqual(payload.fieldCandidates, []);
     assert.equal(payload.raw.primaryData.list[0].sec_short_name, "26WRONG01");
+    assert.equal(payload.diagnostic.noResult.rawPrimaryRows, 1);
     assert.equal(calls.length, 2);
   } finally {
     globalThis.fetch = originalFetch;

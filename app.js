@@ -3236,7 +3236,7 @@ async function runDmLookup() {
       payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
     }
     await renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs });
-    showToast(payload.ok ? "DM 查询成功。" : "DM 查询失败，请看诊断信息。");
+    showToast(payload.ok ? "DM 查询成功。" : payload.noResult ? "DM 无结果。" : "DM 查询失败，请看诊断信息。");
   } catch (error) {
     const elapsedMs = Math.round(performance.now() - startedAt);
     await renderDmLookupResult({
@@ -3281,7 +3281,7 @@ async function renderDmLookupResult(payload) {
 
   const ok = Boolean(enrichedPayload?.ok);
   const statusParts = [
-    ok ? "查询成功" : "查询失败",
+    ok ? "查询成功" : enrichedPayload?.noResult ? "无结果" : "查询失败",
     enrichedPayload?.httpStatus ? `HTTP ${enrichedPayload.httpStatus}` : "",
     Number.isFinite(enrichedPayload?.elapsedMs) ? `${enrichedPayload.elapsedMs}ms` : "",
   ].filter(Boolean);
