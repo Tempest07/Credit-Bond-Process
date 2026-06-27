@@ -104,7 +104,7 @@ h3 { margin: 24px 0 12px; font-size: 13px; }
 .file-button input { display: none; }
 .brief-template-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-textarea, input, select { width: 100%; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: #fff; outline: none; }
+textarea, input, select { width: 100%; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: #fff; outline: none; }
 textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 label[data-recognition-status] input,
 label[data-recognition-status] select,
@@ -548,8 +548,34 @@ label[data-recognition-status="attention"] textarea {
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
   select:not([multiple]),
   textarea {
+    min-width: 0;
+    max-width: 100%;
     font-size: 16px;
     line-height: 1.45;
+  }
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="search"],
+  input[type="time"] {
+    display: block;
+    min-inline-size: 0;
+    text-align: left;
+  }
+  .field-grid > *,
+  .dm-test-form > *,
+  .review-grid > *,
+  .batch-issuer-grid > *,
+  .tranche-grid > *,
+  .result-modal-grid > *,
+  .project-list-tools > *,
+  .project-list-date-tools > *,
+  .protocol-transfer-filter-tools > *,
+  .protocol-transfer-detail .field-grid > *,
+  .secondary-actions > *,
+  .ftp-curve-grid > * {
+    min-width: 0;
+    max-width: 100%;
   }
   .field-grid, .rules-grid, .secondary-summary-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list { grid-template-columns: 1fr; }
   .tranche-inquiry-row { grid-template-columns: 1fr; }
