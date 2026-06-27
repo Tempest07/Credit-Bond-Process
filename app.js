@@ -3331,7 +3331,61 @@ function findIssuerForDmNormalized(normalized) {
     const issuer = findIssuer(String(target), state.issuers || []);
     if (issuer) return issuer;
   }
-  return null;
+  return findIssuerForDmByCoreName(targets);
+}
+
+function findIssuerForDmByCoreName(targets) {
+  let best = null;
+  for (const issuer of state.issuers || []) {
+    const names = [issuer.legalName, ...(issuer.aliases || [])].filter(Boolean);
+    for (const name of names) {
+      const normalizedName = normalizeDmIssuerMatchText(name);
+      const coreName = dmIssuerCoreMatchText(name);
+      for (const target of targets) {
+        const normalizedTarget = normalizeDmIssuerMatchText(target);
+        const coreTarget = dmIssuerCoreMatchText(target);
+        const score = dmIssuerMatchScore(normalizedName, normalizedTarget, coreName, coreTarget);
+        if (score > (best?.score || 0)) best = { issuer, score };
+      }
+    }
+  }
+  return best?.issuer || null;
+}
+
+function dmIssuerMatchScore(name, target, coreName, coreTarget) {
+  if (!name || !target) return 0;
+  if (name === target) return 100 + name.length;
+  if (name.length >= 4 && target.includes(name)) return 80 + name.length;
+  if (target.length >= 4 && name.includes(target)) return 60 + target.length;
+  if (coreName && coreTarget) {
+    if (coreName === coreTarget) return 90 + coreName.length;
+    if (coreName.length >= 4 && coreTarget.includes(coreName)) return 70 + coreName.length;
+    if (coreTarget.length >= 4 && coreName.includes(coreTarget)) return 50 + coreTarget.length;
+  }
+  return 0;
+}
+
+function normalizeDmIssuerMatchText(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, "")
+    .replace(/[()（）【】\[\]{}]/g, "")
+    .toUpperCase();
+}
+
+function dmIssuerCoreMatchText(value = "") {
+  let text = normalizeDmIssuerMatchText(value);
+  const suffixes = ["股份有限公司", "有限责任公司", "责任有限公司", "集团有限公司", "有限公司", "股份公司", "集团公司", "控股公司", "公司"];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const suffix of suffixes) {
+      if (text.endsWith(suffix) && text.length - suffix.length >= 4) {
+        text = text.slice(0, -suffix.length);
+        changed = true;
+      }
+    }
+  }
+  return text;
 }
 
 function renderDmNormalized(normalized) {

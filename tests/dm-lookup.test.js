@@ -169,22 +169,22 @@ test("DM lookup fills missing ratings from the issuer database", async () => {
     if (url.includes("/bond/basic-info/info")) {
       data = [{
         security_id: "012681222.IB",
-        sec_short_name: "26TARGETSCP001",
-        sec_full_name: "Target Issuer 2026 SCP001",
-        issuer_name: "Target Issuer",
+        sec_short_name: "26浦发集团MTN001",
+        sec_full_name: "上海浦东发展集团股份有限公司2026年度第一期中期票据",
+        issuer_name: "上海浦东发展集团股份有限公司",
       }];
     } else if (url.includes("/bond/primary/data")) {
       data = {
         list: [{
           security_id: "012681222.IB",
-          sec_short_name: "26TARGETSCP001",
-          issuer_full_name: "Target Issuer",
-          bond_issue_tenor: "180D",
+          sec_short_name: "26浦发集团MTN001",
+          issuer_full_name: "上海浦东发展集团股份有限公司",
+          bond_issue_tenor: "5Y",
           plan_issue_amount: 50000,
         }],
       };
     } else {
-      data = [{ com_full_name: "Target Issuer" }];
+      data = [{ com_full_name: "上海浦东发展集团股份有限公司" }];
     }
     const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
     return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
@@ -198,10 +198,10 @@ test("DM lookup fills missing ratings from the issuer database", async () => {
           return {
             data: JSON.stringify({
               issuers: [{
-                legalName: "Target Issuer",
-                aliases: ["TARGET"],
+                legalName: "上海浦东发展（集团）有限公司",
+                aliases: ["浦发集团"],
                 subjectRating: "AAA",
-                ratingAgency: "Agency One",
+                ratingAgency: "中诚信国际",
                 hiddenRating: "AA+",
               }],
             }),
@@ -214,21 +214,21 @@ test("DM lookup fills missing ratings from the issuer database", async () => {
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26TARGETSCP001", {
+      request: new Request("https://example.com/api/dm/lookup?shortName=26%E6%B5%A6%E5%8F%91%E9%9B%86%E5%9B%A2MTN001", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.normalized.subjectRating, "AAA");
-    assert.equal(payload.normalized.ratingAgency, "Agency One");
+    assert.equal(payload.normalized.ratingAgency, "中诚信国际");
     assert.equal(payload.normalized.impliedRating, "AA+");
     assert.deepEqual(payload.normalized.ratingSource, {
       subjectRating: "issuer-db",
       ratingAgency: "issuer-db",
       impliedRating: "issuer-db",
     });
-    assert.equal(payload.diagnostic.rating.matchedIssuer, "Target Issuer");
+    assert.equal(payload.diagnostic.rating.matchedIssuer, "上海浦东发展（集团）有限公司");
     assert.deepEqual(payload.diagnostic.rating.missing, []);
   } finally {
     globalThis.fetch = originalFetch;
