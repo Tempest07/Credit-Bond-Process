@@ -13,7 +13,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-source-tags";
+} from "./core.js?v=20260627-required-issuer";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-source-tags";
+} from "./lifecycle.js?v=20260627-required-issuer";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-source-tags";
+} from "./history-parser.js?v=20260627-required-issuer";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-source-tags";
+} from "./protocol-transfer.js?v=20260627-required-issuer";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,7 +70,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-source-tags";
+} from "./secondary-inventory.js?v=20260627-required-issuer";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -110,6 +110,13 @@ const BRIEF_PLACEHOLDER_LABELS = new Set([
   "估值",
   "指导价",
 ]);
+const REQUIRED_PROJECT_ISSUER_FIELDS = [
+  { key: "legalName", label: "主体正式名称", inputId: "quickLegalName" },
+  { key: "defaultBranch", label: "联动分行", inputId: "quickDefaultBranch" },
+  { key: "subjectRating", label: "主体评级", inputId: "quickSubjectRating" },
+  { key: "ratingAgency", label: "评级机构", inputId: "quickRatingAgency" },
+  { key: "hiddenRating", label: "市场隐含评级", inputId: "quickHiddenRating" },
+];
 
 const SAMPLE_ISSUER = {
   id: "sample-yuejiaotou",
@@ -323,11 +330,19 @@ function bindGenerator() {
 
 function saveCurrentProject() {
   const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
-  const generated = { ...generateOpinion(project, issuer), opinion: $("#opinionOutput").value };
   if (!project.shortName) {
     showToast("请先解析项目简表，再保存为项目。");
     return;
   }
+  const issuerStatus = projectIssuerSaveStatus(project, issuer);
+  if (!issuerStatus.ok) {
+    openQuickIssuerPanel({ enforceRequired: true, missing: issuerStatus.missing });
+    showToast(issuerStatus.reason === "missingIssuer"
+      ? "请先将主体录入主体授信库，并补全联动分行、评级、评级机构和隐含评级。"
+      : `主体资料缺少：${issuerStatus.missing.map((item) => item.label).join("、")}。请先补全后再保存项目。`);
+    return;
+  }
+  const generated = { ...generateOpinion(project, issuer), opinion: $("#opinionOutput").value };
   const result = upsertParsedProjectToLedger(project, issuer, generated);
   if (!result) return;
   selectedProjectId = result.record.id;
@@ -339,10 +354,23 @@ function saveCurrentProject() {
 
 function upsertParsedProjectToLedger(projectValue, issuer, generated) {
   if (!projectValue?.shortName) return null;
+  if (!projectIssuerSaveStatus(projectValue, issuer).ok) return null;
   const existing = (state.projects || []).find((item) => item.shortName === projectValue.shortName && item.status !== "已结束");
   const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing);
   state = upsertProject(state, record);
   return { record, isUpdate: Boolean(existing) };
+}
+
+function projectIssuerSaveStatus(projectValue, issuer) {
+  const draft = createIssuerDraft(projectValue, issuer);
+  const missing = missingRequiredProjectIssuerFields(draft);
+  if (!issuer) return { ok: false, reason: "missingIssuer", missing };
+  if (missing.length) return { ok: false, reason: "incompleteIssuer", missing };
+  return { ok: true, reason: "", missing: [] };
+}
+
+function missingRequiredProjectIssuerFields(draft = {}) {
+  return REQUIRED_PROJECT_ISSUER_FIELDS.filter((field) => !String(draft[field.key] || "").trim());
 }
 
 function buildLedgerProjectRecord(projectValue, issuer, generated, existing = null) {
@@ -3409,10 +3437,21 @@ function bindQuickIssuer() {
   $("#quickCreditRawText").addEventListener("change", () => {
     fillCreditInputs("quick", parseCreditText($("#quickCreditRawText").value), false);
   });
+  $("#quickIssuerForm").addEventListener("input", (event) => {
+    clearRecognitionForInput(event.target);
+  });
   $("#quickIssuerForm").addEventListener("submit", (event) => {
     event.preventDefault();
     try {
-      const issuer = readIssuerInput("quick");
+      const draft = readIssuerDraftInput("quick");
+      const missing = missingRequiredProjectIssuerFields(draft);
+      if (missing.length) {
+        applyQuickIssuerRequiredMarks(missing);
+        focusFirstQuickIssuerMissingField(missing);
+        showToast(`请先补全主体入库字段：${missing.map((item) => item.label).join("、")}。`);
+        return;
+      }
+      const issuer = issuerFromDraft(draft);
       const existing = state.issuers.find((candidate) => candidate.legalName === issuer.legalName);
       if (existing) issuer.id = existing.id;
       state = upsertIssuer(state, issuer);
@@ -3435,13 +3474,31 @@ function bindQuickIssuer() {
   });
 }
 
-function openQuickIssuerPanel() {
+function openQuickIssuerPanel(options = {}) {
   const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
   const draft = createIssuerDraft(project, issuer);
   fillIssuerInput("quick", draft);
+  applyQuickIssuerRequiredMarks(options.enforceRequired ? (options.missing || missingRequiredProjectIssuerFields(draft)) : []);
   const panel = $("#quickIssuerPanel");
   panel.hidden = false;
   panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (options.enforceRequired) focusFirstQuickIssuerMissingField(options.missing || missingRequiredProjectIssuerFields(draft));
+}
+
+function applyQuickIssuerRequiredMarks(missingFields = []) {
+  for (const field of REQUIRED_PROJECT_ISSUER_FIELDS) {
+    const input = $(`#${field.inputId}`);
+    if (!input) continue;
+    const missing = missingFields.some((item) => item.key === field.key);
+    setRecognitionForInput(input, missing ? recognitionMark("error", `${field.label}为项目入库必填项`) : null);
+  }
+}
+
+function focusFirstQuickIssuerMissingField(missingFields = []) {
+  const first = missingFields[0];
+  if (!first) return;
+  const input = $(`#${first.inputId}`);
+  if (input) input.focus();
 }
 
 function bindBatch() {
@@ -4772,7 +4829,11 @@ function fillCreditInputs(prefix, credit, onlyEmpty = true) {
 }
 
 function readIssuerInput(prefix) {
-  return issuerFromDraft({
+  return issuerFromDraft(readIssuerDraftInput(prefix));
+}
+
+function readIssuerDraftInput(prefix) {
+  return {
     id: $(`#${prefix}IssuerId`).value,
     legalName: $(`#${prefix}LegalName`).value,
     aliases: $(`#${prefix}Aliases`).value,
@@ -4791,7 +4852,7 @@ function readIssuerInput(prefix) {
     investmentTermText: $(`#${prefix}InvestmentTermText`).value,
     rawText: $(`#${prefix}CreditRawText`).value,
     sourceRank: null,
-  });
+  };
 }
 
 function readIssuerForm() {
