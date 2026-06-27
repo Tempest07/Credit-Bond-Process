@@ -310,6 +310,129 @@ test("DM lookup fills missing ratings from historical D1 project text", async ()
   }
 });
 
+test("DM lookup builds an issue group from same-issue DM primary rows", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url, init) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "260001.SH",
+        sec_short_name: "26ACME01",
+        sec_full_name: "ACME 2026 corporate bond tranche 01",
+        issuer_name: "ACME Group Co Ltd",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [
+          {
+            security_id: "260001.SH",
+            sec_short_name: "26ACME01",
+            issuer_full_name: "ACME Group Co Ltd",
+            bond_issue_tenor: "3Y",
+            plan_issue_amount: 30000,
+            subscribe_rate: "2.000000 ~ 2.500000",
+            subscribe_date: "2026-06-27",
+          },
+          {
+            security_id: "260002.SH",
+            sec_short_name: "26ACME02",
+            issuer_full_name: "ACME Group Co Ltd",
+            bond_issue_tenor: "5Y",
+            plan_issue_amount: 50000,
+            subscribe_rate: "2.300000 ~ 2.800000",
+            subscribe_date: "2026-06-27",
+          },
+        ],
+      };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "ACME Group Co Ltd" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26ACME01", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.issueGroup.source, "dm");
+    assert.equal(payload.issueGroup.tranches.length, 2);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26ACME01", "26ACME02"]);
+    assert.equal(payload.issueGroup.tranches[0].isQueriedInput, true);
+    assert.equal(payload.normalized.issueGroup.tranches[1].tenor, "5Y");
+    assert.equal(payload.diagnostic.issueGroup.found, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM lookup marks a queried cancelled tranche from D1 issue group", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    const data = url.includes("/bond/primary/data") ? { list: [] } : [];
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                id: "project-acme",
+                shortName: "26ACME01/02",
+                shortNames: ["26ACME01", "26ACME02"],
+                issuerName: "ACME Group Co Ltd",
+                venue: "Exchange",
+                leadUnderwriter: "Lead Bank",
+                resultConfirmed: true,
+                tranches: [
+                  { shortName: "26ACME01", durationText: "3Y" },
+                  { shortName: "26ACME02", durationText: "5Y", securityCode: "260002.SH", issueScale: 5, winningRate: 2.6 },
+                ],
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26ACME01", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.issueGroup.source, "cloud-db");
+    assert.equal(payload.issueGroup.tranches.length, 2);
+    assert.equal(payload.issueGroup.tranches[0].shortName, "26ACME01");
+    assert.equal(payload.issueGroup.tranches[0].status, "reallocated");
+    assert.equal(payload.issueGroup.tranches[0].isQueriedInput, true);
+    assert.equal(payload.issueGroup.tranches[1].status, "issued");
+    assert.equal(payload.issueGroup.tranches[1].actualScale, 5);
+    assert.equal(payload.diagnostic.issueGroup.statuses[0].status, "reallocated");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup matches primary cross-market aliases before normalization", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

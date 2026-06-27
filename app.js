@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-mobile-input-fit";
+} from "./core.js?v=20260627-issue-group";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-mobile-input-fit";
+} from "./lifecycle.js?v=20260627-issue-group";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-mobile-input-fit";
+} from "./history-parser.js?v=20260627-issue-group";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-mobile-input-fit";
+} from "./protocol-transfer.js?v=20260627-issue-group";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-mobile-input-fit";
+} from "./secondary-inventory.js?v=20260627-issue-group";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -3251,6 +3251,9 @@ function clearDmLookup() {
   $("#dmLookupStatus").textContent = "等待查询";
   $("#dmLookupStatus").className = "status-badge muted";
   $("#dmNormalizedOutput").innerHTML = `<div class="empty">暂无查询结果。</div>`;
+  $("#dmIssueGroupPanel").hidden = true;
+  $("#dmIssueGroupSummary").textContent = "未识别";
+  $("#dmIssueGroupOutput").innerHTML = "";
   $("#dmDiagnosticOutput").textContent = "暂无诊断。";
   $("#dmCandidateOutput").innerHTML = `<div class="empty">暂无候选字段。</div>`;
   $("#dmCandidateCount").textContent = "0 项";
@@ -3278,6 +3281,7 @@ async function renderDmLookupResult(payload) {
   $("#dmLookupStatus").className = `status-badge ${ok ? "" : "warning"}`;
 
   renderDmNormalized(enrichedPayload?.normalized || null);
+  renderDmIssueGroup(enrichedPayload?.issueGroup || enrichedPayload?.normalized?.issueGroup || null);
   renderDmDiagnostic(enrichedPayload);
   renderDmCandidates(enrichedPayload?.fieldCandidates || []);
   $("#dmRawOutput").textContent = JSON.stringify(enrichedPayload, null, 2);
@@ -3550,6 +3554,63 @@ function renderDmNormalized(normalized) {
       </div>
     `;
   }).join("");
+}
+
+function renderDmIssueGroup(issueGroup) {
+  const panel = $("#dmIssueGroupPanel");
+  const output = $("#dmIssueGroupOutput");
+  const summary = $("#dmIssueGroupSummary");
+  const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
+  if (!issueGroup || tranches.length < 2) {
+    panel.hidden = true;
+    summary.textContent = "未识别";
+    output.innerHTML = "";
+    return;
+  }
+  panel.hidden = false;
+  const sourceLabel = dmIssueGroupSourceLabel(issueGroup.source);
+  const reallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated").length;
+  summary.textContent = `${tranches.length} 个期限 · ${sourceLabel}${reallocatedCount ? ` · ${reallocatedCount} 个待确认回拨` : ""}`;
+  output.innerHTML = tranches.map((tranche) => {
+    const status = dmIssueTrancheStatusMeta(tranche.status);
+    const facts = [
+      tranche.tenor ? `期限 ${tranche.tenor}` : "",
+      Number.isFinite(numberOrNull(tranche.planScale)) ? `计划 ${formatNumber(tranche.planScale)}亿` : "",
+      Number.isFinite(numberOrNull(tranche.actualScale)) ? `发行 ${formatNumber(tranche.actualScale)}亿` : "",
+      tranche.inquiryRange ? `区间 ${tranche.inquiryRange}` : "",
+      Number.isFinite(numberOrNull(tranche.couponRate)) ? `票面 ${formatNumber(tranche.couponRate)}%` : "",
+      tranche.securityId ? `代码 ${tranche.securityId}` : "",
+    ].filter(Boolean);
+    return `
+      <article class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}">
+        <div class="dm-issue-tranche-head">
+          <strong>${escapeHtml(tranche.shortName || "未命名品种")}</strong>
+          <span class="status-badge ${status.className}">${escapeHtml(status.label)}</span>
+        </div>
+        <div class="dm-issue-tranche-tags">
+          ${tranche.isQueriedInput ? `<span>当前查询</span>` : ""}
+          ${tranche.isDmMatched ? `<span>DM命中</span>` : ""}
+          <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.source))}</span>
+        </div>
+        <p>${facts.length ? escapeHtml(facts.join(" · ")) : "暂无结构化发行要素"}</p>
+        ${tranche.statusReason ? `<small>${escapeHtml(tranche.statusReason)}</small>` : ""}
+      </article>
+    `;
+  }).join("");
+}
+
+function dmIssueTrancheStatusMeta(status) {
+  if (status === "issued") return { label: "已发行", className: "" };
+  if (status === "reallocated") return { label: "待确认回拨", className: "warning" };
+  return { label: "待确认", className: "muted" };
+}
+
+function dmIssueGroupSourceLabel(source) {
+  if (source === "cloud-db") return "云端数据库";
+  if (source === "dm") return "DM";
+  if (source === "mixed") return "DM+云端数据库";
+  if (source === "inferred") return "推断";
+  return "未知来源";
 }
 
 function renderDmDiagnostic(payload) {

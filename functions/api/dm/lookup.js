@@ -63,15 +63,20 @@ export async function onRequestGet(context) {
     const normalized = normalizeDmLookup({ shortName, securityId, basic, primary, company });
     const dmRatingDiscovery = await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company });
     const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
-    const issuerRatingFallback = await lookupIssuerRatingFallback(context.env.DB, dmEnrichedNormalized);
+    const d1State = await readD1AppState(context.env.DB);
+    const issuerRatingFallback = lookupIssuerRatingFallback(d1State, dmEnrichedNormalized);
     const enrichedNormalized = applyIssuerRatingFallback(dmEnrichedNormalized, issuerRatingFallback);
+    const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId }, primary);
+    const normalizedWithIssueGroup = issueGroup ? { ...enrichedNormalized, issueGroup } : enrichedNormalized;
 
     return json({
       ok: true,
       query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
-      normalized: enrichedNormalized,
+      normalized: normalizedWithIssueGroup,
+      issueGroup,
       diagnostic: {
         rating: ratingDiagnostic(normalized, dmRatingDiscovery, issuerRatingFallback, enrichedNormalized, Boolean(context.env.DB)),
+        issueGroup: issueGroupDiagnostic(issueGroup),
       },
       fieldCandidates: collectFieldCandidates([
         basic.rows,
@@ -321,20 +326,24 @@ function applyDmRatingDiscovery(normalized, discovery) {
   return next;
 }
 
-async function lookupIssuerRatingFallback(db, normalized) {
+async function readD1AppState(db) {
   if (!db) return null;
-  if (normalized?.subjectRating && normalized?.ratingAgency && normalized?.impliedRating) return null;
   try {
     const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
-    const data = row?.data ? JSON.parse(row.data) : null;
-    const projects = Array.isArray(data?.projects) ? data.projects : [];
-    const project = matchProjectForRating(normalized, projects);
-    if (project) return project;
-    const issuers = Array.isArray(data?.issuers) ? data.issuers : [];
-    return matchIssuerForRating(normalized, issuers);
+    return row?.data ? JSON.parse(row.data) : null;
   } catch {
     return null;
   }
+}
+
+function lookupIssuerRatingFallback(data, normalized) {
+  if (!data) return null;
+  if (normalized?.subjectRating && normalized?.ratingAgency && normalized?.impliedRating) return null;
+  const projects = Array.isArray(data?.projects) ? data.projects : [];
+  const project = matchProjectForRating(normalized, projects);
+  if (project) return project;
+  const issuers = Array.isArray(data?.issuers) ? data.issuers : [];
+  return matchIssuerForRating(normalized, issuers);
 }
 
 function matchProjectForRating(normalized, projects) {
@@ -517,6 +526,374 @@ function applyIssuerRatingFallback(normalized, issuer) {
   return next;
 }
 
+function lookupIssueGroup(data, normalized, query, primary) {
+  const dmGroup = buildIssueGroupFromDmRows(normalized, query, primary);
+  let dbGroup = null;
+  if (data) {
+    const projects = Array.isArray(data?.projects) ? data.projects : [];
+    dbGroup = buildIssueGroupFromProjects(normalized, query, projects);
+  }
+  const group = mergeIssueGroups(dbGroup, dmGroup) || dbGroup || dmGroup;
+  return shouldExposeIssueGroup(group, query, normalized) ? group : null;
+}
+
+function buildIssueGroupFromProjects(normalized, query, projects) {
+  const targets = issueGroupTargets(normalized, query);
+  let best = null;
+  for (const project of projects || []) {
+    const entries = projectIssueEntries(project);
+    if (!entries.length) continue;
+    const score = projectIssueGroupScore(project, entries, targets);
+    if (score > (best?.score || 0)) best = { project, entries, score };
+  }
+  if (!best || best.score < 90) return null;
+  const group = issueGroupFromProject(best.project, best.entries, targets, best.score);
+  return group?.tranches?.length ? group : null;
+}
+
+function projectIssueGroupScore(project, entries, targets) {
+  let score = 0;
+  const projectIssuer = normalizeIssuerMatchText(project?.issuerName || "");
+  const issuerScore = targets.issuerTargets.reduce((maxScore, target) =>
+    Math.max(maxScore, issuerMatchScore(projectIssuer, normalizeIssuerMatchText(target))), 0);
+  for (const entry of entries) {
+    const entrySecurityId = normalizeSecurityId(entry.securityId);
+    if (entrySecurityId && targets.securityIds.some((target) => securityIdMatches(entrySecurityId, target))) score = Math.max(score, 160);
+    const entryName = normalizeLookupName(entry.shortName);
+    if (entryName && targets.names.some((target) => normalizeLookupName(target) === entryName)) score = Math.max(score, 140);
+    const entryFamily = issueShortNameFamily(entry.shortName);
+    if (entryFamily && targets.families.includes(entryFamily) && issuerScore >= 80) score = Math.max(score, 95);
+  }
+  if (issuerScore >= 90 && targets.names.some((name) => projectFullText(project).includes(normalizeLookupName(name)))) score = Math.max(score, 92);
+  return score;
+}
+
+function issueGroupFromProject(project, entries, targets, score) {
+  const finalEntries = entries.map((entry) => ({
+    ...entry,
+    isQueriedInput: entryMatchesTargets(entry, targets.inputNames, targets.inputSecurityIds),
+    isDmMatched: entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds),
+  }));
+  const groupHasIssued = finalEntries.some((entry) => entryHasIssuedFields(entry));
+  const projectResultConfirmed = Boolean(project?.resultConfirmed);
+  const tranches = finalEntries.map((entry, index) => {
+    const status = inferIssueTrancheStatus(entry, { groupHasIssued, projectResultConfirmed });
+    return cleanIssueTranche({
+      shortName: entry.shortName || `${project?.shortName || "品种"}-${index + 1}`,
+      securityId: entry.securityId || "",
+      fullName: "",
+      tenor: entry.durationText || "",
+      planScale: entry.planScale,
+      actualScale: entry.actualScale,
+      inquiryRange: formatIssueGroupRange(entry.inquiryLow, entry.inquiryHigh),
+      couponRate: entry.couponRate,
+      status,
+      statusReason: issueTrancheStatusReason(status),
+      source: "cloud-db",
+      isQueriedInput: entry.isQueriedInput,
+      isDmMatched: entry.isDmMatched,
+    });
+  });
+  return {
+    groupId: project?.id || issueGroupIdFromParts(project?.issuerName, project?.shortName),
+    source: "cloud-db",
+    confidence: Math.min(99, Math.max(90, score)),
+    issuerName: project?.issuerName || "",
+    issueName: project?.shortName || "",
+    subscribeDate: project?.cutoffAt?.slice(0, 10) || "",
+    venue: project?.venue || "",
+    leadUnderwriter: project?.leadUnderwriter || "",
+    queriedInput: targets.inputNames[0] || targets.inputSecurityIds[0] || "",
+    tranches,
+  };
+}
+
+function buildIssueGroupFromDmRows(normalized, query, primary) {
+  const rows = rowsFromDm(primary?.raw);
+  if (!rows.length) return null;
+  const targets = issueGroupTargets(normalized, query);
+  const issuerTarget = normalizeIssuerMatchText(normalized?.issuerName || "");
+  const subscribeDate = normalized?.subscribeDate || "";
+  const families = targets.families;
+  const candidates = rows.filter((row) => {
+    const rowNames = rowShortNames(row);
+    const rowFamilyMatched = rowNames.some((name) => families.includes(issueShortNameFamily(name)));
+    if (!rowFamilyMatched) return false;
+    const rowIssuer = normalizeIssuerMatchText(pickFirstString(row, ["issuer_full_name", "issuerFullName", "issuer_name", "issuerName"]));
+    if (issuerTarget && rowIssuer && issuerMatchScore(rowIssuer, issuerTarget) < 90) return false;
+    const rowDate = pickFirstDateString(row, ["subscribe_date", "subscribeDate", "issue_start_date", "issueStartDate"]);
+    if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
+    return true;
+  });
+  const entries = uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId));
+  if (entries.length < 2) return null;
+  return {
+    groupId: issueGroupIdFromParts(normalized?.issuerName, entries[0]?.shortName || normalized?.shortName),
+    source: "dm",
+    confidence: 86,
+    issuerName: normalized?.issuerName || "",
+    issueName: issueShortNameFamily(entries[0]?.shortName || normalized?.shortName) || normalized?.shortName || "",
+    subscribeDate: normalized?.subscribeDate || "",
+    venue: normalized?.venue || "",
+    leadUnderwriter: normalized?.leadUnderwriter || "",
+    queriedInput: query?.shortName || query?.securityId || "",
+    tranches: entries.map((entry) => cleanIssueTranche({
+      shortName: entry.shortName,
+      securityId: entry.securityId,
+      fullName: entry.fullName,
+      tenor: entry.durationText,
+      planScale: entry.planScale,
+      actualScale: entry.actualScale,
+      inquiryRange: entry.inquiryRange,
+      couponRate: entry.couponRate,
+      status: inferIssueTrancheStatus(entry, { groupHasIssued: entries.some(entryHasIssuedFields), projectResultConfirmed: false }),
+      statusReason: issueTrancheStatusReason(inferIssueTrancheStatus(entry, { groupHasIssued: entries.some(entryHasIssuedFields), projectResultConfirmed: false })),
+      source: "dm",
+      isQueriedInput: entryMatchesTargets(entry, targets.inputNames, targets.inputSecurityIds),
+      isDmMatched: entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds),
+    })),
+  };
+}
+
+function dmRowIssueEntry(row) {
+  const planWan = numberFromRow(row, ["plan_issue_amount", "planIssueAmount"]);
+  const actualWan = numberFromRow(row, ["actu_issue_amount", "actuIssueAmount", "actu_iss_amut", "actuIssAmut", "new_size", "newSize"]);
+  const couponRate = numberFromRow(row, ["coupon_rate", "couponRate", "issue_rate", "issueRate", "winning_rate", "winningRate"]);
+  return {
+    shortName: pickFirstString(row, ["sec_short_name", "secShortName"]),
+    securityId: pickFirstString(row, ["security_id", "securityId"]),
+    fullName: pickFirstString(row, ["sec_full_name", "secFullName"]),
+    durationText: pickFirstString(row, ["bond_issue_tenor", "bondIssueTenor", "bond_matu", "bondMatu"]),
+    planScale: Number.isFinite(planWan) ? round(planWan / 10000, 4) : null,
+    actualScale: Number.isFinite(actualWan) ? round(actualWan / 10000, 4) : null,
+    inquiryRange: normalizeInquiryRange(pickFirstString(row, ["subscribe_rate", "subscribeRate"])),
+    couponRate,
+  };
+}
+
+function issueGroupTargets(normalized, query) {
+  const inputNames = uniqueStrings([query?.shortName]);
+  const normalizedNames = uniqueStrings([normalized?.shortName, normalized?.fullName]);
+  const names = uniqueStrings([...inputNames, ...normalizedNames]);
+  const inputSecurityIds = uniqueStrings([query?.securityId].map(normalizeSecurityId));
+  const normalizedSecurityIds = uniqueStrings([normalized?.securityId].map(normalizeSecurityId));
+  const securityIds = uniqueStrings([...inputSecurityIds, ...normalizedSecurityIds]);
+  return {
+    inputNames,
+    normalizedNames,
+    names,
+    inputSecurityIds,
+    normalizedSecurityIds,
+    securityIds,
+    issuerTargets: uniqueStrings([normalized?.issuerName, normalized?.fullName]),
+    families: uniqueStrings(names.flatMap((name) => splitCombinedShortNames(name).map(issueShortNameFamily))),
+  };
+}
+
+function projectIssueEntries(project) {
+  const entries = [];
+  for (const tranche of project?.tranches || []) {
+    entries.push({
+      shortName: tranche?.shortName || "",
+      securityId: tranche?.securityId || tranche?.security_id || tranche?.securityCode || tranche?.bondCode || tranche?.code || "",
+      durationText: tranche?.durationText || "",
+      planScale: numberOrNull(tranche?.planScale),
+      actualScale: numberOrNull(tranche?.issueScale),
+      inquiryLow: numberOrNull(tranche?.inquiryLow),
+      inquiryHigh: numberOrNull(tranche?.inquiryHigh),
+      couponRate: numberOrNull(tranche?.winningRate ?? tranche?.couponRate),
+      winningAmountWan: numberOrNull(tranche?.winningAmountWan),
+    });
+  }
+  const knownNames = new Set(entries.map((entry) => normalizeLookupName(entry.shortName)).filter(Boolean));
+  const projectShortNameParts = splitCombinedShortNames(project?.shortName);
+  const extraNames = uniqueStrings([
+    ...(project?.shortNames || []),
+    ...projectShortNameParts,
+    projectShortNameParts.length ? "" : project?.shortName,
+  ]);
+  for (const name of extraNames) {
+    const normalizedName = normalizeLookupName(name);
+    if (normalizedName && !knownNames.has(normalizedName)) {
+      entries.push({ shortName: name, securityId: "", durationText: "", planScale: null, actualScale: null });
+      knownNames.add(normalizedName);
+    }
+  }
+  return uniqueIssueEntries(entries);
+}
+
+function uniqueIssueEntries(entries) {
+  const seen = new Set();
+  const result = [];
+  for (const entry of entries) {
+    const key = `${normalizeLookupName(entry.shortName)}|${normalizeSecurityId(entry.securityId)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
+}
+
+function mergeIssueGroups(primaryGroup, secondaryGroup) {
+  if (!primaryGroup || !secondaryGroup) return null;
+  const mergedTranches = [...primaryGroup.tranches];
+  for (const secondary of secondaryGroup.tranches || []) {
+    const index = mergedTranches.findIndex((item) => issueTranchesMatch(item, secondary));
+    if (index >= 0) {
+      mergedTranches[index] = {
+        ...secondary,
+        ...mergedTranches[index],
+        securityId: mergedTranches[index].securityId || secondary.securityId,
+        fullName: mergedTranches[index].fullName || secondary.fullName,
+        tenor: mergedTranches[index].tenor || secondary.tenor,
+        planScale: mergedTranches[index].planScale ?? secondary.planScale,
+        actualScale: mergedTranches[index].actualScale ?? secondary.actualScale,
+        inquiryRange: mergedTranches[index].inquiryRange || secondary.inquiryRange,
+        couponRate: mergedTranches[index].couponRate ?? secondary.couponRate,
+        status: mergedTranches[index].status === "unknown" ? secondary.status : mergedTranches[index].status,
+        isQueriedInput: Boolean(mergedTranches[index].isQueriedInput || secondary.isQueriedInput),
+        isDmMatched: Boolean(mergedTranches[index].isDmMatched || secondary.isDmMatched),
+        source: mergedTranches[index].source === secondary.source ? mergedTranches[index].source : "mixed",
+      };
+    } else {
+      mergedTranches.push(secondary);
+    }
+  }
+  return {
+    ...primaryGroup,
+    source: "mixed",
+    confidence: Math.max(primaryGroup.confidence || 0, secondaryGroup.confidence || 0),
+    tranches: mergedTranches,
+  };
+}
+
+function issueTranchesMatch(a, b) {
+  if (a?.securityId && b?.securityId && securityIdMatches(a.securityId, normalizeSecurityId(b.securityId))) return true;
+  const aName = normalizeLookupName(a?.shortName);
+  const bName = normalizeLookupName(b?.shortName);
+  return Boolean(aName && bName && aName === bName);
+}
+
+function entryMatchesTargets(entry, names, securityIds) {
+  const securityId = normalizeSecurityId(entry?.securityId);
+  if (securityId && securityIds.some((target) => securityIdMatches(securityId, target))) return true;
+  const name = normalizeLookupName(entry?.shortName);
+  return Boolean(name && names.some((target) => normalizeLookupName(target) === name));
+}
+
+function shouldExposeIssueGroup(group, query, normalized) {
+  if (!group?.tranches?.length) return false;
+  if (group.tranches.length >= 2) return true;
+  if (group.tranches.some((tranche) => tranche.status === "reallocated")) return true;
+  const inputName = normalizeLookupName(query?.shortName);
+  const normalizedName = normalizeLookupName(normalized?.shortName);
+  return Boolean(inputName && normalizedName && inputName !== normalizedName);
+}
+
+function inferIssueTrancheStatus(entry, { groupHasIssued, projectResultConfirmed }) {
+  if (entryHasIssuedFields(entry)) return "issued";
+  if (groupHasIssued && projectResultConfirmed) return "reallocated";
+  return "unknown";
+}
+
+function entryHasIssuedFields(entry) {
+  return Boolean(
+    normalizeSecurityId(entry?.securityId)
+    || Number.isFinite(numberOrNull(entry?.actualScale))
+    || Number.isFinite(numberOrNull(entry?.couponRate))
+    || Number.isFinite(numberOrNull(entry?.winningAmountWan)) && numberOrNull(entry?.winningAmountWan) > 0,
+  );
+}
+
+function issueTrancheStatusReason(status) {
+  if (status === "issued") return "已取得发行结果字段";
+  if (status === "reallocated") return "同组其他期限已有发行结果，本期限未见发行结果，可能全额回拨或未发行";
+  return "已识别同次发行关系，发行结果待确认";
+}
+
+function cleanIssueTranche(tranche) {
+  return {
+    shortName: tranche.shortName || "",
+    securityId: tranche.securityId || "",
+    fullName: tranche.fullName || "",
+    tenor: tranche.tenor || "",
+    planScale: numberOrNull(tranche.planScale),
+    actualScale: numberOrNull(tranche.actualScale),
+    inquiryRange: tranche.inquiryRange || "",
+    couponRate: numberOrNull(tranche.couponRate),
+    status: tranche.status || "unknown",
+    statusReason: tranche.statusReason || "",
+    source: tranche.source || "",
+    isQueriedInput: Boolean(tranche.isQueriedInput),
+    isDmMatched: Boolean(tranche.isDmMatched),
+  };
+}
+
+function splitCombinedShortNames(value = "") {
+  const text = String(value || "").trim();
+  if (!text || !text.includes("/")) return text ? [text] : [];
+  const parts = text.split("/").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return parts;
+  const first = parts[0];
+  const numberBase = first.match(/^(.*?)(\d{1,3})$/);
+  if (numberBase && parts.slice(1).every((part) => /^\d{1,3}$/.test(part))) {
+    const width = numberBase[2].length;
+    return [first, ...parts.slice(1).map((part) => `${numberBase[1]}${part.padStart(width, "0")}`)];
+  }
+  const letterBase = first.match(/^(.*?)([A-Z])$/i);
+  if (letterBase && parts.slice(1).every((part) => /^[A-Z]$/i.test(part))) {
+    return [first, ...parts.slice(1).map((part) => `${letterBase[1]}${part.toUpperCase()}`)];
+  }
+  return parts;
+}
+
+function issueShortNameFamily(value = "") {
+  const names = splitCombinedShortNames(value);
+  const text = normalizeLookupName(names[0] || value);
+  if (!text) return "";
+  const letter = text.match(/^(.*\d)[A-Z]$/i);
+  if (letter) return letter[1];
+  const twoDigits = text.match(/^(.*\D)(\d{2})$/);
+  if (twoDigits) return twoDigits[1];
+  const letterDigit = text.match(/^(.*[A-Z])\d$/i);
+  if (letterDigit) return letterDigit[1];
+  return text;
+}
+
+function projectFullText(project) {
+  return normalizeLookupName([
+    project?.shortName,
+    project?.issuerName,
+    project?.sourceText,
+    project?.opinion,
+  ].filter(Boolean).join(" "));
+}
+
+function formatIssueGroupRange(low, high) {
+  return Number.isFinite(numberOrNull(low)) && Number.isFinite(numberOrNull(high))
+    ? `${formatDecimal(low)}-${formatDecimal(high)}`
+    : "";
+}
+
+function issueGroupIdFromParts(...parts) {
+  return normalizeLookupName(parts.filter(Boolean).join("-")).slice(0, 80);
+}
+
+function issueGroupDiagnostic(issueGroup) {
+  if (!issueGroup) return { found: false };
+  return {
+    found: true,
+    source: issueGroup.source,
+    confidence: issueGroup.confidence,
+    trancheCount: issueGroup.tranches?.length || 0,
+    statuses: (issueGroup.tranches || []).map((tranche) => ({
+      shortName: tranche.shortName,
+      status: tranche.status,
+      source: tranche.source,
+    })),
+  };
+}
+
 function ratingDiagnostic(original, dmDiscovery, issuerFallback, enriched, hasDb) {
   const fields = ["subjectRating", "ratingAgency", "impliedRating"];
   const filledFromDm = fields.filter((field) => Boolean(original?.[field]));
@@ -692,6 +1069,12 @@ function numberFromRow(row, keys) {
     if (Number.isFinite(value)) return value;
   }
   return null;
+}
+
+function numberOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function normalizeInquiryRange(value = "") {
