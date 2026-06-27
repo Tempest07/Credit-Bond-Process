@@ -548,6 +548,62 @@ test("DM lookup does not fall back to the first primary row when no row matches"
   }
 });
 
+test("DM no-result response includes close short-name suggestions", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [
+          {
+            security_id: "012689999.IB",
+            sec_short_name: "26MISSNG",
+            issuer_full_name: "Missing Letter Issuer",
+            bond_issue_tenor: "270D",
+            plan_issue_amount: 30000,
+            subscribe_rate: "1.200000 ~ 1.800000",
+            subscribe_date: 1782662400000,
+          },
+          {
+            security_id: "012680000.IB",
+            sec_short_name: "18UNRELATED",
+            issuer_full_name: "Unrelated Issuer",
+          },
+        ],
+      };
+    } else {
+      throw new Error("company lookup should not run without a matched issuer");
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26MISSING&startDate=2026-06-12&endDate=2026-07-11", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.noResult, true);
+    assert.equal(payload.suggestions.length, 1);
+    assert.equal(payload.suggestions[0].shortName, "26MISSNG");
+    assert.equal(payload.suggestions[0].issuerName, "Missing Letter Issuer");
+    assert.equal(payload.suggestions[0].issueScaleYi, 3);
+    assert.equal(payload.suggestions[0].inquiryRange, "1.2-1.8");
+    assert.ok(payload.suggestions[0].score >= 80);
+    assert.equal(payload.diagnostic.noResult.suggestionCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup still accepts direct encrypted string responses", () => {
   const secret = "1234567890abcdef";
   const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data: { ok: true } }), secret);

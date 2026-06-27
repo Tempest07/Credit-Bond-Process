@@ -142,19 +142,28 @@ function hasMatchedDmLookupResult(basic, primary) {
 }
 
 function dmNoResultPayload({ shortName, securityId, basic, primary }) {
+  const suggestions = closestDmLookupSuggestions({
+    shortName,
+    securityId,
+    rows: rowsFromDm(primary?.raw),
+  });
   return {
     ok: false,
     noResult: true,
     error: "未查询到匹配债券",
-    hint: "请确认债券简称、债券代码或查询日期窗口；DM 接口已返回，但没有匹配到该债券。",
+    hint: suggestions.length
+      ? "请确认债券简称、债券代码或查询日期窗口；下方已列出相近候选，可点击继续查询。"
+      : "请确认债券简称、债券代码或查询日期窗口；DM 接口已返回，但没有匹配到该债券。",
     query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
     normalized: null,
     issueGroup: null,
+    suggestions,
     diagnostic: {
       noResult: {
         basicRows: (basic?.rows || []).length,
         matchedPrimaryRows: (primary?.rows || []).length,
         rawPrimaryRows: rowsFromDm(primary?.raw).length,
+        suggestionCount: suggestions.length,
         reason: "DM basic-info returned no row and primary-data had no row matching the requested short name or security id.",
       },
     },
@@ -166,6 +175,121 @@ function dmNoResultPayload({ shortName, securityId, basic, primary }) {
       dmRatingDiscovery: {},
     },
   };
+}
+
+function closestDmLookupSuggestions({ shortName, securityId, rows }) {
+  const bestByKey = new Map();
+  for (const row of rows || []) {
+    const score = dmLookupSuggestionScore(row, { shortName, securityId });
+    if (score < 35) continue;
+    const suggestion = dmLookupSuggestionFromRow(row, score);
+    if (!suggestion.shortName && !suggestion.securityId) continue;
+    const key = `${normalizeLookupName(suggestion.shortName)}|${normalizeSecurityId(suggestion.securityId)}`;
+    if (!bestByKey.has(key) || score > bestByKey.get(key).score) {
+      bestByKey.set(key, suggestion);
+    }
+  }
+  return [...bestByKey.values()]
+    .sort((left, right) => right.score - left.score || String(left.shortName).localeCompare(String(right.shortName), "zh-Hans-CN"))
+    .slice(0, 5);
+}
+
+function dmLookupSuggestionScore(row, query) {
+  const queryName = normalizeLookupName(query?.shortName);
+  const querySecurityId = normalizeSecurityId(query?.securityId);
+  let score = 0;
+  if (queryName) {
+    for (const name of rowShortNames(row)) {
+      score = Math.max(score, Math.round(100 * stringSimilarity(queryName, normalizeLookupName(name))));
+    }
+  }
+  if (querySecurityId) {
+    const queryCode = stripSecuritySuffix(querySecurityId);
+    for (const securityId of rowSecurityIds(row)) {
+      const candidateCode = stripSecuritySuffix(normalizeSecurityId(securityId));
+      score = Math.max(score, Math.round(100 * stringSimilarity(queryCode, candidateCode)));
+    }
+  }
+  return score;
+}
+
+function dmLookupSuggestionFromRow(row, score) {
+  const scaleWan = numberFromRow(row, ["plan_issue_amount", "planIssueAmount"])
+    ?? numberFromRow(row, ["actu_issue_amount", "actuIssueAmount"]);
+  return {
+    shortName: pickFirstString(row, ["sec_short_name", "secShortName"]),
+    securityId: pickFirstString(row, ["security_id", "securityId"]),
+    fullName: pickFirstString(row, ["sec_full_name", "secFullName"]),
+    issuerName: pickFirstString(row, ["issuer_full_name", "issuerFullName", "issuer_name", "issuerName"]),
+    tenor: pickFirstString(row, ["bond_issue_tenor", "bondIssueTenor", "bond_matu", "bondMatu"]),
+    issueScaleYi: Number.isFinite(scaleWan) ? round(scaleWan / 10000, 4) : null,
+    inquiryRange: normalizeInquiryRange(pickFirstString(row, ["subscribe_rate", "subscribeRate"])),
+    subscribeDate: pickFirstDateString(row, ["subscribe_date", "subscribeDate", "issue_start_date", "issueStartDate"]),
+    issueStatus: pickFirstString(row, ["issue_status_desc", "issueStatusDesc"]),
+    score,
+  };
+}
+
+function stringSimilarity(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const maxLength = Math.max(a.length, b.length);
+  const minLength = Math.min(a.length, b.length);
+  let score = 0;
+  if (a.includes(b) || b.includes(a)) score = Math.max(score, 0.7 + (minLength / maxLength) * 0.2);
+  score = Math.max(score, commonPrefixLength(a, b) / maxLength);
+  score = Math.max(score, diceCoefficient(a, b));
+  score = Math.max(score, 1 - levenshteinDistance(a, b) / maxLength);
+  return Math.max(0, Math.min(1, score));
+}
+
+function commonPrefixLength(left, right) {
+  let index = 0;
+  while (index < left.length && index < right.length && left[index] === right[index]) index += 1;
+  return index;
+}
+
+function diceCoefficient(left, right) {
+  const a = bigrams(left);
+  const b = bigrams(right);
+  if (!a.length || !b.length) return left[0] === right[0] ? 0.2 : 0;
+  const counts = new Map();
+  for (const item of a) counts.set(item, (counts.get(item) || 0) + 1);
+  let overlap = 0;
+  for (const item of b) {
+    const count = counts.get(item) || 0;
+    if (count > 0) {
+      overlap += 1;
+      counts.set(item, count - 1);
+    }
+  }
+  return (2 * overlap) / (a.length + b.length);
+}
+
+function bigrams(value) {
+  const chars = [...String(value || "")];
+  if (chars.length < 2) return chars;
+  return chars.slice(0, -1).map((char, index) => `${char}${chars[index + 1]}`);
+}
+
+function levenshteinDistance(left, right) {
+  const a = [...String(left || "")];
+  const b = [...String(right || "")];
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    const current = [i + 1];
+    for (let j = 0; j < b.length; j += 1) {
+      current[j + 1] = Math.min(
+        current[j] + 1,
+        previous[j + 1] + 1,
+        previous[j] + (a[i] === b[j] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[b.length] || 0;
 }
 
 function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {

@@ -241,6 +241,16 @@ label[data-recognition-status="attention"] textarea {
 .dm-normalized-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .dm-normalized-item.empty-field { background: var(--panel-soft); }
 .dm-normalized-item.empty-field strong { color: var(--muted); font-weight: 700; }
+.dm-no-result { display: grid; gap: 10px; grid-column: 1 / -1; min-width: 0; padding: 14px; border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, var(--warning-soft), #fff); }
+.dm-no-result strong { color: var(--warning); font-size: 13px; }
+.dm-no-result p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
+.dm-no-result small { color: var(--muted); font-size: 10px; }
+.dm-suggestion-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dm-suggestion-card { display: grid; gap: 5px; min-width: 0; padding: 10px; border: 1px solid color-mix(in srgb, var(--warning) 24%, var(--line)); border-radius: 7px; color: inherit; background: #fff; text-align: left; }
+.dm-suggestion-card:hover { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); background: var(--panel-soft); }
+.dm-suggestion-card:focus-visible { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.dm-suggestion-card span { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 900; }
+.dm-suggestion-card small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 1.55; }
 .dm-issue-group-panel[hidden] { display: none; }
 .dm-issue-group-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .dm-issue-tranche { display: grid; gap: 7px; width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: #fff; text-align: left; }
@@ -634,7 +644,7 @@ label[data-recognition-status="attention"] textarea {
     min-width: 0;
     max-width: 100%;
   }
-  .field-grid, .rules-grid, .secondary-summary-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list { grid-template-columns: 1fr; }
+  .field-grid, .rules-grid, .secondary-summary-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list { grid-template-columns: 1fr; }
   .tranche-inquiry-row { grid-template-columns: 1fr; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
   .tranche-grid .span-3 { grid-column: span 1; }

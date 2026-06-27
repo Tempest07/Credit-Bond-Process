@@ -3204,6 +3204,14 @@ function bindDmTest() {
     $("#dmLookupInput").value = query;
     await runDmLookup();
   });
+  $("#dmNormalizedOutput").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-dm-suggestion-query]");
+    if (!button) return;
+    const query = button.dataset.dmSuggestionQuery?.trim();
+    if (!query) return;
+    $("#dmLookupInput").value = query;
+    await runDmLookup();
+  });
 }
 
 async function runDmLookup() {
@@ -3236,7 +3244,8 @@ async function runDmLookup() {
       payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
     }
     await renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs });
-    showToast(payload.ok ? "DM 查询成功。" : payload.noResult ? "DM 无结果。" : "DM 查询失败，请看诊断信息。");
+    const hasSuggestions = Array.isArray(payload.suggestions) && payload.suggestions.length > 0;
+    showToast(payload.ok ? "DM 查询成功。" : payload.noResult ? (hasSuggestions ? "DM 无结果，可查看相近候选。" : "DM 无结果。") : "DM 查询失败，请看诊断信息。");
   } catch (error) {
     const elapsedMs = Math.round(performance.now() - startedAt);
     await renderDmLookupResult({
@@ -3288,7 +3297,7 @@ async function renderDmLookupResult(payload) {
   $("#dmLookupStatus").textContent = statusParts.join(" · ");
   $("#dmLookupStatus").className = `status-badge ${ok ? "" : "warning"}`;
 
-  renderDmNormalized(enrichedPayload?.normalized || null);
+  renderDmNormalized(enrichedPayload || null);
   renderDmIssueGroup(enrichedPayload?.issueGroup || enrichedPayload?.normalized?.issueGroup || null);
   renderDmDiagnostic(enrichedPayload);
   renderDmCandidates(enrichedPayload?.fieldCandidates || []);
@@ -3523,7 +3532,7 @@ function dmNormalizedSourceBadge(normalized, key, isMissing) {
   };
 }
 
-function renderDmNormalized(normalized) {
+function renderDmNormalized(payload) {
   const fields = [
     ["securityId", "债券代码"],
     ["shortName", "债券简称"],
@@ -3543,6 +3552,15 @@ function renderDmNormalized(normalized) {
     ["subscribeTime", "簿记时间"],
     ["paymentDate", "缴款日"],
   ];
+  if (!payload) {
+    $("#dmNormalizedOutput").innerHTML = `<div class="empty">暂无结构化字段。</div>`;
+    return;
+  }
+  if (payload.noResult) {
+    renderDmNoResult(payload);
+    return;
+  }
+  const normalized = payload.normalized || payload;
   if (!normalized) {
     $("#dmNormalizedOutput").innerHTML = `<div class="empty">暂无结构化字段。</div>`;
     return;
@@ -3562,6 +3580,40 @@ function renderDmNormalized(normalized) {
       </div>
     `;
   }).join("");
+}
+
+function renderDmNoResult(payload) {
+  const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
+  $("#dmNormalizedOutput").innerHTML = `
+    <div class="dm-no-result">
+      <strong>${escapeHtml(payload?.error || "未查询到匹配债券")}</strong>
+      <p>${escapeHtml(payload?.hint || "请确认债券简称、债券代码或查询日期窗口。")}</p>
+      ${suggestions.length ? `
+        <div class="dm-suggestion-list">
+          ${suggestions.map(renderDmSuggestion).join("")}
+        </div>
+      ` : `<small>暂无相近候选。</small>`}
+    </div>
+  `;
+}
+
+function renderDmSuggestion(item) {
+  const query = item.shortName || item.securityId || "";
+  const facts = [
+    item.securityId ? `代码 ${item.securityId}` : "",
+    item.issuerName || "",
+    item.tenor ? `期限 ${item.tenor}` : "",
+    Number.isFinite(numberOrNull(item.issueScaleYi)) ? `规模 ${formatNumber(item.issueScaleYi)}亿` : "",
+    item.inquiryRange ? `区间 ${item.inquiryRange}` : "",
+    item.subscribeDate ? `日期 ${item.subscribeDate}` : "",
+    item.issueStatus || "",
+  ].filter(Boolean);
+  return `
+    <button class="dm-suggestion-card" type="button" data-dm-suggestion-query="${escapeAttribute(query)}" aria-label="查询 ${escapeAttribute(query || "该候选")}">
+      <span>${escapeHtml(item.shortName || item.securityId || "未命名候选")}</span>
+      <small>${escapeHtml(facts.join(" · ") || "点击使用该候选继续查询")}</small>
+    </button>
+  `;
 }
 
 function renderDmIssueGroup(issueGroup) {
