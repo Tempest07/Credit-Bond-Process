@@ -46,6 +46,20 @@ test("creates a project ledger record with one tranche per bond variety", () => 
   assert.deepEqual(record.tranches.map((item) => item.pricingRate), [1.7, 1.91]);
 });
 
+test("preserves rating fields on project ledger records", () => {
+  const record = createProjectRecord({
+    shortName: "26TESTCP001",
+    issuerName: "Test Issuer",
+    subjectRating: "aa+",
+    ratingAgency: "Agency One",
+    hiddenRating: "aa",
+  }, null, { opinion: "ok" });
+
+  assert.equal(record.subjectRating, "AA+");
+  assert.equal(record.ratingAgency, "Agency One");
+  assert.equal(record.hiddenRating, "AA");
+});
+
 test("fills missing comprehensive pricing from project brief guidance prices", () => {
   const project = normalizeProjectRecord({
     shortName: "26测试MTN001A/B",

@@ -235,6 +235,81 @@ test("DM lookup fills missing ratings from the issuer database", async () => {
   }
 });
 
+test("DM lookup fills missing ratings from historical D1 project text", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "042680222.IB",
+        sec_short_name: "26陕西建工CP005",
+        sec_full_name: "陕西建工控股集团有限公司2026年度第五期短期融资券",
+        issuer_name: "陕西建工控股集团有限公司",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [{
+          security_id: "042680222.IB",
+          sec_short_name: "26陕西建工CP005",
+          issuer_full_name: "陕西建工控股集团有限公司",
+          bond_issue_tenor: "365D",
+          plan_issue_amount: 50000,
+        }],
+      };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "陕西建工控股集团有限公司" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                shortName: "26陕西建工CP005",
+                issuerName: "陕西建工控股集团有限公司",
+                sourceText: "26陕西建工CP005 牵头 西安分行\n365D 规模5亿 AAA(中诚信国际)/隐含AA+\n询价区间2.95-3.95 银行间 兴业银行",
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26%E9%99%95%E8%A5%BF%E5%BB%BA%E5%B7%A5CP005", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.subjectRating, "AAA");
+    assert.equal(payload.normalized.ratingAgency, "中诚信国际");
+    assert.equal(payload.normalized.impliedRating, "AA+");
+    assert.deepEqual(payload.normalized.ratingSource, {
+      subjectRating: "issuer-db",
+      ratingAgency: "issuer-db",
+      impliedRating: "issuer-db",
+    });
+    assert.equal(payload.diagnostic.rating.matchedBy, "26陕西建工CP005");
+    assert.equal(payload.diagnostic.rating.matchedIssuer, "陕西建工控股集团有限公司");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup matches primary cross-market aliases before normalization", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

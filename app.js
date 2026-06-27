@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-dm-rating-fallback";
+} from "./core.js?v=20260627-dm-cloud-rating";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-dm-rating-fallback";
+} from "./lifecycle.js?v=20260627-dm-cloud-rating";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-dm-rating-fallback";
+} from "./history-parser.js?v=20260627-dm-cloud-rating";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-dm-rating-fallback";
+} from "./protocol-transfer.js?v=20260627-dm-cloud-rating";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-dm-rating-fallback";
+} from "./secondary-inventory.js?v=20260627-dm-cloud-rating";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -3227,11 +3227,11 @@ async function runDmLookup() {
     } catch {
       payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
     }
-    renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs });
+    await renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs });
     showToast(payload.ok ? "DM 查询成功。" : "DM 查询失败，请看诊断信息。");
   } catch (error) {
     const elapsedMs = Math.round(performance.now() - startedAt);
-    renderDmLookupResult({
+    await renderDmLookupResult({
       ok: false,
       error: error.message || "DM 查询请求失败",
       diagnostic: { responsePreview: "浏览器请求失败，未收到接口响应。" },
@@ -3263,8 +3263,8 @@ function setDmLookupBusy(isBusy) {
   $("#dmLookupButton").textContent = isBusy ? "查询中..." : "查询 DM";
 }
 
-function renderDmLookupResult(payload) {
-  const enrichedPayload = enrichDmLookupWithLocalIssuer(payload);
+async function renderDmLookupResult(payload) {
+  const enrichedPayload = await enrichDmLookupWithLocalIssuer(payload);
   dmLastPayload = enrichedPayload;
   $("#dmLookupCopyButton").disabled = false;
 
@@ -3283,29 +3283,29 @@ function renderDmLookupResult(payload) {
   $("#dmRawOutput").textContent = JSON.stringify(enrichedPayload, null, 2);
 }
 
-function enrichDmLookupWithLocalIssuer(payload) {
+async function enrichDmLookupWithLocalIssuer(payload) {
   const normalized = payload?.normalized;
   if (!payload?.ok || !normalized) return payload;
   if (normalized.subjectRating && normalized.ratingAgency && normalized.impliedRating) return payload;
 
-  const issuer = findIssuerForDmNormalized(normalized);
-  if (!issuer) return payload;
+  const localRating = findLocalRatingForDmNormalized(normalized) || await findCloudRatingForDmNormalized(normalized);
+  if (!localRating) return payload;
 
   const nextNormalized = { ...normalized };
   const ratingSource = { ...(nextNormalized.ratingSource || {}) };
   let changed = false;
-  if (!nextNormalized.subjectRating && issuer.subjectRating) {
-    nextNormalized.subjectRating = issuer.subjectRating;
+  if (!nextNormalized.subjectRating && localRating.subjectRating) {
+    nextNormalized.subjectRating = localRating.subjectRating;
     ratingSource.subjectRating = "local-issuer-db";
     changed = true;
   }
-  if (!nextNormalized.ratingAgency && issuer.ratingAgency) {
-    nextNormalized.ratingAgency = issuer.ratingAgency;
+  if (!nextNormalized.ratingAgency && localRating.ratingAgency) {
+    nextNormalized.ratingAgency = localRating.ratingAgency;
     ratingSource.ratingAgency = "local-issuer-db";
     changed = true;
   }
-  if (!nextNormalized.impliedRating && issuer.hiddenRating) {
-    nextNormalized.impliedRating = issuer.hiddenRating;
+  if (!nextNormalized.impliedRating && localRating.hiddenRating) {
+    nextNormalized.impliedRating = localRating.hiddenRating;
     ratingSource.impliedRating = "local-issuer-db";
     changed = true;
   }
@@ -3318,10 +3318,99 @@ function enrichDmLookupWithLocalIssuer(payload) {
     diagnostic: {
       ...(payload.diagnostic || {}),
       localIssuerRating: {
-        matchedIssuer: issuer.legalName || "",
+        matchedIssuer: localRating.legalName || "",
+        matchedRecordType: localRating.recordType || "",
         filled: Object.keys(ratingSource).filter((key) => ratingSource[key] === "local-issuer-db"),
       },
     },
+  };
+}
+
+function findLocalRatingForDmNormalized(normalized) {
+  return findProjectRatingForDmNormalized(normalized) || findIssuerForDmNormalized(normalized);
+}
+
+async function findCloudRatingForDmNormalized(normalized) {
+  if (!getApiToken() && !isLocalApiMode()) return null;
+  try {
+    const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
+    if (!response.ok) return null;
+    const remote = await response.json();
+    if (!remote.data?.issuers) return null;
+    state = normalizeLoadedState(remote.data);
+    persistLocal();
+    return findLocalRatingForDmNormalized(normalized);
+  } catch {
+    return null;
+  }
+}
+
+function findProjectRatingForDmNormalized(normalized) {
+  const querySecurityId = normalizeDmSecurityId(normalized.securityId);
+  const queryNames = [normalized.shortName, normalized.fullName].filter(Boolean);
+  const issuerTargets = [normalized.issuerName, normalized.fullName].filter(Boolean);
+  let best = null;
+  for (const projectRecord of state.projects || []) {
+    const ratingFields = projectDmRatingFields(projectRecord);
+    if (!ratingFields.subjectRating && !ratingFields.ratingAgency && !ratingFields.hiddenRating) continue;
+    const codeScore = querySecurityId && projectDmSecurityIds(projectRecord).some((value) => normalizeDmSecurityId(value) === querySecurityId) ? 120 : 0;
+    const nameScore = projectDmShortNames(projectRecord).reduce((score, name) => {
+      const normalizedName = normalizeDmIssuerMatchText(name);
+      const coreName = dmIssuerCoreMatchText(name);
+      const matched = queryNames.reduce((innerScore, target) => Math.max(
+        innerScore,
+        dmIssuerMatchScore(normalizedName, normalizeDmIssuerMatchText(target), coreName, dmIssuerCoreMatchText(target)),
+      ), 0);
+      return Math.max(score, matched);
+    }, 0);
+    const issuerScore = [projectRecord.issuerName].filter(Boolean).reduce((score, name) => {
+      const normalizedName = normalizeDmIssuerMatchText(name);
+      const coreName = dmIssuerCoreMatchText(name);
+      const matched = issuerTargets.reduce((innerScore, target) => Math.max(
+        innerScore,
+        dmIssuerMatchScore(normalizedName, normalizeDmIssuerMatchText(target), coreName, dmIssuerCoreMatchText(target)),
+      ), 0);
+      return Math.max(score, matched);
+    }, 0);
+    const score = Math.max(codeScore, nameScore, issuerScore > 0 ? issuerScore - 20 : 0);
+    if (score > (best?.score || 0)) best = { projectRecord, ratingFields, score };
+  }
+  return best?.projectRecord ? {
+    legalName: best.projectRecord.issuerName || "",
+    subjectRating: best.ratingFields.subjectRating || "",
+    ratingAgency: best.ratingFields.ratingAgency || "",
+    hiddenRating: best.ratingFields.hiddenRating || "",
+    recordType: "project",
+  } : null;
+}
+
+function projectDmRatingFields(projectRecord) {
+  const parsed = parseProjectDmRatingText(`${projectRecord?.sourceText || ""}\n${projectRecord?.opinion || ""}\n${projectRecord?.notes || ""}`);
+  return {
+    subjectRating: String(projectRecord?.subjectRating || parsed.subjectRating || "").trim().toUpperCase(),
+    ratingAgency: String(projectRecord?.ratingAgency || parsed.ratingAgency || "").trim(),
+    hiddenRating: String(projectRecord?.hiddenRating || parsed.hiddenRating || "").trim().toUpperCase(),
+  };
+}
+
+function parseProjectDmRatingText(text = "") {
+  const value = String(text || "");
+  const ratingPattern = "(AAA|AA\\+|AA\\(2\\)|AA-|AA|A\\+|A-|A|BBB\\+|BBB-|BBB|BB\\+|BB-|BB|B\\+|B-|B)";
+  const compact = value.match(new RegExp(`${ratingPattern}\\s*[（(]\\s*([^）)\\n]+?)\\s*[）)]\\s*[/／]\\s*隐含\\s*${ratingPattern}`, "i"));
+  if (compact) {
+    return {
+      subjectRating: compact[1].toUpperCase(),
+      ratingAgency: compact[2].trim(),
+      hiddenRating: compact[3].toUpperCase(),
+    };
+  }
+  const subject = value.match(new RegExp(`主体(?:信用)?评级(?:为|[:：\\s])*${ratingPattern}(?:\\s*[（(]\\s*([^）)\\n]+?)\\s*[）)])?`, "i"));
+  const agency = value.match(/评级机构(?:为|[:：\s])*([^\s,，;；/／。]+)/);
+  const hidden = value.match(new RegExp(`(?:隐含|市场隐含评级)(?:评级)?(?:为|[:：\\s])*${ratingPattern}`, "i"));
+  return {
+    subjectRating: subject?.[1]?.toUpperCase() || "",
+    ratingAgency: subject?.[2]?.trim() || agency?.[1]?.trim() || "",
+    hiddenRating: hidden?.[1]?.toUpperCase() || "",
   };
 }
 
@@ -3386,6 +3475,28 @@ function dmIssuerCoreMatchText(value = "") {
     }
   }
   return text;
+}
+
+function normalizeDmSecurityId(value = "") {
+  return String(value || "").trim().toUpperCase();
+}
+
+function projectDmSecurityIds(projectRecord) {
+  return [
+    projectRecord.securityId,
+    projectRecord.security_id,
+    projectRecord.bondCode,
+    projectRecord.code,
+    ...(projectRecord.tranches || []).flatMap((tranche) => [tranche.securityId, tranche.security_id, tranche.bondCode, tranche.code]),
+  ].filter(Boolean);
+}
+
+function projectDmShortNames(projectRecord) {
+  return [
+    projectRecord.shortName,
+    ...(projectRecord.shortNames || []),
+    ...(projectRecord.tranches || []).map((tranche) => tranche.shortName),
+  ].filter(Boolean);
 }
 
 function renderDmNormalized(normalized) {

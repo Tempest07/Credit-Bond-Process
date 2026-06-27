@@ -327,11 +327,104 @@ async function lookupIssuerRatingFallback(db, normalized) {
   try {
     const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
     const data = row?.data ? JSON.parse(row.data) : null;
+    const projects = Array.isArray(data?.projects) ? data.projects : [];
+    const project = matchProjectForRating(normalized, projects);
+    if (project) return project;
     const issuers = Array.isArray(data?.issuers) ? data.issuers : [];
     return matchIssuerForRating(normalized, issuers);
   } catch {
     return null;
   }
+}
+
+function matchProjectForRating(normalized, projects) {
+  const querySecurityId = normalizeSecurityId(normalized?.securityId);
+  const queryNames = uniqueStrings([normalized?.shortName, normalized?.fullName])
+    .map((value) => ({ raw: value, normalized: normalizeIssuerMatchText(value) }));
+  const issuerTargets = uniqueStrings([normalized?.issuerName, normalized?.fullName])
+    .map((value) => ({ raw: value, normalized: normalizeIssuerMatchText(value) }));
+
+  let best = null;
+  for (const project of projects) {
+    const ratingFields = projectRatingFields(project);
+    if (!projectHasAnyRating(ratingFields)) continue;
+    const codeScore = querySecurityId && projectSecurityIds(project).some((value) => securityIdMatches(value, querySecurityId)) ? 120 : 0;
+    const nameScore = projectShortNames(project).reduce((score, name) => {
+      const normalizedName = normalizeIssuerMatchText(name);
+      const matched = queryNames.reduce((innerScore, target) => Math.max(innerScore, issuerMatchScore(normalizedName, target.normalized)), 0);
+      return Math.max(score, matched);
+    }, 0);
+    const issuerScore = uniqueStrings([project.issuerName]).reduce((score, name) => {
+      const normalizedName = normalizeIssuerMatchText(name);
+      const matched = issuerTargets.reduce((innerScore, target) => Math.max(innerScore, issuerMatchScore(normalizedName, target.normalized)), 0);
+      return Math.max(score, matched);
+    }, 0);
+    const score = Math.max(codeScore, nameScore, issuerScore > 0 ? issuerScore - 20 : 0);
+    if (score > (best?.score || 0)) best = { project, ratingFields, score };
+  }
+
+  if (!best?.project) return null;
+  return {
+    subjectRating: best.ratingFields.subjectRating || "",
+    ratingAgency: best.ratingFields.ratingAgency || "",
+    hiddenRating: best.ratingFields.hiddenRating || "",
+    legalName: best.project.issuerName || "",
+    matchedBy: best.project.shortName || "",
+    matchedTarget: normalized?.shortName || normalized?.securityId || "",
+    matchedRecordType: "project",
+  };
+}
+
+function projectHasAnyRating(project) {
+  return Boolean(project?.subjectRating || project?.ratingAgency || project?.hiddenRating || project?.impliedRating);
+}
+
+function projectRatingFields(project) {
+  const parsed = parseProjectRatingText(`${project?.sourceText || ""}\n${project?.opinion || ""}\n${project?.notes || ""}`);
+  return {
+    subjectRating: String(project?.subjectRating || parsed.subjectRating || "").trim().toUpperCase(),
+    ratingAgency: String(project?.ratingAgency || parsed.ratingAgency || "").trim(),
+    hiddenRating: String(project?.hiddenRating || project?.impliedRating || parsed.hiddenRating || "").trim().toUpperCase(),
+  };
+}
+
+function parseProjectRatingText(text = "") {
+  const value = String(text || "");
+  const ratingPattern = "(AAA|AA\\+|AA\\(2\\)|AA-|AA|A\\+|A-|A|BBB\\+|BBB-|BBB|BB\\+|BB-|BB|B\\+|B-|B)";
+  const compact = value.match(new RegExp(`${ratingPattern}\\s*[（(]\\s*([^）)\\n]+?)\\s*[）)]\\s*[/／]\\s*隐含\\s*${ratingPattern}`, "i"));
+  if (compact) {
+    return {
+      subjectRating: compact[1].toUpperCase(),
+      ratingAgency: compact[2].trim(),
+      hiddenRating: compact[3].toUpperCase(),
+    };
+  }
+  const subject = value.match(new RegExp(`主体(?:信用)?评级(?:为|[:：\\s])*${ratingPattern}(?:\\s*[（(]\\s*([^）)\\n]+?)\\s*[）)])?`, "i"));
+  const agency = value.match(/评级机构(?:为|[:：\s])*([^\s,，;；/／。]+)/);
+  const hidden = value.match(new RegExp(`(?:隐含|市场隐含评级)(?:评级)?(?:为|[:：\\s])*${ratingPattern}`, "i"));
+  return {
+    subjectRating: subject?.[1]?.toUpperCase() || "",
+    ratingAgency: subject?.[2]?.trim() || agency?.[1]?.trim() || "",
+    hiddenRating: hidden?.[1]?.toUpperCase() || "",
+  };
+}
+
+function projectSecurityIds(project) {
+  return uniqueStrings([
+    project?.securityId,
+    project?.security_id,
+    project?.bondCode,
+    project?.code,
+    ...(project?.tranches || []).flatMap((tranche) => [tranche.securityId, tranche.security_id, tranche.bondCode, tranche.code]),
+  ]);
+}
+
+function projectShortNames(project) {
+  return uniqueStrings([
+    project?.shortName,
+    ...(project?.shortNames || []),
+    ...(project?.tranches || []).map((tranche) => tranche.shortName),
+  ]);
 }
 
 function matchIssuerForRating(normalized, issuers) {
@@ -353,7 +446,7 @@ function matchIssuerForRating(normalized, issuers) {
       }
     }
   }
-  return best?.issuer ? { ...best.issuer, matchedBy: best.matchedBy, matchedTarget: best.matchedTarget } : null;
+  return best?.issuer ? { ...best.issuer, matchedBy: best.matchedBy, matchedTarget: best.matchedTarget, matchedRecordType: "issuer" } : null;
 }
 
 function issuerMatchScore(name, target) {
