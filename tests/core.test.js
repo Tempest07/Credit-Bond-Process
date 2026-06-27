@@ -254,12 +254,26 @@ test("caps overdue AA and AA(2) bonds", () => {
   assert.equal(calculateSuggestion({ ...privateBase, hiddenRating: "AA" }, issuer).suggestedRatio, 0);
 });
 
-test("uses the longest possible term for option and dual-tranche durations", () => {
-  assert.equal(durationToDays("3+2年期"), 5 * 365);
-  assert.equal(durationToDays("3+2/5+2年期"), 7 * 365);
+test("uses first exercise term for option and dual-tranche durations", () => {
+  assert.equal(durationToDays("3+2年期"), 3 * 365);
+  assert.equal(durationToDays("5+5+5年期"), 5 * 365);
+  assert.equal(durationToDays("3+2/5+2年期"), 5 * 365);
   const parsed = parseProjectBrief("26广城04 非我行主承 广州分行\n3+2/5+2年期 规模19亿 AAA(中诚信国际)/隐含AAA-\n询价区间1.5-2.5 上交所 中信证券");
-  assert.equal(parsed.durationDays, 7 * 365);
+  assert.equal(parsed.durationDays, 5 * 365);
   assert.equal(parsed.hiddenRating, "AAA-");
+});
+
+test("does not cap callable bonds by final maturity when first exercise fits credit term", () => {
+  const project = parseProjectBrief("26测试MTN001 非我行主承 广州分行\n3+2年期 规模10亿 AAA(联合资信)/隐含AA\n询价区间1.5-2.5 银行间 中信银行");
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "测试集团有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1095, rawText: "总行批20亿，公募，30%，3年" },
+  });
+
+  assert.equal(generated.suggestion.suggestedRatio, 30);
+  assert.match(generated.opinion, /发行期限3\+2年/);
+  assert.doesNotMatch(generated.warnings.join(""), /超授信期限/);
 });
 
 test("parses and generates interbank dual-tranche mutual-allocation projects", () => {

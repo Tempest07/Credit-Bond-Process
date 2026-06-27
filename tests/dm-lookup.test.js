@@ -85,6 +85,62 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
   }
 });
 
+test("DM lookup prefers callable tenor from basic bond fields over final issue tenor", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      assert.deepEqual(request.secShortNameList, ["26含权MTN001"]);
+      data = [{
+        security_id: "102681234.IB",
+        sec_short_name: "26含权MTN001",
+        sec_full_name: "含权测试集团有限公司2026年度第一期中期票据",
+        issuer_name: "含权测试集团有限公司",
+        bond_matu: "3+2Y",
+        special_item: "调整票面利率选择权、投资者回售选择权",
+        next_option_date: "2029-06-27",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [{
+          security_id: "102681234.IB",
+          sec_short_name: "26含权MTN001",
+          issuer_full_name: "含权测试集团有限公司",
+          bond_issue_tenor: "5Y",
+          plan_issue_amount: 50000,
+          subscribe_rate: "1.500000 ~ 2.000000",
+          subscribe_date: "2026-06-27",
+        }],
+      };
+    } else {
+      data = [{ com_full_name: "含权测试集团有限公司" }];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26%E5%90%AB%E6%9D%83MTN001", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.normalized.durationText, "3+2Y");
+    assert.equal(payload.normalized.durationSource, "bond_matu");
+    assert.equal(payload.normalized.specialItem, "调整票面利率选择权、投资者回售选择权");
+    assert.equal(payload.normalized.nextOptionDate, "2029-06-27");
+    assert.ok(payload.fieldCandidates.some((item) => item.key === "special_item"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup searches additional DM issuer data before falling back to D1", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

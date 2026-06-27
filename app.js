@@ -13,7 +13,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-dm-project-polish";
+} from "./core.js?v=20260627-option-tenor";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-dm-project-polish";
+} from "./lifecycle.js?v=20260627-option-tenor";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-dm-project-polish";
+} from "./history-parser.js?v=20260627-option-tenor";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-dm-project-polish";
+} from "./protocol-transfer.js?v=20260627-option-tenor";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,7 +70,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-dm-project-polish";
+} from "./secondary-inventory.js?v=20260627-option-tenor";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
@@ -4052,6 +4052,9 @@ function renderDmNormalized(payload) {
     ["fullName", "债券全称"],
     ["issuerName", "发行人"],
     ["durationText", "期限"],
+    ["durationSource", "期限来源"],
+    ["specialItem", "特殊条款"],
+    ["nextOptionDate", "下一行权日"],
     ["issueScaleYi", "规模（亿）"],
     ["inquiryRange", "询价区间"],
     ["venue", "发行场所"],
@@ -4081,7 +4084,7 @@ function renderDmNormalized(payload) {
   $("#dmNormalizedOutput").innerHTML = fields.map(([key, label]) => {
     const value = normalized[key];
     const isMissing = value === null || value === undefined || value === "";
-    const text = isMissing ? "未返回" : String(value);
+    const text = isMissing ? "未返回" : formatDmNormalizedFieldValue(key, value);
     const sourceBadge = dmNormalizedSourceBadge(normalized, key, isMissing);
     return `
       <div class="dm-normalized-item ${isMissing ? "empty-field" : ""} ${sourceBadge?.className === "cloud" ? "source-cloud" : ""}">
@@ -4093,6 +4096,18 @@ function renderDmNormalized(payload) {
       </div>
     `;
   }).join("");
+}
+
+function formatDmNormalizedFieldValue(key, value) {
+  if (key === "durationSource") {
+    return {
+      bond_matu: "基础资料：债券期限",
+      special_item: "基础资料：特殊条款",
+      next_option_date: "基础资料：下一行权日",
+      bond_issue_tenor: "发行数据：发行期限",
+    }[value] || String(value);
+  }
+  return String(value);
 }
 
 function renderDmNoResult(payload) {

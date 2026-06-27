@@ -44,10 +44,10 @@ export function durationToDays(value = "") {
   if (match) return Math.round(Number(match[1]) * 30);
   match = text.match(/^([\d.+/]+)\s*(Y|年)$/i);
   if (match) {
-    const longestYears = Math.max(...match[1].split("/").map((part) =>
-      part.split("+").reduce((sum, value) => sum + Number(value), 0),
+    const longestExerciseYears = Math.max(...match[1].split("/").map((part) =>
+      Number(part.split("+")[0]),
     ));
-    return Number.isFinite(longestYears) ? Math.round(longestYears * 365) : null;
+    return Number.isFinite(longestExerciseYears) ? Math.round(longestExerciseYears * 365) : null;
   }
   return null;
 }
@@ -1011,10 +1011,10 @@ function daysToTermText(days) {
 
 function formatDuration(value = "") {
   const text = String(value).trim().toUpperCase();
-  const match = text.match(/^(\d+(?:\.\d+)?)\s*(D|M|Y|天|月|年)$/i);
+  const match = text.match(/^(\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*)\s*(D|M|Y|天|月|年)$/i);
   if (!match) return text;
   const unit = { D: "天", M: "个月", Y: "年", 天: "天", 月: "个月", 年: "年" }[match[2].toUpperCase()] || match[2];
-  return `${formatNumber(match[1])}${unit}`;
+  return `${match[1].split("+").map((item) => formatNumber(item)).join("+")}${unit}`;
 }
 
 function trimEndingPunctuation(value) {

@@ -296,6 +296,7 @@ function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
   const basicRow = firstRow(basic);
   const primaryRow = bestPrimaryRow(primary, shortName, securityId);
   const companyRow = firstRow(company);
+  const resolvedDuration = resolveDmDurationText(primaryRow, basicRow);
   const issuerName = pickFirstString(primaryRow, ["issuer_full_name", "issuerFullName"])
     || pickFirstString(basicRow, ["issuer_name", "issuerName"])
     || pickFirstString(companyRow, ["com_full_name", "comFullName"]);
@@ -313,7 +314,10 @@ function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
     shortName: resolvedShortName,
     fullName: pickFirstString(primaryRow, ["sec_full_name", "secFullName"]) || pickFirstString(basicRow, ["sec_full_name", "secFullName"]),
     issuerName,
-    durationText: pickFirstString(primaryRow, ["bond_issue_tenor", "bondIssueTenor"]) || pickFirstString(basicRow, ["bond_matu", "bondMatu"]),
+    durationText: resolvedDuration.value,
+    durationSource: resolvedDuration.source,
+    specialItem: pickFirstString(basicRow, ["special_item", "specialItem"]),
+    nextOptionDate: pickFirstDateString(basicRow, ["next_option_date", "nextOptionDate"]),
     issueScaleYi: scaleYi,
     inquiryRange: normalizeInquiryRange(pickFirstString(primaryRow, ["subscribe_rate", "subscribeRate"])),
     venue: pickFirstString(primaryRow, ["tender_market_desc", "tenderMarketDesc"])
@@ -330,6 +334,76 @@ function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
     ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
     impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
   };
+}
+
+function resolveDmDurationText(primaryRow, basicRow) {
+  const primaryTenor = pickFirstString(primaryRow, ["bond_issue_tenor", "bondIssueTenor"]);
+  const basicTenor = pickFirstString(basicRow, ["bond_matu", "bondMatu"]);
+  const specialItem = pickFirstString(basicRow, ["special_item", "specialItem"]);
+  const unit = dmTenorUnit(primaryTenor) || dmTenorUnit(basicTenor) || "Y";
+  const explicitOptionTenor = normalizeDmOptionTenor(basicTenor, unit)
+    || normalizeDmOptionTenor(specialItem, unit);
+  if (explicitOptionTenor) return { value: explicitOptionTenor, source: basicTenor && normalizeDmOptionTenor(basicTenor, unit) ? "bond_matu" : "special_item" };
+
+  const inferred = inferDmOptionTenorFromDates(primaryTenor, primaryRow, basicRow);
+  if (inferred) return { value: inferred, source: "next_option_date" };
+  if (primaryTenor) return { value: primaryTenor, source: "bond_issue_tenor" };
+  if (basicTenor) return { value: basicTenor, source: "bond_matu" };
+  return { value: "", source: "" };
+}
+
+function normalizeDmOptionTenor(value = "", fallbackUnit = "Y") {
+  const text = String(value || "")
+    .replace(/＋/g, "+")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+  if (!text || !text.includes("+")) return "";
+  const match = text.match(/(\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?){1,})(D|M|Y|天|月|年)?(?:期)?/i);
+  if (!match) return "";
+  const unit = match[2] || fallbackUnit || "Y";
+  return `${match[1]}${unit.toUpperCase()}`;
+}
+
+function dmTenorUnit(value = "") {
+  const unit = String(value || "").trim().match(/(D|M|Y|天|月|年)(?:期)?$/i)?.[1] || "";
+  return unit ? unit.toUpperCase() : "";
+}
+
+function inferDmOptionTenorFromDates(primaryTenor, primaryRow, basicRow) {
+  const finalYears = simpleDmTenorYears(primaryTenor);
+  if (!Number.isFinite(finalYears) || finalYears <= 0) return "";
+  const optionDate = pickFirstDateString(basicRow, ["next_option_date", "nextOptionDate"]);
+  const startDate = pickFirstDateString(primaryRow, ["issue_start_date", "issueStartDate", "subscribe_date", "subscribeDate"])
+    || pickFirstDateString(basicRow, ["iss_start_date", "issStartDate", "inte_start_date", "inteStartDate"]);
+  const firstYears = yearsBetweenLocalDates(startDate, optionDate);
+  if (!Number.isFinite(firstYears) || firstYears <= 0 || firstYears >= finalYears) return "";
+  const first = roundToReasonableTenor(firstYears);
+  const remaining = roundToReasonableTenor(finalYears - first);
+  if (!Number.isFinite(first) || !Number.isFinite(remaining) || remaining <= 0) return "";
+  return `${formatTenorNumber(first)}+${formatTenorNumber(remaining)}Y`;
+}
+
+function simpleDmTenorYears(value = "") {
+  const match = String(value || "").trim().toUpperCase().match(/^(\d+(?:\.\d+)?)\s*(Y|年)$/i);
+  return match ? Number(match[1]) : null;
+}
+
+function yearsBetweenLocalDates(start, end) {
+  if (!start || !end) return null;
+  const startDate = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  return (endDate.getTime() - startDate.getTime()) / (365 * 24 * 60 * 60 * 1000);
+}
+
+function roundToReasonableTenor(value) {
+  if (!Number.isFinite(value)) return null;
+  const nearestHalf = Math.round(value * 2) / 2;
+  return Math.abs(value - nearestHalf) < 0.08 ? nearestHalf : round(value, 2);
+}
+
+function formatTenorNumber(value) {
+  return Number(value).toFixed(4).replace(/\.?0+$/, "");
 }
 
 async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }) {
@@ -785,7 +859,10 @@ function buildIssueGroupFromDmRows(normalized, query, primary) {
     if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
     return true;
   });
-  const entries = uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId));
+  const entries = uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId))
+    .map((entry) => entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds) && normalized?.durationText
+      ? { ...entry, durationText: normalized.durationText }
+      : entry);
   if (entries.length < 2) return null;
   return {
     groupId: issueGroupIdFromParts(normalized?.issuerName, entries[0]?.shortName || normalized?.shortName),
@@ -1209,7 +1286,7 @@ function collectFieldCandidates(rawItems) {
       for (const [key, value] of Object.entries(row || {})) {
         const valueText = String(value ?? "");
         const keyText = String(key);
-        if (/(rating|agency|credit|grade|level|implied|rate|评级|隐含|等级|级别|主体|机构)/i.test(`${keyText} ${valueText}`)) {
+        if (/(rating|agency|credit|grade|level|implied|rate|tenor|matu|option|special|评级|隐含|等级|级别|主体|机构|期限|条款|行权|回售|赎回)/i.test(`${keyText} ${valueText}`)) {
           candidates.push({ key, value });
         }
       }
