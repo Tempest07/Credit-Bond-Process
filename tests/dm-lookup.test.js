@@ -174,6 +174,15 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
             bond_type_desc: "公司债券",
           },
           {
+            security_id: "102600010.IB",
+            sec_short_name: "25青岛城投MTN010",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年度第十期中期票据",
+            issuer_name: "青岛城市建设投资集团有限公司",
+            remaining_tenor: "4.61Y+10.00Y",
+            bond_issue_tenor: "5+10Y",
+            bond_type_desc: "中期票据",
+          },
+          {
             security_id: "2520002.SH",
             sec_short_name: "25青岛城投私募01",
             sec_full_name: "青岛城市建设投资集团有限公司2025年非公开发行公司债券(第一期)",
@@ -181,6 +190,15 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
             remaining_tenor: "5Y",
             bond_issue_tenor: "5Y",
             bond_type_desc: "公司债券",
+          },
+          {
+            security_id: "102600999.IB",
+            sec_short_name: "25青岛城投MTN002",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年度第二期永续中期票据",
+            issuer_name: "青岛城市建设投资集团有限公司",
+            remaining_tenor: "4.61Y+10.00Y",
+            bond_issue_tenor: "5+NY",
+            bond_type_desc: "中期票据",
           },
         ],
         maxOffset: null,
@@ -199,6 +217,29 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
             special_item: "",
           };
         }
+        if (securityId === "102600010.IB") {
+          return {
+            security_id: securityId,
+            sec_short_name: "25青岛城投MTN010",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年度第十期中期票据",
+            remaining_tenor: "4.61Y+10.00Y",
+            bond_issue_tenor: "5+10Y",
+            bond_type_desc: "中期票据",
+            payment_order: "普通债权",
+            special_item: "调整票面利率选择权、投资者回售选择权",
+          };
+        }
+        if (securityId === "102600999.IB") {
+          return {
+            security_id: securityId,
+            sec_short_name: "25青岛城投MTN002",
+            sec_full_name: "青岛城市建设投资集团有限公司2025年度第二期中期票据",
+            remaining_tenor: "4.61Y+10.00Y",
+            bond_type_desc: "中期票据",
+            payment_order: "普通债权",
+            special_item: "发行人续期选择权、递延支付利息选择权",
+          };
+        }
         return {
           security_id: securityId,
           sec_short_name: securityId === "102600001.IB" ? "25青岛城投MTN001" : "25青岛城投私募01",
@@ -214,11 +255,17 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
     } else if (url.includes("/bond/market-data/date")) {
       assert.deepEqual(request.startDate, "2026-06-26");
       assert.ok(request.securityIdList.length <= 5);
+      assert.ok(request.securityIdList.includes("102600010.IB"));
+      assert.ok(!request.securityIdList.includes("102600999.IB"));
       data = request.securityIdList.map((securityId) => ({
         security_id: securityId,
-        sec_short_name: securityId === "2520001.SH" ? "25青岛城投KJ01" : "25青岛城投MTN001",
+        sec_short_name: securityId === "2520001.SH"
+          ? "25青岛城投KJ01"
+          : securityId === "102600010.IB"
+            ? "25青岛城投MTN010"
+            : "25青岛城投MTN001",
         issue_date: "2026-06-26",
-        cb_ytm: securityId === "2520001.SH" ? 2.46 : 2.5,
+        cb_ytm: securityId === "2520001.SH" ? 2.46 : securityId === "102600010.IB" ? 2.51 : 2.5,
         cb_yte: null,
         cb_reliability: "推荐",
       }));
@@ -244,6 +291,8 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
     assert.ok(payload.trancheSuggestions[0].method.includes("交易所科创债约4bp"));
     const techComparable = payload.trancheSuggestions[0].comparableItems.find((item) => item.shortName === "25青岛城投KJ01");
     assert.ok(techComparable);
+    assert.ok(payload.trancheSuggestions[0].comparableItems.some((item) => item.shortName === "25青岛城投MTN010"));
+    assert.ok(!payload.trancheSuggestions[0].comparableItems.some((item) => item.shortName === "25青岛城投MTN002"));
     assert.ok(techComparable.marketAdjustment > 0.03);
     assert.ok(payload.trancheSuggestions[0].center > 2.48 && payload.trancheSuggestions[0].center < 2.52);
     assert.ok(calls.some((url) => url.includes("/bond/market-data/date")));

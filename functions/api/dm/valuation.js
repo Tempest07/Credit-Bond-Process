@@ -413,6 +413,14 @@ function parseDate(value = "") {
 }
 
 function comparableProfile(source = {}) {
+  const tenorText = [
+    source.remaining_tenor,
+    source.remainingTenor,
+    source.bond_issue_tenor,
+    source.bondIssueTenor,
+    source.bond_matu,
+    source.bondMatu,
+  ].filter(Boolean).join(" ").toUpperCase();
   const text = [
     source.shortName,
     source.sec_short_name,
@@ -429,15 +437,26 @@ function comparableProfile(source = {}) {
     source.special_item,
     source.specialItem,
     source.durationText,
+    tenorText,
   ].filter(Boolean).join(" ").toUpperCase();
   return {
     bondClass: bondClassFromText(text),
     market: marketFromText(text),
     exchangeTech: marketFromText(text) === "exchange" && /科创|科技创新|创新创业|双创/.test(text),
-    perpetual: /永续|可续期|无固定期限|续期中票|PERP/.test(text),
+    perpetual: textHasPerpetualTerms(text) || tenorLooksPerpetual(tenorText),
     subordinated: /次级|二级资本|资本补充|TLAC|清偿顺序|劣后/.test(text),
     structured: /ABS|ABN|资产支持|可转债|可交换|REIT|项目收益/.test(text),
   };
+}
+
+function textHasPerpetualTerms(text = "") {
+  return /永续|可续期|无固定期限|续期中票|续期选择权|发行人续期|递延支付|利息递延|可递延|PERP/.test(text);
+}
+
+function tenorLooksPerpetual(text = "") {
+  const value = String(text || "").toUpperCase().replace(/\s+/g, "");
+  if (!value) return false;
+  return /\+\s*N/.test(value);
 }
 
 function profilesAreComparable(target, candidate) {
