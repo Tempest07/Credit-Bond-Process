@@ -540,6 +540,12 @@ label[data-recognition-status="attention"] textarea {
   .cloud-gate { grid-template-columns: 1fr; margin: 14px; text-align: center; }
   .cloud-orb { margin: 0 auto; }
   .cloud-pulse-lines { margin-right: auto; margin-left: auto; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select:not([multiple]),
+  textarea {
+    font-size: 16px;
+    line-height: 1.45;
+  }
   .field-grid, .rules-grid, .secondary-summary-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list { grid-template-columns: 1fr; }
   .tranche-inquiry-row { grid-template-columns: 1fr; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }

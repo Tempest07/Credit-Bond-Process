@@ -12,7 +12,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-dm-cloud-rating";
+} from "./core.js?v=20260627-dm-cloud-mobile";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -30,13 +30,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-dm-cloud-rating";
+} from "./lifecycle.js?v=20260627-dm-cloud-mobile";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-dm-cloud-rating";
+} from "./history-parser.js?v=20260627-dm-cloud-mobile";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -49,7 +49,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-dm-cloud-rating";
+} from "./protocol-transfer.js?v=20260627-dm-cloud-mobile";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -69,7 +69,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-dm-cloud-rating";
+} from "./secondary-inventory.js?v=20260627-dm-cloud-mobile";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const TOKEN_KEY = "credit-bond-process-api-token";
