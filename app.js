@@ -13,7 +13,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260627-dm-valuation";
+} from "./core.js?v=20260628-dm-history";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260627-dm-valuation";
+} from "./lifecycle.js?v=20260628-dm-history";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260627-dm-valuation";
+} from "./history-parser.js?v=20260628-dm-history";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260627-dm-valuation";
+} from "./protocol-transfer.js?v=20260628-dm-history";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,9 +70,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260627-dm-valuation";
+} from "./secondary-inventory.js?v=20260628-dm-history";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
+const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
+const PROJECT_DM_HISTORY_LIMIT = 12;
 const TOKEN_KEY = "credit-bond-process-api-token";
 const API_URL = "./api/state";
 const DM_VALUATION_URL = "./api/dm/valuation";
@@ -158,6 +160,8 @@ let resultRecognitionProjectId = "";
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
 let dmLastPayload = null;
+let projectDmHistory = loadProjectDmHistory();
+let projectDmHistorySaveTimer = null;
 let valuationAssistTimer = null;
 let valuationAssistController = null;
 let valuationAssistRequestKey = "";
@@ -196,6 +200,8 @@ async function initialize() {
   bindDmTest();
   initializeHistoryImport();
   bindDataActions();
+  resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
+  renderProjectDmHistoryControls();
   renderIssuerOptions();
   renderIssuerList();
   renderProjectWorkspace();
@@ -245,6 +251,12 @@ function bindGenerator() {
     event.preventDefault();
     await runProjectDmLookup();
   });
+  $("#projectDmClearButton")?.addEventListener("click", () => resetProjectDmWorkspace());
+  $("#projectDmPreviousButton")?.addEventListener("click", restorePreviousProjectDmHistory);
+  $("#projectDmHistorySelect")?.addEventListener("change", (event) => {
+    const id = event.target.value;
+    if (id) restoreProjectDmHistoryItem(id);
+  });
   $("#projectDmSeedInput").addEventListener("input", () => {
     project.shortName = $("#projectDmSeedInput").value.trim();
     $('[data-project-field="shortName"]').value = project.shortName;
@@ -253,10 +265,12 @@ function bindGenerator() {
   $("#projectValuationInput").addEventListener("input", () => {
     updateProjectPricingFromInputs();
     regenerate();
+    scheduleProjectDmHistorySave();
   });
   $("#projectGuidancePriceInput").addEventListener("input", () => {
     updateProjectPricingFromInputs();
     regenerate();
+    scheduleProjectDmHistorySave();
   });
   $("#projectDmAssist").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-project-dm-query]");
@@ -309,6 +323,7 @@ function bindGenerator() {
       project.sourceText = buildDmProjectSourceText(project);
       $("#briefInput").value = project.sourceText;
       regenerate();
+      scheduleProjectDmHistorySave();
     });
   });
   $("#trancheInquiryRows").addEventListener("input", (event) => {
@@ -319,6 +334,7 @@ function bindGenerator() {
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
     regenerate();
+    scheduleProjectDmHistorySave();
   });
 
   $("#copyButton").addEventListener("click", async () => {
@@ -354,6 +370,169 @@ function saveCurrentProject() {
   renderProjectWorkspace();
   switchView("ledger");
   showToast(result.isUpdate ? "已更新现有项目台账。" : "已保存至项目台账。");
+}
+
+function resetProjectDmWorkspace(options = {}) {
+  const { preserveCurrentAsHistory = true, showToastMessage = true } = options;
+  if (preserveCurrentAsHistory) pushProjectDmHistoryFromCurrent();
+  clearTimeout(projectDmHistorySaveTimer);
+  projectDmHistorySaveTimer = null;
+  project = parseProjectBrief("");
+  project.warnings = [];
+  selectedIssuerId = "";
+  clearProjectRecognitionMarks();
+  clearTimeout(valuationAssistTimer);
+  if (valuationAssistController) valuationAssistController.abort();
+  valuationAssistController = null;
+  valuationAssistRequestKey = "";
+  $("#briefInput").value = "";
+  $("#projectDmStatus").textContent = "未读取 DM";
+  $("#projectDmStatus").className = "pill muted";
+  $("#projectDmAssist").hidden = true;
+  $("#projectDmAssist").innerHTML = "";
+  $("#valuationAssist").hidden = true;
+  $("#valuationAssist").innerHTML = "";
+  $("#opinionOutput").value = "";
+  $("#suggestionSummary").textContent = "建议比例待补充";
+  $("#ruleTrace").innerHTML = "";
+  $("#matchedIssuerPill").textContent = "未匹配主体";
+  $("#matchedIssuerPill").className = "pill";
+  $("#quickIssuerPanel").hidden = true;
+  renderWarnings([]);
+  fillProjectFields();
+  renderIssuerOptions();
+  renderProjectDmHistoryControls();
+  if (showToastMessage) showToast("已清空当前 DM 建项草稿。");
+}
+
+function pushProjectDmHistoryFromCurrent() {
+  const item = projectDmHistoryItemFromCurrent();
+  if (!item) return;
+  const key = projectDmHistoryKey(item);
+  projectDmHistory = [
+    item,
+    ...projectDmHistory.filter((entry) => projectDmHistoryKey(entry) !== key),
+  ].slice(0, PROJECT_DM_HISTORY_LIMIT);
+  saveProjectDmHistory();
+  renderProjectDmHistoryControls();
+}
+
+function scheduleProjectDmHistorySave() {
+  clearTimeout(projectDmHistorySaveTimer);
+  if (!projectDmHasContent(project, $("#projectDmSeedInput")?.value || "")) return;
+  projectDmHistorySaveTimer = setTimeout(() => {
+    projectDmHistorySaveTimer = null;
+    pushProjectDmHistoryFromCurrent();
+  }, 450);
+}
+
+function projectDmHistoryItemFromCurrent() {
+  const seed = $("#projectDmSeedInput")?.value?.trim() || "";
+  const query = seed || project.shortName || project.fullName || "";
+  if (!projectDmHasContent(project, query)) return null;
+  const snapshot = clonePlain({
+    ...project,
+    sourceText: project.sourceText || buildDmProjectSourceText(project),
+  });
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    query,
+    shortName: snapshot.shortName || query,
+    issuerName: snapshot.issuerName || "",
+    durationText: snapshot.durationText || "",
+    valuationText: formatRateListInput(snapshot.valuations?.length ? snapshot.valuations : [snapshot.valuation]),
+    guidanceText: formatRateListInput(snapshot.guidancePrices?.length ? snapshot.guidancePrices : [snapshot.guidancePrice]),
+    selectedIssuerId,
+    project: snapshot,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function projectDmHasContent(projectValue, query = "") {
+  return Boolean(String(query || "").trim()
+    || projectValue?.shortName
+    || projectValue?.fullName
+    || projectValue?.issuerName
+    || projectValue?.durationText
+    || projectValue?.issueScale
+    || projectValue?.valuation
+    || projectValue?.guidancePrice
+    || projectValue?.valuations?.length
+    || projectValue?.guidancePrices?.length);
+}
+
+function restorePreviousProjectDmHistory() {
+  if (!projectDmHistory.length) return;
+  const currentKey = projectDmHistoryKey(projectDmHistoryItemFromCurrent() || {});
+  const item = projectDmHistory.find((entry) => projectDmHistoryKey(entry) !== currentKey) || projectDmHistory[0];
+  restoreProjectDmHistoryItem(item.id);
+}
+
+function restoreProjectDmHistoryItem(id) {
+  const item = projectDmHistory.find((entry) => entry.id === id);
+  if (!item?.project) return;
+  pushProjectDmHistoryFromCurrent();
+  project = clonePlain(item.project);
+  project.warnings = Array.isArray(project.warnings) ? project.warnings : [];
+  selectedIssuerId = state.issuers.some((issuer) => issuer.id === item.selectedIssuerId)
+    ? item.selectedIssuerId
+    : (findIssuerForProject(project)?.id || "");
+  if (!project.sourceText) project.sourceText = buildDmProjectSourceText(project);
+  clearProjectRecognitionMarks();
+  $("#briefInput").value = project.sourceText || "";
+  $("#projectDmStatus").textContent = "已恢复历史";
+  $("#projectDmStatus").className = "pill accent";
+  $("#projectDmAssist").hidden = true;
+  $("#projectDmAssist").innerHTML = "";
+  fillProjectFields();
+  renderIssuerOptions();
+  regenerate();
+  renderProjectDmHistoryControls(item.id);
+  showToast(`已恢复 ${item.shortName || item.query || "上一条历史"}。`);
+}
+
+function renderProjectDmHistoryControls(selectedId = "") {
+  const previousButton = $("#projectDmPreviousButton");
+  const select = $("#projectDmHistorySelect");
+  if (!select) return;
+  if (previousButton) previousButton.disabled = projectDmHistory.length === 0;
+  select.disabled = projectDmHistory.length === 0;
+  select.innerHTML = projectDmHistory.length
+    ? `<option value="">选择历史搜索</option>${projectDmHistory.map((item) => `
+      <option value="${escapeAttribute(item.id)}" ${item.id === selectedId ? "selected" : ""}>${escapeHtml(projectDmHistoryLabel(item))}</option>
+    `).join("")}`
+    : `<option value="">暂无历史</option>`;
+}
+
+function projectDmHistoryLabel(item) {
+  const facts = [
+    item.shortName || item.query,
+    item.durationText,
+    item.valuationText ? `估值${item.valuationText}` : "",
+  ].filter(Boolean);
+  return facts.join(" · ") || "未命名历史";
+}
+
+function projectDmHistoryKey(item = {}) {
+  const value = item.shortName || item.query || item.project?.shortName || item.project?.fullName || "";
+  return String(value || "").toUpperCase().replace(/\s+/g, "").trim();
+}
+
+function loadProjectDmHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PROJECT_DM_HISTORY_KEY));
+    return Array.isArray(value) ? value.filter((item) => item?.project).slice(0, PROJECT_DM_HISTORY_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveProjectDmHistory() {
+  localStorage.setItem(PROJECT_DM_HISTORY_KEY, JSON.stringify(projectDmHistory));
+}
+
+function clonePlain(value) {
+  return JSON.parse(JSON.stringify(value || {}));
 }
 
 function upsertParsedProjectToLedger(projectValue, issuer, generated) {
@@ -430,17 +609,7 @@ function bindLedger() {
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#collapseMailOutputButton").addEventListener("click", hideMailOutput);
   $("#newProjectButton").addEventListener("click", () => {
-    project = parseProjectBrief("");
-    selectedIssuerId = "";
-    $("#briefInput").value = "";
-    $("#projectDmStatus").textContent = "未读取 DM";
-    $("#projectDmStatus").className = "pill muted";
-    $("#projectDmAssist").hidden = true;
-    $("#projectDmAssist").innerHTML = "";
-    renderWarnings([]);
-    fillProjectFields();
-    renderIssuerOptions();
-    regenerate();
+    resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
     switchView("generator");
     $("#projectDmSeedInput").focus();
   });
@@ -625,6 +794,7 @@ async function runProjectDmLookup(queryOverride = "") {
     const sourceLabel = dmPayloadSourceLabel(payload);
     $("#projectDmStatus").textContent = `已读取 ${sourceLabel}`;
     $("#projectDmStatus").className = "pill accent";
+    pushProjectDmHistoryFromCurrent();
     showToast(`已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
   } catch (error) {
     renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });

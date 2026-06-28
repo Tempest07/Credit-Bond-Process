@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260627-dm-valuation">
+  <link rel="stylesheet" href="./styles.css?v=20260628-dm-history">
 </head>
 <body>
   <div class="app-shell">
@@ -73,13 +73,22 @@
               <div><span class="step">01</span><h2>读取 DM 建项</h2></div>
               <span class="pill muted" id="projectDmStatus">未读取 DM</span>
             </div>
-            <form class="project-dm-entry-form" id="projectDmEntryForm">
+            <form class="project-dm-entry-form" id="projectDmEntryForm" autocomplete="off">
               <label>债券简称或代码<input id="projectDmSeedInput" placeholder="例如：26金川MTN001 或 102681001.IB" autocomplete="off"></label>
               <button class="button primary" id="projectDmLookupButton" type="submit">读取 DM</button>
             </form>
+            <div class="project-dm-toolbar">
+              <button class="button subtle" id="projectDmClearButton" type="button">清空当前</button>
+              <button class="button subtle" id="projectDmPreviousButton" type="button" disabled>上一条</button>
+              <label class="project-dm-history-label">历史搜索
+                <select id="projectDmHistorySelect">
+                  <option value="">暂无历史</option>
+                </select>
+              </label>
+            </div>
             <div class="project-pricing-grid">
-              <label>市场估值（%）<input id="projectValuationInput" inputmode="decimal" placeholder="如 1.65；多期限用 1.65/1.83"></label>
-              <label>综合定价至（%）<input id="projectGuidancePriceInput" inputmode="decimal" placeholder="留空为未综；多期限用 1.68/1.85"></label>
+              <label>市场估值（%）<input id="projectValuationInput" inputmode="decimal" autocomplete="off" placeholder="如 1.65；多期限用 1.65/1.83"></label>
+              <label>综合定价至（%）<input id="projectGuidancePriceInput" inputmode="decimal" autocomplete="off" placeholder="留空为未综；多期限用 1.68/1.85"></label>
             </div>
             <div class="valuation-assist" id="valuationAssist" hidden></div>
             <textarea id="briefInput" hidden></textarea>
@@ -713,6 +722,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260627-dm-valuation"></script>
+  <script type="module" src="./app.js?v=20260628-dm-history"></script>
 </body>
 </html>
