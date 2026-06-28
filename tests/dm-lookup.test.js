@@ -86,6 +86,72 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
   }
 });
 
+test("DM lookup resolves a primary record by full bond name", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const fullName = "广州地铁集团有限公司2026年度第六期超短期融资券";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (String(url).includes("/bond/basic-info/info")) {
+      throw new Error("fullName-only lookup should not call basic-info");
+    } else if (String(url).includes("/bond/primary/data")) {
+      assert.equal(request.bond_category, "1");
+      assert.equal(request.issuerFullName, undefined);
+      data = {
+        list: [
+          {
+            security_id: "012681234.IB",
+            sec_short_name: "26广州地铁SCP006",
+            sec_full_name: fullName,
+            issuer_full_name: "广州地铁集团有限公司",
+            bond_issue_tenor: "270D",
+            plan_issue_amount: 210000,
+            subscribe_rate: "1.300000 ~ 1.600000",
+            subscribe_date: "2026-06-29",
+            subject_rating: "AAA",
+            rating_agency: "中诚信国际",
+            implied_rating: "AAA",
+          },
+          {
+            security_id: "012689999.IB",
+            sec_short_name: "26其他SCP001",
+            sec_full_name: "其他发行人2026年度第一期超短期融资券",
+            issuer_full_name: "其他发行人",
+          },
+        ],
+      };
+    } else {
+      assert.deepEqual(request.comFullNameList, ["广州地铁集团有限公司"]);
+      data = [{ com_full_name: "广州地铁集团有限公司" }];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request(`https://example.com/api/dm/lookup?fullName=${encodeURIComponent(fullName)}`, {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.query.fullName, fullName);
+    assert.equal(payload.normalized.shortName, "26广州地铁SCP006");
+    assert.equal(payload.normalized.fullName, fullName);
+    assert.equal(payload.normalized.issuerName, "广州地铁集团有限公司");
+    assert.equal(payload.normalized.issueScaleYi, 21);
+    assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup prefers callable tenor from basic bond fields over final issue tenor", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

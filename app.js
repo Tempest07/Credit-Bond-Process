@@ -14,7 +14,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260628-related-search";
+} from "./core.js?v=20260628-project-screenshot";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -32,13 +32,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260628-related-search";
+} from "./lifecycle.js?v=20260628-project-screenshot";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260628-related-search";
+} from "./history-parser.js?v=20260628-project-screenshot";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -51,7 +51,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260628-related-search";
+} from "./protocol-transfer.js?v=20260628-project-screenshot";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -71,7 +71,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260628-related-search";
+} from "./secondary-inventory.js?v=20260628-project-screenshot";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -85,6 +85,8 @@ const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
+const PROJECT_SCREENSHOT_BRANCHES = ["广州分行", "武汉分行", "青岛分行", "兰州分行", "苏州分行", "太原分行", "西安分行"];
+const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|MTN|PPN|ABN|ABS)";
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -166,6 +168,7 @@ let projectDmHistorySaveTimer = null;
 let valuationAssistTimer = null;
 let valuationAssistController = null;
 let valuationAssistRequestKey = "";
+let projectScreenshotRows = [];
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -191,6 +194,7 @@ initialize();
 async function initialize() {
   bindPlaceholderSelection();
   bindNavigation();
+  bindProjectScreenshotTool();
   bindGenerator();
   bindLedger();
   bindProtocolTransfer();
@@ -224,6 +228,232 @@ function switchView(viewName) {
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   if (button) $("#pageTitle").textContent = button.textContent;
+}
+
+function bindProjectScreenshotTool() {
+  $("#projectScreenshotInput")?.addEventListener("change", handleProjectScreenshotUpload);
+  $("#copyProjectScreenshotShortNamesButton")?.addEventListener("click", copyProjectScreenshotShortNames);
+}
+
+async function handleProjectScreenshotUpload(event) {
+  const input = event.target;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    showToast("请上传项目表截图图片。");
+    input.value = "";
+    return;
+  }
+
+  projectScreenshotRows = [];
+  renderProjectScreenshotResults(projectScreenshotRows);
+  setProjectScreenshotBusy(true, "正在 OCR 图片...");
+  try {
+    await ensureTesseractReady();
+    const result = await window.Tesseract.recognize(file, "chi_sim+eng", {
+      logger: updateProjectScreenshotOcrProgress,
+    });
+    const entries = parseProjectScreenshotOcrText(result?.data?.text || "");
+    if (!entries.length) {
+      setProjectScreenshotStatus("未识别到七家目标分行的债券名称。");
+      showToast("未识别到目标分行项目，请换一张更清晰的截图。");
+      return;
+    }
+
+    projectScreenshotRows = entries.map((entry) => ({ ...entry, status: "pending" }));
+    renderProjectScreenshotResults(projectScreenshotRows);
+    for (let index = 0; index < entries.length; index += 1) {
+      setProjectScreenshotStatus(`已识别 ${entries.length} 条，正在查 DM ${index + 1}/${entries.length}...`);
+      const resolved = await lookupProjectScreenshotEntry(entries[index]);
+      projectScreenshotRows[index] = resolved;
+      renderProjectScreenshotResults(projectScreenshotRows);
+    }
+    const copiedCount = projectScreenshotResolvedShortNames().length;
+    setProjectScreenshotStatus(copiedCount
+      ? `完成：${copiedCount}/${entries.length} 条已匹配简称。`
+      : `完成：${entries.length} 条均未匹配到 DM 简称。`);
+  } catch (error) {
+    projectScreenshotRows = [];
+    renderProjectScreenshotResults(projectScreenshotRows);
+    setProjectScreenshotStatus(error.message || "截图识别失败。");
+    showToast(error.message || "截图识别失败。");
+  } finally {
+    setProjectScreenshotBusy(false);
+    input.value = "";
+  }
+}
+
+function parseProjectScreenshotOcrText(text = "") {
+  const compact = normalizeProjectScreenshotOcrText(text);
+  if (!compact) return [];
+  const branchPattern = new RegExp(PROJECT_SCREENSHOT_BRANCHES.map(escapeRegExpForPattern).join("|"), "g");
+  const matches = [];
+  let match;
+  while ((match = branchPattern.exec(compact))) {
+    matches.push({ branch: match[0], index: match.index });
+  }
+
+  const entries = [];
+  const seen = new Set();
+  for (let index = 0; index < matches.length; index += 1) {
+    const current = matches[index];
+    const nextIndex = matches[index + 1]?.index ?? compact.length;
+    const segmentEnd = Math.min(nextIndex, current.index + 280);
+    const segment = compact.slice(current.index + current.branch.length, segmentEnd);
+    const fullName = extractProjectScreenshotBondFullName(segment);
+    if (!fullName) continue;
+    const key = `${current.branch}|${normalizeProjectScreenshotOcrText(fullName)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push({ branch: current.branch, fullName });
+  }
+  return entries;
+}
+
+function normalizeProjectScreenshotOcrText(text = "") {
+  return String(text || "")
+    .normalize("NFKC")
+    .replace(/[|｜]/g, "")
+    .replace(/\s+/g, "");
+}
+
+function extractProjectScreenshotBondFullName(segment = "") {
+  const text = normalizeProjectScreenshotOcrText(segment);
+  if (!text) return "";
+  const fullNamePattern = new RegExp(`([\\u4e00-\\u9fffA-Za-z0-9()（）]{4,140}?20\\d{2}(?:年度|年)[\\u4e00-\\u9fffA-Za-z0-9()（）]{0,90}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}(?:[()（）][^()（）]{1,24}[()（）])?)`, "i");
+  const fallbackPattern = new RegExp(`([\\u4e00-\\u9fffA-Za-z0-9()（）]{8,160}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}(?:[()（）][^()（）]{1,24}[()（）])?)`, "i");
+  const match = text.match(fullNamePattern) || text.match(fallbackPattern);
+  return cleanProjectScreenshotBondFullName(match?.[1] || "");
+}
+
+function cleanProjectScreenshotBondFullName(value = "") {
+  let text = normalizeProjectScreenshotOcrText(value)
+    .replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, "")
+    .replace(/[,:;，。；：].*$/, "");
+  const endPattern = new RegExp(`^(.+?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}(?:[()（）][^()（）]{1,24}[()（）])?)`, "i");
+  const endMatch = text.match(endPattern);
+  if (endMatch) text = endMatch[1];
+  return text.length >= 8 ? text : "";
+}
+
+async function lookupProjectScreenshotEntry(entry) {
+  const params = new URLSearchParams({ fullName: entry.fullName });
+  try {
+    const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+    });
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
+    }
+    if (!response.ok || !payload.ok) {
+      const suggestion = Array.isArray(payload.suggestions) ? payload.suggestions[0] : null;
+      return {
+        ...entry,
+        status: "error",
+        shortName: "",
+        candidateShortName: suggestion?.shortName || "",
+        securityId: suggestion?.securityId || "",
+        error: payload?.noResult ? "DM 无结果" : payload?.error || `HTTP ${response.status}`,
+      };
+    }
+    const normalized = payload.normalized || {};
+    return {
+      ...entry,
+      status: normalized.shortName ? "ok" : "error",
+      shortName: normalized.shortName || "",
+      securityId: normalized.securityId || "",
+      issuerName: normalized.issuerName || "",
+      error: normalized.shortName ? "" : "DM 未返回简称",
+    };
+  } catch (error) {
+    return { ...entry, status: "error", shortName: "", error: error.message || "DM 查询失败" };
+  }
+}
+
+function renderProjectScreenshotResults(rows = projectScreenshotRows) {
+  const output = $("#projectScreenshotOutput");
+  const copyButton = $("#copyProjectScreenshotShortNamesButton");
+  if (!output || !copyButton) return;
+  const copyText = projectScreenshotResolvedShortNames().join("\n");
+  copyButton.disabled = !copyText;
+  if (!rows.length) {
+    output.hidden = true;
+    output.innerHTML = "";
+    return;
+  }
+
+  const groups = PROJECT_SCREENSHOT_BRANCHES
+    .map((branch) => ({ branch, rows: rows.filter((row) => row.branch === branch) }))
+    .filter((group) => group.rows.length);
+  const groupHtml = groups.map((group) => {
+    const matched = group.rows.filter((row) => row.status === "ok" && row.shortName).length;
+    const items = group.rows.map((row) => {
+      const title = row.shortName || row.candidateShortName || (row.status === "pending" ? "正在查询..." : "未查到简称");
+      const detail = row.status === "ok"
+        ? [row.securityId, row.issuerName].filter(Boolean).join(" · ")
+        : row.status === "pending"
+        ? "正在用债券全称查询 DM"
+        : `${row.error || "查询失败"}${row.candidateShortName ? " · 仅作候选参考" : ""}`;
+      return `
+        <div class="project-screenshot-item${row.status === "ok" ? "" : " is-error"}">
+          <strong>${escapeHtml(title)}</strong>
+          <em>${escapeHtml(row.fullName)}</em>
+          <span>${escapeHtml(detail)}</span>
+        </div>
+      `;
+    }).join("");
+    return `
+      <section class="project-screenshot-branch">
+        <h3>${escapeHtml(group.branch)} <span>${matched}/${group.rows.length}</span></h3>
+        ${items}
+      </section>
+    `;
+  }).join("");
+
+  output.hidden = false;
+  output.innerHTML = `${groupHtml}${copyText ? `<textarea class="project-screenshot-copy-box" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
+}
+
+function projectScreenshotResolvedShortNames() {
+  return projectScreenshotRows
+    .filter((row) => row.status === "ok" && row.shortName)
+    .map((row) => row.shortName);
+}
+
+async function copyProjectScreenshotShortNames() {
+  const text = projectScreenshotResolvedShortNames().join("\n");
+  if (!text) {
+    showToast("暂无可复制的 DM 简称。");
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  showToast("已复制简称清单。");
+}
+
+function setProjectScreenshotBusy(isBusy, message = "") {
+  const input = $("#projectScreenshotInput");
+  const upload = $(".project-screenshot-upload");
+  const copyButton = $("#copyProjectScreenshotShortNamesButton");
+  if (input) input.disabled = isBusy;
+  upload?.classList.toggle("busy", isBusy);
+  if (copyButton) copyButton.disabled = isBusy || !projectScreenshotResolvedShortNames().length;
+  if (message) setProjectScreenshotStatus(message);
+}
+
+function setProjectScreenshotStatus(message) {
+  const status = $("#projectScreenshotStatus");
+  if (status) status.textContent = message || "";
+}
+
+function updateProjectScreenshotOcrProgress(message = {}) {
+  const status = String(message.status || "").replace(/_/g, " ");
+  const progress = Number(message.progress);
+  const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : "";
+  setProjectScreenshotStatus(status ? `OCR ${status}${percent}` : "正在 OCR 图片...");
 }
 
 function bindPlaceholderSelection() {

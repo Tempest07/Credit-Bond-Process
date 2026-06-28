@@ -38,21 +38,23 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const shortName = (url.searchParams.get("shortName") || url.searchParams.get("short_name") || "").trim();
   const securityId = (url.searchParams.get("securityId") || url.searchParams.get("security_id") || "").trim();
+  const fullName = (url.searchParams.get("fullName") || url.searchParams.get("full_name") || "").trim();
   const startDate = (url.searchParams.get("startDate") || url.searchParams.get("start_date") || "").trim();
   const endDate = (url.searchParams.get("endDate") || url.searchParams.get("end_date") || "").trim();
 
-  if (!shortName && !securityId) {
-    return json({ error: "请提供 shortName 或 securityId" }, 400);
+  if (!shortName && !securityId && !fullName) {
+    return json({ error: "请提供 shortName、securityId 或 fullName" }, 400);
   }
   const missingConfig = validateDmConfig(context.env);
   if (missingConfig) return missingConfig;
 
   try {
     const dm = makeDmClient(context.env, context.request);
-    const basic = await lookupBasicInfo(dm, { shortName, securityId });
+    const basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
     const primary = await lookupPrimaryData(dm, {
       shortName,
       securityId,
+      fullName,
       issuerName: pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]),
       startDate,
       endDate,
@@ -61,21 +63,21 @@ export async function onRequestGet(context) {
     const issuerName = pickFirstString(firstRow(primary), ["issuer_full_name", "issuerFullName"])
       || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
     const company = issuerName ? await lookupCompanyInfo(dm, issuerName) : null;
-    const normalized = normalizeDmLookup({ shortName, securityId, basic, primary, company });
+    const normalized = normalizeDmLookup({ shortName, securityId, fullName, basic, primary, company });
     const dmRatingDiscovery = await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company });
     const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
     const d1State = await readD1AppState(context.env.DB);
     const issuerRatingFallback = lookupIssuerRatingFallback(d1State, dmEnrichedNormalized);
     const enrichedNormalized = applyIssuerRatingFallback(dmEnrichedNormalized, issuerRatingFallback);
-    const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId }, primary);
+    const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId, fullName }, primary);
     if (!dmMatched && !issuerRatingFallback && !issueGroup) {
-      return json(dmNoResultPayload({ shortName, securityId, basic, primary }));
+      return json(dmNoResultPayload({ shortName, securityId, fullName, basic, primary }));
     }
     const normalizedWithIssueGroup = issueGroup ? { ...enrichedNormalized, issueGroup } : enrichedNormalized;
 
     return json({
       ok: true,
-      query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
+      query: { shortName, securityId, fullName, startDate: primary.window.startDate, endDate: primary.window.endDate },
       normalized: normalizedWithIssueGroup,
       issueGroup,
       diagnostic: {
@@ -110,6 +112,7 @@ export async function onRequestOptions() {
 }
 
 async function lookupBasicInfo(dm, { shortName, securityId }) {
+  if (!shortName && !securityId) return { raw: null, rows: [] };
   const payload = securityId
     ? { securityIdList: [securityId] }
     : { secShortNameList: [shortName] };
@@ -117,7 +120,7 @@ async function lookupBasicInfo(dm, { shortName, securityId }) {
   return { raw, rows: rowsFromDm(raw) };
 }
 
-async function lookupPrimaryData(dm, { shortName, securityId, issuerName, startDate, endDate }) {
+async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, startDate, endDate }) {
   const window = resolvePrimaryWindow(startDate, endDate);
   const payload = {
     startDate: window.startDate,
@@ -128,8 +131,8 @@ async function lookupPrimaryData(dm, { shortName, securityId, issuerName, startD
 
   const raw = await dm.post(PRIMARY_PATH, payload);
   const rows = rowsFromDm(raw);
-  const filtered = rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId }));
-  return { raw, rows: shortName || securityId ? filtered : rows, window };
+  const filtered = rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId, fullName }));
+  return { raw, rows: shortName || securityId || fullName ? filtered : rows, window };
 }
 
 async function lookupCompanyInfo(dm, issuerName) {
@@ -141,10 +144,11 @@ function hasMatchedDmLookupResult(basic, primary) {
   return Boolean((basic?.rows || []).length || (primary?.rows || []).length);
 }
 
-function dmNoResultPayload({ shortName, securityId, basic, primary }) {
+function dmNoResultPayload({ shortName, securityId, fullName, basic, primary }) {
   const suggestions = closestDmLookupSuggestions({
     shortName,
     securityId,
+    fullName,
     rows: rowsFromDm(primary?.raw),
   });
   return {
@@ -154,7 +158,7 @@ function dmNoResultPayload({ shortName, securityId, basic, primary }) {
     hint: suggestions.length
       ? "请确认债券简称、债券代码或查询日期窗口；下方已列出相近候选，可点击继续查询。"
       : "请确认债券简称、债券代码或查询日期窗口；DM 接口已返回，但没有匹配到该债券。",
-    query: { shortName, securityId, startDate: primary.window.startDate, endDate: primary.window.endDate },
+    query: { shortName, securityId, fullName, startDate: primary.window.startDate, endDate: primary.window.endDate },
     normalized: null,
     issueGroup: null,
     suggestions,
@@ -177,10 +181,10 @@ function dmNoResultPayload({ shortName, securityId, basic, primary }) {
   };
 }
 
-function closestDmLookupSuggestions({ shortName, securityId, rows }) {
+function closestDmLookupSuggestions({ shortName, securityId, fullName, rows }) {
   const bestByKey = new Map();
   for (const row of rows || []) {
-    const scoring = dmLookupSuggestionScore(row, { shortName, securityId });
+    const scoring = dmLookupSuggestionScore(row, { shortName, securityId, fullName });
     const score = scoring.score;
     if (score < 35) continue;
     const suggestion = dmLookupSuggestionFromRow(row, score, scoring.reasons);
@@ -198,8 +202,27 @@ function closestDmLookupSuggestions({ shortName, securityId, rows }) {
 function dmLookupSuggestionScore(row, query) {
   const queryName = normalizeLookupName(query?.shortName);
   const querySecurityId = normalizeSecurityId(query?.securityId);
+  const queryFullName = normalizeFullNameForLookup(query?.fullName);
   let score = 0;
   const reasons = [];
+  if (queryFullName) {
+    for (const name of rowFullNames(row)) {
+      const candidateName = normalizeFullNameForLookup(name);
+      if (!candidateName) continue;
+      let candidateScore = 0;
+      if (candidateName === queryFullName) {
+        candidateScore = 100;
+      } else if (candidateName.includes(queryFullName) || queryFullName.includes(candidateName)) {
+        candidateScore = 82 + Math.round(12 * Math.min(candidateName.length, queryFullName.length) / Math.max(candidateName.length, queryFullName.length));
+      } else {
+        candidateScore = Math.round(100 * stringSimilarity(queryFullName, candidateName));
+      }
+      if (candidateScore > score) {
+        score = candidateScore;
+        reasons.splice(0, reasons.length, candidateScore >= 95 ? "鍏ㄧО楂樺害鍖归厤" : "鍏ㄧО鐩歌繎");
+      }
+    }
+  }
   if (queryName) {
     const queryProfile = shortNameProfile(queryName);
     for (const name of rowShortNames(row)) {
@@ -390,9 +413,9 @@ function levenshteinDistance(left, right) {
   return previous[b.length] || 0;
 }
 
-function normalizeDmLookup({ shortName, securityId, basic, primary, company }) {
+function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, company }) {
   const basicRow = firstRow(basic);
-  const primaryRow = bestPrimaryRow(primary, shortName, securityId);
+  const primaryRow = bestPrimaryRow(primary, shortName, securityId, fullName);
   const companyRow = firstRow(company);
   const resolvedDuration = resolveDmDurationText(primaryRow, basicRow);
   const issuerName = pickFirstString(primaryRow, ["issuer_full_name", "issuerFullName"])
@@ -971,7 +994,7 @@ function buildIssueGroupFromDmRows(normalized, query, primary) {
     subscribeDate: normalized?.subscribeDate || "",
     venue: normalized?.venue || "",
     leadUnderwriter: normalized?.leadUnderwriter || "",
-    queriedInput: query?.shortName || query?.securityId || "",
+    queriedInput: query?.shortName || query?.securityId || query?.fullName || "",
     tranches: entries.map((entry) => cleanIssueTranche({
       shortName: entry.shortName,
       securityId: entry.securityId,
@@ -1007,7 +1030,7 @@ function dmRowIssueEntry(row) {
 }
 
 function issueGroupTargets(normalized, query) {
-  const inputNames = uniqueStrings([query?.shortName]);
+  const inputNames = uniqueStrings([query?.shortName, query?.fullName]);
   const normalizedNames = uniqueStrings([normalized?.shortName, normalized?.fullName]);
   const names = uniqueStrings([...inputNames, ...normalizedNames]);
   const inputSecurityIds = uniqueStrings([query?.securityId].map(normalizeSecurityId));
@@ -1285,16 +1308,17 @@ function ratingDiagnostic(original, dmDiscovery, issuerFallback, enriched, hasDb
   };
 }
 
-function bestPrimaryRow(primary, shortName, securityId) {
+function bestPrimaryRow(primary, shortName, securityId, fullName) {
   const rows = primary?.rows || [];
   return rows.find((row) => rowMatchesSecurityId(row, securityId))
     || rows.find((row) => rowMatchesShortName(row, shortName))
+    || rows.find((row) => rowMatchesFullName(row, fullName))
     || rows[0]
     || {};
 }
 
-function primaryRowMatchesQuery(row, { shortName, securityId }) {
-  return rowMatchesSecurityId(row, securityId) || rowMatchesShortName(row, shortName);
+function primaryRowMatchesQuery(row, { shortName, securityId, fullName }) {
+  return rowMatchesSecurityId(row, securityId) || rowMatchesShortName(row, shortName) || rowMatchesFullName(row, fullName);
 }
 
 function rowMatchesSecurityId(row, securityId) {
@@ -1307,6 +1331,19 @@ function rowMatchesShortName(row, shortName) {
   const query = normalizeLookupName(shortName);
   if (!query) return false;
   return rowShortNames(row).some((candidate) => normalizeLookupName(candidate) === query);
+}
+
+function rowMatchesFullName(row, fullName) {
+  const query = normalizeFullNameForLookup(fullName);
+  if (!query || query.length < 8) return false;
+  return rowFullNames(row).some((candidate) => {
+    const normalized = normalizeFullNameForLookup(candidate);
+    if (!normalized) return false;
+    if (normalized === query) return true;
+    if ((normalized.includes(query) || query.includes(normalized))
+      && Math.min(normalized.length, query.length) / Math.max(normalized.length, query.length) >= 0.82) return true;
+    return false;
+  });
 }
 
 function rowSecurityIds(row) {
@@ -1322,6 +1359,15 @@ function rowShortNames(row) {
     row?.sec_short_name,
     row?.secShortName,
     ...parseCrossMarketEntries(row).map((item) => item.shortName),
+  ]);
+}
+
+function rowFullNames(row) {
+  return uniqueStrings([
+    row?.sec_full_name,
+    row?.secFullName,
+    row?.bond_full_name,
+    row?.bondFullName,
   ]);
 }
 
@@ -1359,6 +1405,11 @@ function normalizeLookupName(value = "") {
   return normalizeName(value)
     .replace(/_BC$/i, "")
     .replace(/债(?=\d+$)/g, "");
+}
+
+function normalizeFullNameForLookup(value = "") {
+  return normalizeName(value)
+    .replace(/[()（）\[\]{}"'`.,，。;；:：、\-_]/g, "");
 }
 
 function uniqueStrings(values) {

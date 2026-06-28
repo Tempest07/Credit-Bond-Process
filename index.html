@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260628-related-search">
+  <link rel="stylesheet" href="./styles.css?v=20260628-project-screenshot">
 </head>
 <body>
   <div class="app-shell">
@@ -26,6 +26,23 @@
         <button class="nav-item" data-view-target="dm-test">DM 测试</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
       </nav>
+
+      <section class="sidebar-tool project-screenshot-tool" id="projectScreenshotTool">
+        <div class="sidebar-tool-head">
+          <span>SHOT</span>
+          <strong>项目表截图</strong>
+        </div>
+        <p>识别项目表目标分行，按债券全称查 DM 简称。</p>
+        <div class="sidebar-tool-actions">
+          <label class="button subtle file-button project-screenshot-upload">
+            上传图片
+            <input id="projectScreenshotInput" type="file" accept="image/*">
+          </label>
+          <button class="button subtle" id="copyProjectScreenshotShortNamesButton" type="button" disabled>复制简称</button>
+        </div>
+        <small id="projectScreenshotStatus">未上传</small>
+        <div class="project-screenshot-output" id="projectScreenshotOutput" hidden></div>
+      </section>
 
       <div class="sidebar-card">
         <span>数据状态</span>
@@ -722,6 +739,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260628-related-search"></script>
+  <script type="module" src="./app.js?v=20260628-project-screenshot"></script>
 </body>
 </html>
