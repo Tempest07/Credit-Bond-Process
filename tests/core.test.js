@@ -243,6 +243,34 @@ test("caps Xingye-led investments at 20 percent", () => {
   assert.equal(suggestion.investmentAmount, 1.4);
 });
 
+test("keeps lead bank in joint Xingye underwriter opinions", () => {
+  const project = parseProjectBrief(`26广州地铁SCP006 联席 广州分行
+270D 规模21亿 AAA(中诚信国际)/隐含AAA
+询价区间1.3-1.6 银行间 平安银行股份有限公司,兴业银行股份有限公司`);
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "广州地铁集团有限公司",
+  });
+
+  assert.equal(project.sponsorStatus, "联席");
+  assert.match(generated.opinion, /主承销商为平安银行、兴业银行/);
+  assert.doesNotMatch(generated.opinion, /主承销商为兴业银行，/);
+});
+
+test("states when project tenor is outside credit approval term", () => {
+  const project = parseProjectBrief(`26测试MTN001 非我行主承 广州分行
+5年期 规模10亿 AAA(联合资信)/隐含AAA
+询价区间1.5-2.5 银行间 中信银行`);
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "测试集团有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1095, rawText: "总行批20亿，公募，30%，3年" },
+  });
+
+  assert.match(generated.opinion, /本笔业务期限不覆盖/);
+  assert.equal(generated.suggestion.trancheSuggestions[0].exceedsCreditTerm, true);
+});
+
 test("caps overdue AA and AA(2) bonds", () => {
   const base = { ...parseProjectBrief(sample), durationDays: 1460 };
   assert.equal(calculateSuggestion({ ...base, hiddenRating: "AA+" }, issuer).suggestedRatio, 20);

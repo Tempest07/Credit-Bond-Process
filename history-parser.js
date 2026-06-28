@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260628-dm-history";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260628-opinion-rules";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

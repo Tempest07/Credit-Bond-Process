@@ -570,7 +570,7 @@ export function calculateSuggestion(project, issuer) {
     if (Number.isFinite(ratio)) {
       for (const cap of caps) ratio = Math.min(ratio, cap.value);
     }
-    return { index, durationText, durationDays, suggestedRatio: ratio, caps };
+    return { index, durationText, durationDays, suggestedRatio: ratio, caps, exceedsCreditTerm };
   });
   const caps = uniqueCaps(trancheSuggestions.flatMap((item) => item.caps));
   const suggestedRatios = trancheSuggestions.map((item) => item.suggestedRatio).filter(Number.isFinite);
@@ -617,12 +617,43 @@ export function determineApprover(hiddenRating, investmentAmount, isRealEstate) 
 }
 
 export function buildUnderwriter(project) {
+  const underwriters = parseUnderwriterNames(project.leadUnderwriter);
   if (project.sponsorStatus === "牵头") return "兴业银行";
   if (project.sponsorStatus === "联席") {
-    if (!project.leadUnderwriter || project.leadUnderwriter.includes("兴业银行")) return "兴业银行";
-    return `${project.leadUnderwriter}、兴业银行`;
+    const leadNames = underwriters.filter((name) => !isXingyeUnderwriter(name));
+    const names = uniqueNonEmpty([...leadNames, "兴业银行"]);
+    return names.length > 1 ? names.join("、") : "【待补充牵头主承销商】、兴业银行";
   }
-  return project.leadUnderwriter || "【待补充主承销商】";
+  return underwriters.length ? underwriters.join("、") : "【待补充主承销商】";
+}
+
+function parseUnderwriterNames(value = "") {
+  return uniqueNonEmpty(
+    String(value || "")
+      .split(/[、,，;；/]/)
+      .map(formatUnderwriterName),
+  );
+}
+
+function formatUnderwriterName(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^(牵头主承销商|主承销商|簿记管理人|簿记人)[:：]?/, "")
+    .replace(/(股份有限公司|有限责任公司|责任有限公司|有限公司)$/u, "")
+    .trim();
+}
+
+function isXingyeUnderwriter(value = "") {
+  return /兴业银行/.test(value);
+}
+
+function uniqueNonEmpty(values = []) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function formatCreditTermCoverageSentence(suggestion) {
+  if (!suggestion.trancheSuggestions.some((item) => item.exceedsCreditTerm)) return "";
+  return "本笔业务期限不覆盖，已按超授信期限规则控制投资比例。";
 }
 
 export function formatCreditSentence(issuer) {
@@ -667,6 +698,7 @@ export function generateOpinion(project, issuer) {
   const creditSentence = formatCreditSentence(issuer);
   const approver = determineApprover(project.hiddenRating, suggestion.investmentAmount, Boolean(issuer?.isRealEstate));
   const recommendationAmount = formatRecommendationAmount(suggestion, amount, dualTranche);
+  const creditTermCoverageSentence = formatCreditTermCoverageSentence(suggestion);
 
   const opinion = [
     `${branch}申请与资金营运中心一二级联动投资${fullName || "【待补充债券全称】"}。`,
@@ -678,10 +710,11 @@ export function generateOpinion(project, issuer) {
     dualTranche
       ? `${recommendationAmount}、${ratio}、${bidRateSentence}。`
       : `建议投资金额不超过${amount}、投资比例不超过最终发行规模的${ratio}、${bidRateSentence}。`,
+    creditTermCoverageSentence,
     "本流程可用于一级、二级市场投资。",
     "以上妥否，请领导审核。",
     approver,
-  ].join("");
+  ].filter(Boolean).join("");
 
   const warnings = [...project.warnings, ...suggestion.warnings];
   if (!issuer) warnings.push("未匹配到主体资料，请选择或新增主体。");

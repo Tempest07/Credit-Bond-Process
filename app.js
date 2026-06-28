@@ -13,7 +13,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260628-dm-history";
+} from "./core.js?v=20260628-opinion-rules";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +31,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260628-dm-history";
+} from "./lifecycle.js?v=20260628-opinion-rules";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260628-dm-history";
+} from "./history-parser.js?v=20260628-opinion-rules";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +50,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260628-dm-history";
+} from "./protocol-transfer.js?v=20260628-opinion-rules";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,7 +70,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260628-dm-history";
+} from "./secondary-inventory.js?v=20260628-opinion-rules";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
