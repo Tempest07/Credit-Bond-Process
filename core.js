@@ -651,9 +651,9 @@ function uniqueNonEmpty(values = []) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
-function formatCreditTermCoverageSentence(suggestion) {
+function formatCreditTermCoverageSentence(suggestion, branch) {
   if (!suggestion.trancheSuggestions.some((item) => item.exceedsCreditTerm)) return "";
-  return "本笔业务期限不覆盖，已按超授信期限规则控制投资比例。";
+  return `本笔业务期限不覆盖，请${branch || "【待补充联动分行】"}及时续作授信或在授信到期前三个月通知我部，避免超期限持有。`;
 }
 
 export function formatCreditSentence(issuer) {
@@ -698,7 +698,7 @@ export function generateOpinion(project, issuer) {
   const creditSentence = formatCreditSentence(issuer);
   const approver = determineApprover(project.hiddenRating, suggestion.investmentAmount, Boolean(issuer?.isRealEstate));
   const recommendationAmount = formatRecommendationAmount(suggestion, amount, dualTranche);
-  const creditTermCoverageSentence = formatCreditTermCoverageSentence(suggestion);
+  const creditTermCoverageSentence = formatCreditTermCoverageSentence(suggestion, branch);
 
   const opinion = [
     `${branch}申请与资金营运中心一二级联动投资${fullName || "【待补充债券全称】"}。`,

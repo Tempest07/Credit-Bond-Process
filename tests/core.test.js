@@ -267,7 +267,7 @@ test("states when project tenor is outside credit approval term", () => {
     credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1095, rawText: "总行批20亿，公募，30%，3年" },
   });
 
-  assert.match(generated.opinion, /本笔业务期限不覆盖/);
+  assert.match(generated.opinion, /本笔业务期限不覆盖，请广州分行及时续作授信或在授信到期前三个月通知我部，避免超期限持有。/);
   assert.equal(generated.suggestion.trancheSuggestions[0].exceedsCreditTerm, true);
 });
 
