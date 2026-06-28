@@ -14,7 +14,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260628-ledger-tags";
+} from "./core.js?v=20260628-related-search";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -32,13 +32,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260628-ledger-tags";
+} from "./lifecycle.js?v=20260628-related-search";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260628-ledger-tags";
+} from "./history-parser.js?v=20260628-related-search";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -51,7 +51,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260628-ledger-tags";
+} from "./protocol-transfer.js?v=20260628-related-search";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -71,7 +71,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260628-ledger-tags";
+} from "./secondary-inventory.js?v=20260628-related-search";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -1116,6 +1116,7 @@ function renderProjectDmAssist(payload) {
 function renderProjectDmSuggestion(item) {
   const query = item.shortName || item.securityId || "";
   const facts = [
+    item.matchReason || "",
     item.securityId ? `代码 ${item.securityId}` : "",
     item.issuerName || "",
     item.tenor ? `期限 ${item.tenor}` : "",
@@ -4593,6 +4594,7 @@ function renderDmNoResult(payload) {
 function renderDmSuggestion(item) {
   const query = item.shortName || item.securityId || "";
   const facts = [
+    item.matchReason || "",
     item.securityId ? `代码 ${item.securityId}` : "",
     item.issuerName || "",
     item.tenor ? `期限 ${item.tenor}` : "",

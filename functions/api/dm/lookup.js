@@ -180,9 +180,10 @@ function dmNoResultPayload({ shortName, securityId, basic, primary }) {
 function closestDmLookupSuggestions({ shortName, securityId, rows }) {
   const bestByKey = new Map();
   for (const row of rows || []) {
-    const score = dmLookupSuggestionScore(row, { shortName, securityId });
+    const scoring = dmLookupSuggestionScore(row, { shortName, securityId });
+    const score = scoring.score;
     if (score < 35) continue;
-    const suggestion = dmLookupSuggestionFromRow(row, score);
+    const suggestion = dmLookupSuggestionFromRow(row, score, scoring.reasons);
     if (!suggestion.shortName && !suggestion.securityId) continue;
     const key = `${normalizeLookupName(suggestion.shortName)}|${normalizeSecurityId(suggestion.securityId)}`;
     if (!bestByKey.has(key) || score > bestByKey.get(key).score) {
@@ -198,22 +199,118 @@ function dmLookupSuggestionScore(row, query) {
   const queryName = normalizeLookupName(query?.shortName);
   const querySecurityId = normalizeSecurityId(query?.securityId);
   let score = 0;
+  const reasons = [];
   if (queryName) {
+    const queryProfile = shortNameProfile(queryName);
     for (const name of rowShortNames(row)) {
-      score = Math.max(score, Math.round(100 * stringSimilarity(queryName, normalizeLookupName(name))));
+      const candidate = scoreShortNameCandidate(queryName, queryProfile, normalizeLookupName(name));
+      if (candidate.score > score) {
+        score = candidate.score;
+        reasons.splice(0, reasons.length, ...candidate.reasons);
+      }
     }
   }
   if (querySecurityId) {
     const queryCode = stripSecuritySuffix(querySecurityId);
     for (const securityId of rowSecurityIds(row)) {
       const candidateCode = stripSecuritySuffix(normalizeSecurityId(securityId));
-      score = Math.max(score, Math.round(100 * stringSimilarity(queryCode, candidateCode)));
+      const candidateScore = Math.round(100 * stringSimilarity(queryCode, candidateCode));
+      if (candidateScore > score) {
+        score = candidateScore;
+        reasons.splice(0, reasons.length, candidateScore >= 90 ? "代码相近" : "代码部分相近");
+      }
     }
   }
-  return score;
+  return { score, reasons: uniqueStrings(reasons).slice(0, 3) };
 }
 
-function dmLookupSuggestionFromRow(row, score) {
+function scoreShortNameCandidate(queryName, queryProfile, candidateName) {
+  if (!candidateName) return { score: 0, reasons: [] };
+  if (queryName === candidateName) return { score: 100, reasons: ["简称完全一致"] };
+
+  const rawScore = Math.round(100 * stringSimilarity(queryName, candidateName));
+  const candidateProfile = shortNameProfile(candidateName);
+  const aliasScore = queryProfile.alias && candidateProfile.alias
+    ? stringSimilarity(queryProfile.alias, candidateProfile.alias)
+    : 0;
+  const reasons = [];
+  let score = rawScore;
+
+  if (queryProfile.alias && candidateProfile.alias) {
+    if (aliasScore >= 0.98) {
+      score = Math.max(score, 72);
+      reasons.push("同主体简称");
+    } else if (aliasScore >= 0.75) {
+      score = Math.max(score, 66 + Math.round(aliasScore * 20));
+      reasons.push("简称高度相近");
+    } else if (aliasScore >= 0.55) {
+      score = Math.max(score, 40 + Math.round(aliasScore * 25));
+      reasons.push("简称相近");
+    } else {
+      score = Math.min(score, 34);
+    }
+  }
+
+  if (score >= 40 && queryProfile.year && queryProfile.year === candidateProfile.year) {
+    score += 6;
+    reasons.push("同发行年份");
+  }
+  if (score >= 45 && queryProfile.product && queryProfile.product === candidateProfile.product) {
+    score += 8;
+    reasons.push("同品种");
+  }
+  if (score >= 45 && Number.isFinite(queryProfile.serial) && Number.isFinite(candidateProfile.serial)) {
+    const distance = Math.abs(queryProfile.serial - candidateProfile.serial);
+    if (distance === 0) {
+      score += 8;
+      reasons.push("同期次");
+    } else if (distance <= 2) {
+      score += 6;
+      reasons.push("期次相近");
+    }
+  }
+
+  return { score: Math.min(100, score), reasons };
+}
+
+function shortNameProfile(value = "") {
+  const normalized = normalizeLookupName(value);
+  const yearMatch = normalized.match(/^(\d{2})(.+)$/);
+  const year = yearMatch?.[1] || "";
+  const body = yearMatch?.[2] || normalized;
+  const productMatch = body.match(/^(.*?)(SCP|MTN|PPN|ABN|CP)(\d{1,4})([A-Z]?(?:\/[A-Z])?)?$/i);
+  if (productMatch) {
+    return {
+      normalized,
+      year,
+      alias: productMatch[1],
+      product: productMatch[2].toUpperCase(),
+      serial: Number(productMatch[3]),
+    };
+  }
+
+  const serialMatch = body.match(/^(.*?)(\d{1,4})([A-Z]?)$/i);
+  if (serialMatch) {
+    let alias = serialMatch[1];
+    let product = "";
+    const marker = alias.match(/^(.+?)([A-Z])$/i);
+    if (marker) {
+      alias = marker[1];
+      product = marker[2].toUpperCase();
+    }
+    return {
+      normalized,
+      year,
+      alias,
+      product,
+      serial: Number(serialMatch[2]),
+    };
+  }
+
+  return { normalized, year, alias: body, product: "", serial: null };
+}
+
+function dmLookupSuggestionFromRow(row, score, reasons = []) {
   const scaleWan = numberFromRow(row, ["plan_issue_amount", "planIssueAmount"])
     ?? numberFromRow(row, ["actu_issue_amount", "actuIssueAmount"]);
   return {
@@ -227,6 +324,7 @@ function dmLookupSuggestionFromRow(row, score) {
     subscribeDate: pickFirstDateString(row, ["subscribe_date", "subscribeDate", "issue_start_date", "issueStartDate"]),
     issueStatus: pickFirstString(row, ["issue_status_desc", "issueStatusDesc"]),
     score,
+    matchReason: reasons.join("、"),
   };
 }
 
@@ -1737,5 +1835,6 @@ export const __test__ = {
   extractDmEncryptedPayload,
   decryptDmPayload,
   resolvePrimaryWindow,
+  closestDmLookupSuggestions,
   bytesToHex,
 };

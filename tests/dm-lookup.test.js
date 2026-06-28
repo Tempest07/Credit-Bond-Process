@@ -1023,11 +1023,53 @@ test("DM no-result response includes close short-name suggestions", async () => 
     assert.equal(payload.suggestions[0].issuerName, "Missing Letter Issuer");
     assert.equal(payload.suggestions[0].issueScaleYi, 3);
     assert.equal(payload.suggestions[0].inquiryRange, "1.2-1.8");
+    assert.match(payload.suggestions[0].matchReason, /简称/);
     assert.ok(payload.suggestions[0].score >= 80);
     assert.equal(payload.diagnostic.noResult.suggestionCount, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("DM no-result suggestions prefer same issuer alias over unrelated same issue number", () => {
+  const suggestions = __test__.closestDmLookupSuggestions({
+    shortName: "26广越09",
+    rows: [
+      {
+        security_id: "809370.IB",
+        sec_short_name: "26黑龙江09",
+        issuer_full_name: "黑龙江省人民政府",
+        bond_issue_tenor: "5Y",
+        plan_issue_amount: 882030,
+      },
+      {
+        security_id: "260659.SH",
+        sec_short_name: "26安徽债59",
+        issuer_full_name: "安徽省人民政府",
+        bond_issue_tenor: "10Y",
+        plan_issue_amount: 46400,
+      },
+      {
+        security_id: "260608.SH",
+        sec_short_name: "26广越08",
+        issuer_full_name: "广州越秀集团股份有限公司",
+        bond_issue_tenor: "10Y",
+        plan_issue_amount: 90000,
+        subscribe_rate: "1.700000 ~ 2.700000",
+      },
+      {
+        security_id: "260610.SH",
+        sec_short_name: "26广越10",
+        issuer_full_name: "广州越秀集团股份有限公司",
+        bond_issue_tenor: "5Y",
+        plan_issue_amount: 60000,
+      },
+    ],
+  });
+
+  assert.deepEqual(suggestions.map((item) => item.shortName), ["26广越08", "26广越10"]);
+  assert.ok(suggestions.every((item) => /同主体简称/.test(item.matchReason)));
+  assert.ok(!suggestions.some((item) => /黑龙江|安徽/.test(item.shortName)));
 });
 
 test("DM lookup still accepts direct encrypted string responses", () => {
