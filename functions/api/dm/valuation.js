@@ -16,12 +16,17 @@ import {
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
 const MARKET_DATA_DATE_PATH = "/dm-quant-func-service/api/v1/bond/market-data/date";
+const YIELD_CURVE_PATH = "/dm-quant-func-service/api/v1/bond/yield-curve/data";
 const MAX_MARKET_DATA_SECURITIES = 25;
 const MARKET_DATA_BATCH_SIZE = 5;
+const MAX_CURVE_TERMS = 5;
 const DURATION_SLOPE_BP_PER_YEAR = 5;
 const PRIMARY_DURATION_CLUSTER_MIN_ITEMS = 2;
 const MAX_DISPLAY_COMPARABLES = 5;
 const DATA_SOURCE_LIST = [1, 2, 3, 4, 7];
+const CHINABOND_CURVE_SOURCE = "18";
+const CURVE_TYPE_YTM = "1";
+const SUPPORTED_CHINABOND_MTN_CURVE_RATINGS = new Set(["AAA+", "AAA", "AAA-", "AA+", "AA", "AA-", "A+", "A", "A-"]);
 const MARKET_DATA_FIELDS = [
   "securityId",
   "secShortName",
@@ -52,6 +57,13 @@ export async function onRequestGet(context) {
   const fullName = (url.searchParams.get("fullName") || url.searchParams.get("full_name") || "").trim();
   const offeringType = (url.searchParams.get("offeringType") || url.searchParams.get("offering_type") || "").trim();
   const venue = (url.searchParams.get("venue") || "").trim();
+  const impliedRating = normalizeCurveRating(
+    url.searchParams.get("hiddenRating")
+    || url.searchParams.get("hidden_rating")
+    || url.searchParams.get("impliedRating")
+    || url.searchParams.get("implied_rating")
+    || "",
+  );
   const valuationDate = (url.searchParams.get("valuationDate") || url.searchParams.get("valuation_date") || previousChinaBusinessDate()).trim();
 
   if (!issuerName && !societyCode) {
@@ -100,9 +112,17 @@ export async function onRequestGet(context) {
       }))
       .filter((candidate) => Number.isFinite(candidate.valuation?.rate));
 
-    const trancheSuggestions = targetDurations
+    let trancheSuggestions = targetDurations
       .map((target, index) => buildTrancheSuggestion(target, index, pricedCandidates, targetProfile, targetHasExercise))
       .filter(Boolean);
+    if (impliedRating && trancheSuggestions.some(shouldTryCurveCalibration)) {
+      trancheSuggestions = await Promise.all(trancheSuggestions.map((suggestion) => maybeApplyCurveCalibration(dm, {
+        suggestion,
+        impliedRating,
+        valuationDate,
+        targetProfile,
+      })));
+    }
 
     if (!trancheSuggestions.length) {
       return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noValuation", hint: "DM 有可比存续债，但上一日估值字段未返回中债/中证/上清所收益率。" }));
@@ -111,7 +131,7 @@ export async function onRequestGet(context) {
     return json({
       ok: true,
       source: "DM market-data/date",
-      query: { issuerName, societyCode, durationText, offeringType, shortName, valuationDate },
+      query: { issuerName, societyCode, durationText, offeringType, shortName, impliedRating, valuationDate },
       valuationDate,
       targetProfile,
       candidateCount: candidates.length,
@@ -121,6 +141,7 @@ export async function onRequestGet(context) {
         outstandingRows: outstanding.rows.length,
         outstandingPages: outstanding.pages,
         marketRows: marketRows.length,
+        curveCalibratedSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveResidualCalibration").length,
       },
     });
   } catch (error) {
@@ -209,6 +230,22 @@ async function lookupMarketDataRows(dm, securityIds, valuationDate) {
   return rows;
 }
 
+async function lookupYieldCurveRows(dm, { impliedRating, terms, valuationDate }) {
+  const curveName = chinaBondMtnCurveName(impliedRating);
+  const curveTermList = normalizeCurveTerms(terms).slice(0, MAX_CURVE_TERMS);
+  if (!curveName || !curveTermList.length) return { curveName, rows: [], raw: null };
+  const raw = await dm.post(YIELD_CURVE_PATH, {
+    dataSource: CHINABOND_CURVE_SOURCE,
+    curveName,
+    curveTermList,
+    curveType: CURVE_TYPE_YTM,
+    startDate: valuationDate,
+    endDate: valuationDate,
+    fieldNames: ["curveChName", "curveTerm", "curveType", "valuationDate", "yield"],
+  });
+  return { curveName, rows: rowsFromDm(raw), raw };
+}
+
 function candidateFromOutstandingRow(row, { valuationDate, targetHasExercise }) {
   const securityId = normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"]));
   const shortName = pickFirstString(row, ["sec_short_name", "secShortName"]);
@@ -278,6 +315,8 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
         adjustment: round(adjustment, 4),
         adjustedRate: round(candidate.valuation.rate + adjustment, 4),
         absoluteGapYears: round(absoluteGapYears, 4),
+        candidateMarketPremiumBp: marketQualityPremiumBp(candidate.profile),
+        targetMarketPremiumBp: marketQualityPremiumBp(targetProfile),
         weight: 1 / (0.35 + absoluteGapYears),
       };
     })
@@ -307,6 +346,166 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
     method: `DM 存续债上一日估值；${cluster.note}；期限差按约 ${DURATION_SLOPE_BP_PER_YEAR}bp/年机械调整，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
     comparableItems,
   };
+}
+
+function shouldTryCurveCalibration(suggestion) {
+  return suggestion?.clusterMode && suggestion.clusterMode !== "nearestCluster";
+}
+
+async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valuationDate, targetProfile }) {
+  if (!shouldTryCurveCalibration(suggestion)) return suggestion;
+  const curveName = chinaBondMtnCurveName(impliedRating);
+  if (!curveName) return {
+    ...suggestion,
+    clusterNote: `${suggestion.clusterNote}；隐含评级缺少可用中债中短票曲线`,
+  };
+  const curveTerms = [suggestion.years, ...suggestion.comparableItems.map((item) => item.years)];
+  const curve = await lookupYieldCurveRows(dm, { impliedRating, terms: curveTerms, valuationDate });
+  const curveByTerm = curveRowsByTerm(curve.rows);
+  const targetCurveYield = curveYieldForTerm(curveByTerm, suggestion.years);
+  if (!Number.isFinite(targetCurveYield)) return suggestion;
+
+  const residualItems = suggestion.comparableItems
+    .map((item) => {
+      const curveYield = curveYieldForTerm(curveByTerm, item.years);
+      if (!Number.isFinite(curveYield)) return null;
+      const ordinaryEquivalentRate = item.rate + ((item.candidateMarketPremiumBp || 0) / 100);
+      const residual = ordinaryEquivalentRate - curveYield;
+      return {
+        ...item,
+        curveYield: round(curveYield, 4),
+        curveResidual: round(residual, 4),
+        curveResidualBp: round(residual * 100, 1),
+      };
+    })
+    .filter(Boolean);
+  if (!residualItems.length) return suggestion;
+
+  const totalWeight = residualItems.reduce((sum, item) => sum + item.weight, 0);
+  const averageResidual = residualItems.reduce((sum, item) => sum + item.curveResidual * item.weight, 0) / totalWeight;
+  const residualDeviation = weightedValueDeviation(residualItems, averageResidual, "curveResidual");
+  const targetPremium = marketQualityPremiumBp(targetProfile) / 100;
+  const targetCurveAdjusted = targetCurveYield - targetPremium;
+  const center = round(targetCurveAdjusted + averageResidual, 2);
+  const spread = curveCalibrationSpread(residualItems, residualDeviation);
+  const residualDeviationBp = round(residualDeviation * 100, 1);
+  const averageResidualBp = round(averageResidual * 100, 1);
+
+  return {
+    ...suggestion,
+    center,
+    low: round(center - spread, 2),
+    high: round(center + spread, 2),
+    confidence: curveCalibrationConfidence(residualItems, residualDeviationBp),
+    clusterMode: "curveResidualCalibration",
+    clusterNote: "目标附近无足够券，采用隐含评级中债中短票曲线 + 主体曲线偏离校准",
+    method: `DM 存续债上一日估值；目标附近无足够券，按${impliedRating}隐含评级中债中短票曲线加主体曲线偏离${formatSignedBp(averageResidualBp)}校准；不使用主体评级`,
+    comparableItems: residualItems,
+    curveCalibration: {
+      curveName,
+      impliedRating,
+      targetCurveYield: round(targetCurveYield, 4),
+      targetCurveAdjusted: round(targetCurveAdjusted, 4),
+      averageResidual: round(averageResidual, 4),
+      averageResidualBp,
+      residualDeviation: round(residualDeviation, 4),
+      residualDeviationBp,
+      itemCount: residualItems.length,
+      valuationDate,
+    },
+  };
+}
+
+function curveRowsByTerm(rows = []) {
+  const map = new Map();
+  for (const row of rows) {
+    const term = numberFromRow(row, ["curve_term", "curveTerm"]);
+    const yieldRate = numberFromRow(row, ["yield"]);
+    if (!Number.isFinite(term) || !Number.isFinite(yieldRate)) continue;
+    map.set(curveTermKey(term), {
+      term,
+      yieldRate,
+      curveName: pickFirstString(row, ["curve_ch_name", "curveChName"]),
+      valuationDate: pickFirstDateString(row, ["valuation_date", "valuationDate"]),
+    });
+  }
+  return map;
+}
+
+function curveYieldForTerm(curveByTerm, years) {
+  const exact = curveByTerm.get(curveTermKey(years));
+  if (exact) return exact.yieldRate;
+  let best = null;
+  for (const value of curveByTerm.values()) {
+    const gap = Math.abs(value.term - years);
+    if (gap > 0.02) continue;
+    if (!best || gap < best.gap) best = { ...value, gap };
+  }
+  return best?.yieldRate ?? null;
+}
+
+function normalizeCurveTerms(terms = []) {
+  const seen = new Set();
+  const result = [];
+  for (const term of terms) {
+    const value = Number(term);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    const key = curveTermKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(formatCurveTerm(value));
+  }
+  return result;
+}
+
+function curveTermKey(value) {
+  return String(round(Number(value), 4));
+}
+
+function formatCurveTerm(value) {
+  return String(round(Number(value), 4));
+}
+
+function chinaBondMtnCurveName(impliedRating) {
+  const rating = normalizeCurveRating(impliedRating);
+  return rating ? `中债中短期票据收益率曲线(${rating})` : "";
+}
+
+function normalizeCurveRating(value = "") {
+  const rating = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/（/g, "(")
+    .replace(/）/g, ")");
+  if (!SUPPORTED_CHINABOND_MTN_CURVE_RATINGS.has(rating)) return "";
+  return rating;
+}
+
+function curveCalibrationSpread(items, residualDeviation) {
+  return items.length <= 1 ? 0.08 : Math.max(0.05, Math.min(0.18, residualDeviation));
+}
+
+function curveCalibrationConfidence(items, residualDeviationBp) {
+  if (items.length >= 3 && residualDeviationBp <= 5) return "中等";
+  if (items.length >= 2 && residualDeviationBp <= 8) return "中等";
+  return "较低";
+}
+
+function weightedValueDeviation(items, center, key) {
+  const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+  const variance = items.reduce((sum, item) => sum + ((item[key] - center) ** 2) * item.weight, 0) / totalWeight;
+  return Math.sqrt(variance);
+}
+
+function formatSignedBp(value) {
+  return `${value > 0 ? "+" : ""}${formatNumber(value)}bp`;
+}
+
+function formatNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  return String(round(number, 1));
 }
 
 function selectPrimaryDurationCluster(items, targetYears) {
@@ -658,7 +857,9 @@ function previousChinaBusinessDate(reference = new Date()) {
 
 export const __test__ = {
   buildTrancheSuggestion,
+  chinaBondMtnCurveName,
   durationToYears,
+  normalizeCurveRating,
   previousChinaBusinessDate,
   pickDmValuationRate,
   selectPrimaryDurationCluster,

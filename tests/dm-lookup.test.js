@@ -362,6 +362,92 @@ test("DM valuation assistant falls back cautiously when target duration lacks ne
   assert.ok(suggestion.high > suggestion.center);
 });
 
+test("DM valuation assistant calibrates sparse tenors with implied-rating ChinaBond MTN curve", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  const issuerName = "Curve Issuer";
+  const securities = [
+    { security_id: "102600101.IB", sec_short_name: "short-1", remaining_tenor: "3.78Y", bond_issue_tenor: "5Y", bond_type_desc: "MTN" },
+    { security_id: "102600102.IB", sec_short_name: "short-2", remaining_tenor: "3.72Y", bond_issue_tenor: "5Y", bond_type_desc: "MTN" },
+    { security_id: "102600103.IB", sec_short_name: "short-3", remaining_tenor: "3.69Y", bond_issue_tenor: "5Y", bond_type_desc: "MTN" },
+  ];
+  const rates = new Map([
+    ["102600101.IB", 1.8381],
+    ["102600102.IB", 1.8361],
+    ["102600103.IB", 1.8351],
+  ]);
+  const curveYields = new Map([
+    ["5", 1.88],
+    ["3.78", 1.75],
+    ["3.72", 1.745],
+    ["3.69", 1.742],
+  ]);
+
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    calls.push({ url: String(url), request });
+    let data;
+    if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      assert.equal(request.issuerFullName, issuerName);
+      data = { list: securities.map((item) => ({ ...item, issuer_name: issuerName })), maxOffset: null };
+    } else if (url.includes("/bond/basic-info/info")) {
+      data = request.securityIdList.map((securityId) => ({
+        ...securities.find((item) => item.security_id === securityId),
+        issuer_name: issuerName,
+        payment_order: "普通债权",
+        special_item: "",
+      }));
+    } else if (url.includes("/bond/market-data/date")) {
+      data = request.securityIdList.map((securityId) => ({
+        security_id: securityId,
+        sec_short_name: securities.find((item) => item.security_id === securityId)?.sec_short_name,
+        valuation_date: "2026-06-26",
+        cb_yte: rates.get(securityId),
+        cb_reliability: "推荐",
+      }));
+    } else if (url.includes("/bond/yield-curve/data")) {
+      assert.equal(request.curveName, "中债中短期票据收益率曲线(AA+)");
+      assert.equal(request.dataSource, "18");
+      assert.equal(request.curveType, "1");
+      assert.ok(!request.curveName.includes("AAA"));
+      data = request.curveTermList.map((term) => ({
+        curve_ch_name: request.curveName,
+        curve_term: Number(term),
+        curve_type: 1,
+        valuation_date: "2026-06-26",
+        yield: curveYields.get(term),
+      }));
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onValuationRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/valuation?issuerName=Curve%20Issuer&durationText=5%2B10Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26CURVE001&hiddenRating=AA%2B&subjectRating=AAA&valuationDate=2026-06-26", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.trancheSuggestions[0].clusterMode, "curveResidualCalibration");
+    assert.equal(payload.trancheSuggestions[0].curveCalibration.impliedRating, "AA+");
+    assert.equal(payload.trancheSuggestions[0].curveCalibration.targetCurveYield, 1.88);
+    assert.ok(payload.trancheSuggestions[0].curveCalibration.averageResidualBp > 8);
+    assert.ok(payload.trancheSuggestions[0].center > 1.95 && payload.trancheSuggestions[0].center < 1.98);
+    assert.ok(payload.trancheSuggestions[0].method.includes("不使用主体评级"));
+    assert.ok(payload.trancheSuggestions[0].comparableItems.every((item) => Number.isFinite(item.curveResidualBp)));
+    assert.ok(calls.some((call) => call.url.includes("/bond/yield-curve/data")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup searches additional DM issuer data before falling back to D1", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

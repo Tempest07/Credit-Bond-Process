@@ -1448,6 +1448,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
     fullName: projectValue.fullName || "",
     offeringType: projectValue.offeringType || "",
     venue: projectValue.venue || "",
+    hiddenRating: projectValue.hiddenRating || "",
   });
   if (valuationAssistRequestKey === key) return;
   valuationAssistRequestKey = key;
@@ -1472,6 +1473,7 @@ async function fetchDmValuationAssist(key, projectValue, issuerName) {
     fullName: projectValue.fullName || "",
     offeringType: projectValue.offeringType || "",
     venue: projectValue.venue || "",
+    hiddenRating: projectValue.hiddenRating || "",
   });
   try {
     const response = await fetch(`${DM_VALUATION_URL}?${params.toString()}`, {
@@ -1559,6 +1561,7 @@ function renderValuationComparable(item) {
   const facts = [
     item.durationText,
     `${formatValuationRate(item.rate)} ${item.source}`,
+    Number.isFinite(numberOrNull(item.curveResidualBp)) ? `曲线偏离${item.curveResidualBp > 0 ? "+" : ""}${formatNumber(item.curveResidualBp)}bp` : "",
     item.reliability ? `推荐度${item.reliability}` : "",
     adjustmentText,
   ].filter(Boolean);
