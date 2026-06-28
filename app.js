@@ -2,6 +2,7 @@ import {
   DEFAULT_STATE,
   applyIssuerCommonFields,
   buildBondFullName,
+  buildUnderwriter,
   durationParts,
   durationToDays,
   findIssuer,
@@ -13,7 +14,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260628-credit-term-wording";
+} from "./core.js?v=20260628-ledger-tags";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -31,13 +32,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260628-credit-term-wording";
+} from "./lifecycle.js?v=20260628-ledger-tags";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260628-credit-term-wording";
+} from "./history-parser.js?v=20260628-ledger-tags";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -50,7 +51,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260628-credit-term-wording";
+} from "./protocol-transfer.js?v=20260628-ledger-tags";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -70,7 +71,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260628-credit-term-wording";
+} from "./secondary-inventory.js?v=20260628-ledger-tags";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -3609,8 +3610,13 @@ function parseScaleFromSourceText(text = "") {
 function formatProjectVenueLead(projectValue) {
   return [
     projectValue.venue,
-    projectValue.leadUnderwriter,
+    formatProjectLeadForDisplay(projectValue),
   ].filter(Boolean).join(" · ") || "场所/主承待补";
+}
+
+function formatProjectLeadForDisplay(projectValue) {
+  const value = buildUnderwriter(projectValue || {});
+  return value.includes("【") ? "" : value;
 }
 
 function formatDurationSummaryValue(value = "") {

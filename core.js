@@ -653,7 +653,7 @@ function uniqueNonEmpty(values = []) {
 
 function formatCreditTermCoverageSentence(suggestion, branch) {
   if (!suggestion.trancheSuggestions.some((item) => item.exceedsCreditTerm)) return "";
-  return `本笔业务期限不覆盖，请${branch || "【待补充联动分行】"}及时续作授信或在授信到期前三个月通知我部，避免超期限持有。`;
+  return `本笔业务期限不覆盖，请${branch || "【待补充联动分行】"}及时续作授信，或在授信到期前三个月通知我部，避免超期限持有。`;
 }
 
 export function formatCreditSentence(issuer) {
