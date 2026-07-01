@@ -161,21 +161,35 @@ export async function onRequestOptions() {
 async function lookupOutstandingBonds(dm, { issuerName, societyCode }) {
   const rows = [];
   const pages = [];
-  let offset = 0;
-  for (let page = 0; page < 5; page += 1) {
-    const payload = {
-      bondStatusList: [2],
-      offset,
-    };
-    if (issuerName) payload.issuerFullName = issuerName;
-    if (societyCode) payload.societyCode = societyCode;
-    const raw = await dm.post(OUTSTANDING_BONDS_PATH, payload);
-    const pageRows = rowsFromDm(raw);
-    rows.push(...pageRows);
-    const nextOffset = raw?.maxOffset ?? raw?.max_offset ?? raw?.Max_Offset ?? raw?.max_Offset;
-    pages.push({ offset, count: pageRows.length, nextOffset: nextOffset ?? null });
-    if (!pageRows.length || nextOffset === undefined || nextOffset === null || String(nextOffset) === String(offset)) break;
-    offset = nextOffset;
+  const seen = new Set();
+  const queries = [
+    ...(societyCode ? [{ source: "societyCode", societyCode }] : []),
+    ...(issuerName ? [{ source: "issuerFullName", issuerFullName: issuerName }] : []),
+  ];
+  for (const query of queries) {
+    const beforeCount = rows.length;
+    let offset = 0;
+    for (let page = 0; page < 5; page += 1) {
+      const payload = {
+        bondStatusList: [2],
+        offset,
+        ...(query.issuerFullName ? { issuerFullName: query.issuerFullName } : {}),
+        ...(query.societyCode ? { societyCode: query.societyCode } : {}),
+      };
+      const raw = await dm.post(OUTSTANDING_BONDS_PATH, payload);
+      const pageRows = rowsFromDm(raw);
+      for (const row of pageRows) {
+        const key = normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"])) || JSON.stringify(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+      }
+      const nextOffset = raw?.maxOffset ?? raw?.max_offset ?? raw?.Max_Offset ?? raw?.max_Offset;
+      pages.push({ source: query.source, offset, count: pageRows.length, nextOffset: nextOffset ?? null });
+      if (!pageRows.length || nextOffset === undefined || nextOffset === null || String(nextOffset) === String(offset)) break;
+      offset = nextOffset;
+    }
+    if (rows.length > beforeCount) break;
   }
   return { rows, pages };
 }

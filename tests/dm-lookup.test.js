@@ -27,6 +27,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
         sec_short_name: "26测试SCP001",
         sec_full_name: "测试集团有限公司2026年度第一期超短期融资券",
         issuer_name: "测试集团有限公司",
+        society_code: "91320000123456789X",
         bond_matu: "270D",
         subject_rating: "AAA",
         rating_agency: "中诚信国际",
@@ -51,7 +52,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
       };
     } else {
       assert.deepEqual(request.comFullNameList, ["测试集团有限公司"]);
-      data = [{ com_full_name: "测试集团有限公司", is_city_annex: 1 }];
+      data = [{ com_full_name: "测试集团有限公司", society_code: "91320000123456789X", is_city_annex: 1 }];
     }
     const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
     return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
@@ -69,6 +70,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
     assert.equal(payload.ok, true);
     assert.equal(payload.normalized.shortName, "26测试SCP001");
     assert.equal(payload.normalized.issuerName, "测试集团有限公司");
+    assert.equal(payload.normalized.societyCode, "91320000123456789X");
     assert.equal(payload.normalized.issueScaleYi, 7);
     assert.equal(payload.normalized.inquiryRange, "1.3-1.5");
     assert.equal(payload.normalized.venue, "银行间");
@@ -362,6 +364,76 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
     assert.ok(techComparable.marketAdjustment > 0.03);
     assert.ok(payload.trancheSuggestions[0].center > 2.48 && payload.trancheSuggestions[0].center < 2.52);
     assert.ok(calls.some((url) => url.includes("/bond/market-data/date")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM valuation assistant prefers society code when loading issuer comparables", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const outstandingRequests = [];
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      outstandingRequests.push(request);
+      assert.equal(request.societyCode, "91320200123456789X");
+      assert.equal(request.issuerFullName, undefined);
+      data = {
+        list: [{
+          security_id: "256800002.SH",
+          sec_short_name: "26锡城02",
+          sec_full_name: "无锡城建发展集团有限公司2026年面向专业投资者非公开发行公司债券(第二期)",
+          issuer_name: "无锡城建发展集团有限公司",
+          remaining_tenor: "9.92Y",
+          bond_issue_tenor: "10Y",
+          bond_type_desc: "公司债券",
+          public_offering_status: "私募",
+        }],
+        maxOffset: null,
+      };
+    } else if (url.includes("/bond/basic-info/info")) {
+      data = request.securityIdList.map((securityId) => ({
+        security_id: securityId,
+        sec_short_name: "26锡城02",
+        sec_full_name: "无锡城建发展集团有限公司2026年面向专业投资者非公开发行公司债券(第二期)",
+        issuer_name: "无锡城建发展集团有限公司",
+        remaining_tenor: "9.92Y",
+        bond_issue_tenor: "10Y",
+        bond_type_desc: "公司债券",
+        payment_order: "普通债权",
+        special_item: "",
+      }));
+    } else if (url.includes("/bond/market-data/date")) {
+      assert.deepEqual(request.securityIdList, ["256800002.SH"]);
+      data = [{
+        security_id: "256800002.SH",
+        sec_short_name: "26锡城02",
+        valuation_date: "2026-06-30",
+        cb_ytm: 2.4575,
+        cb_reliability: "推荐",
+      }];
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onValuationRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/valuation?issuerName=%E5%90%8D%E7%A7%B0%E5%8F%AF%E8%83%BD%E6%9C%89%E5%B7%AE%E5%BC%82&societyCode=91320200123456789X&durationText=10Y&offeringType=%E7%A7%81%E5%8B%9F&venue=%E4%B8%8A%E4%BA%A4%E6%89%80&shortName=26%E9%94%A1%E5%9F%8E03&valuationDate=2026-06-30", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.query.societyCode, "91320200123456789X");
+    assert.equal(payload.trancheSuggestions[0].comparableItems[0].shortName, "26锡城02");
+    assert.equal(outstandingRequests.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

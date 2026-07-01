@@ -1142,6 +1142,7 @@ function projectPatchFromDmLookup(payload) {
   assignProjectDmValueWithSource(patch, sourceMap, "shortName", normalized.shortName);
   assignProjectDmValueWithSource(patch, sourceMap, "fullName", dmProjectFullNameForProject(normalized.fullName, patch, issueGroup));
   assignProjectDmValueWithSource(patch, sourceMap, "issuerName", normalized.issuerName);
+  assignProjectDmValueWithSource(patch, sourceMap, "societyCode", normalized.societyCode);
   assignProjectDmValueWithSource(patch, sourceMap, "durationText", normalizeDmTenor(normalized.durationText));
   assignProjectDmValueWithSource(patch, sourceMap, "issueScale", normalized.issueScaleYi);
   assignProjectDmValueWithSource(patch, sourceMap, "venue", normalized.venue);
@@ -1845,6 +1846,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
 
   const key = JSON.stringify({
     issuerName,
+    societyCode: projectValue.societyCode || "",
     durationText: projectValue.durationText || "",
     shortName: projectValue.shortName || "",
     fullName: projectValue.fullName || "",
@@ -1870,6 +1872,7 @@ async function fetchDmValuationAssist(key, projectValue, issuerName) {
   valuationAssistController = new AbortController();
   const params = new URLSearchParams({
     issuerName,
+    societyCode: projectValue.societyCode || "",
     durationText: projectValue.durationText || "",
     shortName: projectValue.shortName || "",
     fullName: projectValue.fullName || "",

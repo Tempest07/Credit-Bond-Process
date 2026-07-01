@@ -421,6 +421,9 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
   const issuerName = pickFirstString(primaryRow, ["issuer_full_name", "issuerFullName"])
     || pickFirstString(basicRow, ["issuer_name", "issuerName"])
     || pickFirstString(companyRow, ["com_full_name", "comFullName"]);
+  const societyCode = pickFirstString(primaryRow, ["society_code", "societyCode"])
+    || pickFirstString(basicRow, ["society_code", "societyCode"])
+    || pickFirstString(companyRow, ["society_code", "societyCode"]);
   const leadUnderwriter = pickFirstString(primaryRow, ["unde_name", "undeName"]);
   const scaleWan = numberFromRow(primaryRow, ["plan_issue_amount", "planIssueAmount"])
     ?? numberFromRow(primaryRow, ["actu_issue_amount", "actuIssueAmount"]);
@@ -435,6 +438,7 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
     shortName: resolvedShortName,
     fullName: pickFirstString(primaryRow, ["sec_full_name", "secFullName"]) || pickFirstString(basicRow, ["sec_full_name", "secFullName"]),
     issuerName,
+    societyCode,
     durationText: resolvedDuration.value,
     durationSource: resolvedDuration.source,
     specialItem: pickFirstString(basicRow, ["special_item", "specialItem"]),
