@@ -7,6 +7,7 @@ import {
   calculateSuggestion,
   determineApprover,
   durationToDays,
+  findIssuer,
   generateOpinion,
   mergeImportedIssuers,
   normalizeIssuer,
@@ -53,6 +54,19 @@ const sample = `26粤交投SCP002 非我行主承 广州分行
 
 26粤交投SCP002 市场估值约1.46
 如需综合定价，指导价约1.48`;
+
+test("ignores generic issuer aliases when matching unrelated issuer text", () => {
+  const issuers = [
+    { id: "sd", legalName: "山东发展投资控股集团有限公司", aliases: ["发展", "山东发展"] },
+    { id: "wx", legalName: "无锡城建发展集团有限公司", aliases: ["锡城", "无锡城建"] },
+  ];
+
+  assert.equal(findIssuer("无锡城建发展集团有限公司2026年面向专业投资者非公开发行公司债券(第三期)", [issuers[0]]), null);
+  assert.equal(findIssuer("26锡城03", [issuers[0]]), null);
+  assert.equal(findIssuer("26锡城03", issuers)?.id, "wx");
+  assert.equal(findIssuer("无锡城建发展集团有限公司", issuers)?.id, "wx");
+  assert.equal(findIssuer("山东发展投资控股集团有限公司", issuers)?.id, "sd");
+});
 
 test("parses the sample project brief", () => {
   const parsed = parseProjectBrief(sample);

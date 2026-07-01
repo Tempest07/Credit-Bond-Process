@@ -516,8 +516,8 @@ function parseAndRender() {
 }
 
 function findIssuerForProject(projectValue) {
-  return findIssuer(projectValue?.shortName || "", state.issuers)
-    || findIssuer(projectValue?.issuerName || "", state.issuers);
+  return findIssuer(projectValue?.issuerName || "", state.issuers)
+    || findIssuer(projectValue?.shortName || "", state.issuers);
 }
 
 function loadBlankBriefTemplate() {

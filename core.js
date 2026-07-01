@@ -494,15 +494,87 @@ function parseOfferingType(text, result) {
   }
 }
 
-export function findIssuer(shortName, issuers = []) {
-  const candidates = issuers.flatMap((issuer) =>
-    [...new Set([issuer.legalName, ...(issuer.aliases || [])])]
-      .filter(Boolean)
-      .map((alias) => ({ issuer, alias })),
-  );
+const GENERIC_ISSUER_ALIASES = new Set([
+  "发展",
+  "投资",
+  "控股",
+  "集团",
+  "城投",
+  "城建",
+  "建设",
+  "交通",
+  "交投",
+  "产投",
+  "国投",
+  "国资",
+  "资本",
+  "实业",
+  "置业",
+  "金控",
+  "文旅",
+  "水务",
+  "能源",
+  "开发",
+  "运营",
+  "管理",
+  "城市",
+  "市政",
+  "高速",
+  "铁路",
+  "轨交",
+  "地铁",
+  "地产",
+  "资产",
+  "产业",
+  "公司",
+  "有限",
+  "股份",
+]);
+
+function compactIssuerText(value = "") {
+  return String(value || "").replace(/[^\p{Letter}\p{Number}]/gu, "").toLowerCase();
+}
+
+function issuerTextLength(value = "") {
+  return Array.from(value).length;
+}
+
+function isSpecificIssuerAlias(alias) {
+  const text = compactIssuerText(alias);
+  if (!text || GENERIC_ISSUER_ALIASES.has(text)) return false;
+  if (/^[a-z0-9]+$/i.test(text)) return text.length >= 4;
+  return issuerTextLength(text) >= 2;
+}
+
+function issuerMatchScore(queryValue, aliasValue, isLegalName = false) {
+  const query = compactIssuerText(queryValue);
+  const alias = compactIssuerText(aliasValue);
+  if (!query || !alias) return 0;
+  const queryLength = issuerTextLength(query);
+  const aliasLength = issuerTextLength(alias);
+  if (query === alias) return (isLegalName ? 1000 : 900) + aliasLength;
+  if (isLegalName) {
+    if (query.includes(alias) && aliasLength >= 6) return 800 + aliasLength;
+    if (alias.includes(query) && queryLength >= 4) return 700 + queryLength;
+    return 0;
+  }
+  if (!isSpecificIssuerAlias(alias)) return 0;
+  return query.includes(alias) ? 500 + aliasLength : 0;
+}
+
+export function findIssuer(query, issuers = []) {
+  const candidates = issuers.flatMap((issuer) => {
+    const legalName = String(issuer.legalName || "").trim();
+    const aliases = [...new Set((issuer.aliases || []).map((alias) => String(alias || "").trim()).filter(Boolean))];
+    return [
+      ...(legalName ? [{ issuer, alias: legalName, isLegalName: true }] : []),
+      ...aliases.map((alias) => ({ issuer, alias, isLegalName: false })),
+    ];
+  });
   return candidates
-    .filter(({ alias }) => shortName.includes(alias))
-    .sort((left, right) => right.alias.length - left.alias.length)[0]?.issuer || null;
+    .map((candidate) => ({ ...candidate, score: issuerMatchScore(query, candidate.alias, candidate.isLegalName) }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || right.alias.length - left.alias.length)[0]?.issuer || null;
 }
 
 export function buildBondFullName(shortName, legalName, project = {}) {
