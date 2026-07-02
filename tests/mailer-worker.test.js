@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { onRequestGet as onMailProxyGet } from "../functions/api/mail/today.js";
 import mailerWorker, { buildTodayMail, selectTodayBidProjects } from "../mailer-worker.js";
 
 const today = "2026-06-11";
@@ -88,3 +89,55 @@ test("returns a readable JSON error when sending is misconfigured", async () => 
   assert.match(body.error, /RESEND_API_KEY/);
   assert.match(body.hint, /RESEND_API_KEY/);
 });
+
+test("mail proxy authenticates the page session and forwards the mailer password", async () => {
+  const originalFetch = globalThis.fetch;
+  let forwardedAuthorization = "";
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://credit-bond-mailer.weiqian-yu.workers.dev/preview-today");
+    forwardedAuthorization = init.headers.Authorization;
+    return new Response(JSON.stringify({ ok: true, text: "preview" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const response = await onMailProxyGet({
+      env: { APP_PASSWORD: "mailer-password", DB: createSessionDb() },
+      request: new Request("https://example.com/api/mail/today?action=preview", {
+        headers: { Authorization: "Bearer session-token" },
+      }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.text, "preview");
+    assert.equal(forwardedAuthorization, "Bearer mailer-password");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function createSessionDb() {
+  return {
+    prepare(sql) {
+      return {
+        bind() {
+          return this;
+        },
+        async run() {
+          return {};
+        },
+        async first() {
+          if (/SELECT id FROM users WHERE username/i.test(sql)) return { id: "admin" };
+          if (/SELECT user_id FROM user_app_state/i.test(sql)) return { user_id: "admin" };
+          if (/FROM sessions s/i.test(sql)) {
+            return { id: "admin", username: "admin", nickname: "管理员", role: "admin" };
+          }
+          return null;
+        },
+      };
+    },
+  };
+}

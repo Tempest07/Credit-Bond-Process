@@ -14,7 +14,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260702-login";
+} from "./core.js?v=20260702-mail-proxy";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -32,13 +32,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260702-login";
+} from "./lifecycle.js?v=20260702-mail-proxy";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260702-login";
+} from "./history-parser.js?v=20260702-mail-proxy";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -51,7 +51,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260702-login";
+} from "./protocol-transfer.js?v=20260702-mail-proxy";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -71,7 +71,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260702-login";
+} from "./secondary-inventory.js?v=20260702-mail-proxy";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -82,7 +82,7 @@ const API_URL = "./api/state";
 const AUTH_LOGIN_URL = "./api/auth/login";
 const AUTH_LOGOUT_URL = "./api/auth/logout";
 const DM_VALUATION_URL = "./api/dm/valuation";
-const MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
+const MAILER_URL = "./api/mail/today";
 const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
@@ -2136,9 +2136,10 @@ async function callMailer(action) {
     isSend ? "正在发送今日流程邮件..." : "正在生成今日邮件预览...",
   );
   try {
-    const response = await fetch(`${MAILER_URL}/${isSend ? "send-today" : "preview-today"}`, {
+    const params = new URLSearchParams({ action: isSend ? "send" : "preview" });
+    const response = await fetch(`${MAILER_URL}?${params.toString()}`, {
       method: isSend ? "POST" : "GET",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeaders(),
     });
     const text = await response.text();
     const payload = parseJson(text);

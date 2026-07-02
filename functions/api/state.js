@@ -48,6 +48,7 @@ export async function onRequestPut(context) {
 
     await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
     await writeUserAppState(context.env.DB, auth.user.id, data, updatedAt);
+    if (auth.user.id === "admin") await writeLegacyAppState(context.env.DB, data, updatedAt);
 
     return json({ status: "ok", updatedAt, user: auth.user });
   } catch (error) {
@@ -86,4 +87,23 @@ function validateState(data) {
     ftpCurve: data.ftpCurve || {},
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };
+}
+
+async function writeLegacyAppState(db, data, updatedAt) {
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS app_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `).run();
+    await db.prepare(`
+      INSERT INTO app_state (id, data, updated_at)
+      VALUES (1, ?1, ?2)
+      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+    `).bind(JSON.stringify(data), updatedAt).run();
+  } catch {
+    // user_app_state is the source of truth; legacy app_state is only for older mailer deployments.
+  }
 }
