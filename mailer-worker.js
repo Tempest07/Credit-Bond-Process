@@ -39,8 +39,8 @@ export async function handleRequest(request, env) {
     return jsonResponse({ status: "ok" });
   }
 
-  const denied = authorize(request, env);
-  if (denied) return denied;
+  const auth = await authorize(request, env);
+  if (auth.response) return auth.response;
 
   if (url.pathname === "/preview-today" && request.method === "GET") {
     const report = await buildReportFromDb(env, {
@@ -240,6 +240,12 @@ function formatOpinion(project) {
 
 async function loadState(db) {
   if (!db) throw new Error("D1 binding DB 尚未配置");
+  try {
+    const userRow = await db.prepare("SELECT data FROM user_app_state WHERE user_id = ?1").bind("admin").first();
+    if (userRow?.data) return JSON.parse(userRow.data);
+  } catch {
+    // Legacy deployments may not have the per-user table yet.
+  }
   const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
   return row?.data ? JSON.parse(row.data) : { version: 2, issuers: [], projects: [], updatedAt: null };
 }
@@ -306,7 +312,38 @@ function validateMailEnv(env) {
   if (!env.MAIL_TO) throw new Error("Variable MAIL_TO 尚未配置");
 }
 
-function authorize(request, env) {
+async function authorize(request, env) {
+  const password = String(env.ADMIN_PASSWORD || env.APP_PASSWORD || "").trim();
+  const authorization = request.headers.get("Authorization") || "";
+  const token = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!password && !token) return { response: jsonResponse({ error: "Secret APP_PASSWORD 灏氭湭閰嶇疆" }, 503) };
+  if (token && password && token === password) return { userId: "admin" };
+  if (!token) return { response: jsonResponse({ error: "Unauthorized" }, 401) };
+  if (!env.DB && password) return { response: jsonResponse({ error: "Unauthorized" }, 401) };
+  if (!env.DB) return { response: jsonResponse({ error: "D1 binding DB 灏氭湭閰嶇疆" }, 503) };
+
+  try {
+    const row = await env.DB.prepare(`
+      SELECT u.id, u.username, u.nickname, u.role
+      FROM sessions s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ?1 AND s.expires_at > ?2
+    `).bind(await sha256Hex(token), new Date().toISOString()).first();
+    if (row?.id) return { userId: row.id };
+  } catch {
+    if (!password) return { response: jsonResponse({ error: "Secret APP_PASSWORD 灏氭湭閰嶇疆" }, 503) };
+  }
+
+  return { response: jsonResponse({ error: "Unauthorized" }, 401) };
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(String(value || ""));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function legacyAuthorize(request, env) {
   if (!env.APP_PASSWORD) return jsonResponse({ error: "Secret APP_PASSWORD 尚未配置" }, 503);
   const authorization = request.headers.get("Authorization") || "";
   if (authorization === `Bearer ${env.APP_PASSWORD}`) return null;

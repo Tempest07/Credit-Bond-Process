@@ -1,3 +1,5 @@
+import { readUserAppState, requireUser } from "../_auth.js";
+
 const DM_BASE_URL = "https://gapi-ext.innodealing.com";
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const PRIMARY_PATH = "/dm-quant-func-service/api/v1/bond/primary/data";
@@ -32,8 +34,8 @@ const CK = [
 ];
 
 export async function onRequestGet(context) {
-  const denied = authorize(context);
-  if (denied) return denied;
+  const auth = await requireUser(context);
+  if (auth.response) return auth.response;
 
   const url = new URL(context.request.url);
   const shortName = (url.searchParams.get("shortName") || url.searchParams.get("short_name") || "").trim();
@@ -66,7 +68,7 @@ export async function onRequestGet(context) {
     const normalized = normalizeDmLookup({ shortName, securityId, fullName, basic, primary, company });
     const dmRatingDiscovery = await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company });
     const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
-    const d1State = await readD1AppState(context.env.DB);
+    const d1State = await readD1AppState(context.env.DB, auth.user.id);
     const issuerRatingFallback = lookupIssuerRatingFallback(d1State, dmEnrichedNormalized);
     const enrichedNormalized = applyIssuerRatingFallback(dmEnrichedNormalized, issuerRatingFallback);
     const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId, fullName }, primary);
@@ -684,8 +686,22 @@ function applyDmRatingDiscovery(normalized, discovery) {
   return next;
 }
 
-async function readD1AppState(db) {
+async function readD1AppState(db, userId = "admin") {
   if (!db) return null;
+  try {
+    const result = await readUserAppState(db, userId);
+    const hasUserData = result?.updatedAt
+      || (Array.isArray(result?.data?.issuers) && result.data.issuers.length)
+      || (Array.isArray(result?.data?.projects) && result.data.projects.length);
+    if (hasUserData) return result.data;
+  } catch {
+    try {
+      const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
+      return row?.data ? JSON.parse(row.data) : null;
+    } catch {
+      return null;
+    }
+  }
   try {
     const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
     return row?.data ? JSON.parse(row.data) : null;
@@ -1619,20 +1635,6 @@ export function validateDmConfig(env) {
   if (!env.INNO_APP_KEY) return json({ error: "Cloudflare Secret INNO_APP_KEY 尚未配置" }, 503);
   if (!env.INNO_APP_SECRET && !env.INNO_SM4_KEY) return json({ error: "Cloudflare Secret INNO_APP_SECRET 尚未配置" }, 503);
   return null;
-}
-
-export function authorize(context) {
-  if (isLocalRequest(context.request)) return null;
-  const password = context.env.APP_PASSWORD;
-  if (!password) return json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503);
-  const authorization = context.request.headers.get("Authorization") || "";
-  if (authorization !== `Bearer ${password}`) return json({ error: "Unauthorized" }, 401);
-  return null;
-}
-
-function isLocalRequest(request) {
-  const hostname = new URL(request.url).hostname;
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 export function apiHeaders() {

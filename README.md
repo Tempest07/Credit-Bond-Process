@@ -48,10 +48,10 @@
    - D1 database：`credit-bond-process`
 6. 在 Pages 项目的 Settings / Variables and Secrets 中添加加密 Secret：
    - Variable name：`APP_PASSWORD`
-   - Value：设置一个仅自己知道的高强度口令
+   - Value：设置一个仅自己知道的高强度口令，作为 `admin` 管理员账号的初始密码
 7. 重新部署 Pages。
 
-Pages Function 会在首次访问时自动创建所需表，也可以手动执行 `schema.sql`。
+Pages Function 会在首次登录或访问资料库时自动创建所需表，并把旧 `app_state` 数据迁移到 `admin` 管理员账号名下；也可以手动执行 `schema.sql`。
 
 ## Gateway
 
@@ -72,7 +72,7 @@ https://tempest07.com/bond-centre/
 
 ## 安全要求
 
-资料库 API 强制校验 Pages Secret `APP_PASSWORD`。口令由用户在页面中输入，仅保存在当前浏览器会话的 `sessionStorage`，不会写入仓库或长期保存在浏览器中。
+资料库 API 强制校验登录 session。默认管理员用户名为 `admin`，昵称为“管理员”，初始密码取 Pages Secret `APP_PASSWORD`（也兼容 `ADMIN_PASSWORD`）。登录 token 仅保存在当前浏览器会话的 `sessionStorage`，不会写入仓库或长期保存在浏览器中。旧的 `Authorization: Bearer APP_PASSWORD` 调用仍保留兼容。
 
 正式启用后仍建议使用 Cloudflare Access 进一步保护 Gateway 路径和 Pages 项目。直接访问 `*.pages.dev` 时，前端会跳转至 Gateway，但跳转本身不能替代访问控制。
 

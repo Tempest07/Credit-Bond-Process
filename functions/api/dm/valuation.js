@@ -1,6 +1,5 @@
 import {
   apiHeaders,
-  authorize,
   json,
   makeDmClient,
   normalizeSecurityId,
@@ -12,6 +11,7 @@ import {
   rowsFromDm,
   validateDmConfig,
 } from "./lookup.js";
+import { requireUser } from "../_auth.js";
 
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
@@ -44,8 +44,8 @@ const MARKET_DATA_FIELDS = [
 ];
 
 export async function onRequestGet(context) {
-  const denied = authorize(context);
-  if (denied) return denied;
+  const auth = await requireUser(context);
+  if (auth.response) return auth.response;
   const missingConfig = validateDmConfig(context.env);
   if (missingConfig) return missingConfig;
 

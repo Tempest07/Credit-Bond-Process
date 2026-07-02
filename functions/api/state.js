@@ -1,14 +1,27 @@
+import {
+  EMPTY_APP_STATE,
+  apiHeaders,
+  ensureAuthSchema,
+  isLocalRequest,
+  json,
+  readUserAppState,
+  requireUser,
+  writeUserAppState,
+} from "./_auth.js";
+
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export async function onRequestGet(context) {
-  const denied = authorize(context);
-  if (denied) return denied;
+  const auth = await requireUser(context);
+  if (auth.response) return auth.response;
+  if (!context.env.DB) return json({ error: "Cloudflare D1 binding DB 尚未配置" }, 503);
   try {
-    await ensureSchema(context.env.DB);
-    const row = await context.env.DB.prepare("SELECT data, updated_at FROM app_state WHERE id = 1").first();
+    await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
+    const result = await readUserAppState(context.env.DB, auth.user.id);
     return json({
-      data: row?.data ? JSON.parse(row.data) : { version: 2, issuers: [], projects: [], updatedAt: null },
-      updatedAt: row?.updated_at || null,
+      data: result.data,
+      updatedAt: result.updatedAt,
+      user: auth.user,
     });
   } catch (error) {
     return json({ error: error.message || "读取资料库失败" }, 500);
@@ -16,8 +29,9 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPut(context) {
-  const denied = authorize(context);
-  if (denied) return denied;
+  const auth = await requireUser(context);
+  if (auth.response) return auth.response;
+  if (!context.env.DB) return json({ error: "Cloudflare D1 binding DB 尚未配置" }, 503);
   const declaredLength = Number(context.request.headers.get("Content-Length") || 0);
   if (declaredLength > MAX_BODY_BYTES) return json({ error: "提交的数据过大" }, 413);
 
@@ -32,14 +46,10 @@ export async function onRequestPut(context) {
     const updatedAt = new Date().toISOString();
     data.updatedAt = updatedAt;
 
-    await ensureSchema(context.env.DB);
-    await context.env.DB.prepare(`
-      INSERT INTO app_state (id, data, updated_at)
-      VALUES (1, ?1, ?2)
-      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
-    `).bind(JSON.stringify(data), updatedAt).run();
+    await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
+    await writeUserAppState(context.env.DB, auth.user.id, data, updatedAt);
 
-    return json({ status: "ok", updatedAt });
+    return json({ status: "ok", updatedAt, user: auth.user });
   } catch (error) {
     return json({ error: error.message || "保存资料库失败" }, 400);
   }
@@ -47,17 +57,6 @@ export async function onRequestPut(context) {
 
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: apiHeaders() });
-}
-
-async function ensureSchema(db) {
-  if (!db) throw new Error("Cloudflare D1 binding DB 尚未配置");
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS app_state (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      data TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `).run();
 }
 
 function validateState(data) {
@@ -76,7 +75,8 @@ function validateState(data) {
   if (data.secondaryTrades !== undefined && !Array.isArray(data.secondaryTrades)) throw new Error("二级成交流水必须为 secondaryTrades 数组");
   if ((data.secondaryTrades || []).length > 20000) throw new Error("二级成交流水数量不能超过20000");
   return {
-    version: 3,
+    ...EMPTY_APP_STATE,
+    version: 4,
     issuers: data.issuers,
     projects: data.projects || [],
     protocolTransfers: data.protocolTransfers || [],
@@ -86,30 +86,4 @@ function validateState(data) {
     ftpCurve: data.ftpCurve || {},
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };
-}
-
-function authorize(context) {
-  if (isLocalRequest(context.request)) return null;
-  const password = context.env.APP_PASSWORD;
-  if (!password) return json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503);
-  const authorization = context.request.headers.get("Authorization") || "";
-  if (authorization !== `Bearer ${password}`) return json({ error: "Unauthorized" }, 401);
-  return null;
-}
-
-function isLocalRequest(request) {
-  const hostname = new URL(request.url).hostname;
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
-
-function apiHeaders() {
-  return {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff",
-  };
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
 }

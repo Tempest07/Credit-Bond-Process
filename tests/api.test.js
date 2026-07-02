@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { onRequestPost as onLoginPost } from "../functions/api/auth/login.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
 
 test("requires APP_PASSWORD to be configured", async () => {
@@ -12,17 +13,7 @@ test("requires APP_PASSWORD to be configured", async () => {
 });
 
 test("allows local D1 access without APP_PASSWORD", async () => {
-  const DB = {
-    prepare(sql) {
-      return {
-        async run() {},
-        async first() {
-          if (sql.includes("SELECT data")) return null;
-          return null;
-        },
-      };
-    },
-  };
+  const DB = createMockDb();
   const response = await onRequestGet({
     env: { DB },
     request: new Request("http://127.0.0.1:8788/api/state"),
@@ -42,19 +33,8 @@ test("rejects an incorrect API password", async () => {
   assert.equal(response.status, 401);
 });
 
-test("accepts and preserves project ledger records", async () => {
-  let saved = null;
-  const DB = {
-    prepare(sql) {
-      return {
-        bind(data) {
-          if (sql.includes("INSERT INTO app_state")) saved = JSON.parse(data);
-          return this;
-        },
-        async run() {},
-      };
-    },
-  };
+test("accepts and preserves project ledger records under admin", async () => {
+  const DB = createMockDb();
   const response = await onRequestPut({
     env: { APP_PASSWORD: "correct", DB },
     request: new Request("https://example.com/api/state", {
@@ -74,6 +54,7 @@ test("accepts and preserves project ledger records", async () => {
       }),
     }),
   });
+  const saved = JSON.parse(DB.userStates.get("admin").data);
   assert.equal(response.status, 200);
   assert.equal(saved.projects[0].shortName, "26测试01");
   assert.equal(saved.protocolTransfers[0].code, "281926.SH");
@@ -82,3 +63,117 @@ test("accepts and preserves project ledger records", async () => {
   assert.equal(saved.secondaryTrades[0].side, "sell");
   assert.equal(saved.ftpCurve.y1, 1.5);
 });
+
+test("logs in admin and reads migrated legacy state", async () => {
+  const DB = createMockDb({
+    legacyData: {
+      version: 3,
+      issuers: [{ id: "issuer-1", legalName: "测试主体" }],
+      projects: [],
+    },
+  });
+  const loginResponse = await onLoginPost({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "correct" }),
+      headers: { "Content-Type": "application/json" },
+    }),
+  });
+  assert.equal(loginResponse.status, 200);
+  const loginPayload = await loginResponse.json();
+  assert.equal(loginPayload.user.username, "admin");
+  assert.equal(loginPayload.user.nickname, "管理员");
+  assert.ok(loginPayload.token);
+
+  const stateResponse = await onRequestGet({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/state", {
+      headers: { Authorization: `Bearer ${loginPayload.token}` },
+    }),
+  });
+  assert.equal(stateResponse.status, 200);
+  const statePayload = await stateResponse.json();
+  assert.equal(statePayload.user.username, "admin");
+  assert.equal(statePayload.data.issuers[0].legalName, "测试主体");
+});
+
+function createMockDb({ legacyData = null } = {}) {
+  const users = new Map();
+  const sessions = new Map();
+  const userStates = new Map();
+  const legacyState = legacyData
+    ? { data: JSON.stringify(legacyData), updated_at: "2026-07-02T00:00:00.000Z" }
+    : null;
+
+  const db = {
+    users,
+    sessions,
+    userStates,
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return this;
+        },
+        async run() {
+          if (/CREATE TABLE/i.test(sql)) return {};
+          if (/INSERT INTO users/i.test(sql)) {
+            const [id, username, nickname, salt, passwordHash, now] = values;
+            users.set(username, {
+              id,
+              username,
+              nickname,
+              role: "admin",
+              password_salt: salt,
+              password_hash: passwordHash,
+              created_at: now,
+              updated_at: now,
+            });
+            return {};
+          }
+          if (/INSERT INTO sessions/i.test(sql)) {
+            const [tokenHash, userId, createdAt, expiresAt] = values;
+            sessions.set(tokenHash, { token_hash: tokenHash, user_id: userId, created_at: createdAt, expires_at: expiresAt });
+            return {};
+          }
+          if (/DELETE FROM sessions/i.test(sql)) {
+            sessions.delete(values[0]);
+            return {};
+          }
+          if (/INSERT INTO user_app_state/i.test(sql)) {
+            const [userId, data, updatedAt] = values;
+            userStates.set(userId, { user_id: userId, data, updated_at: updatedAt });
+            return {};
+          }
+          return {};
+        },
+        async first() {
+          if (/SELECT id FROM users WHERE username/i.test(sql)) {
+            const user = users.get(values[0]);
+            return user ? { id: user.id } : null;
+          }
+          if (/password_salt/i.test(sql) && /FROM users/i.test(sql)) {
+            return users.get(values[0]) || null;
+          }
+          if (/FROM sessions s/i.test(sql)) {
+            const session = sessions.get(values[0]);
+            if (!session || session.expires_at <= values[1]) return null;
+            return [...users.values()].find((user) => user.id === session.user_id) || null;
+          }
+          if (/SELECT user_id FROM user_app_state/i.test(sql)) {
+            return userStates.get(values[0]) ? { user_id: values[0] } : null;
+          }
+          if (/FROM user_app_state/i.test(sql)) {
+            return userStates.get(values[0]) || null;
+          }
+          if (/FROM app_state/i.test(sql)) return legacyState;
+          return null;
+        },
+      };
+    },
+  };
+
+  return db;
+}

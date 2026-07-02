@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260628-project-screenshot">
+  <link rel="stylesheet" href="./styles.css?v=20260702-login">
 </head>
 <body>
   <div class="app-shell">
@@ -58,7 +58,8 @@
           <h1 id="pageTitle">项目中心</h1>
         </div>
         <div class="top-actions">
-          <button class="button subtle" id="setPasswordButton">设置云端口令</button>
+          <button class="button subtle" id="setPasswordButton">登录</button>
+          <button class="button subtle" id="logoutButton" hidden>退出登录</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
           <label class="button subtle file-button">导入资料库<input id="importDataInput" type="file" accept=".json"></label>
           <button class="button" id="saveCloudButton">同步资料库</button>
@@ -76,7 +77,7 @@
         <div class="cloud-gate-copy">
           <span class="step" id="cloudGateStep">D1</span>
           <h2 id="cloudGateTitle">请先连接资料库</h2>
-          <p id="cloudGateDetail">点击右上角“设置云端口令”，连接 Cloudflare D1 后使用项目中心。</p>
+          <p id="cloudGateDetail">点击右上角“登录”，使用 admin 账号连接 Cloudflare D1 后使用项目中心。</p>
           <div class="cloud-pulse-lines" aria-hidden="true">
             <span></span><span></span><span></span>
           </div>
@@ -739,6 +740,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260628-project-screenshot"></script>
+  <script type="module" src="./app.js?v=20260702-login"></script>
 </body>
 </html>
