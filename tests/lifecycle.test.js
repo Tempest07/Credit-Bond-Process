@@ -60,6 +60,38 @@ test("preserves rating fields on project ledger records", () => {
   assert.equal(record.hiddenRating, "AA");
 });
 
+test("preserves ABS structured fields on project ledger records", () => {
+  const record = createProjectRecord({
+    shortName: "26创格2A",
+    instrumentType: "ABS",
+    branch: "武汉分行",
+    venue: "深交所",
+    issueScale: 5,
+    absInfo: {
+      planName: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)",
+      totalScale: 5,
+      underlyingAsset: "租金请求权",
+      creditEnhancementType: "差额支付承诺人",
+      creditEnhancementParty: "创格融资租赁有限公司",
+      approvalAmount: 0.7,
+      approvalRatio: 20,
+      tranches: [
+        { className: "优先A1级", shortName: "26创格2A", scale: 3.4535, sharePct: 69.07, expectedMaturityDate: "2027-04-16", debtRating: "AAA", debtRatingAgency: "联合资信", inquiryLow: 1.5, inquiryHigh: 2, selected: true },
+        { className: "次级", shortName: "26创格2C", scale: 0.9545 },
+      ],
+    },
+  }, null, { opinion: "ABS流程意见" });
+
+  assert.equal(record.instrumentType, "ABS");
+  assert.equal(record.absInfo.planName, "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)");
+  assert.equal(record.absInfo.tranches.length, 2);
+  assert.equal(record.tranches.length, 1);
+  assert.equal(record.tranches[0].shortName, "26创格2A");
+  assert.equal(record.tranches[0].absClassName, "优先A1级");
+  assert.equal(record.tranches[0].debtRating, "AAA");
+  assert.equal(record.tranches[0].expectedMaturityDate, "2027-04-16");
+});
+
 test("fills missing comprehensive pricing from project brief guidance prices", () => {
   const project = normalizeProjectRecord({
     shortName: "26测试MTN001A/B",

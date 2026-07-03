@@ -41,6 +41,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     id: input.id || crypto.randomUUID(),
     status: input.status || "未投标",
     shortName: project.shortName,
+    instrumentType: normalizeInstrumentType(project.instrumentType),
     issuerId: issuer?.id || "",
     issuerName: issuer?.legalName || project.issuerName || "",
     subjectRating: project.subjectRating || issuer?.subjectRating || "",
@@ -58,6 +59,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     opinion: generated?.opinion || "",
     sourceText: project.sourceText || "",
     issueScale: project.issueScale,
+    absInfo: normalizeAbsInfo(project.absInfo),
     notes: input.notes || "",
     tranches,
     resultAdvertisement: "",
@@ -79,6 +81,7 @@ export function normalizeProjectRecord(input = {}) {
     id: input.id || crypto.randomUUID(),
     status,
     shortName: String(input.shortName || "").trim(),
+    instrumentType: normalizeInstrumentType(input.instrumentType),
     issuerId: String(input.issuerId || "").trim(),
     issuerName: String(input.issuerName || "").trim(),
     subjectRating: String(input.subjectRating || "").trim().toUpperCase(),
@@ -96,6 +99,7 @@ export function normalizeProjectRecord(input = {}) {
     opinion: String(input.opinion || "").trim(),
     sourceText: String(input.sourceText || "").trim(),
     issueScale: numberOrNull(input.issueScale),
+    absInfo: normalizeAbsInfo(input.absInfo),
     notes: String(input.notes || "").trim(),
     tranches: Array.isArray(input.tranches) && input.tranches.length
       ? input.tranches.map(normalizeTranche)
@@ -386,7 +390,75 @@ function isAdvertisementBlockHeader(value = "") {
     || /^\d{2}\S+/.test(text);
 }
 
+function normalizeInstrumentType(value = "") {
+  const text = String(value || "").trim().toUpperCase();
+  if (text === "ABS" || text === "ABN") return text;
+  return "";
+}
+
+function normalizeAbsInfo(input = {}) {
+  return {
+    planName: String(input.planName || "").trim(),
+    totalScale: numberOrNull(input.totalScale),
+    bookDate: String(input.bookDate || "").trim(),
+    selectedClass: String(input.selectedClass || "").trim(),
+    underlyingAsset: String(input.underlyingAsset || "").trim(),
+    creditEnhancementType: String(input.creditEnhancementType || "").trim(),
+    creditEnhancementParty: String(input.creditEnhancementParty || "").trim(),
+    creditApprovalText: String(input.creditApprovalText || "").trim(),
+    approvalAmount: numberOrNull(input.approvalAmount),
+    approvalRatio: numberOrNull(input.approvalRatio),
+    approvalTermText: String(input.approvalTermText || "").trim(),
+    applicationAmount: numberOrNull(input.applicationAmount),
+    recommendedAmount: numberOrNull(input.recommendedAmount),
+    source: String(input.source || "").trim(),
+    tranches: Array.isArray(input.tranches) ? input.tranches.map(normalizeAbsLayer) : [],
+  };
+}
+
+function normalizeAbsLayer(input = {}) {
+  return {
+    id: input.id || crypto.randomUUID(),
+    className: String(input.className || input.trancheLevel || input.absClassName || "").trim(),
+    shortName: String(input.shortName || "").trim(),
+    securityId: String(input.securityId || input.securityCode || "").trim(),
+    scale: numberOrNull(input.scale ?? input.actualScale ?? input.issueScale ?? input.planScale),
+    sharePct: numberOrNull(input.sharePct),
+    expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
+    expectedTerm: String(input.expectedTerm || input.tenor || input.durationText || "").trim(),
+    debtRating: String(input.debtRating || "").trim().toUpperCase(),
+    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
+    inquiryLow: numberOrNull(input.inquiryLow),
+    inquiryHigh: numberOrNull(input.inquiryHigh),
+    selected: Boolean(input.selected),
+  };
+}
+
 function buildTranches(project) {
+  if (normalizeInstrumentType(project.instrumentType)) {
+    const absInfo = normalizeAbsInfo(project.absInfo);
+    const selectedLayers = absInfo.tranches.filter((layer) => layer.selected);
+    const layers = selectedLayers.length
+      ? selectedLayers
+      : absInfo.tranches.filter((layer) => !/(次级|劣后|夹层)/.test(`${layer.className} ${layer.shortName}`));
+    const uniqueLayers = uniqueAbsLayers(layers.length ? layers : absInfo.tranches);
+    if (uniqueLayers.length) {
+      return uniqueLayers.map((layer, index) => normalizeTranche({
+        shortName: layer.shortName || layer.className || project.shortName,
+        durationText: layer.expectedTerm || layer.expectedMaturityDate || "",
+        inquiryLow: layer.inquiryLow,
+        inquiryHigh: layer.inquiryHigh,
+        suggestedRatio: project.suggestedRatios?.[index] ?? project.suggestedRatio ?? absInfo.approvalRatio,
+        issueScale: layer.scale,
+        securityCode: layer.securityId,
+        absClassName: layer.className,
+        sharePct: layer.sharePct,
+        expectedMaturityDate: layer.expectedMaturityDate,
+        debtRating: layer.debtRating,
+        debtRatingAgency: layer.debtRatingAgency,
+      }));
+    }
+  }
   const names = project.shortNames?.length ? project.shortNames : [project.shortName];
   const durations = project.durationParts?.length ? project.durationParts : [project.durationText];
   const ranges = project.inquiryRanges?.length
@@ -408,6 +480,18 @@ function buildTranches(project) {
       pricingRate,
     });
   });
+}
+
+function uniqueAbsLayers(layers = []) {
+  const seen = new Set();
+  const result = [];
+  for (const layer of layers) {
+    const key = `${layer.className}|${layer.shortName}|${layer.securityId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(layer);
+  }
+  return result;
 }
 
 function normalizeTranche(input = {}) {
@@ -439,6 +523,11 @@ function normalizeTranche(input = {}) {
     outsourcedBids: Array.isArray(input.outsourcedBids) ? input.outsourcedBids.map(normalizeOutsourcedBid) : [],
     securityCode: String(input.securityCode || "").trim(),
     issueScale: numberOrNull(input.issueScale),
+    absClassName: String(input.absClassName || input.className || "").trim(),
+    sharePct: numberOrNull(input.sharePct),
+    expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
+    debtRating: String(input.debtRating || "").trim().toUpperCase(),
+    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
     fullMarketMultiple: numberOrNull(input.fullMarketMultiple),
     marginalMultiple: numberOrNull(input.marginalMultiple),
     paymentDate: String(input.paymentDate || "").trim(),

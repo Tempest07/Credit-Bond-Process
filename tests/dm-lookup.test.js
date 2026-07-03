@@ -154,6 +154,108 @@ test("DM lookup resolves a primary record by full bond name", async () => {
   }
 });
 
+test("DM lookup discovers ABS tranches and ABS-specific fields", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const primaryRequests = [];
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (String(url).includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "260001.SZ",
+        sec_short_name: "26创格2A",
+        sec_full_name: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)优先A1级资产支持证券",
+        issuer_name: "创格融资租赁有限公司",
+        bond_type_desc: "资产支持证券",
+      }];
+    } else if (String(url).includes("/bond/primary/data")) {
+      primaryRequests.push(request);
+      data = request.bond_category === "2" ? {
+        list: [
+          {
+            security_id: "260001.SZ",
+            sec_short_name: "26创格2A",
+            sec_full_name: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)优先A1级资产支持证券",
+            issuer_full_name: "创格融资租赁有限公司",
+            bond_type_desc: "资产支持证券",
+            total_issue_amount: 50000,
+            plan_issue_amount: 34535,
+            issue_ratio: 69.07,
+            expected_maturity_date: "2027/04/16",
+            tranche_level: "优先A1级",
+            bond_rating: "AAA",
+            rating_agency: "联合资信",
+            subscribe_rate: "1.5-2.0",
+            underlying_asset: "租金请求权、附属担保权益及租赁车辆的尾付款",
+            difference_payment_committer: "创格融资租赁有限公司",
+          },
+          {
+            security_id: "260002.SZ",
+            sec_short_name: "26创格2B",
+            sec_full_name: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)优先A2级资产支持证券",
+            issuer_full_name: "创格融资租赁有限公司",
+            bond_type_desc: "资产支持证券",
+            total_issue_amount: 50000,
+            plan_issue_amount: 5920,
+            issue_ratio: 11.84,
+            expected_maturity_date: "2027-10-25",
+            tranche_level: "优先A2级",
+            bond_rating: "AAA",
+            rating_agency: "联合资信",
+            subscribe_rate: "1.8-2.3",
+            underlying_asset: "租金请求权、附属担保权益及租赁车辆的尾付款",
+            difference_payment_committer: "创格融资租赁有限公司",
+          },
+          {
+            security_id: "260003.SZ",
+            sec_short_name: "26创格2C",
+            sec_full_name: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)次级资产支持证券",
+            issuer_full_name: "创格融资租赁有限公司",
+            bond_type_desc: "资产支持证券",
+            total_issue_amount: 50000,
+            plan_issue_amount: 9545,
+            issue_ratio: 19.09,
+            tranche_level: "次级",
+          },
+        ],
+      } : { list: [] };
+    } else {
+      data = [{ com_full_name: "创格融资租赁有限公司" }];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("https://example.com/api/dm/lookup?shortName=26%E5%88%9B%E6%A0%BC2A", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.normalized.instrumentType, "ABS");
+    assert.equal(payload.normalized.isAbs, true);
+    assert.equal(payload.normalized.absInfo.totalScale, 5);
+    assert.equal(payload.normalized.absInfo.underlyingAsset, "租金请求权、附属担保权益及租赁车辆的尾付款");
+    assert.equal(payload.normalized.absInfo.creditEnhancementType, "差额支付承诺人");
+    assert.equal(payload.issueGroup.instrumentType, "ABS");
+    assert.equal(payload.issueGroup.tranches.length, 3);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.trancheLevel), ["优先A1级", "优先A2级", "次级"]);
+    assert.equal(payload.issueGroup.tranches[0].sharePct, 69.07);
+    assert.equal(payload.issueGroup.tranches[0].expectedMaturityDate, "2027-04-16");
+    assert.equal(payload.issueGroup.tranches[0].debtRating, "AAA");
+    assert.equal(payload.issueGroup.tranches[0].debtRatingAgency, "联合资信");
+    assert.ok(primaryRequests.some((request) => request.bond_category === "2"));
+    assert.ok(primaryRequests.some((request) => !request.bond_category));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup prefers callable tenor from basic bond fields over final issue tenor", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

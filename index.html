@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260702-mail-proxy">
+  <link rel="stylesheet" href="./styles.css?v=20260703-abs">
 </head>
 <body>
   <div class="app-shell">
@@ -127,6 +127,13 @@
             </div>
 
             <div class="field-grid">
+              <label>项目类型
+                <select data-project-field="instrumentType">
+                  <option value="">普通信用债</option>
+                  <option value="ABS">ABS</option>
+                  <option value="ABN">ABN</option>
+                </select>
+              </label>
               <label>债券简称<input data-project-field="shortName"></label>
               <label>主承身份
                 <select data-project-field="sponsorStatus">
@@ -137,14 +144,14 @@
                 </select>
               </label>
               <label>联动分行<input data-project-field="branch"></label>
-              <label>债券期限<input data-project-field="durationText" placeholder="如 270D、3Y"></label>
+              <label data-standard-project-field>债券期限<input data-project-field="durationText" placeholder="如 270D、3Y"></label>
               <label>发行规模（亿元）<input data-project-field="issueScale" type="number" step="0.0001"></label>
-              <label>主体评级<input data-project-field="subjectRating"></label>
-              <label>评级机构<input data-project-field="ratingAgency"></label>
-              <label>隐含评级<input data-project-field="hiddenRating"></label>
-              <label>询价下限（%）<input data-project-field="inquiryLow" type="number" step="0.0001"></label>
-              <label>询价上限（%）<input data-project-field="inquiryHigh" type="number" step="0.0001"></label>
-              <div class="tranche-inquiry-panel span-2" id="trancheInquiryPanel" hidden>
+              <label data-standard-project-field>主体评级<input data-project-field="subjectRating"></label>
+              <label data-standard-project-field>评级机构<input data-project-field="ratingAgency"></label>
+              <label data-standard-project-field>隐含评级<input data-project-field="hiddenRating"></label>
+              <label data-standard-project-field>询价下限（%）<input data-project-field="inquiryLow" type="number" step="0.0001"></label>
+              <label data-standard-project-field>询价上限（%）<input data-project-field="inquiryHigh" type="number" step="0.0001"></label>
+              <div class="tranche-inquiry-panel span-2" id="trancheInquiryPanel" data-standard-project-field hidden>
                 <div class="tranche-inquiry-head">
                   <strong>多品种询价区间</strong>
                   <span>识别到多个品种时显示，可补充品种二、品种三等区间。</span>
@@ -152,7 +159,7 @@
                 <div class="tranche-inquiry-rows" id="trancheInquiryRows"></div>
               </div>
               <label>发行场所<input data-project-field="venue"></label>
-              <label>发行方式
+              <label data-standard-project-field>发行方式
                 <select data-project-field="offeringType">
                   <option value="">待确认</option>
                   <option value="公募">公开发行 / 公募</option>
@@ -165,6 +172,39 @@
                 <select id="issuerSelect"><option value="">未匹配主体</option></select>
               </label>
               <label class="span-2">债券全称（可覆盖自动生成结果）<input data-project-field="fullName"></label>
+            </div>
+            <div class="abs-field-panel" id="absFieldPanel" hidden>
+              <div class="tranche-inquiry-head">
+                <strong>ABS / ABN 结构化要素</strong>
+                <span>DM 能带入的会自动填入，空白项用于人工补充并存档。</span>
+              </div>
+              <div class="field-grid">
+                <label class="span-2">专项计划 / 产品名称<input data-abs-field="planName"></label>
+                <label>簿记日期<input data-abs-field="bookDate" type="date"></label>
+                <label>全专项计划规模（亿元）<input data-abs-field="totalScale" type="number" step="0.0001"></label>
+                <label class="span-2">基础资产<input data-abs-field="underlyingAsset"></label>
+                <label>增信 / 支持类型
+                  <select data-abs-field="creditEnhancementType">
+                    <option value="">待确认</option>
+                    <option>差额支付承诺人</option>
+                    <option>流动性支持承诺人</option>
+                    <option>增信主体</option>
+                    <option>无明确增信</option>
+                  </select>
+                </label>
+                <label>增信 / 支持主体<input data-abs-field="creditEnhancementParty"></label>
+                <label>授信批复金额（亿元）<input data-abs-field="approvalAmount" type="number" step="0.0001"></label>
+                <label>投资比例上限（%）<input data-abs-field="approvalRatio" type="number" step="0.01"></label>
+                <label>投资期限上限<input data-abs-field="approvalTermText" placeholder="如 1年、2年、3年"></label>
+                <label>申请投标金额（亿元）<input data-abs-field="applicationAmount" type="number" step="0.0001"></label>
+                <label>建议投标金额（亿元）<input data-abs-field="recommendedAmount" type="number" step="0.0001"></label>
+                <label class="span-2">授信表述<input data-abs-field="creditApprovalText" placeholder="如：总行储架批0.7亿，每期投资金额不超过该期优先级发行规模的20%..."></label>
+              </div>
+              <div class="abs-tranche-toolbar">
+                <strong>分档结构</strong>
+                <button class="text-button" type="button" id="addAbsTrancheButton">增加分档</button>
+              </div>
+              <div class="abs-tranche-list" id="absTrancheRows"></div>
             </div>
             <div class="project-dm-assist" id="projectDmAssist" hidden></div>
           </section>
@@ -740,6 +780,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260702-mail-proxy"></script>
+  <script type="module" src="./app.js?v=20260703-abs"></script>
 </body>
 </html>

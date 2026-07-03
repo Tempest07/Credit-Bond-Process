@@ -69,6 +69,7 @@ export function parseProjectBrief(rawText) {
   const result = {
     shortName: "",
     shortNames: [],
+    instrumentType: "",
     fullName: "",
     issuerName: "",
     sponsorStatus: "",
@@ -94,6 +95,7 @@ export function parseProjectBrief(rawText) {
     valuations: [],
     guidancePrice: null,
     guidancePrices: [],
+    absInfo: defaultAbsInfo(),
     sourceText: text,
     warnings: [],
   };
@@ -120,6 +122,7 @@ export function parseProjectBrief(rawText) {
   }
   parseOfferingType(text, result);
   result.exchangeIssueNumber = parseExplicitIssueNumber(text);
+  parseAbsProjectFields(text, result);
 
   for (const line of lines) {
     const valuations = parseNumberListAfter(line, /市场估值(?:约)?\s*/);
@@ -140,29 +143,33 @@ export function parseProjectBrief(rawText) {
     }
   }
 
-  if (!result.shortName) result.warnings.push("未识别债券简称。");
-  if (!result.sponsorStatus) result.warnings.push("未识别主承身份（非我行主承、联席或牵头）。");
-  if (!result.branch) result.warnings.push("未识别联动分行。");
-  if (!result.durationDays) result.warnings.push("未识别债券期限。");
-  if (!Number.isFinite(result.issueScale)) result.warnings.push("未识别发行规模。");
-  if (!result.hiddenRating) result.warnings.push("未识别隐含评级。");
-  if (!Number.isFinite(result.inquiryLow) || !Number.isFinite(result.inquiryHigh)) {
-    result.warnings.push("未完整识别询价区间。");
-  }
-  if (isDualTranche(result) && result.inquiryRanges.length < 2) {
-    result.warnings.push("已识别为双品种互拨，但未完整识别两个询价区间。");
-  }
-  if (!result.leadUnderwriter && result.sponsorStatus !== "牵头") {
-    result.warnings.push("未识别牵头主承销商。");
-  }
-  if (isExchangeVenue(result.venue) && !result.offeringType) {
-    result.warnings.push("交易所债券无法仅凭简称可靠判断公开或非公开发行，请在简表中注明“公开/非公开”或手工选择发行方式。");
-  }
-  if (result.offeringTypeSource === "short-name") {
-    result.warnings.push(`发行方式根据简称尾部“${exchangeSeriesMarker(result.shortName)}”推断为${result.offeringType}，请确认。`);
-  }
-  if (isExchangeVenue(result.venue) && !Number.isInteger(result.exchangeIssueNumber)) {
-    result.warnings.push("交易所债券简称尾号不等于发行期次，请在简表中注明“第几期”或手工填写交易所发行期次。");
+  if (isAbsProject(result)) {
+    addAbsParseWarnings(result);
+  } else {
+    if (!result.shortName) result.warnings.push("未识别债券简称。");
+    if (!result.sponsorStatus) result.warnings.push("未识别主承身份（非我行主承、联席或牵头）。");
+    if (!result.branch) result.warnings.push("未识别联动分行。");
+    if (!result.durationDays) result.warnings.push("未识别债券期限。");
+    if (!Number.isFinite(result.issueScale)) result.warnings.push("未识别发行规模。");
+    if (!result.hiddenRating) result.warnings.push("未识别隐含评级。");
+    if (!Number.isFinite(result.inquiryLow) || !Number.isFinite(result.inquiryHigh)) {
+      result.warnings.push("未完整识别询价区间。");
+    }
+    if (isDualTranche(result) && result.inquiryRanges.length < 2) {
+      result.warnings.push("已识别为双品种互拨，但未完整识别两个询价区间。");
+    }
+    if (!result.leadUnderwriter && result.sponsorStatus !== "牵头") {
+      result.warnings.push("未识别牵头主承销商。");
+    }
+    if (isExchangeVenue(result.venue) && !result.offeringType) {
+      result.warnings.push("交易所债券无法仅凭简称可靠判断公开或非公开发行，请在简表中注明“公开/非公开”或手工选择发行方式。");
+    }
+    if (result.offeringTypeSource === "short-name") {
+      result.warnings.push(`发行方式根据简称尾部“${exchangeSeriesMarker(result.shortName)}”推断为${result.offeringType}，请确认。`);
+    }
+    if (isExchangeVenue(result.venue) && !Number.isInteger(result.exchangeIssueNumber)) {
+      result.warnings.push("交易所债券简称尾号不等于发行期次，请在简表中注明“第几期”或手工填写交易所发行期次。");
+    }
   }
 
   return result;
@@ -254,6 +261,132 @@ function parseExplicitIssueNumber(text) {
   if (!match) return null;
   if (/^\d+$/.test(match[1])) return Number(match[1]);
   return chineseTextToNumber(match[1]);
+}
+
+function defaultAbsInfo(input = {}) {
+  return {
+    planName: String(input.planName || "").trim(),
+    totalScale: numberOrNull(input.totalScale),
+    bookDate: String(input.bookDate || "").trim(),
+    selectedClass: String(input.selectedClass || "").trim(),
+    underlyingAsset: String(input.underlyingAsset || "").trim(),
+    creditEnhancementType: String(input.creditEnhancementType || "").trim(),
+    creditEnhancementParty: String(input.creditEnhancementParty || "").trim(),
+    creditApprovalText: String(input.creditApprovalText || "").trim(),
+    approvalAmount: numberOrNull(input.approvalAmount),
+    approvalRatio: numberOrNull(input.approvalRatio),
+    approvalTermText: String(input.approvalTermText || "").trim(),
+    applicationAmount: numberOrNull(input.applicationAmount),
+    recommendedAmount: numberOrNull(input.recommendedAmount),
+    tranches: Array.isArray(input.tranches) ? input.tranches.map(normalizeAbsTranche) : [],
+    source: String(input.source || "").trim(),
+  };
+}
+
+function normalizeAbsTranche(input = {}) {
+  return {
+    id: input.id || crypto.randomUUID(),
+    className: String(input.className || input.trancheLevel || "").trim(),
+    shortName: String(input.shortName || "").trim(),
+    securityId: String(input.securityId || "").trim(),
+    scale: numberOrNull(input.scale ?? input.actualScale ?? input.planScale),
+    sharePct: numberOrNull(input.sharePct),
+    expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
+    expectedTerm: String(input.expectedTerm || input.tenor || "").trim(),
+    debtRating: String(input.debtRating || "").trim().toUpperCase(),
+    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
+    inquiryLow: numberOrNull(input.inquiryLow),
+    inquiryHigh: numberOrNull(input.inquiryHigh),
+    selected: Boolean(input.selected),
+  };
+}
+
+function parseAbsProjectFields(text, result) {
+  if (!isAbsText(text)) return;
+  result.instrumentType = /ABN|资产支持票据/i.test(text) ? "ABN" : "ABS";
+  const abs = defaultAbsInfo(result.absInfo);
+  abs.planName ||= extractAfterLabel(text, ["专项计划", "产品名称", "计划名称", "债券全称", "债券名称"]) || result.fullName;
+  abs.totalScale ??= parseScaleValue(extractAfterLabel(text, ["全专项计划发行规模合计", "发行规模", "规模"]));
+  abs.bookDate ||= formatCompactBookDate(text);
+  abs.underlyingAsset ||= extractAfterLabel(text, ["基础资产", "底层资产"]);
+  abs.creditEnhancementParty ||= extractAfterLabel(text, ["差额支付承诺人", "流动性支持承诺人", "增信主体"]);
+  if (!abs.creditEnhancementType && abs.creditEnhancementParty) {
+    abs.creditEnhancementType = text.includes("流动性支持承诺人") ? "流动性支持承诺人" : text.includes("增信主体") ? "增信主体" : "差额支付承诺人";
+  }
+  abs.creditApprovalText ||= extractSentenceAfter(text, "授信方面");
+  abs.approvalAmount ??= parseScaleValue(abs.creditApprovalText);
+  const ratioMatch = abs.creditApprovalText.match(/(\d+(?:\.\d+)?)\s*%/);
+  abs.approvalRatio ??= numberOrNull(ratioMatch?.[1]);
+  abs.approvalTermText ||= [...abs.creditApprovalText.matchAll(/(\d+(?:\.\d+)?\s*(?:年|个月|月|天))/g)].at(-1)?.[1]?.replace(/\s+/g, "") || "";
+  const parsedTranches = parseAbsTranchesFromText(text);
+  if (parsedTranches.length && !abs.tranches.length) abs.tranches = parsedTranches;
+  result.absInfo = abs;
+  if (!result.fullName && abs.planName) result.fullName = abs.planName;
+  if (!Number.isFinite(result.issueScale) && Number.isFinite(abs.totalScale)) result.issueScale = abs.totalScale;
+}
+
+function isAbsText(value = "") {
+  return /(?:\bABS\b|\bABN\b|资产支持|专项计划|优先[ABC]?\d*级|优先级|次级|劣后)/i.test(String(value || ""));
+}
+
+export function isAbsProject(project = {}) {
+  return /^(ABS|ABN)$/i.test(String(project.instrumentType || ""))
+    || isAbsText(`${project.shortName || ""} ${project.fullName || ""} ${project.sourceText || ""} ${project.absInfo?.planName || ""}`);
+}
+
+function extractAfterLabel(text, labels = []) {
+  for (const label of labels) {
+    const pattern = new RegExp(`${escapeRegExp(label)}\\s*[：:]\\s*([^\\n。；;]+)`);
+    const match = String(text || "").match(pattern);
+    if (match?.[1]) return trimEndingPunctuation(match[1]);
+  }
+  return "";
+}
+
+function extractSentenceAfter(text, label) {
+  const pattern = new RegExp(`${escapeRegExp(label)}[，,:：]?\\s*([^。]+)`);
+  return trimEndingPunctuation(String(text || "").match(pattern)?.[1] || "");
+}
+
+function formatCompactBookDate(text) {
+  const compact = String(text || "").match(/【\s*(20\d{6})\s*簿记\s*】/);
+  if (compact) return `${compact[1].slice(0, 4)}-${compact[1].slice(4, 6)}-${compact[1].slice(6, 8)}`;
+  const date = String(text || "").match(/20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}/)?.[0];
+  return date ? date.replace(/年|月/g, "-").replace(/日/g, "").replace(/\//g, "-").replace(/-(\d)(?=-|$)/g, "-0$1") : "";
+}
+
+function parseAbsTranchesFromText(text) {
+  const pattern = /(优先[ABC]?\d*级?|优先级|次级|劣后级?)\s*([\d.]+)\s*亿元?(?:，占比\s*([\d.]+)\s*%)?(?:，预期(?:到期日|期限)为([^；。;]+))?/g;
+  return [...String(text || "").matchAll(pattern)].map((match) => normalizeAbsTranche({
+    className: normalizeAbsClassName(match[1]),
+    scale: numberOrNull(match[2]),
+    sharePct: numberOrNull(match[3]),
+    expectedMaturityDate: /\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(match[4] || "") ? formatAbsDate(match[4]) : "",
+    expectedTerm: /\d/.test(match[4] || "") && !/\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(match[4] || "") ? String(match[4] || "").trim() : "",
+  }));
+}
+
+function normalizeAbsClassName(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/级$/.test(text)) return text;
+  return `${text}级`;
+}
+
+function formatAbsDate(value = "") {
+  const match = String(value || "").match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  if (!match) return String(value || "").trim();
+  return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+}
+
+function addAbsParseWarnings(project) {
+  if (!project.shortName) project.warnings.push("未识别 ABS 简称。");
+  if (!project.branch) project.warnings.push("未识别联动分行。");
+  if (!project.absInfo?.planName && !project.fullName) project.warnings.push("未识别专项计划/资产支持产品名称。");
+  if (!Number.isFinite(numberOrNull(project.absInfo?.totalScale ?? project.issueScale))) project.warnings.push("未识别全专项计划发行规模。");
+  if (!project.absInfo?.tranches?.length) project.warnings.push("未识别 ABS 分档结构，请补充优先/次级分档。");
+  if (!project.absInfo?.underlyingAsset) project.warnings.push("未识别基础资产。");
+  if (!project.absInfo?.creditEnhancementParty) project.warnings.push("未识别差额支付承诺人/流动性支持承诺人。");
 }
 
 function isStructuredProjectAdvertisement(lines) {
@@ -610,6 +743,7 @@ export function normalizeBondFullNameForProject(fullName, project = {}) {
 }
 
 export function calculateSuggestion(project, issuer) {
+  if (isAbsProject(project)) return calculateAbsSuggestion(project, issuer);
   const warnings = [];
   const credit = issuer?.credit || {};
   const offeringType = inferOfferingType(project);
@@ -745,6 +879,7 @@ export function formatCreditSentence(issuer) {
 }
 
 export function generateOpinion(project, issuer) {
+  if (isAbsProject(project)) return generateAbsOpinion(project, issuer);
   const suggestion = calculateSuggestion(project, issuer);
   const fullName = normalizeBondFullNameForProject(project.fullName, project)
     || buildBondFullName(project.shortName, issuer?.legalName, project);
@@ -796,6 +931,206 @@ export function generateOpinion(project, issuer) {
   }
 
   return { opinion, suggestion, approver, fullName, warnings };
+}
+
+function calculateAbsSuggestion(project, issuer) {
+  const abs = defaultAbsInfo(project.absInfo);
+  const credit = issuer?.credit || {};
+  const tranches = abs.tranches.map((tranche) => ({
+    ...tranche,
+    selected: tranche.selected || absTrancheMatchesSelection(tranche, project, abs),
+  }));
+  const selected = tranches.filter((tranche) => tranche.selected);
+  const investable = selected.length ? selected : tranches.filter(isInvestableAbsTranche);
+  const ratio = numberOrNull(abs.approvalRatio)
+    ?? numberOrNull(credit.approvedRatio)
+    ?? 20;
+  const approvalAmount = numberOrNull(abs.approvalAmount)
+    ?? numberOrNull(credit.approvedAmount)
+    ?? numberOrNull(credit.privateAmount);
+  const selectedScale = sumNumbers(investable.map((tranche) => tranche.scale));
+  const calculatedAmount = Number.isFinite(selectedScale) && Number.isFinite(ratio)
+    ? round(selectedScale * ratio / 100, 4)
+    : null;
+  const applicationAmount = numberOrNull(abs.applicationAmount)
+    ?? approvalAmount
+    ?? calculatedAmount;
+  const recommendedAmount = numberOrNull(abs.recommendedAmount)
+    ?? applicationAmount;
+  const trancheSuggestions = investable.length
+    ? investable.map((tranche, index) => ({
+        index,
+        durationText: tranche.expectedTerm || tranche.expectedMaturityDate || tranche.className || `分档${index + 1}`,
+        suggestedRatio: ratio,
+        className: tranche.className,
+        shortName: tranche.shortName,
+        investmentAmount: Number.isFinite(numberOrNull(tranche.scale)) && Number.isFinite(ratio)
+          ? round(numberOrNull(tranche.scale) * ratio / 100, 4)
+          : null,
+      }))
+    : [{ index: 0, durationText: abs.selectedClass || "优先级", suggestedRatio: ratio }];
+  const warnings = [];
+  if (!Number.isFinite(numberOrNull(abs.approvalRatio)) && !Number.isFinite(numberOrNull(credit.approvedRatio))) {
+    warnings.push("ABS 投资比例未从授信或字段中识别，暂按 20% 生成，请复核。");
+  }
+  if (!Number.isFinite(applicationAmount)) warnings.push("ABS 申请投标金额待补充。");
+
+  return {
+    offeringType: "ABS",
+    approvedRatio: ratio,
+    suggestedRatio: ratio,
+    investmentAmount: applicationAmount,
+    recommendedAmount,
+    applicationAmount,
+    caps: Number.isFinite(ratio) ? [{ value: ratio, reason: `ABS 优先档投资比例不超过${formatNumber(ratio)}%` }] : [],
+    trancheSuggestions,
+    selectedTranches: investable,
+    warnings,
+  };
+}
+
+function generateAbsOpinion(project, issuer) {
+  const abs = defaultAbsInfo(project.absInfo);
+  const suggestion = calculateAbsSuggestion({ ...project, absInfo: abs }, issuer);
+  const branch = project.branch || issuer?.linkedBranch || issuer?.defaultBranch || "【待补充联动分行】";
+  const planName = abs.planName || project.fullName || "【待补充专项计划/资产支持产品名称】";
+  const totalScale = numberOrNull(abs.totalScale ?? project.issueScale);
+  const issueScaleText = Number.isFinite(totalScale) ? `${formatNumber(totalScale)}亿元` : "【待补充发行规模】";
+  const tranches = abs.tranches.length ? abs.tranches : suggestion.selectedTranches;
+  const descriptiveTranches = tranches.filter(isInvestableAbsTranche);
+  const displayedTranches = descriptiveTranches.length ? descriptiveTranches : tranches;
+  const selectedTranches = suggestion.selectedTranches?.length ? suggestion.selectedTranches : displayedTranches;
+  const selectedClassText = formatAbsClassList(selectedTranches) || abs.selectedClass || "优先级";
+  const applicationAmount = Number.isFinite(numberOrNull(suggestion.applicationAmount))
+    ? `${formatNumber(suggestion.applicationAmount)}亿元`
+    : "【待补充申请金额】";
+  const recommendedAmount = Number.isFinite(numberOrNull(suggestion.recommendedAmount))
+    ? `${formatNumber(suggestion.recommendedAmount)}亿元`
+    : applicationAmount;
+  const ratioText = Number.isFinite(numberOrNull(suggestion.suggestedRatio))
+    ? `${formatNumber(suggestion.suggestedRatio)}%`
+    : "【待补充比例】";
+  const creditSentence = abs.creditApprovalText
+    ? trimEndingPunctuation(abs.creditApprovalText)
+    : formatAbsCreditSentence(abs, issuer, selectedClassText, ratioText);
+  const bookPrefix = abs.bookDate ? `【${abs.bookDate.replace(/-/g, "")}簿记】` : "";
+  const trancheSentence = formatAbsTrancheSentence(displayedTranches);
+  const ratingSentence = formatAbsRatingSentence(displayedTranches);
+  const assetSentence = abs.underlyingAsset
+    ? `基础资产为：${trimEndingPunctuation(abs.underlyingAsset)}`
+    : "基础资产为：【待补充基础资产】";
+  const enhancerSentence = abs.creditEnhancementParty
+    ? `${abs.creditEnhancementType || "增信/支持主体"}为${trimEndingPunctuation(abs.creditEnhancementParty)}`
+    : "【待补充差额支付承诺人/流动性支持承诺人】";
+  const rateSentence = formatAbsRateSentence(selectedTranches);
+  const ratioSentence = formatAbsRatioSentence(selectedClassText, ratioText, selectedTranches);
+  const approver = "本笔业务由处室终批。";
+
+  const opinion = [
+    `${bookPrefix}${branch}拟与资金营运中心联动投资“${planName}”，发行规模${issueScaleText}${trancheSentence ? `，其中${trancheSentence}` : ""}。`,
+    ratingSentence,
+    `${assetSentence}，${enhancerSentence}。`,
+    `授信方面，${creditSentence}。`,
+    `${branch}拟申请投标${selectedClassText}金额不超过${applicationAmount}。`,
+    `拟建议投标${selectedClassText}金额不超过${recommendedAmount}${ratioSentence}。`,
+    rateSentence,
+    "以上妥否，请领导审核。",
+    approver,
+  ].filter(Boolean).join("");
+
+  const warnings = [...(project.warnings || []), ...suggestion.warnings];
+  if (!abs.planName && !project.fullName) warnings.push("ABS 专项计划/产品名称待补充。");
+  if (!displayedTranches.length) warnings.push("ABS 分档结构待补充。");
+  if (!abs.underlyingAsset) warnings.push("ABS 基础资产待补充。");
+  if (!abs.creditEnhancementParty) warnings.push("ABS 差额支付承诺人/流动性支持承诺人待补充。");
+  if (selectedTranches.some((tranche) => !Number.isFinite(numberOrNull(tranche.inquiryLow)) || !Number.isFinite(numberOrNull(tranche.inquiryHigh)))) {
+    warnings.push("ABS 优先档投标利率区间待补充。");
+  }
+
+  return { opinion, suggestion, approver, fullName: planName, warnings };
+}
+
+function absTrancheMatchesSelection(tranche, project, abs) {
+  const query = String(project.shortName || "").trim();
+  const selected = String(abs.selectedClass || "").trim();
+  const values = [tranche.className, tranche.shortName].map((value) => String(value || "").trim()).filter(Boolean);
+  if (selected && values.some((value) => value.includes(selected) || selected.includes(value))) return true;
+  if (query && values.some((value) => value.includes(query) || query.includes(value))) return true;
+  return false;
+}
+
+function isInvestableAbsTranche(tranche = {}) {
+  const value = `${tranche.className || ""} ${tranche.shortName || ""}`;
+  return !/(次级|劣后|夹层)/.test(value);
+}
+
+function sumNumbers(values = []) {
+  const numbers = values.map(numberOrNull).filter(Number.isFinite);
+  return numbers.length ? round(numbers.reduce((sum, value) => sum + value, 0), 4) : null;
+}
+
+function formatAbsClassList(tranches = []) {
+  const names = uniqueNonEmpty(tranches.map((tranche) => tranche.className || tranche.shortName));
+  if (!names.length) return "";
+  return names.join("、");
+}
+
+function formatAbsTrancheSentence(tranches = []) {
+  return tranches.map((tranche) => {
+    const className = tranche.className || tranche.shortName || "分档";
+    const scale = Number.isFinite(numberOrNull(tranche.scale)) ? `${formatNumber(tranche.scale)}亿元` : "【待补充规模】";
+    const share = Number.isFinite(numberOrNull(tranche.sharePct)) ? `，占比${formatNumber(tranche.sharePct)}%` : "";
+    const maturity = tranche.expectedMaturityDate
+      ? `，预期到期日为${tranche.expectedMaturityDate.replace(/-/g, "/")}`
+      : tranche.expectedTerm
+        ? `，预期期限${tranche.expectedTerm}`
+        : "";
+    return `${className}${scale}${share}${maturity}`;
+  }).join("；");
+}
+
+function formatAbsRatingSentence(tranches = []) {
+  const rated = tranches.filter((tranche) => tranche.debtRating);
+  if (!rated.length) return "";
+  const first = rated[0];
+  const same = rated.every((tranche) =>
+    tranche.debtRating === first.debtRating && (tranche.debtRatingAgency || "") === (first.debtRatingAgency || ""));
+  if (same) {
+    const names = formatAbsClassList(rated);
+    const agency = first.debtRatingAgency ? `（${first.debtRatingAgency}）` : "";
+    return `${names}之债项评级均为${first.debtRating}${agency}。`;
+  }
+  return `${rated.map((tranche) => {
+    const agency = tranche.debtRatingAgency ? `（${tranche.debtRatingAgency}）` : "";
+    return `${tranche.className || tranche.shortName || "分档"}债项评级为${tranche.debtRating}${agency}`;
+  }).join("；")}。`;
+}
+
+function formatAbsCreditSentence(abs, issuer, selectedClassText, ratioText) {
+  const credit = issuer?.credit || {};
+  const level = abs.approvalAmount || credit.approvedAmount ? (credit.approvalLevel || "总行储架") : "【待补充审批层级】";
+  const amount = Number.isFinite(numberOrNull(abs.approvalAmount ?? credit.approvedAmount))
+    ? `${formatNumber(abs.approvalAmount ?? credit.approvedAmount)}亿`
+    : "【待补充批复金额】";
+  const term = abs.approvalTermText || credit.investmentTermText || daysToTermText(credit.investmentTermDays) || "【待补充投资期限】";
+  return `${level}批${amount}，每期投资金额不超过该期${selectedClassText}发行规模的${ratioText}，投资期限不超过${term}且不超过${selectedClassText}预期到期日`;
+}
+
+function formatAbsRatioSentence(selectedClassText, ratioText, tranches = []) {
+  if (!ratioText || ratioText.includes("待补充")) return "";
+  const scope = tranches.length > 1 ? `${selectedClassText}各档发行规模` : `该期${selectedClassText}发行规模`;
+  return `，投资比例不超过${scope}的${ratioText}`;
+}
+
+function formatAbsRateSentence(tranches = []) {
+  const items = tranches.map((tranche) => {
+    const low = numberOrNull(tranche.inquiryLow);
+    const high = numberOrNull(tranche.inquiryHigh);
+    const name = tranche.className || tranche.shortName || "优先级";
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return "";
+    return `${name}投标利率区间为${formatNumber(low)}%-${formatNumber(high)}%`;
+  }).filter(Boolean);
+  return items.length ? `${items.join("；")}。` : "";
 }
 
 export function applyIssuerCommonFields(project, issuer) {

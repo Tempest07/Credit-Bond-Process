@@ -143,6 +143,42 @@ test("parses structured project advertisements", () => {
   assert.match(generateOpinion(parsed, null).opinion, /陕西建工控股集团有限公司2026年度第五期短期融资券/);
 });
 
+test("generates ABS-specific flow opinion with tranches and credit support", () => {
+  const generated = generateOpinion({
+    shortName: "26创格2A",
+    instrumentType: "ABS",
+    branch: "武汉分行",
+    venue: "深交所",
+    leadUnderwriter: "兴业银行",
+    sponsorStatus: "牵头",
+    issueScale: 5,
+    absInfo: {
+      planName: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)",
+      totalScale: 5,
+      bookDate: "2026-07-01",
+      underlyingAsset: "租金请求权、附属担保权益及租赁车辆的尾付款",
+      creditEnhancementType: "差额支付承诺人",
+      creditEnhancementParty: "创格融资租赁有限公司",
+      creditApprovalText: "总行储架批0.7亿，A1，每期投资金额不超过该期优先A1级发行规模的20%，投资期限不超过1年且不超过优先A1级预期到期日",
+      approvalAmount: 0.7,
+      approvalRatio: 20,
+      applicationAmount: 0.7,
+      tranches: [
+        { className: "优先A1级", scale: 3.4535, sharePct: 69.07, expectedMaturityDate: "2027-04-16", debtRating: "AAA", debtRatingAgency: "联合资信", inquiryLow: 1.5, inquiryHigh: 2, selected: true },
+        { className: "优先A2级", scale: 0.6, sharePct: 11.84, expectedMaturityDate: "2027-10-25", debtRating: "AAA", debtRatingAgency: "联合资信", inquiryLow: 1.8, inquiryHigh: 2.3 },
+      ],
+    },
+  }, null);
+
+  assert.match(generated.opinion, /【20260701簿记】武汉分行拟与资金营运中心联动投资“创格租赁悦升2025年第2期资产支持专项计划/);
+  assert.match(generated.opinion, /优先A1级3\.4535亿元，占比69\.07%，预期到期日为2027\/04\/16/);
+  assert.match(generated.opinion, /优先A1级、优先A2级之债项评级均为AAA（联合资信）/);
+  assert.match(generated.opinion, /基础资产为：租金请求权、附属担保权益及租赁车辆的尾付款，差额支付承诺人为创格融资租赁有限公司/);
+  assert.match(generated.opinion, /武汉分行拟申请投标优先A1级金额不超过0\.7亿元/);
+  assert.match(generated.opinion, /优先A1级投标利率区间为1\.5%-2%/);
+  assert.match(generated.opinion, /本笔业务由处室终批/);
+});
+
 test("parses three-variety inquiry ranges", () => {
   const parsed = parseProjectBrief(`26测试MTN001A
 26测试MTN001B

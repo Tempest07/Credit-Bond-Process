@@ -8,13 +8,14 @@ import {
   findIssuer,
   formatNumber,
   generateOpinion,
+  isAbsProject,
   mergeImportedIssuers,
   normalizeBondFullNameForProject,
   normalizeIssuer,
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260702-mail-proxy";
+} from "./core.js?v=20260703-abs";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -32,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260702-mail-proxy";
+} from "./lifecycle.js?v=20260703-abs";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260702-mail-proxy";
+} from "./history-parser.js?v=20260703-abs";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -51,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260702-mail-proxy";
+} from "./protocol-transfer.js?v=20260703-abs";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -71,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260702-mail-proxy";
+} from "./secondary-inventory.js?v=20260703-abs";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -553,13 +554,55 @@ function bindGenerator() {
       }
       if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
       if (field === "exchangeIssueNumber") applyExchangeIssueNumberChoice(project, project.exchangeIssueNumber, true);
-      if (field === "venue") syncProjectConditionalFields();
+      if (field === "venue" || field === "instrumentType") syncProjectConditionalFields();
       if (field === "shortName" && $("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
       project.sourceText = buildDmProjectSourceText(project);
       $("#briefInput").value = project.sourceText;
       regenerate();
       scheduleProjectDmHistorySave();
     });
+  });
+  $$("[data-abs-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      clearRecognitionForInput(input);
+      updateAbsInfoFromInputs();
+      project.sourceText = buildDmProjectSourceText(project);
+      $("#briefInput").value = project.sourceText;
+      regenerate();
+      scheduleProjectDmHistorySave();
+    });
+  });
+  $("#addAbsTrancheButton")?.addEventListener("click", () => {
+    ensureAbsInfo(project);
+    project.instrumentType = project.instrumentType || "ABS";
+    project.absInfo.tranches.push(defaultAbsTranche());
+    renderAbsTrancheFields();
+    syncProjectConditionalFields();
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
+    regenerate();
+    scheduleProjectDmHistorySave();
+  });
+  $("#absTrancheRows")?.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-abs-tranche-field]");
+    if (!input) return;
+    clearRecognitionForInput(input);
+    updateAbsTranchesFromInputs();
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
+    regenerate();
+    scheduleProjectDmHistorySave();
+  });
+  $("#absTrancheRows")?.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-remove-abs-tranche]");
+    if (!remove) return;
+    ensureAbsInfo(project);
+    project.absInfo.tranches.splice(Number(remove.dataset.removeAbsTranche), 1);
+    renderAbsTrancheFields();
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
+    regenerate();
+    scheduleProjectDmHistorySave();
   });
   $("#trancheInquiryRows").addEventListener("input", (event) => {
     const input = event.target.closest("[data-inquiry-index]");
@@ -591,10 +634,14 @@ function saveCurrentProject() {
   }
   const issuerStatus = projectIssuerSaveStatus(project, issuer);
   if (!issuerStatus.ok) {
-    openQuickIssuerPanel({ enforceRequired: true, missing: issuerStatus.missing });
-    showToast(issuerStatus.reason === "missingIssuer"
-      ? "请先将主体录入主体授信库，并补全联动分行、评级、评级机构和隐含评级。"
-      : `主体资料缺少：${issuerStatus.missing.map((item) => item.label).join("、")}。请先补全后再保存项目。`);
+    if (issuerStatus.reason === "incompleteAbs") {
+      showToast(`ABS要素缺少：${issuerStatus.missing.map((item) => item.label).join("、")}。请先补全后再保存项目。`);
+    } else {
+      openQuickIssuerPanel({ enforceRequired: true, missing: issuerStatus.missing });
+      showToast(issuerStatus.reason === "missingIssuer"
+        ? "请先将主体录入主体授信库，并补全联动分行、评级、评级机构和隐含评级。"
+        : `主体资料缺少：${issuerStatus.missing.map((item) => item.label).join("、")}。请先补全后再保存项目。`);
+    }
     return;
   }
   const generated = { ...generateOpinion(project, issuer), opinion: $("#opinionOutput").value };
@@ -687,6 +734,9 @@ function projectDmHasContent(projectValue, query = "") {
   return Boolean(String(query || "").trim()
     || projectValue?.shortName
     || projectValue?.fullName
+    || projectValue?.instrumentType
+    || projectValue?.absInfo?.planName
+    || projectValue?.absInfo?.tranches?.length
     || projectValue?.issuerName
     || projectValue?.durationText
     || projectValue?.issueScale
@@ -780,11 +830,24 @@ function upsertParsedProjectToLedger(projectValue, issuer, generated) {
 }
 
 function projectIssuerSaveStatus(projectValue, issuer) {
+  if (isAbsProject(projectValue)) return absProjectSaveStatus(projectValue);
   const draft = createIssuerDraft(projectValue, issuer);
   const missing = missingRequiredProjectIssuerFields(draft);
   if (!issuer) return { ok: false, reason: "missingIssuer", missing };
   if (missing.length) return { ok: false, reason: "incompleteIssuer", missing };
   return { ok: true, reason: "", missing: [] };
+}
+
+function absProjectSaveStatus(projectValue) {
+  const absInfo = normalizeProjectAbsInfo(projectValue.absInfo);
+  const missing = [];
+  if (!String(projectValue.shortName || "").trim()) missing.push({ key: "shortName", label: "ABS简称" });
+  if (!String(projectValue.branch || "").trim()) missing.push({ key: "branch", label: "联动分行" });
+  if (!String(absInfo.planName || projectValue.fullName || "").trim()) missing.push({ key: "abs.planName", label: "专项计划/产品名称" });
+  if (!absInfo.tranches.length) missing.push({ key: "abs.tranches", label: "ABS分档结构" });
+  return missing.length
+    ? { ok: false, reason: "incompleteAbs", missing }
+    : { ok: true, reason: "", missing: [] };
 }
 
 function missingRequiredProjectIssuerFields(draft = {}) {
@@ -802,6 +865,8 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
     ? normalizeProjectRecord({
         ...created,
         status: existing.status,
+        instrumentType: created.instrumentType,
+        absInfo: created.absInfo,
         cutoffAt: existing.cutoffAt || created.cutoffAt,
         cutoffTimeConfirmed: existing.cutoffAt ? existing.cutoffTimeConfirmed : created.cutoffTimeConfirmed,
         cutoffSource: existing.cutoffAt ? existing.cutoffSource : created.cutoffSource,
@@ -821,6 +886,13 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
               inquiryLow: tranche.inquiryLow,
               inquiryHigh: tranche.inquiryHigh,
               suggestedRatio: tranche.suggestedRatio,
+              issueScale: tranche.issueScale ?? existing.tranches[index].issueScale,
+              securityCode: tranche.securityCode || existing.tranches[index].securityCode,
+              absClassName: tranche.absClassName || existing.tranches[index].absClassName,
+              sharePct: tranche.sharePct ?? existing.tranches[index].sharePct,
+              expectedMaturityDate: tranche.expectedMaturityDate || existing.tranches[index].expectedMaturityDate,
+              debtRating: tranche.debtRating || existing.tranches[index].debtRating,
+              debtRatingAgency: tranche.debtRatingAgency || existing.tranches[index].debtRatingAgency,
               pricingMode: existing.tranches[index].pricingRate == null && tranche.pricingRate != null
                 ? tranche.pricingMode
                 : existing.tranches[index].pricingMode,
@@ -935,6 +1007,9 @@ function bindLedger() {
       venue: record.venue,
       leadUnderwriter: record.leadUnderwriter,
       sponsorStatus: record.sponsorStatus,
+      instrumentType: record.instrumentType,
+      absInfo: record.absInfo,
+      issueScale: record.issueScale,
       sourceText: record.sourceText,
     };
     selectedIssuerId = record.issuerId || "";
@@ -1106,8 +1181,24 @@ function projectPatchFromDmLookup(payload) {
     if (source === "cloud" || !sourceMap[field]) sourceMap[field] = source;
   };
   const groupSource = projectSourceFromDmIssueGroup(issueGroup);
+  const dmAbs = normalized?.isAbs || normalized?.absInfo || /^(ABS|ABN)$/i.test(String(issueGroup?.instrumentType || ""));
 
-  if (tranches.length) {
+  if (dmAbs) {
+    patch.instrumentType = normalized.instrumentType || normalized.absInfo?.type || issueGroup?.instrumentType || "ABS";
+    markSource("instrumentType", "dm");
+    patch.absInfo = projectAbsInfoFromDm(normalized, issueGroup);
+    markAbsInfoSources(patch.absInfo, sourceMap, groupSource);
+    if (patch.absInfo.planName) {
+      patch.fullName = patch.absInfo.planName;
+      markSource("fullName", "dm");
+    }
+    if (Number.isFinite(numberOrNull(patch.absInfo.totalScale))) {
+      patch.issueScale = patch.absInfo.totalScale;
+      markSource("issueScale", groupSource);
+    }
+  }
+
+  if (tranches.length && !dmAbs) {
     const names = uniqueNonEmpty(tranches.map((tranche) => tranche.shortName || tranche.securityId));
     const durations = tranches.map((tranche) => normalizeDmTenor(tranche.tenor)).filter(Boolean);
     const ranges = tranches.map((tranche) => parseDmInquiryRange(tranche.inquiryRange));
@@ -1189,6 +1280,60 @@ function projectPatchFromDmLookup(payload) {
   return patch;
 }
 
+function projectAbsInfoFromDm(normalized = {}, issueGroup = null) {
+  const base = normalizeProjectAbsInfo(normalized.absInfo || {});
+  const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
+  const absTranches = tranches.length
+    ? tranches.map((tranche) => {
+        const range = parseDmInquiryRange(tranche.inquiryRange);
+        return normalizeProjectAbsTranche({
+          className: tranche.trancheLevel,
+          shortName: tranche.shortName,
+          securityId: tranche.securityId,
+          scale: numberOrNull(tranche.actualScale) ?? numberOrNull(tranche.planScale),
+          sharePct: tranche.sharePct,
+          expectedMaturityDate: tranche.expectedMaturityDate,
+          expectedTerm: normalizeDmTenor(tranche.tenor),
+          debtRating: tranche.debtRating,
+          debtRatingAgency: tranche.debtRatingAgency,
+          inquiryLow: range.low,
+          inquiryHigh: range.high,
+          selected: Boolean(tranche.isQueriedInput),
+        });
+      })
+    : base.tranches;
+  const totalScale = numberOrNull(base.totalScale)
+    ?? numberOrNull(issueGroup?.totalScale)
+    ?? sumFinite(absTranches.map((tranche) => tranche.scale));
+  return normalizeProjectAbsInfo({
+    ...base,
+    planName: base.planName || issueGroup?.issueName || normalized.fullName || "",
+    totalScale,
+    bookDate: base.bookDate || issueGroup?.subscribeDate || normalized.subscribeDate || "",
+    tranches: absTranches,
+  });
+}
+
+function markAbsInfoSources(absInfo, sourceMap, source) {
+  if (!absInfo) return;
+  [
+    "planName",
+    "totalScale",
+    "bookDate",
+    "underlyingAsset",
+    "creditEnhancementType",
+    "creditEnhancementParty",
+    "creditApprovalText",
+    "approvalAmount",
+    "approvalRatio",
+    "approvalTermText",
+    "applicationAmount",
+    "recommendedAmount",
+  ].forEach((field) => {
+    if (valueHasContent(absInfo[field])) sourceMap[`abs.${field}`] = source || "dm";
+  });
+}
+
 function assignProjectDmValueWithSource(target, sourceMap, field, value, source = "dm") {
   if (assignProjectDmValue(target, field, value)) {
     sourceMap[field] = source;
@@ -1233,6 +1378,7 @@ function buildProjectDmRecognitionMarks(patch) {
   const marks = {};
   const sourceMap = patch.sourceMap || {};
   const dmFields = [
+    ["instrumentType", "项目类型"],
     ["shortName", "债券简称"],
     ["durationText", "债券期限"],
     ["issueScale", "发行规模"],
@@ -1248,6 +1394,40 @@ function buildProjectDmRecognitionMarks(patch) {
   ];
   for (const [field, label] of dmFields) {
     if (valueHasContent(patch[field])) marks[field] = sourcedRecognitionMark(label, sourceMap[field]);
+  }
+  if (patch.absInfo) {
+    const absInfo = normalizeProjectAbsInfo(patch.absInfo);
+    const absFields = [
+      ["planName", "专项计划/产品名称"],
+      ["totalScale", "全专项计划规模"],
+      ["bookDate", "簿记日期"],
+      ["underlyingAsset", "基础资产"],
+      ["creditEnhancementType", "增信/支持类型"],
+      ["creditEnhancementParty", "增信/支持主体"],
+      ["creditApprovalText", "授信表述"],
+      ["approvalAmount", "授信批复金额"],
+      ["approvalRatio", "投资比例上限"],
+      ["approvalTermText", "投资期限上限"],
+    ];
+    for (const [field, label] of absFields) {
+      if (valueHasContent(absInfo[field])) marks[`abs.${field}`] = sourcedRecognitionMark(label, sourceMap[`abs.${field}`] || "dm");
+    }
+    absInfo.tranches.forEach((tranche, index) => {
+      [
+        ["className", "分档级别"],
+        ["shortName", "分档简称"],
+        ["scale", "分档规模"],
+        ["sharePct", "分档占比"],
+        ["expectedMaturityDate", "预期到期日"],
+        ["expectedTerm", "预期期限"],
+        ["debtRating", "债项评级"],
+        ["debtRatingAgency", "债项评级机构"],
+        ["inquiryLow", "分档利率下限"],
+        ["inquiryHigh", "分档利率上限"],
+      ].forEach(([field, label]) => {
+        if (valueHasContent(tranche[field])) marks[`abs.tranches.${index}.${field}`] = sourcedRecognitionMark(label, "dm");
+      });
+    });
   }
   if (Array.isArray(patch.inquiryRanges)) {
     patch.inquiryRanges.forEach((range, index) => {
@@ -1294,6 +1474,7 @@ function projectDmUsableTranches(issueGroup) {
 }
 
 function buildDmProjectSourceText(projectValue) {
+  if (isAbsProject(projectValue)) return buildAbsProjectSourceText(projectValue);
   const rating = projectValue.subjectRating
     ? `${projectValue.subjectRating}${projectValue.ratingAgency ? `(${projectValue.ratingAgency})` : ""}`
     : "主体评级待补";
@@ -1314,6 +1495,33 @@ function buildDmProjectSourceText(projectValue) {
   return lines.join("\n");
 }
 
+function buildAbsProjectSourceText(projectValue) {
+  const absInfo = normalizeProjectAbsInfo(projectValue.absInfo);
+  const tranches = absInfo.tranches.map((tranche) => {
+    const facts = [
+      tranche.className || tranche.shortName || "分档",
+      Number.isFinite(numberOrNull(tranche.scale)) ? `规模${formatNumber(tranche.scale)}亿` : "",
+      Number.isFinite(numberOrNull(tranche.sharePct)) ? `占比${formatNumber(tranche.sharePct)}%` : "",
+      tranche.expectedMaturityDate ? `预期到期${tranche.expectedMaturityDate}` : tranche.expectedTerm ? `预期期限${tranche.expectedTerm}` : "",
+      tranche.debtRating ? `债项${tranche.debtRating}${tranche.debtRatingAgency ? `(${tranche.debtRatingAgency})` : ""}` : "",
+      Number.isFinite(numberOrNull(tranche.inquiryLow)) && Number.isFinite(numberOrNull(tranche.inquiryHigh))
+        ? `利率区间${formatNumber(tranche.inquiryLow)}-${formatNumber(tranche.inquiryHigh)}`
+        : "",
+      tranche.selected ? "本次投资" : "",
+    ].filter(Boolean);
+    return `分档：${facts.join(" ")}`;
+  });
+  return [
+    `${projectValue.shortName || "ABS简称待补"} ${projectValue.sponsorStatus || "主承身份待补"} ${projectValue.branch || "联动分行待补"} ${projectValue.instrumentType || "ABS"}`,
+    `专项计划：${absInfo.planName || projectValue.fullName || "专项计划/产品名称待补"}`,
+    `发行规模：${Number.isFinite(numberOrNull(absInfo.totalScale ?? projectValue.issueScale)) ? `${formatNumber(absInfo.totalScale ?? projectValue.issueScale)}亿` : "待补"} ${projectValue.venue || "发行场所待补"} ${projectValue.leadUnderwriter || "牵头主承待补"}`,
+    `基础资产：${absInfo.underlyingAsset || "待补"}`,
+    `增信支持：${absInfo.creditEnhancementType || "类型待补"} ${absInfo.creditEnhancementParty || "主体待补"}`,
+    absInfo.creditApprovalText ? `授信方面：${absInfo.creditApprovalText}` : "",
+    ...tranches,
+  ].filter(Boolean).join("\n");
+}
+
 function renderProjectDmAssist(payload) {
   const output = $("#projectDmAssist");
   if (!output) return;
@@ -1332,16 +1540,18 @@ function renderProjectDmAssist(payload) {
 
   const issueGroup = payload.issueGroup || payload.normalized?.issueGroup || null;
   const normalized = payload.normalized || {};
+  const abs = Boolean(normalized.isAbs || normalized.absInfo || /^(ABS|ABN)$/i.test(String(issueGroup?.instrumentType || "")));
   const facts = [
+    abs ? (normalized.instrumentType || normalized.absInfo?.type || "ABS") : "",
     normalized.shortName,
-    normalized.issuerName,
-    normalized.durationText ? `期限 ${normalized.durationText}` : "",
-    Number.isFinite(numberOrNull(normalized.issueScaleYi)) ? `规模 ${formatNumber(normalized.issueScaleYi)}亿` : "",
+    abs ? (normalized.absInfo?.planName || issueGroup?.issueName || "") : normalized.issuerName,
+    !abs && normalized.durationText ? `期限 ${normalized.durationText}` : "",
+    Number.isFinite(numberOrNull(normalized.absInfo?.totalScale ?? issueGroup?.totalScale ?? normalized.issueScaleYi)) ? `规模 ${formatNumber(normalized.absInfo?.totalScale ?? issueGroup?.totalScale ?? normalized.issueScaleYi)}亿` : "",
     normalized.inquiryRange ? `区间 ${normalized.inquiryRange}` : "",
   ].filter(Boolean);
   output.innerHTML = `
     <div class="project-dm-assist-head">
-      <strong>DM 已带入新增项目</strong>
+      <strong>DM 已带入${abs ? " ABS/ABN" : ""}新增项目</strong>
       <span>${escapeHtml(facts.join(" · ") || "已读取结构化字段，请复核后保存。")}</span>
     </div>
     ${renderProjectDmIssueGroup(issueGroup)}
@@ -1370,15 +1580,16 @@ function renderProjectDmIssueGroup(issueGroup) {
   const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
   if (tranches.length < 2) return "";
   const usable = projectDmUsableTranches(issueGroup);
+  const abs = /^(ABS|ABN)$/i.test(String(issueGroup.instrumentType || ""));
   const summary = [
-    `${tranches.length} 个期限`,
+    `${tranches.length} 个${abs ? "分档" : "期限"}`,
     dmIssueGroupSourceLabel(issueGroup.source),
-    usable.length !== tranches.length ? `默认入项 ${usable.length} 个可发行期限` : "",
+    usable.length !== tranches.length ? `默认入项 ${usable.length} 个可发行${abs ? "分档" : "期限"}` : "",
   ].filter(Boolean).join(" · ");
   return `
     <div class="project-dm-issue-group">
       <div class="project-dm-assist-head compact">
-        <strong>同次发行组</strong>
+        <strong>${abs ? "ABS分档组" : "同次发行组"}</strong>
         <span>${escapeHtml(summary)}</span>
       </div>
       <div class="dm-issue-group-list">
@@ -1393,9 +1604,13 @@ function renderProjectDmIssueTranche(tranche) {
   const targetQuery = tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId || "";
   const query = targetQuery || tranche.shortName || tranche.securityId || "";
   const facts = [
+    tranche.trancheLevel ? `级别 ${tranche.trancheLevel}` : "",
     tranche.tenor ? `期限 ${tranche.tenor}` : "",
     Number.isFinite(numberOrNull(tranche.planScale)) ? `计划 ${formatNumber(tranche.planScale)}亿` : "",
     Number.isFinite(numberOrNull(tranche.actualScale)) ? `发行 ${formatNumber(tranche.actualScale)}亿` : "",
+    Number.isFinite(numberOrNull(tranche.sharePct)) ? `占比 ${formatNumber(tranche.sharePct)}%` : "",
+    tranche.expectedMaturityDate ? `预期到期 ${tranche.expectedMaturityDate}` : "",
+    tranche.debtRating ? `债项 ${tranche.debtRating}${tranche.debtRatingAgency ? `(${tranche.debtRatingAgency})` : ""}` : "",
     tranche.inquiryRange ? `区间 ${tranche.inquiryRange}` : "",
     Number.isFinite(numberOrNull(tranche.couponRate)) ? `票面 ${formatNumber(tranche.couponRate)}%` : "",
   ].filter(Boolean);
@@ -1690,10 +1905,12 @@ function focusBriefPlaceholder(direction = "next") {
 }
 
 function fillProjectFields() {
+  ensureAbsInfo(project);
   $$("[data-project-field]").forEach((input) => {
     const field = input.dataset.projectField;
     input.value = project[field] ?? "";
   });
+  fillAbsFields();
   if ($("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
   if ($("#projectValuationInput")) $("#projectValuationInput").value = formatRateListInput(project.valuations?.length ? project.valuations : [project.valuation]);
   if ($("#projectGuidancePriceInput")) $("#projectGuidancePriceInput").value = formatRateListInput(project.guidancePrices?.length ? project.guidancePrices : [project.guidancePrice]);
@@ -1704,8 +1921,136 @@ function fillProjectFields() {
 }
 
 function syncProjectConditionalFields() {
+  const abs = isAbsProject(project);
+  $$("[data-standard-project-field]").forEach((item) => {
+    if (item.id === "trancheInquiryPanel") return;
+    item.hidden = abs;
+  });
+  const absPanel = $("#absFieldPanel");
+  if (absPanel) absPanel.hidden = !abs;
   const exchangeIssueField = $("#exchangeIssueNumberField");
-  if (exchangeIssueField) exchangeIssueField.hidden = !isExchangeProject(project);
+  if (exchangeIssueField) exchangeIssueField.hidden = abs || !isExchangeProject(project);
+  if (abs) {
+    $("#trancheInquiryPanel").hidden = true;
+  } else {
+    $("#trancheInquiryPanel").hidden = inquiryVarietyCount(project) <= 1;
+  }
+}
+
+function ensureAbsInfo(projectValue) {
+  projectValue.absInfo = normalizeProjectAbsInfo(projectValue.absInfo);
+  return projectValue.absInfo;
+}
+
+function normalizeProjectAbsInfo(input = {}) {
+  return {
+    planName: String(input.planName || "").trim(),
+    totalScale: numberOrNull(input.totalScale),
+    bookDate: String(input.bookDate || "").trim(),
+    selectedClass: String(input.selectedClass || "").trim(),
+    underlyingAsset: String(input.underlyingAsset || "").trim(),
+    creditEnhancementType: String(input.creditEnhancementType || "").trim(),
+    creditEnhancementParty: String(input.creditEnhancementParty || "").trim(),
+    creditApprovalText: String(input.creditApprovalText || "").trim(),
+    approvalAmount: numberOrNull(input.approvalAmount),
+    approvalRatio: numberOrNull(input.approvalRatio),
+    approvalTermText: String(input.approvalTermText || "").trim(),
+    applicationAmount: numberOrNull(input.applicationAmount),
+    recommendedAmount: numberOrNull(input.recommendedAmount),
+    source: String(input.source || "").trim(),
+    tranches: Array.isArray(input.tranches) ? input.tranches.map(normalizeProjectAbsTranche) : [],
+  };
+}
+
+function normalizeProjectAbsTranche(input = {}) {
+  return {
+    id: input.id || crypto.randomUUID(),
+    className: String(input.className || input.trancheLevel || input.absClassName || "").trim(),
+    shortName: String(input.shortName || "").trim(),
+    securityId: String(input.securityId || input.securityCode || "").trim(),
+    scale: numberOrNull(input.scale ?? input.actualScale ?? input.planScale ?? input.issueScale),
+    sharePct: numberOrNull(input.sharePct),
+    expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
+    expectedTerm: String(input.expectedTerm || input.tenor || "").trim(),
+    debtRating: String(input.debtRating || "").trim().toUpperCase(),
+    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
+    inquiryLow: numberOrNull(input.inquiryLow),
+    inquiryHigh: numberOrNull(input.inquiryHigh),
+    selected: Boolean(input.selected),
+  };
+}
+
+function defaultAbsTranche() {
+  return normalizeProjectAbsTranche({ className: "优先级", selected: true });
+}
+
+function fillAbsFields() {
+  const absInfo = ensureAbsInfo(project);
+  $$("[data-abs-field]").forEach((input) => {
+    const field = input.dataset.absField;
+    input.value = absInfo[field] ?? "";
+  });
+  renderAbsTrancheFields();
+}
+
+function updateAbsInfoFromInputs() {
+  const absInfo = ensureAbsInfo(project);
+  $$("[data-abs-field]").forEach((input) => {
+    const field = input.dataset.absField;
+    absInfo[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+  });
+  project.instrumentType = project.instrumentType || "ABS";
+  if (absInfo.planName && !project.fullName) project.fullName = absInfo.planName;
+  if (Number.isFinite(numberOrNull(absInfo.totalScale)) && !Number.isFinite(numberOrNull(project.issueScale))) {
+    project.issueScale = absInfo.totalScale;
+  }
+}
+
+function renderAbsTrancheFields() {
+  const rows = $("#absTrancheRows");
+  if (!rows) return;
+  const absInfo = ensureAbsInfo(project);
+  rows.innerHTML = absInfo.tranches.length
+    ? absInfo.tranches.map((tranche, index) => `
+      <div class="abs-tranche-row" data-abs-tranche-index="${index}">
+        <div class="abs-tranche-row-head">
+          <strong>${escapeHtml(tranche.className || tranche.shortName || `分档 ${index + 1}`)}</strong>
+          <button class="text-button" type="button" data-remove-abs-tranche="${index}">移除</button>
+        </div>
+        <div class="abs-tranche-grid">
+          <label>本次投资<input data-abs-tranche-field="selected" type="checkbox" ${tranche.selected ? "checked" : ""}></label>
+          <label>分档级别<input data-abs-tranche-field="className" value="${escapeAttribute(tranche.className)}" placeholder="优先A1级"></label>
+          <label>简称<input data-abs-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
+          <label>代码<input data-abs-tranche-field="securityId" value="${escapeAttribute(tranche.securityId)}"></label>
+          <label>规模（亿元）<input data-abs-tranche-field="scale" type="number" step="0.0001" value="${escapeAttribute(tranche.scale ?? "")}"></label>
+          <label>占比（%）<input data-abs-tranche-field="sharePct" type="number" step="0.01" value="${escapeAttribute(tranche.sharePct ?? "")}"></label>
+          <label>预期到期日<input data-abs-tranche-field="expectedMaturityDate" type="date" value="${escapeAttribute(tranche.expectedMaturityDate)}"></label>
+          <label>预期期限<input data-abs-tranche-field="expectedTerm" value="${escapeAttribute(tranche.expectedTerm)}" placeholder="如 1+1+1年"></label>
+          <label>债项评级<input data-abs-tranche-field="debtRating" value="${escapeAttribute(tranche.debtRating)}"></label>
+          <label>评级机构<input data-abs-tranche-field="debtRatingAgency" value="${escapeAttribute(tranche.debtRatingAgency)}"></label>
+          <label>利率下限（%）<input data-abs-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
+          <label>利率上限（%）<input data-abs-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
+        </div>
+      </div>
+    `).join("")
+    : '<div class="empty compact">暂无 ABS 分档，读取 DM 后会自动带入，也可手工增加。</div>';
+}
+
+function updateAbsTranchesFromInputs() {
+  const absInfo = ensureAbsInfo(project);
+  absInfo.tranches = [...$("#absTrancheRows").querySelectorAll("[data-abs-tranche-index]")].map((card, index) => {
+    const existing = absInfo.tranches[index] || {};
+    const values = { id: existing.id };
+    card.querySelectorAll("[data-abs-tranche-field]").forEach((input) => {
+      values[input.dataset.absTrancheField] = input.type === "checkbox"
+        ? input.checked
+        : input.type === "number"
+          ? numberOrNull(input.value)
+          : input.value.trim();
+    });
+    return normalizeProjectAbsTranche(values);
+  });
+  project.instrumentType = project.instrumentType || "ABS";
 }
 
 function clearProjectRecognitionMarks() {
@@ -1722,6 +2067,48 @@ function buildProjectRecognitionMarks(projectValue, issuer) {
       ? recognitionMark("success", `${label}已识别`)
       : recognitionMark("error", `${label}未识别，请补充`);
   };
+
+  if (isAbsProject(projectValue)) {
+    const absInfo = normalizeProjectAbsInfo(projectValue.absInfo);
+    [
+      ["instrumentType", "项目类型"],
+      ["shortName", "ABS 简称"],
+      ["branch", "联动分行"],
+      ["issueScale", "发行规模"],
+      ["venue", "发行场所"],
+      ["leadUnderwriter", "牵头主承销商"],
+      ["fullName", "专项计划/产品全称"],
+    ].forEach(([field, label]) => markAuto(field, label));
+    marks["abs.planName"] = valueHasContent(absInfo.planName)
+      ? recognitionMark("success", "专项计划/产品名称已识别")
+      : recognitionMark("error", "专项计划/产品名称未识别，请补充");
+    marks["abs.totalScale"] = Number.isFinite(numberOrNull(absInfo.totalScale))
+      ? recognitionMark("success", "全专项计划规模已识别")
+      : recognitionMark("attention", "全专项计划规模待补充");
+    marks["abs.underlyingAsset"] = valueHasContent(absInfo.underlyingAsset)
+      ? recognitionMark("success", "基础资产已识别")
+      : recognitionMark("error", "基础资产未识别，请补充");
+    marks["abs.creditEnhancementParty"] = valueHasContent(absInfo.creditEnhancementParty)
+      ? recognitionMark("success", "增信/支持主体已识别")
+      : recognitionMark("attention", "增信/支持主体待补充");
+    marks["abs.creditApprovalText"] = valueHasContent(absInfo.creditApprovalText)
+      ? recognitionMark("success", "授信表述已识别")
+      : recognitionMark("attention", "授信表述待补充");
+    absInfo.tranches.forEach((tranche, index) => {
+      const base = `abs.tranches.${index}`;
+      marks[`${base}.className`] = valueHasContent(tranche.className)
+        ? recognitionMark("success", "分档级别已识别")
+        : recognitionMark("error", "分档级别未识别，请补充");
+      marks[`${base}.scale`] = Number.isFinite(numberOrNull(tranche.scale))
+        ? recognitionMark("success", "分档规模已识别")
+        : recognitionMark("attention", "分档规模待补充");
+      marks[`${base}.debtRating`] = valueHasContent(tranche.debtRating)
+        ? recognitionMark("success", "债项评级已识别")
+        : recognitionMark("attention", "债项评级待补充");
+    });
+    if (!issuer) marks.issuerSelect = recognitionMark("attention", "ABS 项目可先保存结构化要素；如需绑定承诺人/原始权益人，可补录主体资料");
+    return marks;
+  }
 
   [
     ["shortName", "债券简称"],
@@ -1784,6 +2171,15 @@ function applyProjectRecognitionMarks() {
   $$("[data-project-field]").forEach((input) => {
     setRecognitionForInput(input, projectRecognitionMarks[input.dataset.projectField]);
   });
+  $$("[data-abs-field]").forEach((input) => {
+    setRecognitionForInput(input, projectRecognitionMarks[`abs.${input.dataset.absField}`]);
+  });
+  $$("[data-abs-tranche-index]").forEach((card) => {
+    const index = Number(card.dataset.absTrancheIndex);
+    card.querySelectorAll("[data-abs-tranche-field]").forEach((input) => {
+      setRecognitionForInput(input, projectRecognitionMarks[`abs.tranches.${index}.${input.dataset.absTrancheField}`]);
+    });
+  });
   $$("[data-inquiry-index][data-inquiry-bound]").forEach((input) => {
     const key = `inquiryRanges.${input.dataset.inquiryIndex}.${input.dataset.inquiryBound}`;
     setRecognitionForInput(input, projectRecognitionMarks[key]);
@@ -1837,6 +2233,15 @@ function regenerate() {
 function scheduleDmValuationAssist(projectValue, issuer) {
   const output = $("#valuationAssist");
   if (!output) return;
+  if (isAbsProject(projectValue)) {
+    clearTimeout(valuationAssistTimer);
+    if (valuationAssistController) valuationAssistController.abort();
+    valuationAssistController = null;
+    valuationAssistRequestKey = "";
+    output.hidden = true;
+    output.innerHTML = "";
+    return;
+  }
   const issuerName = issuer?.legalName || projectValue?.issuerName || "";
   if (!issuerName || !projectValue?.durationText || !projectValue?.shortName) {
     clearTimeout(valuationAssistTimer);
@@ -1993,13 +2398,21 @@ function renderWarnings(warnings) {
 
 function renderRuleTrace(generated, issuer) {
   const suggestion = generated.suggestion;
-  const items = [
-    issuer ? `已匹配：${issuer.legalName}` : "未匹配主体",
-    Number.isFinite(suggestion.approvedRatio) ? `授信比例：${formatNumber(suggestion.approvedRatio)}%` : "授信比例待补",
-    ...suggestion.caps.map((cap) => cap.reason),
-    Number.isFinite(suggestion.investmentAmount) ? `投资金额：${formatNumber(suggestion.investmentAmount)}亿元` : "投资金额待补",
-    generated.approver,
-  ];
+  const items = isAbsProject(project)
+    ? [
+        `类型：${project.instrumentType || "ABS"}`,
+        project.absInfo?.planName ? `产品：${project.absInfo.planName}` : "专项计划待补",
+        ...(suggestion.trancheSuggestions || []).map((item) => `${item.className || item.shortName || item.durationText}：${Number.isFinite(item.suggestedRatio) ? `${formatNumber(item.suggestedRatio)}%` : "比例待补"}`),
+        Number.isFinite(suggestion.investmentAmount) ? `申请金额：${formatNumber(suggestion.investmentAmount)}亿元` : "申请金额待补",
+        generated.approver,
+      ]
+    : [
+        issuer ? `已匹配：${issuer.legalName}` : "未匹配主体",
+        Number.isFinite(suggestion.approvedRatio) ? `授信比例：${formatNumber(suggestion.approvedRatio)}%` : "授信比例待补",
+        ...suggestion.caps.map((cap) => cap.reason),
+        Number.isFinite(suggestion.investmentAmount) ? `投资金额：${formatNumber(suggestion.investmentAmount)}亿元` : "投资金额待补",
+        generated.approver,
+      ];
   $("#ruleTrace").innerHTML = items.map((item, index) =>
     `<span class="trace-item ${index ? "active" : ""}">${escapeHtml(item)}</span>`,
   ).join("");
@@ -3095,7 +3508,7 @@ function renderPaymentTodo() {
 }
 
 function isAbsOrAbnProject(projectValue, tranche = {}) {
-  return /(?:ABS|ABN)/i.test(`${projectValue.shortName} ${tranche.shortName} ${projectValue.sourceText}`);
+  return isAbsProject(projectValue) || /(?:ABS|ABN|资产支持)/i.test(`${projectValue.shortName} ${tranche.shortName} ${projectValue.sourceText}`);
 }
 
 function completePaymentTodo(value) {
@@ -3577,6 +3990,11 @@ function readProjectForm() {
     values.id = existing.tranches?.[trancheIndex]?.id;
     values.inquiryLow = existing.tranches?.[trancheIndex]?.inquiryLow;
     values.inquiryHigh = existing.tranches?.[trancheIndex]?.inquiryHigh;
+    values.absClassName = existing.tranches?.[trancheIndex]?.absClassName;
+    values.sharePct = existing.tranches?.[trancheIndex]?.sharePct;
+    values.expectedMaturityDate = existing.tranches?.[trancheIndex]?.expectedMaturityDate;
+    values.debtRating = existing.tranches?.[trancheIndex]?.debtRating;
+    values.debtRatingAgency = existing.tranches?.[trancheIndex]?.debtRatingAgency;
     values.bidLevels = [...card.querySelectorAll("[data-bid-level-index]")].map((levelCard) => {
       const level = {};
       levelCard.querySelectorAll("[data-bid-level-field]").forEach((input) => {
@@ -3882,6 +4300,7 @@ function formatDurationPart(value = "") {
 }
 
 function formatProjectOfferingSummary(projectValue) {
+  if (isAbsProject(projectValue)) return projectValue.instrumentType || "ABS";
   if (["公募", "私募", "公私募"].includes(projectValue.offeringType)) return projectValue.offeringType;
   const text = `${projectValue.sourceText || ""} ${projectValue.opinion || ""}`;
   if (/(?:非公开|私募)/.test(text)) return "私募";
@@ -4752,6 +5171,7 @@ function dmNormalizedSourceBadge(normalized, key, isMissing) {
 function renderDmNormalized(payload) {
   const fields = [
     ["securityId", "债券代码"],
+    ["instrumentType", "项目类型"],
     ["shortName", "债券简称"],
     ["fullName", "债券全称"],
     ["issuerName", "发行人"],
@@ -4771,6 +5191,7 @@ function renderDmNormalized(payload) {
     ["subscribeDate", "簿记日期"],
     ["subscribeTime", "簿记时间"],
     ["paymentDate", "缴款日"],
+    ["absInfo", "ABS/ABN要素"],
   ];
   if (!payload) {
     $("#dmNormalizedOutput").innerHTML = `<div class="empty">暂无结构化字段。</div>`;
@@ -4810,6 +5231,15 @@ function formatDmNormalizedFieldValue(key, value) {
       next_option_date: "基础资料：下一行权日",
       bond_issue_tenor: "发行数据：发行期限",
     }[value] || String(value);
+  }
+  if (key === "absInfo" && value && typeof value === "object") {
+    const facts = [
+      value.planName,
+      Number.isFinite(numberOrNull(value.totalScale)) ? `规模${formatNumber(value.totalScale)}亿` : "",
+      value.underlyingAsset ? `基础资产：${value.underlyingAsset}` : "",
+      value.creditEnhancementParty ? `${value.creditEnhancementType || "增信"}：${value.creditEnhancementParty}` : "",
+    ].filter(Boolean);
+    return facts.join(" · ") || JSON.stringify(value);
   }
   return String(value);
 }
@@ -4862,10 +5292,11 @@ function renderDmIssueGroup(issueGroup) {
   }
   panel.hidden = false;
   const sourceLabel = dmIssueGroupSourceLabel(issueGroup.source);
+  const abs = /^(ABS|ABN)$/i.test(String(issueGroup.instrumentType || ""));
   const confirmedReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && (tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId)).length;
   const uncertainReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && !tranche.reallocationTargetShortName && !tranche.reallocationTargetSecurityId).length;
   summary.textContent = [
-    `${tranches.length} 个期限`,
+    `${tranches.length} 个${abs ? "分档" : "期限"}`,
     sourceLabel,
     confirmedReallocatedCount ? `${confirmedReallocatedCount} 个已回拨` : "",
     uncertainReallocatedCount ? `${uncertainReallocatedCount} 个待确认回拨` : "",
@@ -4875,9 +5306,13 @@ function renderDmIssueGroup(issueGroup) {
     const targetQuery = tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId || "";
     const queryValue = (tranche.status === "reallocated" && targetQuery) ? targetQuery : (tranche.shortName || tranche.securityId || "");
     const facts = [
+      tranche.trancheLevel ? `级别 ${tranche.trancheLevel}` : "",
       tranche.tenor ? `期限 ${tranche.tenor}` : "",
       Number.isFinite(numberOrNull(tranche.planScale)) ? `计划 ${formatNumber(tranche.planScale)}亿` : "",
       Number.isFinite(numberOrNull(tranche.actualScale)) ? `发行 ${formatNumber(tranche.actualScale)}亿` : "",
+      Number.isFinite(numberOrNull(tranche.sharePct)) ? `占比 ${formatNumber(tranche.sharePct)}%` : "",
+      tranche.expectedMaturityDate ? `预期到期 ${tranche.expectedMaturityDate}` : "",
+      tranche.debtRating ? `债项 ${tranche.debtRating}${tranche.debtRatingAgency ? `(${tranche.debtRatingAgency})` : ""}` : "",
       tranche.inquiryRange ? `区间 ${tranche.inquiryRange}` : "",
       Number.isFinite(numberOrNull(tranche.couponRate)) ? `票面 ${formatNumber(tranche.couponRate)}%` : "",
       tranche.securityId ? `代码 ${tranche.securityId}` : "",

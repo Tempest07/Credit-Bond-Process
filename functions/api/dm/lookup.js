@@ -53,11 +53,13 @@ export async function onRequestGet(context) {
   try {
     const dm = makeDmClient(context.env, context.request);
     const basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
+    const basicRow = firstRow(basic);
     const primary = await lookupPrimaryData(dm, {
       shortName,
       securityId,
       fullName,
-      issuerName: pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]),
+      issuerName: pickFirstString(basicRow, ["issuer_name", "issuerName"]),
+      absHintText: rowAbsSearchText(basicRow),
       startDate,
       endDate,
     });
@@ -122,19 +124,56 @@ async function lookupBasicInfo(dm, { shortName, securityId }) {
   return { raw, rows: rowsFromDm(raw) };
 }
 
-async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, startDate, endDate }) {
+async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, absHintText, startDate, endDate }) {
   const window = resolvePrimaryWindow(startDate, endDate);
-  const payload = {
+  const basePayload = {
     startDate: window.startDate,
     endDate: window.endDate,
-    bond_category: "1",
   };
-  if (issuerName) payload.issuerFullName = issuerName;
+  if (issuerName) basePayload.issuerFullName = issuerName;
 
-  const raw = await dm.post(PRIMARY_PATH, payload);
-  const rows = rowsFromDm(raw);
-  const filtered = rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId, fullName }));
-  return { raw, rows: shortName || securityId || fullName ? filtered : rows, window };
+  const shouldTryAbsCategories = isAbsLookupText([shortName, fullName, absHintText].filter(Boolean).join(" "));
+  const payloads = [
+    { ...basePayload, bond_category: "1" },
+    ...(shouldTryAbsCategories ? [
+      { ...basePayload, bond_category: "2" },
+      { ...basePayload, bond_category: "3" },
+      { ...basePayload },
+    ] : []),
+  ];
+  const allRows = [];
+  const seen = new Set();
+  const sources = [];
+  let firstRaw = null;
+
+  for (let index = 0; index < payloads.length; index += 1) {
+    const payload = payloads[index];
+    try {
+      const raw = await dm.post(PRIMARY_PATH, payload);
+      if (!firstRaw) firstRaw = raw;
+      const rows = rowsFromDm(raw);
+      sources.push({
+        bondCategory: payload.bond_category || "",
+        rowCount: rows.length,
+      });
+      for (const row of rows) {
+        const key = primaryRowDedupKey(row);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        allRows.push(row);
+      }
+    } catch (error) {
+      if (index === 0) throw error;
+      sources.push({
+        bondCategory: payload.bond_category || "",
+        error: error.message || "primary-data optional ABS lookup failed",
+      });
+    }
+  }
+
+  const filtered = allRows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId, fullName }));
+  const raw = sources.length > 1 ? { list: allRows, sources, firstRaw } : (firstRaw || { list: allRows });
+  return { raw, rows: shortName || securityId || fullName ? filtered : allRows, window };
 }
 
 async function lookupCompanyInfo(dm, issuerName) {
@@ -435,7 +474,11 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
   const resolvedShortName = pickFirstString(primaryRow, ["sec_short_name", "secShortName"])
     || pickFirstString(basicRow, ["sec_short_name", "secShortName"])
     || shortName;
+  const absInfo = normalizeAbsLookupFields({ primaryRow, basicRow, companyRow, primaryRows: primary?.rows || [], query: { shortName, fullName } });
+  const bondTypeDesc = pickFirstString(primaryRow, ["bond_type_desc", "bondTypeDesc"]) || pickFirstString(basicRow, ["bond_type_desc", "bondTypeDesc"]);
+  const textForType = [resolvedShortName, fullName, pickFirstString(primaryRow, ["sec_full_name", "secFullName"]), pickFirstString(basicRow, ["sec_full_name", "secFullName"]), bondTypeDesc].join(" ");
   return {
+    instrumentType: absInfo?.type || "",
     securityId: primarySecurityId || basicSecurityId || securityId,
     shortName: resolvedShortName,
     fullName: pickFirstString(primaryRow, ["sec_full_name", "secFullName"]) || pickFirstString(basicRow, ["sec_full_name", "secFullName"]),
@@ -447,8 +490,14 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
     nextOptionDate: pickFirstDateString(basicRow, ["next_option_date", "nextOptionDate"]),
     issueScaleYi: scaleYi,
     inquiryRange: normalizeInquiryRange(pickFirstString(primaryRow, ["subscribe_rate", "subscribeRate"])),
-    venue: pickFirstString(primaryRow, ["tender_market_desc", "tenderMarketDesc"])
-      || inferVenue(primarySecurityId || basicSecurityId || securityId, resolvedShortName, pickFirstString(primaryRow, ["bond_type_desc", "bondTypeDesc"]) || pickFirstString(basicRow, ["bond_type_desc", "bondTypeDesc"])),
+    venue: pickFirstString(primaryRow, [
+      "tender_market_desc", "tenderMarketDesc",
+      "market_desc", "marketDesc",
+      "exchange", "list_place", "listPlace",
+      "listing_place", "listingPlace",
+      "trade_place", "tradePlace",
+    ])
+      || inferVenue(primarySecurityId || basicSecurityId || securityId, resolvedShortName, bondTypeDesc),
     offeringType: pickFirstString(primaryRow, ["public_offering_status", "publicOfferingStatus"]),
     leadUnderwriter,
     sponsorStatus: inferSponsorStatus(leadUnderwriter),
@@ -460,7 +509,201 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
     subjectRating: pickRatingLike([basicRow, primaryRow, companyRow], "subject"),
     ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
     impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
+    absInfo,
+    isAbs: Boolean(absInfo || isAbsLookupText(textForType)),
   };
+}
+
+function normalizeAbsLookupFields({ primaryRow = {}, basicRow = {}, companyRow = {}, primaryRows = [], query = {} }) {
+  const rows = [primaryRow, basicRow, companyRow, ...primaryRows].filter(Boolean);
+  const allText = [
+    query.shortName,
+    query.fullName,
+    ...rows.map(rowAbsSearchText),
+  ].filter(Boolean).join(" ");
+  if (!isAbsLookupText(allText)) return null;
+
+  const planName = normalizeAbsPlanName(
+    pickFirstStringFromRows(rows, [
+      "special_plan_name", "specialPlanName",
+      "asset_support_plan_name", "assetSupportPlanName",
+      "plan_name", "planName",
+      "product_full_name", "productFullName",
+      "asset_plan_name", "assetPlanName",
+      "sec_full_name", "secFullName",
+      "bond_full_name", "bondFullName",
+    ]) || query.fullName,
+  );
+  const totalScale = dmAmountYiFromRows(rows, [
+    "total_issue_amount", "totalIssueAmount",
+    "total_plan_issue_amount", "totalPlanIssueAmount",
+    "total_actu_issue_amount", "totalActuIssueAmount",
+    "issue_amount", "issueAmount",
+    "product_scale", "productScale",
+    "plan_scale", "planScale",
+  ]);
+  const underlyingAsset = pickTextByKeyHints(rows, [/underlying.*asset/i, /base.*asset/i, /basic.*asset/i, /asset.*pool/i, /asset.*type/i, /基础资产/, /底层资产/, /资产池/]);
+  const differencePaymentCommitter = pickTextByKeyHints(rows, [/difference.*payment/i, /deficien/i, /差额支付/, /差补/, /差额补足/]);
+  const liquiditySupportCommitter = pickTextByKeyHints(rows, [/liquidity.*support/i, /liquidity.*provider/i, /流动性支持/, /流动性承诺/]);
+  const creditEnhancementParty = differencePaymentCommitter || liquiditySupportCommitter
+    || pickTextByKeyHints(rows, [/credit.*enhance/i, /enhancement.*party/i, /增信.*(主体|机构|方|人)/]);
+  const creditEnhancementType = differencePaymentCommitter
+    ? "差额支付承诺人"
+    : liquiditySupportCommitter
+      ? "流动性支持承诺人"
+      : creditEnhancementParty
+        ? "增信主体"
+        : "";
+
+  return {
+    type: /ABN|资产支持票据/i.test(allText) ? "ABN" : "ABS",
+    planName,
+    totalScale,
+    underlyingAsset,
+    creditEnhancementType,
+    creditEnhancementParty,
+    differencePaymentCommitter,
+    liquiditySupportCommitter,
+    bookDate: pickFirstDateStringFromRows(rows, ["subscribe_date", "subscribeDate", "book_date", "bookDate", "issue_start_date", "issueStartDate"]),
+    selectedClass: extractAbsTrancheLevel(primaryRow) || "",
+    source: "dm",
+  };
+}
+
+function rowAbsSearchText(row = {}) {
+  return [
+    pickFirstString(row, ["sec_short_name", "secShortName"]),
+    pickFirstString(row, ["sec_full_name", "secFullName"]),
+    pickFirstString(row, ["bond_full_name", "bondFullName"]),
+    pickFirstString(row, ["bond_type_desc", "bondTypeDesc"]),
+    pickFirstString(row, ["security_type_desc", "securityTypeDesc"]),
+    pickFirstString(row, ["product_full_name", "productFullName"]),
+    pickFirstString(row, ["special_plan_name", "specialPlanName"]),
+    pickFirstString(row, ["asset_support_plan_name", "assetSupportPlanName"]),
+  ].filter(Boolean).join(" ");
+}
+
+function isAbsLookupText(value = "") {
+  return /(?:\bABS\b|\bABN\b|资产支持|专项计划|资产支持票据|资产支持证券|优先[ABC]?\d*级|次级|劣后)/i.test(String(value || ""));
+}
+
+function normalizeAbsPlanName(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text
+    .replace(/\s+/g, "")
+    .replace(/[（(]\s*(?:优先|次级|劣后|夹层)[^)）]*[)）]$/u, "")
+    .replace(/(?:优先[ABC]?\d*级?|优先级|次级|劣后级?|夹层级?)(?:资产支持(?:证券|票据))?$/u, "")
+    .replace(/(?:资产支持证券|资产支持票据)(?:优先[ABC]?\d*级?|优先级|次级|劣后级?|夹层级?)$/u, "资产支持证券")
+    .trim();
+}
+
+function normalizeAbsPlanComparable(value = "") {
+  return normalizeFullNameForLookup(normalizeAbsPlanName(value));
+}
+
+function pickFirstStringFromRows(rows, keys) {
+  for (const row of rows || []) {
+    const value = pickFirstString(row, keys);
+    if (value) return value;
+  }
+  return "";
+}
+
+function pickFirstDateStringFromRows(rows, keys) {
+  for (const row of rows || []) {
+    const value = pickFirstDateString(row, keys);
+    if (value) return value;
+  }
+  return "";
+}
+
+function dmAmountYiFromRows(rows, keys) {
+  for (const row of rows || []) {
+    const value = dmAmountYiFromRow(row, keys);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function dmAmountYiFromRow(row, keys) {
+  for (const key of keys) {
+    const raw = row?.[key];
+    const value = numberOrNull(raw);
+    if (!Number.isFinite(value)) continue;
+    return amountKeyLooksYi(key) ? round(value, 4) : round(value / 10000, 4);
+  }
+  return null;
+}
+
+function amountKeyLooksYi(key = "") {
+  return /(Yi|_yi|亿元|billion|amount_yi|scale_yi)$/i.test(String(key || ""));
+}
+
+function pickTextByKeyHints(rows, patterns) {
+  for (const row of rows || []) {
+    for (const item of flattenDmValues(row)) {
+      const key = String(item.key || "");
+      const value = String(item.value ?? "").trim();
+      if (!value || value.length > 500) continue;
+      if (patterns.some((pattern) => pattern.test(key))) return value;
+    }
+  }
+  return "";
+}
+
+function extractAbsTrancheLevel(row = {}) {
+  const explicit = pickFirstString(row, [
+    "tranche_level", "trancheLevel",
+    "priority_level", "priorityLevel",
+    "security_level", "securityLevel",
+    "class_name", "className",
+    "bond_level", "bondLevel",
+    "debt_level", "debtLevel",
+  ]);
+  const source = explicit || [
+    pickFirstString(row, ["sec_short_name", "secShortName"]),
+    pickFirstString(row, ["sec_full_name", "secFullName"]),
+    pickFirstString(row, ["bond_full_name", "bondFullName"]),
+  ].filter(Boolean).join(" ");
+  const match = String(source || "").match(/(优先[ABC]?\d*级?|优先级|次级|劣后级?|夹层级?)/i);
+  if (match?.[1] || explicit) return (match?.[1] || explicit || "").replace(/级?$/, (value) => value ? "级" : "").trim();
+  const shortName = pickFirstString(row, ["sec_short_name", "secShortName"]);
+  const suffix = String(shortName || "").match(/(?:\d)(A\d?|B\d?|C\d?)$/i)?.[1];
+  return suffix ? `优先${suffix.toUpperCase()}级` : "";
+}
+
+function pickAbsDebtRating(row = {}) {
+  const direct = pickFirstString(row, [
+    "bond_rating", "bondRating",
+    "debt_rating", "debtRating",
+    "credit_rating", "creditRating",
+    "security_rating", "securityRating",
+    "tranche_rating", "trancheRating",
+  ]);
+  const parsed = parseRatingWithAgency(direct);
+  if (parsed.rating) return parsed.rating;
+  for (const item of flattenDmValues(row)) {
+    const key = String(item.key || "");
+    if (/subject|issuer|main|主体|发行人/i.test(key)) continue;
+    if (!/(bond|debt|credit|security|tranche|rating|grade|债项|信用|评级|级别|等级)/i.test(key)) continue;
+    const rating = parseRatingWithAgency(item.value).rating;
+    if (rating) return rating;
+  }
+  return "";
+}
+
+function pickAbsDebtRatingAgency(row = {}) {
+  const direct = pickFirstString(row, [
+    "bond_rating_agency", "bondRatingAgency",
+    "debt_rating_agency", "debtRatingAgency",
+    "credit_rating_agency", "creditRatingAgency",
+    "rating_agency", "ratingAgency",
+    "agency_name", "agencyName",
+  ]);
+  const parsed = parseRatingWithAgency(direct);
+  if (parsed.agency) return parsed.agency;
+  return direct && !ratingValuePattern().test(direct) ? direct : "";
 }
 
 function resolveDmDurationText(primaryRow, basicRow) {
@@ -986,6 +1229,10 @@ function issueGroupFromProject(project, entries, targets, score) {
 function buildIssueGroupFromDmRows(normalized, query, primary) {
   const rows = rowsFromDm(primary?.raw);
   if (!rows.length) return null;
+  if (normalized?.isAbs || normalized?.absInfo) {
+    const absGroup = buildAbsIssueGroupFromDmRows(normalized, query, rows);
+    if (absGroup) return absGroup;
+  }
   const targets = issueGroupTargets(normalized, query);
   const issuerTarget = normalizeIssuerMatchText(normalized?.issuerName || "");
   const subscribeDate = normalized?.subscribeDate || "";
@@ -1046,7 +1293,105 @@ function dmRowIssueEntry(row) {
     actualScale: Number.isFinite(actualWan) ? round(actualWan / 10000, 4) : null,
     inquiryRange: normalizeInquiryRange(pickFirstString(row, ["subscribe_rate", "subscribeRate"])),
     couponRate,
+    trancheLevel: extractAbsTrancheLevel(row),
+    sharePct: numberFromRow(row, ["issue_ratio", "issueRatio", "scale_ratio", "scaleRatio", "tranche_ratio", "trancheRatio", "ratio", "shareRatio"]),
+    expectedMaturityDate: pickFirstDateString(row, ["expected_maturity_date", "expectedMaturityDate", "exp_matu_date", "expMatuDate", "expected_due_date", "expectedDueDate", "maturity_date", "maturityDate"]),
+    debtRating: pickAbsDebtRating(row),
+    debtRatingAgency: pickAbsDebtRatingAgency(row),
   };
+}
+
+function buildAbsIssueGroupFromDmRows(normalized, query, rows) {
+  const targets = issueGroupTargets(normalized, query);
+  const issuerTarget = normalizeIssuerMatchText(normalized?.issuerName || "");
+  const planTargets = uniqueStrings([
+    normalized?.absInfo?.planName,
+    normalized?.fullName,
+    query?.fullName,
+    query?.shortName,
+  ]).map(normalizeAbsPlanComparable).filter(Boolean);
+  const subscribeDate = normalized?.subscribeDate || normalized?.absInfo?.bookDate || "";
+  const candidates = rows.filter((row) => {
+    if (!isAbsLookupText(rowAbsSearchText(row))) return false;
+    const rowPlans = rowFullNames(row)
+      .concat([
+        pickFirstString(row, ["special_plan_name", "specialPlanName"]),
+        pickFirstString(row, ["asset_support_plan_name", "assetSupportPlanName"]),
+        pickFirstString(row, ["plan_name", "planName"]),
+        pickFirstString(row, ["product_full_name", "productFullName"]),
+      ])
+      .map(normalizeAbsPlanComparable)
+      .filter(Boolean);
+    const planMatched = planTargets.length
+      ? rowPlans.some((rowPlan) => planTargets.some((target) => absPlanMatches(rowPlan, target)))
+      : true;
+    if (!planMatched) return false;
+    const rowIssuer = normalizeIssuerMatchText(pickFirstString(row, ["issuer_full_name", "issuerFullName", "issuer_name", "issuerName"]));
+    if (issuerTarget && rowIssuer && issuerMatchScore(rowIssuer, issuerTarget) < 75) return false;
+    const rowDate = pickFirstDateString(row, ["subscribe_date", "subscribeDate", "book_date", "bookDate", "issue_start_date", "issueStartDate"]);
+    if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
+    return true;
+  });
+  const entries = uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId));
+  if (entries.length < 2) return null;
+  const totalScale = normalized?.absInfo?.totalScale
+    ?? sumIssueEntryScales(entries.map((entry) => entry.actualScale ?? entry.planScale));
+  return {
+    groupId: issueGroupIdFromParts(normalized?.absInfo?.planName || normalized?.fullName || normalized?.issuerName, entries[0]?.shortName || normalized?.shortName),
+    source: "dm",
+    confidence: 90,
+    instrumentType: normalized?.instrumentType || normalized?.absInfo?.type || "ABS",
+    issuerName: normalized?.issuerName || "",
+    issueName: normalized?.absInfo?.planName || normalizeAbsPlanName(entries[0]?.fullName) || normalized?.fullName || "",
+    subscribeDate: subscribeDate || "",
+    venue: normalized?.venue || "",
+    leadUnderwriter: normalized?.leadUnderwriter || "",
+    queriedInput: query?.shortName || query?.securityId || query?.fullName || "",
+    totalScale,
+    tranches: entries.map((entry) => {
+      const scale = numberOrNull(entry.actualScale) ?? numberOrNull(entry.planScale);
+      const sharePct = Number.isFinite(numberOrNull(entry.sharePct))
+        ? numberOrNull(entry.sharePct)
+        : Number.isFinite(scale) && Number.isFinite(totalScale) && totalScale > 0
+          ? round(scale / totalScale * 100, 2)
+          : null;
+      const status = inferIssueTrancheStatus(entry, { groupHasIssued: entries.some(entryHasIssuedFields), projectResultConfirmed: false });
+      return cleanIssueTranche({
+        shortName: entry.shortName,
+        securityId: entry.securityId,
+        fullName: entry.fullName,
+        tenor: entry.durationText,
+        planScale: entry.planScale,
+        actualScale: entry.actualScale,
+        inquiryRange: entry.inquiryRange,
+        couponRate: entry.couponRate,
+        trancheLevel: entry.trancheLevel,
+        sharePct,
+        expectedMaturityDate: entry.expectedMaturityDate,
+        debtRating: entry.debtRating,
+        debtRatingAgency: entry.debtRatingAgency,
+        status,
+        statusReason: issueTrancheStatusReason(status),
+        source: "dm",
+        isQueriedInput: entryMatchesTargets(entry, targets.inputNames, targets.inputSecurityIds),
+        isDmMatched: entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds),
+      });
+    }),
+  };
+}
+
+function absPlanMatches(rowPlan, target) {
+  if (!rowPlan || !target) return false;
+  if (rowPlan === target) return true;
+  if (rowPlan.includes(target) || target.includes(rowPlan)) {
+    return Math.min(rowPlan.length, target.length) / Math.max(rowPlan.length, target.length) >= 0.7;
+  }
+  return stringSimilarity(rowPlan, target) >= 0.82;
+}
+
+function sumIssueEntryScales(values = []) {
+  const numbers = values.map(numberOrNull).filter(Number.isFinite);
+  return numbers.length ? round(numbers.reduce((sum, value) => sum + value, 0), 4) : null;
 }
 
 function issueGroupTargets(normalized, query) {
@@ -1128,6 +1473,11 @@ function mergeIssueGroups(primaryGroup, secondaryGroup) {
         actualScale: mergedTranches[index].actualScale ?? secondary.actualScale,
         inquiryRange: mergedTranches[index].inquiryRange || secondary.inquiryRange,
         couponRate: mergedTranches[index].couponRate ?? secondary.couponRate,
+        trancheLevel: mergedTranches[index].trancheLevel || secondary.trancheLevel,
+        sharePct: mergedTranches[index].sharePct ?? secondary.sharePct,
+        expectedMaturityDate: mergedTranches[index].expectedMaturityDate || secondary.expectedMaturityDate,
+        debtRating: mergedTranches[index].debtRating || secondary.debtRating,
+        debtRatingAgency: mergedTranches[index].debtRatingAgency || secondary.debtRatingAgency,
         status: mergedTranches[index].status === "unknown" ? secondary.status : mergedTranches[index].status,
         isQueriedInput: Boolean(mergedTranches[index].isQueriedInput || secondary.isQueriedInput),
         isDmMatched: Boolean(mergedTranches[index].isDmMatched || secondary.isDmMatched),
@@ -1228,6 +1578,11 @@ function cleanIssueTranche(tranche) {
     actualScale: numberOrNull(tranche.actualScale),
     inquiryRange: tranche.inquiryRange || "",
     couponRate: numberOrNull(tranche.couponRate),
+    trancheLevel: tranche.trancheLevel || "",
+    sharePct: numberOrNull(tranche.sharePct),
+    expectedMaturityDate: tranche.expectedMaturityDate || "",
+    debtRating: tranche.debtRating || "",
+    debtRatingAgency: tranche.debtRatingAgency || "",
     status: tranche.status || "unknown",
     statusReason: tranche.statusReason || "",
     reallocationTargetShortName: tranche.reallocationTargetShortName || "",
@@ -1339,6 +1694,14 @@ function bestPrimaryRow(primary, shortName, securityId, fullName) {
 
 function primaryRowMatchesQuery(row, { shortName, securityId, fullName }) {
   return rowMatchesSecurityId(row, securityId) || rowMatchesShortName(row, shortName) || rowMatchesFullName(row, fullName);
+}
+
+function primaryRowDedupKey(row = {}) {
+  return [
+    normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"])),
+    normalizeLookupName(pickFirstString(row, ["sec_short_name", "secShortName"])),
+    normalizeFullNameForLookup(pickFirstString(row, ["sec_full_name", "secFullName", "bond_full_name", "bondFullName"])),
+  ].filter(Boolean).join("|") || JSON.stringify(row);
 }
 
 function rowMatchesSecurityId(row, securityId) {
@@ -1455,7 +1818,7 @@ function collectFieldCandidates(rawItems) {
       for (const [key, value] of Object.entries(row || {})) {
         const valueText = String(value ?? "");
         const keyText = String(key);
-        if (/(rating|agency|credit|grade|level|implied|rate|tenor|matu|option|special|评级|隐含|等级|级别|主体|机构|期限|条款|行权|回售|赎回)/i.test(`${keyText} ${valueText}`)) {
+        if (/(rating|agency|credit|grade|level|implied|rate|tenor|matu|option|special|asset|plan|tranche|ratio|support|enhance|underlying|评级|隐含|等级|级别|主体|机构|期限|条款|行权|回售|赎回|基础资产|底层资产|专项|计划|分档|优先|次级|劣后|占比|到期|差额|流动性|承诺|增信)/i.test(`${keyText} ${valueText}`)) {
           candidates.push({ key, value });
         }
       }
