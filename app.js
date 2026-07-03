@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260703-abs";
+} from "./core.js?v=20260703-abs-layout";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260703-abs";
+} from "./lifecycle.js?v=20260703-abs-layout";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260703-abs";
+} from "./history-parser.js?v=20260703-abs-layout";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260703-abs";
+} from "./protocol-transfer.js?v=20260703-abs-layout";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260703-abs";
+} from "./secondary-inventory.js?v=20260703-abs-layout";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -587,6 +587,9 @@ function bindGenerator() {
     const input = event.target.closest("[data-abs-tranche-field]");
     if (!input) return;
     clearRecognitionForInput(input);
+    if (input.dataset.absTrancheField === "selected") {
+      input.closest(".abs-tranche-row")?.classList.toggle("is-selected", input.checked);
+    }
     updateAbsTranchesFromInputs();
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
@@ -2012,24 +2015,32 @@ function renderAbsTrancheFields() {
   const absInfo = ensureAbsInfo(project);
   rows.innerHTML = absInfo.tranches.length
     ? absInfo.tranches.map((tranche, index) => `
-      <div class="abs-tranche-row" data-abs-tranche-index="${index}">
+      <div class="abs-tranche-row ${tranche.selected ? "is-selected" : ""}" data-abs-tranche-index="${index}">
         <div class="abs-tranche-row-head">
-          <strong>${escapeHtml(tranche.className || tranche.shortName || `分档 ${index + 1}`)}</strong>
+          <label class="abs-invest-switch">
+            <input data-abs-tranche-field="selected" type="checkbox" ${tranche.selected ? "checked" : ""}>
+            <span>本次投资</span>
+          </label>
+          <div class="abs-tranche-title">
+            <strong>${escapeHtml(tranche.shortName || tranche.className || `分档 ${index + 1}`)}</strong>
+            <span>${escapeHtml([tranche.className, tranche.securityId].filter(Boolean).join(" · ") || "补充分档要素")}</span>
+          </div>
           <button class="text-button" type="button" data-remove-abs-tranche="${index}">移除</button>
         </div>
-        <div class="abs-tranche-grid">
-          <label>本次投资<input data-abs-tranche-field="selected" type="checkbox" ${tranche.selected ? "checked" : ""}></label>
-          <label>分档级别<input data-abs-tranche-field="className" value="${escapeAttribute(tranche.className)}" placeholder="优先A1级"></label>
-          <label>简称<input data-abs-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
-          <label>代码<input data-abs-tranche-field="securityId" value="${escapeAttribute(tranche.securityId)}"></label>
-          <label>规模（亿元）<input data-abs-tranche-field="scale" type="number" step="0.0001" value="${escapeAttribute(tranche.scale ?? "")}"></label>
-          <label>占比（%）<input data-abs-tranche-field="sharePct" type="number" step="0.01" value="${escapeAttribute(tranche.sharePct ?? "")}"></label>
-          <label>预期到期日<input data-abs-tranche-field="expectedMaturityDate" type="date" value="${escapeAttribute(tranche.expectedMaturityDate)}"></label>
-          <label>预期期限<input data-abs-tranche-field="expectedTerm" value="${escapeAttribute(tranche.expectedTerm)}" placeholder="如 1+1+1年"></label>
-          <label>债项评级<input data-abs-tranche-field="debtRating" value="${escapeAttribute(tranche.debtRating)}"></label>
-          <label>评级机构<input data-abs-tranche-field="debtRatingAgency" value="${escapeAttribute(tranche.debtRatingAgency)}"></label>
-          <label>利率下限（%）<input data-abs-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
-          <label>利率上限（%）<input data-abs-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
+        <div class="abs-tranche-main">
+          <label class="abs-tranche-field is-wide">分档级别<input data-abs-tranche-field="className" value="${escapeAttribute(tranche.className)}" placeholder="优先A1级"></label>
+          <label class="abs-tranche-field">简称<input data-abs-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
+          <label class="abs-tranche-field">代码<input data-abs-tranche-field="securityId" value="${escapeAttribute(tranche.securityId)}"></label>
+        </div>
+        <div class="abs-tranche-secondary">
+          <label class="abs-tranche-field">规模（亿元）<input data-abs-tranche-field="scale" type="number" step="0.0001" value="${escapeAttribute(tranche.scale ?? "")}"></label>
+          <label class="abs-tranche-field">占比（%）<input data-abs-tranche-field="sharePct" type="number" step="0.01" value="${escapeAttribute(tranche.sharePct ?? "")}"></label>
+          <label class="abs-tranche-field">预期到期日<input data-abs-tranche-field="expectedMaturityDate" type="date" value="${escapeAttribute(tranche.expectedMaturityDate)}"></label>
+          <label class="abs-tranche-field">预期期限<input data-abs-tranche-field="expectedTerm" value="${escapeAttribute(tranche.expectedTerm)}" placeholder="如 1+1+1年"></label>
+          <label class="abs-tranche-field">债项评级<input data-abs-tranche-field="debtRating" value="${escapeAttribute(tranche.debtRating)}"></label>
+          <label class="abs-tranche-field">评级机构<input data-abs-tranche-field="debtRatingAgency" value="${escapeAttribute(tranche.debtRatingAgency)}"></label>
+          <label class="abs-tranche-field">利率下限（%）<input data-abs-tranche-field="inquiryLow" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryLow ?? "")}"></label>
+          <label class="abs-tranche-field">利率上限（%）<input data-abs-tranche-field="inquiryHigh" type="number" step="0.0001" value="${escapeAttribute(tranche.inquiryHigh ?? "")}"></label>
         </div>
       </div>
     `).join("")
