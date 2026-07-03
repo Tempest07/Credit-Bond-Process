@@ -179,6 +179,36 @@ test("generates ABS-specific flow opinion with tranches and credit support", () 
   assert.match(generated.opinion, /本笔业务由处室终批/);
 });
 
+test("ABS opinion uses tranche class names and maturity dates instead of short names and terms", () => {
+  const generated = generateOpinion({
+    shortName: "26创格2A",
+    instrumentType: "ABS",
+    branch: "武汉分行",
+    issueScale: 5,
+    absInfo: {
+      planName: "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)",
+      totalScale: 5,
+      bookDate: "2026-06-21",
+      underlyingAsset: "租金请求权、附属担保权益及租赁车辆的尾付款",
+      creditEnhancementType: "差额支付承诺人",
+      creditEnhancementParty: "创格融资租赁有限公司",
+      approvalAmount: 0.7,
+      approvalRatio: 20,
+      applicationAmount: 0.7,
+      tranches: [
+        { shortName: "26创格2A", scale: 3.5, sharePct: 70, expectedTerm: "374D", debtRating: "AAA", debtRatingAgency: "联合资信", inquiryLow: 1.5, inquiryHigh: 2 },
+        { shortName: "26创格2B", scale: 0.6, sharePct: 12, expectedTerm: "475D", debtRating: "AAA", debtRatingAgency: "联合资信", inquiryLow: 1.8, inquiryHigh: 2.3 },
+        { shortName: "26创格2C", scale: 0.9, sharePct: 18, expectedTerm: "475D" },
+      ],
+    },
+  }, null);
+
+  assert.match(generated.opinion, /其中优先A1级3\.5亿元，占比70%，预期到期日为2027\/06\/30；优先A2级0\.6亿元，占比12%，预期到期日为2027\/10\/09/);
+  assert.doesNotMatch(generated.opinion, /其中26创格2A/);
+  assert.doesNotMatch(generated.opinion, /26创格2C0\.9亿元/);
+  assert.doesNotMatch(generated.opinion, /预期期限374D/);
+});
+
 test("parses three-variety inquiry ranges", () => {
   const parsed = parseProjectBrief(`26测试MTN001A
 26测试MTN001B

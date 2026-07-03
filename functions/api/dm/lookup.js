@@ -670,7 +670,17 @@ function extractAbsTrancheLevel(row = {}) {
   if (match?.[1] || explicit) return (match?.[1] || explicit || "").replace(/级?$/, (value) => value ? "级" : "").trim();
   const shortName = pickFirstString(row, ["sec_short_name", "secShortName"]);
   const suffix = String(shortName || "").match(/(?:\d)(A\d?|B\d?|C\d?)$/i)?.[1];
-  return suffix ? `优先${suffix.toUpperCase()}级` : "";
+  return absClassNameFromShortSuffix(suffix);
+}
+
+function absClassNameFromShortSuffix(suffix = "") {
+  const value = String(suffix || "").toUpperCase();
+  if (value === "A") return "优先A1级";
+  if (value === "B") return "优先A2级";
+  if (value === "C") return "次级";
+  if (/^A\d+$/.test(value)) return `优先${value}级`;
+  if (/^[BC]\d+$/.test(value)) return `优先${value}级`;
+  return "";
 }
 
 function pickAbsDebtRating(row = {}) {
@@ -1295,10 +1305,34 @@ function dmRowIssueEntry(row) {
     couponRate,
     trancheLevel: extractAbsTrancheLevel(row),
     sharePct: numberFromRow(row, ["issue_ratio", "issueRatio", "scale_ratio", "scaleRatio", "tranche_ratio", "trancheRatio", "ratio", "shareRatio"]),
-    expectedMaturityDate: pickFirstDateString(row, ["expected_maturity_date", "expectedMaturityDate", "exp_matu_date", "expMatuDate", "expected_due_date", "expectedDueDate", "maturity_date", "maturityDate"]),
+    expectedMaturityDate: pickAbsExpectedMaturityDate(row),
     debtRating: pickAbsDebtRating(row),
     debtRatingAgency: pickAbsDebtRatingAgency(row),
   };
+}
+
+function pickAbsExpectedMaturityDate(row = {}) {
+  const direct = pickFirstDateString(row, [
+    "expected_maturity_date", "expectedMaturityDate",
+    "exp_matu_date", "expMatuDate",
+    "expected_due_date", "expectedDueDate",
+    "expected_end_date", "expectedEndDate",
+    "pre_maturity_date", "preMaturityDate",
+    "plan_maturity_date", "planMaturityDate",
+    "est_maturity_date", "estMaturityDate",
+    "maturity_date", "maturityDate",
+    "due_date", "dueDate",
+    "expire_date", "expireDate",
+    "end_date", "endDate",
+  ]);
+  if (direct) return direct;
+  for (const item of flattenDmValues(row)) {
+    const key = String(item.key || "");
+    if (!/(expected|expect|exp|pre|plan|maturity|matu|due|expire|兑付|到期|预期)/i.test(key)) continue;
+    const text = formatDmDate(item.value);
+    if (/\d{4}-\d{2}-\d{2}/.test(text)) return text;
+  }
+  return "";
 }
 
 function buildAbsIssueGroupFromDmRows(normalized, query, rows) {

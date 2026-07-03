@@ -284,14 +284,18 @@ function defaultAbsInfo(input = {}) {
 }
 
 function normalizeAbsTranche(input = {}) {
+  const shortName = String(input.shortName || "").trim();
+  const className = normalizeAbsClassName(
+    input.className || input.trancheLevel || input.absClassName || inferAbsClassNameFromShortName(shortName),
+  );
   return {
     id: input.id || crypto.randomUUID(),
-    className: String(input.className || input.trancheLevel || "").trim(),
-    shortName: String(input.shortName || "").trim(),
+    className,
+    shortName,
     securityId: String(input.securityId || "").trim(),
     scale: numberOrNull(input.scale ?? input.actualScale ?? input.planScale),
     sharePct: numberOrNull(input.sharePct),
-    expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
+    expectedMaturityDate: formatAbsDate(input.expectedMaturityDate || ""),
     expectedTerm: String(input.expectedTerm || input.tenor || "").trim(),
     debtRating: String(input.debtRating || "").trim().toUpperCase(),
     debtRatingAgency: String(input.debtRatingAgency || "").trim(),
@@ -369,8 +373,17 @@ function parseAbsTranchesFromText(text) {
 function normalizeAbsClassName(value = "") {
   const text = String(value || "").trim();
   if (!text) return "";
+  if (/^优先A$/i.test(text) || /^优先A级$/i.test(text)) return "优先A1级";
   if (/级$/.test(text)) return text;
   return `${text}级`;
+}
+
+function inferAbsClassNameFromShortName(shortName = "") {
+  const suffix = String(shortName || "").trim().toUpperCase().match(/\d([ABC])$/)?.[1] || "";
+  if (suffix === "A") return "优先A1级";
+  if (suffix === "B") return "优先A2级";
+  if (suffix === "C") return "次级";
+  return "";
 }
 
 function formatAbsDate(value = "") {
@@ -1014,7 +1027,7 @@ function generateAbsOpinion(project, issuer) {
     ? trimEndingPunctuation(abs.creditApprovalText)
     : formatAbsCreditSentence(abs, issuer, selectedClassText, ratioText);
   const bookPrefix = abs.bookDate ? `【${abs.bookDate.replace(/-/g, "")}簿记】` : "";
-  const trancheSentence = formatAbsTrancheSentence(displayedTranches);
+  const trancheSentence = formatAbsTrancheSentence(displayedTranches, abs);
   const ratingSentence = formatAbsRatingSentence(displayedTranches);
   const assetSentence = abs.underlyingAsset
     ? `基础资产为：${trimEndingPunctuation(abs.underlyingAsset)}`
@@ -1060,7 +1073,7 @@ function absTrancheMatchesSelection(tranche, project, abs) {
 }
 
 function isInvestableAbsTranche(tranche = {}) {
-  const value = `${tranche.className || ""} ${tranche.shortName || ""}`;
+  const value = `${absTrancheDisplayClassName(tranche, 0, false)} ${tranche.shortName || ""}`;
   return !/(次级|劣后|夹层)/.test(value);
 }
 
@@ -1070,23 +1083,56 @@ function sumNumbers(values = []) {
 }
 
 function formatAbsClassList(tranches = []) {
-  const names = uniqueNonEmpty(tranches.map((tranche) => tranche.className || tranche.shortName));
+  const names = uniqueNonEmpty(tranches.map((tranche, index) => absTrancheDisplayClassName(tranche, index, false)));
   if (!names.length) return "";
   return names.join("、");
 }
 
-function formatAbsTrancheSentence(tranches = []) {
-  return tranches.map((tranche) => {
-    const className = tranche.className || tranche.shortName || "分档";
+function absTrancheDisplayClassName(tranche = {}, index = 0, allowGeneric = true) {
+  const className = normalizeAbsClassName(
+    tranche.className || tranche.trancheLevel || tranche.absClassName || inferAbsClassNameFromShortName(tranche.shortName),
+  );
+  if (className) return className;
+  if (!allowGeneric) return "";
+  return tranche.shortName || `分档${index + 1}`;
+}
+
+function formatAbsTrancheSentence(tranches = [], abs = {}) {
+  return tranches.map((tranche, index) => {
+    const className = absTrancheDisplayClassName(tranche, index);
     const scale = Number.isFinite(numberOrNull(tranche.scale)) ? `${formatNumber(tranche.scale)}亿元` : "【待补充规模】";
     const share = Number.isFinite(numberOrNull(tranche.sharePct)) ? `，占比${formatNumber(tranche.sharePct)}%` : "";
-    const maturity = tranche.expectedMaturityDate
-      ? `，预期到期日为${tranche.expectedMaturityDate.replace(/-/g, "/")}`
+    const expectedMaturityDate = tranche.expectedMaturityDate || inferAbsExpectedMaturityDate(tranche.expectedTerm, abs.bookDate);
+    const maturity = expectedMaturityDate
+      ? `，预期到期日为${expectedMaturityDate.replace(/-/g, "/")}`
       : tranche.expectedTerm
         ? `，预期期限${tranche.expectedTerm}`
         : "";
     return `${className}${scale}${share}${maturity}`;
   }).join("；");
+}
+
+function inferAbsExpectedMaturityDate(expectedTerm = "", bookDate = "") {
+  const base = formatAbsDate(bookDate);
+  const term = String(expectedTerm || "").trim().toUpperCase();
+  if (!base || !term) return "";
+  const match = term.match(/^(\d+(?:\.\d+)?)\s*(D|天|M|月|Y|年)$/i);
+  if (!match) return "";
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return "";
+  const date = new Date(`${base}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  const unit = match[2].toUpperCase();
+  if (unit === "D" || unit === "天") {
+    date.setUTCDate(date.getUTCDate() + Math.round(value));
+  } else if (unit === "M" || unit === "月") {
+    date.setUTCMonth(date.getUTCMonth() + Math.round(value));
+  } else if (unit === "Y" || unit === "年") {
+    date.setUTCFullYear(date.getUTCFullYear() + Math.round(value));
+  } else {
+    return "";
+  }
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
 function formatAbsRatingSentence(tranches = []) {
@@ -1100,9 +1146,9 @@ function formatAbsRatingSentence(tranches = []) {
     const agency = first.debtRatingAgency ? `（${first.debtRatingAgency}）` : "";
     return `${names}之债项评级均为${first.debtRating}${agency}。`;
   }
-  return `${rated.map((tranche) => {
+  return `${rated.map((tranche, index) => {
     const agency = tranche.debtRatingAgency ? `（${tranche.debtRatingAgency}）` : "";
-    return `${tranche.className || tranche.shortName || "分档"}债项评级为${tranche.debtRating}${agency}`;
+    return `${absTrancheDisplayClassName(tranche, index)}债项评级为${tranche.debtRating}${agency}`;
   }).join("；")}。`;
 }
 
@@ -1123,10 +1169,10 @@ function formatAbsRatioSentence(selectedClassText, ratioText, tranches = []) {
 }
 
 function formatAbsRateSentence(tranches = []) {
-  const items = tranches.map((tranche) => {
+  const items = tranches.map((tranche, index) => {
     const low = numberOrNull(tranche.inquiryLow);
     const high = numberOrNull(tranche.inquiryHigh);
-    const name = tranche.className || tranche.shortName || "优先级";
+    const name = absTrancheDisplayClassName(tranche, index, false) || "优先级";
     if (!Number.isFinite(low) || !Number.isFinite(high)) return "";
     return `${name}投标利率区间为${formatNumber(low)}%-${formatNumber(high)}%`;
   }).filter(Boolean);
