@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { onRequestPost as onLoginPost } from "../functions/api/auth/login.js";
+import { onRequestPost as onLogoutPost } from "../functions/api/auth/logout.js";
+import { onRequestGet as onSessionGet } from "../functions/api/auth/session.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
 
 test("requires APP_PASSWORD to be configured", async () => {
@@ -96,6 +98,60 @@ test("logs in admin and reads migrated legacy state", async () => {
   const statePayload = await stateResponse.json();
   assert.equal(statePayload.user.username, "admin");
   assert.equal(statePayload.data.issuers[0].legalName, "测试主体");
+});
+
+test("sets a persistent session cookie and authenticates API calls with it", async () => {
+  const DB = createMockDb({
+    legacyData: {
+      version: 3,
+      issuers: [{ id: "issuer-cookie", legalName: "Cookie主体" }],
+      projects: [],
+    },
+  });
+  const loginResponse = await onLoginPost({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "correct" }),
+      headers: { "Content-Type": "application/json" },
+    }),
+  });
+  assert.equal(loginResponse.status, 200);
+  const setCookie = loginResponse.headers.get("Set-Cookie");
+  assert.match(setCookie, /bond_centre_session=/);
+  assert.match(setCookie, /HttpOnly/);
+  assert.match(setCookie, /Max-Age=2592000/);
+  assert.match(setCookie, /SameSite=Lax/);
+
+  const cookie = setCookie.split(";")[0];
+  const sessionResponse = await onSessionGet({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/auth/session", {
+      headers: { Cookie: cookie },
+    }),
+  });
+  assert.equal(sessionResponse.status, 200);
+  assert.equal((await sessionResponse.json()).user.nickname, "管理员");
+
+  const stateResponse = await onRequestGet({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/state", {
+      headers: { Cookie: cookie },
+    }),
+  });
+  assert.equal(stateResponse.status, 200);
+  const statePayload = await stateResponse.json();
+  assert.equal(statePayload.data.issuers[0].legalName, "Cookie主体");
+
+  const logoutResponse = await onLogoutPost({
+    env: { APP_PASSWORD: "correct", DB },
+    request: new Request("https://example.com/api/auth/logout", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    }),
+  });
+  assert.equal(logoutResponse.status, 200);
+  assert.match(logoutResponse.headers.get("Set-Cookie"), /Max-Age=0/);
 });
 
 function createMockDb({ legacyData = null } = {}) {

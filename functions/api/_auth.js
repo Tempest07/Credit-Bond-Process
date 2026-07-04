@@ -1,7 +1,9 @@
 const ADMIN_USER_ID = "admin";
 const ADMIN_USERNAME = "admin";
 const ADMIN_NICKNAME = "管理员";
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_COOKIE = "bond_centre_session";
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
 
 export const EMPTY_APP_STATE = {
   version: 4,
@@ -16,7 +18,7 @@ export const EMPTY_APP_STATE = {
 };
 
 export async function requireUser(context) {
-  const token = bearerToken(context.request);
+  const token = requestToken(context.request);
   const legacyPassword = adminPassword(context.env);
   const local = isLocalRequest(context.request);
 
@@ -66,6 +68,10 @@ export async function loginUser(db, env, { username, password }, options = {}) {
 export async function logoutUser(db, token) {
   if (!db || !token) return;
   await db.prepare("DELETE FROM sessions WHERE token_hash = ?1").bind(await sha256Hex(token)).run();
+}
+
+export function requestToken(request) {
+  return bearerToken(request) || cookieValue(request, SESSION_COOKIE);
 }
 
 export async function ensureAuthSchema(db, env = {}, options = {}) {
@@ -147,6 +153,39 @@ export function bearerToken(request) {
   return authorization.replace(/^Bearer\s+/i, "").trim();
 }
 
+export function sessionCookie(token, request) {
+  const parts = [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `Max-Age=${SESSION_TTL_SECONDS}`,
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (new URL(request.url).protocol === "https:") parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function clearSessionCookie(request) {
+  const parts = [
+    `${SESSION_COOKIE}=`,
+    "Path=/",
+    "Max-Age=0",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (new URL(request.url).protocol === "https:") parts.push("Secure");
+  return parts.join("; ");
+}
+
+function cookieValue(request, name) {
+  const cookie = request.headers.get("Cookie") || "";
+  for (const part of cookie.split(";")) {
+    const [rawKey, ...rawValue] = part.trim().split("=");
+    if (rawKey === name) return decodeURIComponent(rawValue.join("=") || "");
+  }
+  return "";
+}
+
 export function isLocalRequest(request) {
   const hostname = new URL(request.url).hostname;
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
@@ -160,8 +199,11 @@ export function apiHeaders() {
   };
 }
 
-export function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: apiHeaders() });
+export function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...apiHeaders(), ...extraHeaders },
+  });
 }
 
 async function ensureAdminUser(db, env, options) {

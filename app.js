@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260703-abs-opinion";
+} from "./core.js?v=20260704-gateway-login";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260703-abs-opinion";
+} from "./lifecycle.js?v=20260704-gateway-login";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260703-abs-opinion";
+} from "./history-parser.js?v=20260704-gateway-login";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260703-abs-opinion";
+} from "./protocol-transfer.js?v=20260704-gateway-login";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260703-abs-opinion";
+} from "./secondary-inventory.js?v=20260704-gateway-login";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -82,6 +82,7 @@ const USER_KEY = "credit-bond-process-api-user";
 const API_URL = "./api/state";
 const AUTH_LOGIN_URL = "./api/auth/login";
 const AUTH_LOGOUT_URL = "./api/auth/logout";
+const AUTH_SESSION_URL = "./api/auth/session";
 const DM_VALUATION_URL = "./api/dm/valuation";
 const MAILER_URL = "./api/mail/today";
 const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
@@ -219,6 +220,7 @@ async function initialize() {
   renderFtpCurveForm();
   clearIssuerForm();
   updateAuthUi();
+  await restoreAuthSession();
   await loadCloudState();
 }
 
@@ -346,6 +348,7 @@ async function lookupProjectScreenshotEntry(entry) {
   try {
     const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
       cache: "no-store",
+      credentials: "same-origin",
       headers: authHeaders(),
     });
     let payload;
@@ -1093,6 +1096,7 @@ async function runProjectDmLookup(queryOverride = "") {
   try {
     const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
       cache: "no-store",
+      credentials: "same-origin",
       headers: authHeaders(),
     });
     const payload = await response.json();
@@ -2303,6 +2307,7 @@ async function fetchDmValuationAssist(key, projectValue, issuerName) {
   try {
     const response = await fetch(`${DM_VALUATION_URL}?${params.toString()}`, {
       cache: "no-store",
+      credentials: "same-origin",
       headers: authHeaders(),
       signal: valuationAssistController.signal,
     });
@@ -2563,6 +2568,7 @@ async function callMailer(action) {
     const params = new URLSearchParams({ action: isSend ? "send" : "preview" });
     const response = await fetch(`${MAILER_URL}?${params.toString()}`, {
       method: isSend ? "POST" : "GET",
+      credentials: "same-origin",
       headers: authHeaders(),
     });
     const text = await response.text();
@@ -4881,6 +4887,7 @@ async function runDmLookup() {
   try {
     const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
       cache: "no-store",
+      credentials: "same-origin",
       headers: authHeaders(),
     });
     const elapsedMs = Math.round(performance.now() - startedAt);
@@ -4999,9 +5006,8 @@ function findLocalRatingForDmNormalized(normalized) {
 }
 
 async function findCloudRatingForDmNormalized(normalized) {
-  if (!getApiToken() && !isLocalApiMode()) return null;
   try {
-    const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
+    const response = await fetch(API_URL, { cache: "no-store", credentials: "same-origin", headers: authHeaders() });
     if (!response.ok) return null;
     const remote = await response.json();
     if (!remote.data?.issuers) return null;
@@ -5985,18 +5991,16 @@ function bindDataActions() {
     showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 未连接，项目中心已锁定。");
   });
 
-  $("#setPasswordButton").addEventListener("click", async () => {
-    const current = getCurrentUser();
-    const username = prompt("请输入用户名：", current?.username || "admin");
-    if (username === null) return;
-    const normalizedUsername = username.trim();
-    if (!normalizedUsername) {
-      showToast("请输入用户名。");
+  $("#setPasswordButton").addEventListener("click", showLoginGateway);
+  $("#loginForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = $("#loginUsername")?.value.trim() || "admin";
+    const password = $("#loginPassword")?.value || "";
+    if (!username || !password) {
+      setLoginMessage("请输入用户名和密码。");
       return;
     }
-    const password = prompt(`请输入 ${normalizedUsername} 的密码：`, "");
-    if (password === null) return;
-    await loginWithPassword(normalizedUsername, password);
+    await loginWithPassword(username, password);
   });
   $("#logoutButton")?.addEventListener("click", logoutCurrentUser);
 
@@ -6032,31 +6036,48 @@ function bindDataActions() {
   });
 }
 
+function showLoginGateway() {
+  const user = getCurrentUser();
+  if ($("#loginUsername")) $("#loginUsername").value = user?.username || "admin";
+  if ($("#loginPassword")) $("#loginPassword").value = "";
+  setLoginMessage("");
+  setCloudGate(true, {
+    state: "idle",
+    title: user ? `欢迎回来，${user.nickname || user.username}` : "欢迎回来",
+    detail: "请登录管理员账号，进入后即可访问项目中心、主体库、DM 测试和邮件等云端数据。",
+  });
+  window.setTimeout(() => $("#loginPassword")?.focus(), 40);
+}
+
 async function loginWithPassword(username, password) {
+  setLoginBusy(true);
+  setLoginMessage("");
   setCloudGate(true, {
     state: "connecting",
     title: "正在登录",
-    detail: "正在校验账号并读取云端资料库。",
+    detail: "正在校验账号并建立持久会话。",
   });
   try {
     const response = await fetch(AUTH_LOGIN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ username, password }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.token) {
+    if (!response.ok || !payload.user) {
       throw new Error(payload.error || `HTTP ${response.status}`);
     }
-    sessionStorage.setItem(TOKEN_KEY, payload.token);
+    if (payload.token) sessionStorage.setItem(TOKEN_KEY, payload.token);
     setCurrentUser(payload.user);
     updateAuthUi();
-    showToast(`已登录：${payload.user?.nickname || payload.user?.username || username}`);
+    showToast(payload.message || `欢迎回来，${payload.user?.nickname || payload.user?.username || username}`);
     await loadCloudState();
     return true;
   } catch (error) {
     clearAuthSession();
     cloudAvailable = false;
+    setLoginMessage(error.message || "登录失败，请重试。");
     setSyncStatus("登录失败", "请检查用户名或密码");
     setCloudGate(true, {
       state: "error",
@@ -6065,38 +6086,87 @@ async function loginWithPassword(username, password) {
     });
     showToast(error.message || "登录失败，请重试。");
     return false;
+  } finally {
+    setLoginBusy(false);
   }
 }
 
 async function logoutCurrentUser() {
-  const token = getApiToken();
-  if (token) {
-    await fetch(AUTH_LOGOUT_URL, {
-      method: "POST",
-      headers: authHeaders(),
-    }).catch(() => {});
-  }
+  await fetch(AUTH_LOGOUT_URL, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: authHeaders(),
+  }).catch(() => {});
   clearAuthSession();
   cloudAvailable = false;
   await loadCloudState();
   showToast("已退出登录。");
 }
 
+function setLoginBusy(busy) {
+  const form = $("#loginForm");
+  form?.querySelectorAll("input, button").forEach((element) => {
+    element.disabled = Boolean(busy);
+  });
+  const button = $("#loginSubmitButton");
+  if (button) button.textContent = busy ? "正在登录..." : "登录并进入";
+}
+
+function setLoginMessage(message = "") {
+  const target = $("#loginMessage");
+  if (!target) return;
+  target.textContent = message;
+  target.hidden = !message;
+}
+
+async function restoreAuthSession() {
+  if (isLocalApiMode() && !getApiToken()) {
+    updateAuthUi();
+    return false;
+  }
+  try {
+    const response = await fetch(AUTH_SESSION_URL, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      if (response.status === 401) clearAuthSession();
+      return false;
+    }
+    const payload = await response.json();
+    if (payload.user) {
+      setCurrentUser(payload.user);
+      updateAuthUi();
+      return true;
+    }
+  } catch {
+    // loadCloudState will surface the actual connection/login state.
+  }
+  return false;
+}
+
 function getCurrentUser() {
   try {
-    return JSON.parse(sessionStorage.getItem(USER_KEY)) || null;
+    return JSON.parse(localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY)) || null;
   } catch {
     return null;
   }
 }
 
 function setCurrentUser(user) {
-  if (user?.username) sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-  else sessionStorage.removeItem(USER_KEY);
+  if (user?.username) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(USER_KEY);
+  }
 }
 
 function clearAuthSession() {
   sessionStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(USER_KEY);
   updateAuthUi();
 }
@@ -6105,22 +6175,16 @@ function updateAuthUi() {
   const user = getCurrentUser();
   const loginButton = $("#setPasswordButton");
   const logoutButton = $("#logoutButton");
-  if (loginButton) loginButton.textContent = user ? `切换账号：${user.nickname || user.username}` : "登录";
-  if (logoutButton) logoutButton.hidden = !getApiToken();
+  const welcomeLine = $("#welcomeLine");
+  const welcomeNickname = $("#welcomeNickname");
+  if (loginButton) loginButton.textContent = user ? "切换账号" : "登录";
+  if (logoutButton) logoutButton.hidden = !user && !getApiToken();
+  if (welcomeLine) welcomeLine.hidden = !user;
+  if (welcomeNickname) welcomeNickname.textContent = user?.nickname || user?.username || "";
+  if ($("#loginUsername") && user?.username) $("#loginUsername").value = user.username;
 }
 
 async function loadCloudState() {
-  if (!getApiToken() && !isLocalApiMode()) {
-    cloudAvailable = false;
-    updateAuthUi();
-    setSyncStatus("未登录", "请先登录管理员账号");
-    setCloudGate(true, {
-      state: "idle",
-      title: "请先登录",
-      detail: "点击右上角“登录”，使用 admin 账号读取云端资料库。",
-    });
-    return;
-  }
   setSyncStatus("正在连接", isLocalApiMode() ? "尝试读取本地 D1" : "尝试读取 Cloudflare D1");
   setCloudGate(true, {
     state: "connecting",
@@ -6128,9 +6192,18 @@ async function loadCloudState() {
     detail: isLocalApiMode() ? "正在读取本地开发数据库。" : "正在校验登录状态并读取云端资料库。",
   });
   try {
-    const response = await fetch(API_URL, { cache: "no-store", headers: authHeaders() });
+    const response = await fetch(API_URL, { cache: "no-store", credentials: "same-origin", headers: authHeaders() });
     if (!response.ok) {
-      if (response.status === 401) clearAuthSession();
+      if (response.status === 401) {
+        clearAuthSession();
+        setSyncStatus("未登录", "请先登录管理员账号");
+        setCloudGate(true, {
+          state: "idle",
+          title: "请先登录",
+          detail: "登录后即可读取云端资料库，并进入项目中心各个子界面。",
+        });
+        return;
+      }
       throw new Error(`HTTP ${response.status}`);
     }
     const remote = await response.json();
@@ -6159,7 +6232,7 @@ async function loadCloudState() {
     setCloudGate(true, {
       state: "error",
       title: isLocalApiMode() ? "本地 D1 连接失败" : "D1 连接失败",
-      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : "D1 暂时无法连接。请点击右上角“登录”重新登录。",
+      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : "D1 暂时无法连接。请在下方重新登录或稍后再试。",
     });
   }
   renderIssuerOptions();
@@ -6173,19 +6246,10 @@ async function loadCloudState() {
 
 async function saveCloudState() {
   persistLocal();
-  if (!getApiToken() && !isLocalApiMode()) {
-    updateAuthUi();
-    setSyncStatus("未登录", "请先登录管理员账号");
-    setCloudGate(true, {
-      state: "idle",
-      title: "请先登录",
-      detail: "点击右上角“登录”，登录后再同步云端资料库。",
-    });
-    return false;
-  }
   try {
     const response = await fetch(API_URL, {
       method: "PUT",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ data: state }),
     });
@@ -6301,10 +6365,12 @@ function setCloudGate(locked, options = {}) {
   $("#exportDataButton").disabled = Boolean(locked);
   $("#importDataInput").disabled = Boolean(locked);
   $("#importDataInput").closest(".file-button")?.classList.toggle("unavailable", Boolean(locked));
+  const loginForm = $("#loginForm");
+  if (loginForm) loginForm.hidden = !locked || isLocalApiMode();
   if (config.title) $("#cloudGateTitle").textContent = config.title;
   if (config.detail) $("#cloudGateDetail").textContent = config.detail;
-  $("#cloudGateStep").textContent = stateName === "error" ? "ERR" : stateName === "success" ? "OK" : "D1";
-  $("#cloudGateSymbol").textContent = stateName === "error" ? "!" : stateName === "success" ? "✓" : "D1";
+  $("#cloudGateStep").textContent = stateName === "error" ? "ERR" : stateName === "success" ? "OK" : stateName === "connecting" ? "WAIT" : "LOGIN";
+  $("#cloudGateSymbol").textContent = stateName === "error" ? "!" : stateName === "success" ? "✓" : stateName === "connecting" ? "..." : "T7";
 }
 
 function getApiToken() {
@@ -6312,8 +6378,8 @@ function getApiToken() {
 }
 
 function authHeaders() {
-  if (isLocalApiMode() && !getApiToken()) return {};
-  return { Authorization: `Bearer ${getApiToken()}` };
+  const token = getApiToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function isLocalApiMode() {

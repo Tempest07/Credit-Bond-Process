@@ -1,4 +1,4 @@
-import { apiHeaders, isLocalRequest, json, loginUser } from "../_auth.js";
+import { apiHeaders, isLocalRequest, json, loginUser, sessionCookie } from "../_auth.js";
 
 export async function onRequestPost(context) {
   try {
@@ -15,6 +15,9 @@ export async function onRequestPost(context) {
       token: result.token,
       expiresAt: result.expiresAt,
       user: result.user,
+      message: `欢迎回来，${result.user.nickname || result.user.username}`,
+    }, 200, {
+      "Set-Cookie": sessionCookie(result.token, context.request),
     });
   } catch (error) {
     const status = /D1 binding DB/.test(error.message || "") ? 503 : 400;

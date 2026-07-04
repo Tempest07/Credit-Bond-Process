@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260703-abs-opinion">
+  <link rel="stylesheet" href="./styles.css?v=20260704-gateway-login">
 </head>
 <body>
   <div class="app-shell">
@@ -56,6 +56,7 @@
         <div>
           <p class="eyebrow">Bond Centre</p>
           <h1 id="pageTitle">项目中心</h1>
+          <p class="welcome-line" id="welcomeLine" hidden>欢迎回来，<strong id="welcomeNickname">管理员</strong></p>
         </div>
         <div class="top-actions">
           <button class="button subtle" id="setPasswordButton">登录</button>
@@ -67,21 +68,38 @@
       </header>
 
       <section class="cloud-gate cloud-gate-idle" id="cloudGate">
-        <div class="cloud-orb" aria-hidden="true">
-          <span class="cloud-orb-ring"></span>
-          <span class="cloud-orb-ring"></span>
-          <span class="cloud-orb-core">
-            <span class="cloud-orb-symbol" id="cloudGateSymbol">D1</span>
-          </span>
-        </div>
-        <div class="cloud-gate-copy">
-          <span class="step" id="cloudGateStep">D1</span>
-          <h2 id="cloudGateTitle">请先连接资料库</h2>
-          <p id="cloudGateDetail">点击右上角“登录”，使用 admin 账号连接 Cloudflare D1 后使用项目中心。</p>
-          <div class="cloud-pulse-lines" aria-hidden="true">
-            <span></span><span></span><span></span>
+        <div class="cloud-gate-status">
+          <div class="cloud-orb" aria-hidden="true">
+            <span class="cloud-orb-ring"></span>
+            <span class="cloud-orb-ring"></span>
+            <span class="cloud-orb-core">
+              <span class="cloud-orb-symbol" id="cloudGateSymbol">D1</span>
+            </span>
+          </div>
+          <div class="cloud-gate-copy">
+            <span class="step" id="cloudGateStep">LOGIN</span>
+            <h2 id="cloudGateTitle">欢迎回来</h2>
+            <p id="cloudGateDetail">请登录管理员账号，进入后即可访问项目中心、主体库、DM 测试和邮件等云端数据。</p>
+            <div class="cloud-pulse-lines" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
           </div>
         </div>
+        <form class="login-card" id="loginForm" autocomplete="on">
+          <div class="login-card-head">
+            <span>SECURE GATEWAY</span>
+            <h3>登录信用债项目中心</h3>
+            <small>会话将保持一段时间，刷新页面后会自动恢复。</small>
+          </div>
+          <label>用户名
+            <input id="loginUsername" name="username" autocomplete="username" value="admin" inputmode="text">
+          </label>
+          <label>密码
+            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="输入管理员密码">
+          </label>
+          <button class="button primary" id="loginSubmitButton" type="submit">登录并进入</button>
+          <p class="login-message" id="loginMessage" hidden></p>
+        </form>
       </section>
 
       <section class="view" data-view="generator">
@@ -780,6 +798,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260703-abs-opinion"></script>
+  <script type="module" src="./app.js?v=20260704-gateway-login"></script>
 </body>
 </html>
