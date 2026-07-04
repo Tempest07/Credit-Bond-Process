@@ -6,15 +6,15 @@ import { onRequestPost as onLogoutPost } from "../functions/api/auth/logout.js";
 import { onRequestGet as onSessionGet } from "../functions/api/auth/session.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
 
-test("requires APP_PASSWORD to be configured", async () => {
+test("rejects remote state access without a gateway assertion", async () => {
   const response = await onRequestGet({
     env: {},
     request: new Request("https://example.com/api/state"),
   });
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 401);
 });
 
-test("allows local D1 access without APP_PASSWORD", async () => {
+test("allows local D1 access without a gateway assertion", async () => {
   const DB = createMockDb();
   const response = await onRequestGet({
     env: { DB },
@@ -23,12 +23,12 @@ test("allows local D1 access without APP_PASSWORD", async () => {
   assert.equal(response.status, 200);
 });
 
-test("rejects an incorrect API password", async () => {
+test("rejects an invalid gateway assertion", async () => {
   const response = await onRequestPut({
-    env: { APP_PASSWORD: "correct" },
+    env: { GATEWAY_AUTH_SECRET: "correct" },
     request: new Request("https://example.com/api/state", {
       method: "PUT",
-      headers: { Authorization: "Bearer incorrect" },
+      headers: { "X-Tempest-Auth": "bad-token" },
       body: JSON.stringify({ data: { version: 1, issuers: [] } }),
     }),
   });
@@ -37,11 +37,12 @@ test("rejects an incorrect API password", async () => {
 
 test("accepts and preserves project ledger records under admin", async () => {
   const DB = createMockDb();
+  const token = await gatewayToken("correct");
   const response = await onRequestPut({
-    env: { APP_PASSWORD: "correct", DB },
+    env: { GATEWAY_AUTH_SECRET: "correct", DB },
     request: new Request("https://example.com/api/state", {
       method: "PUT",
-      headers: { Authorization: "Bearer correct" },
+      headers: { "X-Tempest-Auth": token },
       body: JSON.stringify({
         data: {
           version: 3,
@@ -62,11 +63,11 @@ test("accepts and preserves project ledger records under admin", async () => {
   assert.equal(saved.protocolTransfers[0].code, "281926.SH");
   assert.equal(saved.secondaryInventoryPositions[0].quantityWan, 5000);
   assert.equal(saved.secondaryOrders[0].side, "offer");
-  assert.equal(saved.secondaryTrades[0].side, "sell");
+  assert.equal(saved.secondaryTrades[0].quantityWan, 1000);
   assert.equal(saved.ftpCurve.y1, 1.5);
 });
 
-test("logs in admin and reads migrated legacy state", async () => {
+test("reads migrated legacy state with gateway auth", async () => {
   const DB = createMockDb({
     legacyData: {
       version: 3,
@@ -74,89 +75,72 @@ test("logs in admin and reads migrated legacy state", async () => {
       projects: [],
     },
   });
-  const loginResponse = await onLoginPost({
-    env: { APP_PASSWORD: "correct", DB },
-    request: new Request("https://example.com/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username: "admin", password: "correct" }),
-      headers: { "Content-Type": "application/json" },
-    }),
-  });
-  assert.equal(loginResponse.status, 200);
-  const loginPayload = await loginResponse.json();
-  assert.equal(loginPayload.user.username, "admin");
-  assert.equal(loginPayload.user.nickname, "管理员");
-  assert.ok(loginPayload.token);
-
+  const token = await gatewayToken("correct");
   const stateResponse = await onRequestGet({
-    env: { APP_PASSWORD: "correct", DB },
+    env: { GATEWAY_AUTH_SECRET: "correct", DB },
     request: new Request("https://example.com/api/state", {
-      headers: { Authorization: `Bearer ${loginPayload.token}` },
+      headers: { "X-Tempest-Auth": token },
     }),
   });
   assert.equal(stateResponse.status, 200);
   const statePayload = await stateResponse.json();
   assert.equal(statePayload.user.username, "admin");
+  assert.equal(statePayload.user.nickname, "管理员");
   assert.equal(statePayload.data.issuers[0].legalName, "测试主体");
 });
 
-test("sets a persistent session cookie and authenticates API calls with it", async () => {
-  const DB = createMockDb({
-    legacyData: {
-      version: 3,
-      issuers: [{ id: "issuer-cookie", legalName: "Cookie主体" }],
-      projects: [],
-    },
-  });
-  const loginResponse = await onLoginPost({
-    env: { APP_PASSWORD: "correct", DB },
-    request: new Request("https://example.com/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username: "admin", password: "correct" }),
-      headers: { "Content-Type": "application/json" },
-    }),
-  });
-  assert.equal(loginResponse.status, 200);
-  const setCookie = loginResponse.headers.get("Set-Cookie");
-  assert.match(setCookie, /bond_centre_session=/);
-  assert.match(setCookie, /HttpOnly/);
-  assert.match(setCookie, /Max-Age=2592000/);
-  assert.match(setCookie, /SameSite=Lax/);
-
-  const cookie = setCookie.split(";")[0];
+test("project auth session only reflects gateway auth", async () => {
+  const token = await gatewayToken("correct");
   const sessionResponse = await onSessionGet({
-    env: { APP_PASSWORD: "correct", DB },
+    env: { GATEWAY_AUTH_SECRET: "correct" },
     request: new Request("https://example.com/api/auth/session", {
-      headers: { Cookie: cookie },
+      headers: { "X-Tempest-Auth": token },
     }),
   });
   assert.equal(sessionResponse.status, 200);
   assert.equal((await sessionResponse.json()).user.nickname, "管理员");
+});
 
-  const stateResponse = await onRequestGet({
-    env: { APP_PASSWORD: "correct", DB },
-    request: new Request("https://example.com/api/state", {
-      headers: { Cookie: cookie },
-    }),
+test("project login and logout routes are disabled", async () => {
+  const loginResponse = await onLoginPost({
+    env: {},
+    request: new Request("https://example.com/api/auth/login", { method: "POST" }),
   });
-  assert.equal(stateResponse.status, 200);
-  const statePayload = await stateResponse.json();
-  assert.equal(statePayload.data.issuers[0].legalName, "Cookie主体");
+  assert.equal(loginResponse.status, 410);
 
   const logoutResponse = await onLogoutPost({
-    env: { APP_PASSWORD: "correct", DB },
-    request: new Request("https://example.com/api/auth/logout", {
-      method: "POST",
-      headers: { Cookie: cookie },
-    }),
+    env: {},
+    request: new Request("https://example.com/api/auth/logout", { method: "POST" }),
   });
-  assert.equal(logoutResponse.status, 200);
-  assert.match(logoutResponse.headers.get("Set-Cookie"), /Max-Age=0/);
+  assert.equal(logoutResponse.status, 410);
 });
+
+async function gatewayToken(secret, payload = {}) {
+  const body = Buffer.from(JSON.stringify({
+    sub: "admin",
+    username: "admin",
+    nickname: "管理员",
+    role: "admin",
+    exp: Math.floor(Date.now() / 1000) + 300,
+    ...payload,
+  })).toString("base64url");
+  return `${body}.${await hmacHex(secret, body)}`;
+}
+
+async function hmacHex(secret, value) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function createMockDb({ legacyData = null } = {}) {
   const users = new Map();
-  const sessions = new Map();
   const userStates = new Map();
   const legacyState = legacyData
     ? { data: JSON.stringify(legacyData), updated_at: "2026-07-02T00:00:00.000Z" }
@@ -164,7 +148,6 @@ function createMockDb({ legacyData = null } = {}) {
 
   const db = {
     users,
-    sessions,
     userStates,
     prepare(sql) {
       let values = [];
@@ -176,26 +159,17 @@ function createMockDb({ legacyData = null } = {}) {
         async run() {
           if (/CREATE TABLE/i.test(sql)) return {};
           if (/INSERT INTO users/i.test(sql)) {
-            const [id, username, nickname, salt, passwordHash, now] = values;
+            const [id, username, nickname, passwordSalt, passwordHash, now] = values;
             users.set(username, {
               id,
               username,
               nickname,
               role: "admin",
-              password_salt: salt,
+              password_salt: passwordSalt,
               password_hash: passwordHash,
               created_at: now,
               updated_at: now,
             });
-            return {};
-          }
-          if (/INSERT INTO sessions/i.test(sql)) {
-            const [tokenHash, userId, createdAt, expiresAt] = values;
-            sessions.set(tokenHash, { token_hash: tokenHash, user_id: userId, created_at: createdAt, expires_at: expiresAt });
-            return {};
-          }
-          if (/DELETE FROM sessions/i.test(sql)) {
-            sessions.delete(values[0]);
             return {};
           }
           if (/INSERT INTO user_app_state/i.test(sql)) {
@@ -210,26 +184,18 @@ function createMockDb({ legacyData = null } = {}) {
             const user = users.get(values[0]);
             return user ? { id: user.id } : null;
           }
-          if (/password_salt/i.test(sql) && /FROM users/i.test(sql)) {
-            return users.get(values[0]) || null;
+          if (/SELECT user_id FROM user_app_state WHERE user_id/i.test(sql)) {
+            const row = userStates.get(values[0]);
+            return row ? { user_id: row.user_id } : null;
           }
-          if (/FROM sessions s/i.test(sql)) {
-            const session = sessions.get(values[0]);
-            if (!session || session.expires_at <= values[1]) return null;
-            return [...users.values()].find((user) => user.id === session.user_id) || null;
-          }
-          if (/SELECT user_id FROM user_app_state/i.test(sql)) {
-            return userStates.get(values[0]) ? { user_id: values[0] } : null;
-          }
-          if (/FROM user_app_state/i.test(sql)) {
+          if (/SELECT data, updated_at\s+FROM app_state/i.test(sql)) return legacyState;
+          if (/SELECT data, updated_at\s+FROM user_app_state/i.test(sql)) {
             return userStates.get(values[0]) || null;
           }
-          if (/FROM app_state/i.test(sql)) return legacyState;
           return null;
         },
       };
     },
   };
-
   return db;
 }

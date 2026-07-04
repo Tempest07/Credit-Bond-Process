@@ -1,9 +1,7 @@
 const ADMIN_USER_ID = "admin";
 const ADMIN_USERNAME = "admin";
 const ADMIN_NICKNAME = "管理员";
-const SESSION_COOKIE = "bond_centre_session";
-const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
-const SESSION_TTL_MS = SESSION_TTL_SECONDS * 1000;
+const GATEWAY_AUTH_HEADER = "X-Tempest-Auth";
 
 export const EMPTY_APP_STATE = {
   version: 4,
@@ -18,64 +16,14 @@ export const EMPTY_APP_STATE = {
 };
 
 export async function requireUser(context) {
-  const token = requestToken(context.request);
-  const legacyPassword = adminPassword(context.env);
-  const local = isLocalRequest(context.request);
-
-  if (!local && !legacyPassword && !token) {
-    return { response: json({ error: "Pages Secret APP_PASSWORD 尚未配置" }, 503) };
-  }
-
-  if (token && legacyPassword && token === legacyPassword) {
-    return { user: adminUser() };
-  }
-
-  if (local && !token) {
-    return { user: adminUser() };
-  }
-
-  if (!token) return { response: json({ error: "Unauthorized" }, 401) };
-  if (!context.env.DB && legacyPassword) return { response: json({ error: "Unauthorized" }, 401) };
-  if (!context.env.DB) return { response: json({ error: "Cloudflare D1 binding DB 尚未配置" }, 503) };
-
-  await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: local });
-  const tokenHash = await sha256Hex(token);
-  const row = await context.env.DB.prepare(`
-    SELECT u.id, u.username, u.nickname, u.role
-    FROM sessions s
-    JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?1 AND s.expires_at > ?2
-  `).bind(tokenHash, new Date().toISOString()).first();
-  if (!row) return { response: json({ error: "Unauthorized" }, 401) };
-  return { user: publicUser(row), tokenHash };
+  const gatewayUser = await gatewayUserFromRequest(context.request, context.env);
+  if (gatewayUser) return { user: gatewayUser };
+  if (isLocalRequest(context.request)) return { user: adminUser() };
+  return { response: json({ error: "Unauthorized" }, 401) };
 }
 
-export async function loginUser(db, env, { username, password }, options = {}) {
-  if (!db) throw new Error("Cloudflare D1 binding DB 尚未配置");
-  await ensureAuthSchema(db, env, options);
-  const user = await db.prepare(`
-    SELECT id, username, nickname, role, password_salt, password_hash
-    FROM users
-    WHERE username = ?1
-  `).bind(String(username || "").trim()).first();
-  if (!user) return null;
-  const ok = await verifyPassword(password, user.password_salt, user.password_hash);
-  if (!ok) return null;
-  const session = await createSession(db, user.id);
-  return { ...session, user: publicUser(user) };
-}
-
-export async function logoutUser(db, token) {
-  if (!db || !token) return;
-  await db.prepare("DELETE FROM sessions WHERE token_hash = ?1").bind(await sha256Hex(token)).run();
-}
-
-export function requestToken(request) {
-  return bearerToken(request) || cookieValue(request, SESSION_COOKIE);
-}
-
-export async function ensureAuthSchema(db, env = {}, options = {}) {
-  if (!db) throw new Error("Cloudflare D1 binding DB 尚未配置");
+export async function ensureAuthSchema(db) {
+  if (!db) throw new Error("Cloudflare D1 binding DB is not configured");
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -89,24 +37,14 @@ export async function ensureAuthSchema(db, env = {}, options = {}) {
     )
   `).run();
   await db.prepare(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      token_hash TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-  `).run();
-  await db.prepare(`
     CREATE TABLE IF NOT EXISTS user_app_state (
       user_id TEXT PRIMARY KEY,
       data TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      updated_at TEXT NOT NULL
     )
   `).run();
 
-  await ensureAdminUser(db, env, options);
+  await ensureAdminUser(db);
   await migrateLegacyStateToAdmin(db);
 }
 
@@ -148,42 +86,20 @@ export function publicUser(row = {}) {
   };
 }
 
-export function bearerToken(request) {
-  const authorization = request.headers.get("Authorization") || "";
-  return authorization.replace(/^Bearer\s+/i, "").trim();
-}
-
-export function sessionCookie(token, request) {
-  const parts = [
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
-    "Path=/",
-    `Max-Age=${SESSION_TTL_SECONDS}`,
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (new URL(request.url).protocol === "https:") parts.push("Secure");
-  return parts.join("; ");
-}
-
-export function clearSessionCookie(request) {
-  const parts = [
-    `${SESSION_COOKIE}=`,
-    "Path=/",
-    "Max-Age=0",
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (new URL(request.url).protocol === "https:") parts.push("Secure");
-  return parts.join("; ");
-}
-
-function cookieValue(request, name) {
-  const cookie = request.headers.get("Cookie") || "";
-  for (const part of cookie.split(";")) {
-    const [rawKey, ...rawValue] = part.trim().split("=");
-    if (rawKey === name) return decodeURIComponent(rawValue.join("=") || "");
-  }
-  return "";
+export async function gatewayUserFromRequest(request, env = {}) {
+  const token = request.headers.get(GATEWAY_AUTH_HEADER);
+  if (!token) return null;
+  const secret = gatewayAuthSecret(env);
+  if (!secret) return null;
+  const payload = await verifySignedPayload(token, secret);
+  if (!payload || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+  if (payload.username !== ADMIN_USERNAME) return null;
+  return publicUser({
+    id: payload.sub || ADMIN_USER_ID,
+    username: payload.username || ADMIN_USERNAME,
+    nickname: payload.nickname || ADMIN_NICKNAME,
+    role: payload.role || "admin",
+  });
 }
 
 export function isLocalRequest(request) {
@@ -206,18 +122,14 @@ export function json(data, status = 200, extraHeaders = {}) {
   });
 }
 
-async function ensureAdminUser(db, env, options) {
+async function ensureAdminUser(db) {
   const existing = await db.prepare("SELECT id FROM users WHERE username = ?1").bind(ADMIN_USERNAME).first();
   if (existing) return;
-  const password = adminPassword(env) || (options.allowDefaultPassword ? "admin" : "");
-  if (!password) throw new Error("Pages Secret APP_PASSWORD 尚未配置");
   const now = new Date().toISOString();
-  const salt = randomHex(16);
-  const passwordHash = await hashPassword(password, salt);
   await db.prepare(`
     INSERT INTO users (id, username, nickname, role, password_salt, password_hash, created_at, updated_at)
     VALUES (?1, ?2, ?3, 'admin', ?4, ?5, ?6, ?6)
-  `).bind(ADMIN_USER_ID, ADMIN_USERNAME, ADMIN_NICKNAME, salt, passwordHash, now).run();
+  `).bind(ADMIN_USER_ID, ADMIN_USERNAME, ADMIN_NICKNAME, "gateway", "disabled", now).run();
 }
 
 async function migrateLegacyStateToAdmin(db) {
@@ -238,37 +150,28 @@ async function migrateLegacyStateToAdmin(db) {
   `).bind(ADMIN_USER_ID, data, updatedAt).run();
 }
 
-async function createSession(db, userId) {
-  const token = randomHex(32);
-  const tokenHash = await sha256Hex(token);
-  const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + SESSION_TTL_MS).toISOString();
-  await db.prepare(`
-    INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
-    VALUES (?1, ?2, ?3, ?4)
-  `).bind(tokenHash, userId, createdAt.toISOString(), expiresAt).run();
-  return { token, expiresAt };
+async function verifySignedPayload(token, secret) {
+  const [body, signature] = String(token || "").split(".");
+  if (!body || !signature || !secret) return null;
+  const expected = await hmacHex(secret, body);
+  if (!timingSafeEqual(signature, expected)) return null;
+  try {
+    return JSON.parse(base64UrlDecode(body));
+  } catch {
+    return null;
+  }
 }
 
-async function verifyPassword(password, salt, expectedHash) {
-  if (!password || !salt || !expectedHash) return false;
-  return timingSafeEqual(await hashPassword(password, salt), expectedHash);
-}
-
-async function hashPassword(password, salt) {
-  return sha256Hex(`${salt}:${password}`);
-}
-
-async function sha256Hex(value) {
-  const bytes = new TextEncoder().encode(String(value || ""));
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function randomHex(length) {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+async function hmacHex(secret, value) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(secret || "")),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(String(value || "")));
+  return bytesToHex(new Uint8Array(signature));
 }
 
 function timingSafeEqual(left, right) {
@@ -282,6 +185,20 @@ function timingSafeEqual(left, right) {
   return diff === 0;
 }
 
-function adminPassword(env = {}) {
-  return String(env.ADMIN_PASSWORD || env.APP_PASSWORD || "").trim();
+function base64UrlDecode(value) {
+  const padded = `${value}${"=".repeat((4 - value.length % 4) % 4)}`.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function gatewayAuthSecret(env = {}) {
+  return String(env.TEMPEST_AUTH_SECRET || env.GATEWAY_AUTH_SECRET || "").trim();
 }

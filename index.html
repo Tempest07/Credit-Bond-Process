@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260704-gateway-login">
+  <link rel="stylesheet" href="./styles.css?v=20260704-domain-login">
 </head>
 <body>
   <div class="app-shell">
@@ -59,8 +59,6 @@
           <p class="welcome-line" id="welcomeLine" hidden>欢迎回来，<strong id="welcomeNickname">管理员</strong></p>
         </div>
         <div class="top-actions">
-          <button class="button subtle" id="setPasswordButton">登录</button>
-          <button class="button subtle" id="logoutButton" hidden>退出登录</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
           <label class="button subtle file-button">导入资料库<input id="importDataInput" type="file" accept=".json"></label>
           <button class="button" id="saveCloudButton">同步资料库</button>
@@ -85,21 +83,7 @@
             </div>
           </div>
         </div>
-        <form class="login-card" id="loginForm" autocomplete="on">
-          <div class="login-card-head">
-            <span>SECURE GATEWAY</span>
-            <h3>登录信用债项目中心</h3>
-            <small>会话将保持一段时间，刷新页面后会自动恢复。</small>
-          </div>
-          <label>用户名
-            <input id="loginUsername" name="username" autocomplete="username" value="admin" inputmode="text">
-          </label>
-          <label>密码
-            <input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="输入管理员密码">
-          </label>
-          <button class="button primary" id="loginSubmitButton" type="submit">登录并进入</button>
-          <p class="login-message" id="loginMessage" hidden></p>
-        </form>
+        <a class="button primary cloud-login-link" id="gatewayLoginLink" href="/login/?next=/bond-centre/">前往统一登录</a>
       </section>
 
       <section class="view" data-view="generator">
@@ -798,6 +782,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260704-gateway-login"></script>
+  <script type="module" src="./app.js?v=20260704-domain-login"></script>
 </body>
 </html>

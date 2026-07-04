@@ -61,7 +61,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26%E6%B5%8B%E8%AF%95SCP001", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E6%B5%8B%E8%AF%95SCP001", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -136,7 +136,7 @@ test("DM lookup resolves a primary record by full bond name", async () => {
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request(`https://example.com/api/dm/lookup?fullName=${encodeURIComponent(fullName)}`, {
+      request: new Request(`http://127.0.0.1:8788/api/dm/lookup?fullName=${encodeURIComponent(fullName)}`, {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -227,7 +227,7 @@ test("DM lookup discovers ABS tranches and ABS-specific fields", async () => {
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26%E5%88%9B%E6%A0%BC2A", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%88%9B%E6%A0%BC2A", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -292,7 +292,7 @@ test("DM lookup prefers callable tenor from basic bond fields over final issue t
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26%E5%90%AB%E6%9D%83MTN001", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%90%AB%E6%9D%83MTN001", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -446,7 +446,7 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
   try {
     const response = await onValuationRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/valuation?issuerName=%E9%9D%92%E5%B2%9B%E5%9F%8E%E5%B8%82%E5%BB%BA%E8%AE%BE%E6%8A%95%E8%B5%84%E9%9B%86%E5%9B%A2%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&durationText=5%2B5%2B5Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26%E9%9D%92%E5%B2%9B%E5%9F%8E%E6%8A%95MTN001&valuationDate=2026-06-26", {
+      request: new Request("http://127.0.0.1:8788/api/dm/valuation?issuerName=%E9%9D%92%E5%B2%9B%E5%9F%8E%E5%B8%82%E5%BB%BA%E8%AE%BE%E6%8A%95%E8%B5%84%E9%9B%86%E5%9B%A2%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&durationText=5%2B5%2B5Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26%E9%9D%92%E5%B2%9B%E5%9F%8E%E6%8A%95MTN001&valuationDate=2026-06-26", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -523,7 +523,7 @@ test("DM valuation assistant prefers society code when loading issuer comparable
   try {
     const response = await onValuationRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/valuation?issuerName=%E5%90%8D%E7%A7%B0%E5%8F%AF%E8%83%BD%E6%9C%89%E5%B7%AE%E5%BC%82&societyCode=91320200123456789X&durationText=10Y&offeringType=%E7%A7%81%E5%8B%9F&venue=%E4%B8%8A%E4%BA%A4%E6%89%80&shortName=26%E9%94%A1%E5%9F%8E03&valuationDate=2026-06-30", {
+      request: new Request("http://127.0.0.1:8788/api/dm/valuation?issuerName=%E5%90%8D%E7%A7%B0%E5%8F%AF%E8%83%BD%E6%9C%89%E5%B7%AE%E5%BC%82&societyCode=91320200123456789X&durationText=10Y&offeringType=%E7%A7%81%E5%8B%9F&venue=%E4%B8%8A%E4%BA%A4%E6%89%80&shortName=26%E9%94%A1%E5%9F%8E03&valuationDate=2026-06-30", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -665,7 +665,7 @@ test("DM valuation assistant calibrates sparse tenors with implied-rating ChinaB
   try {
     const response = await onValuationRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/valuation?issuerName=Curve%20Issuer&durationText=5%2B10Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26CURVE001&hiddenRating=AA%2B&subjectRating=AAA&valuationDate=2026-06-26", {
+      request: new Request("http://127.0.0.1:8788/api/dm/valuation?issuerName=Curve%20Issuer&durationText=5%2B10Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26CURVE001&hiddenRating=AA%2B&subjectRating=AAA&valuationDate=2026-06-26", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -739,7 +739,7 @@ test("DM lookup searches additional DM issuer data before falling back to D1", a
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26DMFIND001", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26DMFIND001", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -814,7 +814,7 @@ test("DM lookup fills missing ratings from the issuer database", async () => {
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26%E6%B5%A6%E5%8F%91%E9%9B%86%E5%9B%A2MTN001", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E6%B5%A6%E5%8F%91%E9%9B%86%E5%9B%A2MTN001", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -889,7 +889,7 @@ test("DM lookup fills missing ratings from historical D1 project text", async ()
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26%E9%99%95%E8%A5%BF%E5%BB%BA%E5%B7%A5CP005", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E9%99%95%E8%A5%BF%E5%BB%BA%E5%B7%A5CP005", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -957,7 +957,7 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26ACME01", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26ACME01", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1014,7 +1014,7 @@ test("DM lookup marks a queried cancelled tranche from D1 issue group", async ()
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26ACME01", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26ACME01", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1075,7 +1075,7 @@ test("DM lookup points A/B reallocated tranches to the final issued MTN tranche"
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26%E9%87%91%E5%B7%9DMTN001A", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E9%87%91%E5%B7%9DMTN001A", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1144,7 +1144,7 @@ test("DM lookup matches primary cross-market aliases before normalization", asyn
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26ALIAS07&startDate=2026-06-12&endDate=2026-07-11", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26ALIAS07&startDate=2026-06-12&endDate=2026-07-11", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1192,7 +1192,7 @@ test("DM lookup does not fall back to the first primary row when no row matches"
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26MISSING&startDate=2026-06-12&endDate=2026-07-11", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26MISSING&startDate=2026-06-12&endDate=2026-07-11", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1247,7 +1247,7 @@ test("DM no-result response includes close short-name suggestions", async () => 
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("https://example.com/api/dm/lookup?shortName=26MISSING&startDate=2026-06-12&endDate=2026-07-11", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26MISSING&startDate=2026-06-12&endDate=2026-07-11", {
         headers: { Authorization: "Bearer pw" },
       }),
     });

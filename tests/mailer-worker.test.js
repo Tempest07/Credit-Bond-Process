@@ -105,7 +105,7 @@ test("mail proxy authenticates the page session and forwards the mailer password
   try {
     const response = await onMailProxyGet({
       env: { APP_PASSWORD: "mailer-password", DB: createSessionDb() },
-      request: new Request("https://example.com/api/mail/today?action=preview", {
+      request: new Request("http://127.0.0.1:8788/api/mail/today?action=preview", {
         headers: { Authorization: "Bearer session-token" },
       }),
     });

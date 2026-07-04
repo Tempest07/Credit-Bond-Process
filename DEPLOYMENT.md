@@ -60,18 +60,18 @@ D1 database: credit-bond-process
 
 Pages Function 会在第一次成功访问 API 时自动创建数据表，无需手工执行 SQL。
 
-## 3. 设置云端口令
+## 3. 设置 Gateway 签名密钥
 
 在 Pages 项目 `Settings` / `Variables and Secrets` 中添加加密 Secret：
 
 ```text
-Variable name: APP_PASSWORD
-Value: 设置一个仅自己知道的高强度口令
+Variable name: GATEWAY_AUTH_SECRET
+Value: 与 tempest07.com Gateway Worker 中的 GATEWAY_AUTH_SECRET / TEMPEST_AUTH_SECRET 保持一致
 ```
 
 保存后，重新部署最新的 `main` 分支。
 
-进入网页后点击右上角“设置云端口令”，输入同一个口令即可连接 D1。口令仅保存在当前浏览器会话。
+管理员密码只配置在 `tempest07.com` Gateway Worker。项目中心不再提供独立登录框，也不再接收 `Authorization: Bearer APP_PASSWORD`。
 
 ## 4. 部署 Gateway Worker
 
@@ -116,10 +116,10 @@ https://tempest07.com/bond-centre/
 2. 确认非我行主承时生成 `30% / 2.1亿元`。
 3. 将主承身份改为“牵头”。
 4. 确认主承销商改为兴业银行，生成 `20% / 1.4亿元`。
-5. 点击“设置云端口令”并输入 `APP_PASSWORD`。
-6. 新增一条主体资料并点击“同步资料库”。
-7. 刷新页面，重新输入口令，确认资料仍然存在。
+5. 访问 `https://tempest07.com/login/`，使用管理员账号登录。
+6. 进入 `https://tempest07.com/bond-centre/`，新增一条主体资料并点击“同步资料库”。
+7. 刷新页面，确认登录状态和资料仍然存在。
 
 ## 6. 建议的额外保护
 
-资料可能包含授信信息，建议继续使用 Cloudflare Access 保护 Pages 项目和统一入口。`APP_PASSWORD` 已能保护 D1 API，但 Access 可以进一步限制谁能打开页面。
+资料可能包含授信信息，建议继续使用 Cloudflare Access 保护 Pages 项目和统一入口。项目中心 API 只信任 Gateway Worker 注入的短期 `X-Tempest-Auth` 签名；Access 可以进一步限制谁能打开页面。

@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260704-gateway-login";
+} from "./core.js?v=20260704-domain-login";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260704-gateway-login";
+} from "./lifecycle.js?v=20260704-domain-login";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260704-gateway-login";
+} from "./history-parser.js?v=20260704-domain-login";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260704-gateway-login";
+} from "./protocol-transfer.js?v=20260704-domain-login";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,17 +72,12 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260704-gateway-login";
+} from "./secondary-inventory.js?v=20260704-domain-login";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
-const TOKEN_KEY = "credit-bond-process-api-token";
-const USER_KEY = "credit-bond-process-api-user";
 const API_URL = "./api/state";
-const AUTH_LOGIN_URL = "./api/auth/login";
-const AUTH_LOGOUT_URL = "./api/auth/logout";
-const AUTH_SESSION_URL = "./api/auth/session";
 const DM_VALUATION_URL = "./api/dm/valuation";
 const MAILER_URL = "./api/mail/today";
 const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
@@ -155,6 +150,7 @@ let state = loadLocalState();
 let project = parseProjectBrief("");
 let selectedIssuerId = "";
 let cloudAvailable = false;
+let currentGatewayUser = null;
 let pendingHistoryImport = null;
 let batchItems = [];
 let selectedProjectId = "";
@@ -220,7 +216,6 @@ async function initialize() {
   renderFtpCurveForm();
   clearIssuerForm();
   updateAuthUi();
-  await restoreAuthSession();
   await loadCloudState();
 }
 
@@ -2550,9 +2545,9 @@ function renderCutoffTodo() {
 }
 
 async function callMailer(action) {
-  const token = getApiToken();
-  if (!token) {
-    showMailOutput("请先登录", "warning", "请先点击右上角“登录”，登录管理员账号后再预览或发送邮件。");
+  if (!getCurrentUser() && !isLocalApiMode()) {
+    showMailOutput("请先登录", "warning", "请先通过 tempest07.com 统一登录后再预览或发送邮件。");
+    redirectToGatewayLogin();
     return;
   }
 
@@ -5991,19 +5986,6 @@ function bindDataActions() {
     showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 未连接，项目中心已锁定。");
   });
 
-  $("#setPasswordButton").addEventListener("click", showLoginGateway);
-  $("#loginForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const username = $("#loginUsername")?.value.trim() || "admin";
-    const password = $("#loginPassword")?.value || "";
-    if (!username || !password) {
-      setLoginMessage("请输入用户名和密码。");
-      return;
-    }
-    await loginWithPassword(username, password);
-  });
-  $("#logoutButton")?.addEventListener("click", logoutCurrentUser);
-
   $("#exportDataButton").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
     const link = document.createElement("a");
@@ -6036,152 +6018,25 @@ function bindDataActions() {
   });
 }
 
-function showLoginGateway() {
-  const user = getCurrentUser();
-  if ($("#loginUsername")) $("#loginUsername").value = user?.username || "admin";
-  if ($("#loginPassword")) $("#loginPassword").value = "";
-  setLoginMessage("");
-  setCloudGate(true, {
-    state: "idle",
-    title: user ? `欢迎回来，${user.nickname || user.username}` : "欢迎回来",
-    detail: "请登录管理员账号，进入后即可访问项目中心、主体库、DM 测试和邮件等云端数据。",
-  });
-  window.setTimeout(() => $("#loginPassword")?.focus(), 40);
-}
-
-async function loginWithPassword(username, password) {
-  setLoginBusy(true);
-  setLoginMessage("");
-  setCloudGate(true, {
-    state: "connecting",
-    title: "正在登录",
-    detail: "正在校验账号并建立持久会话。",
-  });
-  try {
-    const response = await fetch(AUTH_LOGIN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ username, password }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.user) {
-      throw new Error(payload.error || `HTTP ${response.status}`);
-    }
-    if (payload.token) sessionStorage.setItem(TOKEN_KEY, payload.token);
-    setCurrentUser(payload.user);
-    updateAuthUi();
-    showToast(payload.message || `欢迎回来，${payload.user?.nickname || payload.user?.username || username}`);
-    await loadCloudState();
-    return true;
-  } catch (error) {
-    clearAuthSession();
-    cloudAvailable = false;
-    setLoginMessage(error.message || "登录失败，请重试。");
-    setSyncStatus("登录失败", "请检查用户名或密码");
-    setCloudGate(true, {
-      state: "error",
-      title: "登录失败",
-      detail: error.message || "请检查用户名或密码后重试。",
-    });
-    showToast(error.message || "登录失败，请重试。");
-    return false;
-  } finally {
-    setLoginBusy(false);
-  }
-}
-
-async function logoutCurrentUser() {
-  await fetch(AUTH_LOGOUT_URL, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: authHeaders(),
-  }).catch(() => {});
-  clearAuthSession();
-  cloudAvailable = false;
-  await loadCloudState();
-  showToast("已退出登录。");
-}
-
-function setLoginBusy(busy) {
-  const form = $("#loginForm");
-  form?.querySelectorAll("input, button").forEach((element) => {
-    element.disabled = Boolean(busy);
-  });
-  const button = $("#loginSubmitButton");
-  if (button) button.textContent = busy ? "正在登录..." : "登录并进入";
-}
-
-function setLoginMessage(message = "") {
-  const target = $("#loginMessage");
-  if (!target) return;
-  target.textContent = message;
-  target.hidden = !message;
-}
-
-async function restoreAuthSession() {
-  if (isLocalApiMode() && !getApiToken()) {
-    updateAuthUi();
-    return false;
-  }
-  try {
-    const response = await fetch(AUTH_SESSION_URL, {
-      cache: "no-store",
-      credentials: "same-origin",
-      headers: authHeaders(),
-    });
-    if (!response.ok) {
-      if (response.status === 401) clearAuthSession();
-      return false;
-    }
-    const payload = await response.json();
-    if (payload.user) {
-      setCurrentUser(payload.user);
-      updateAuthUi();
-      return true;
-    }
-  } catch {
-    // loadCloudState will surface the actual connection/login state.
-  }
-  return false;
-}
-
 function getCurrentUser() {
-  try {
-    return JSON.parse(localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY)) || null;
-  } catch {
-    return null;
-  }
+  return currentGatewayUser;
 }
 
 function setCurrentUser(user) {
-  if (user?.username) {
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-  } else {
-    localStorage.removeItem(USER_KEY);
-    sessionStorage.removeItem(USER_KEY);
-  }
+  currentGatewayUser = user?.username ? user : null;
 }
 
 function clearAuthSession() {
-  sessionStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  sessionStorage.removeItem(USER_KEY);
+  currentGatewayUser = null;
   updateAuthUi();
 }
 
 function updateAuthUi() {
   const user = getCurrentUser();
-  const loginButton = $("#setPasswordButton");
-  const logoutButton = $("#logoutButton");
   const welcomeLine = $("#welcomeLine");
   const welcomeNickname = $("#welcomeNickname");
-  if (loginButton) loginButton.textContent = user ? "切换账号" : "登录";
-  if (logoutButton) logoutButton.hidden = !user && !getApiToken();
   if (welcomeLine) welcomeLine.hidden = !user;
   if (welcomeNickname) welcomeNickname.textContent = user?.nickname || user?.username || "";
-  if ($("#loginUsername") && user?.username) $("#loginUsername").value = user.username;
 }
 
 async function loadCloudState() {
@@ -6196,6 +6051,7 @@ async function loadCloudState() {
     if (!response.ok) {
       if (response.status === 401) {
         clearAuthSession();
+        redirectToGatewayLogin();
         setSyncStatus("未登录", "请先登录管理员账号");
         setCloudGate(true, {
           state: "idle",
@@ -6254,7 +6110,10 @@ async function saveCloudState() {
       body: JSON.stringify({ data: state }),
     });
     if (!response.ok) {
-      if (response.status === 401) clearAuthSession();
+      if (response.status === 401) {
+        clearAuthSession();
+        redirectToGatewayLogin();
+      }
       throw new Error(`HTTP ${response.status}`);
     }
     cloudAvailable = true;
@@ -6365,25 +6224,25 @@ function setCloudGate(locked, options = {}) {
   $("#exportDataButton").disabled = Boolean(locked);
   $("#importDataInput").disabled = Boolean(locked);
   $("#importDataInput").closest(".file-button")?.classList.toggle("unavailable", Boolean(locked));
-  const loginForm = $("#loginForm");
-  if (loginForm) loginForm.hidden = !locked || isLocalApiMode();
+  const gatewayLoginLink = $("#gatewayLoginLink");
+  if (gatewayLoginLink) gatewayLoginLink.hidden = !locked || isLocalApiMode() || stateName === "success" || stateName === "connecting";
   if (config.title) $("#cloudGateTitle").textContent = config.title;
   if (config.detail) $("#cloudGateDetail").textContent = config.detail;
   $("#cloudGateStep").textContent = stateName === "error" ? "ERR" : stateName === "success" ? "OK" : stateName === "connecting" ? "WAIT" : "LOGIN";
   $("#cloudGateSymbol").textContent = stateName === "error" ? "!" : stateName === "success" ? "✓" : stateName === "connecting" ? "..." : "T7";
 }
 
-function getApiToken() {
-  return sessionStorage.getItem(TOKEN_KEY) || "";
-}
-
 function authHeaders() {
-  const token = getApiToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {};
 }
 
 function isLocalApiMode() {
   return LOCAL_HOSTS.has(location.hostname);
+}
+
+function redirectToGatewayLogin() {
+  if (isLocalApiMode()) return;
+  location.assign("https://tempest07.com/login/?next=%2Fbond-centre%2F");
 }
 
 function showToast(message) {
