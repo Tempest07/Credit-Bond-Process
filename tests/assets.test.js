@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260706-project-shot-ocr";
+const VERSION = "20260706-project-shot-columns";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser] = await Promise.all([

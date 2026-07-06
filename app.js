@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260706-project-shot-ocr";
+} from "./core.js?v=20260706-project-shot-columns";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260706-project-shot-ocr";
+} from "./lifecycle.js?v=20260706-project-shot-columns";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260706-project-shot-ocr";
+} from "./history-parser.js?v=20260706-project-shot-columns";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260706-project-shot-ocr";
+} from "./protocol-transfer.js?v=20260706-project-shot-columns";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260706-project-shot-ocr";
+} from "./secondary-inventory.js?v=20260706-project-shot-columns";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -336,7 +336,10 @@ async function loadProjectScreenshotImage(file) {
 
 function createProjectScreenshotOcrTargets(image) {
   const rowBands = detectProjectScreenshotRowBands(image);
+  const columns = detectProjectScreenshotKeyColumns(image);
   const targets = [];
+  const columnCanvas = rowBands.length >= 3 && columns ? createProjectScreenshotColumnCanvas(image, rowBands, columns) : null;
+  if (columnCanvas) targets.push({ label: "分行债券列", canvas: columnCanvas });
   const rowCanvas = rowBands.length >= 3 ? createProjectScreenshotRowCanvas(image, rowBands) : null;
   if (rowCanvas) targets.push({ label: "表格行", canvas: rowCanvas });
   targets.push({ label: "左侧两列", canvas: createProjectScreenshotLeftCropCanvas(image) });
@@ -388,6 +391,59 @@ function createProjectScreenshotRowCanvas(image, rowBands = []) {
   return canvas;
 }
 
+function createProjectScreenshotColumnCanvas(image, rowBands = [], columns) {
+  const scale = projectScreenshotScaleForWidth(columns.branch.width + columns.name.width);
+  const gap = Math.max(18, Math.round(10 * scale));
+  const padding = Math.max(16, Math.round(8 * scale));
+  const branchWidth = Math.round(columns.branch.width * scale);
+  const nameWidth = Math.round(columns.name.width * scale);
+  const scaledRows = rowBands
+    .map((band) => ({
+      y: Math.max(0, band.y + 2),
+      height: Math.max(1, band.height - 4),
+      targetHeight: Math.max(108, Math.round(Math.max(1, band.height - 4) * scale)),
+    }))
+    .filter((band) => band.height >= 20);
+  if (!scaledRows.length) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = padding * 2 + branchWidth + gap + nameWidth;
+  canvas.height = scaledRows.reduce((sum, band) => sum + band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP, PROJECT_SCREENSHOT_ROW_GAP);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  let targetY = PROJECT_SCREENSHOT_ROW_GAP;
+  for (const band of scaledRows) {
+    context.drawImage(
+      image,
+      columns.branch.x,
+      band.y,
+      columns.branch.width,
+      band.height,
+      padding,
+      targetY,
+      branchWidth,
+      band.targetHeight
+    );
+    context.drawImage(
+      image,
+      columns.name.x,
+      band.y,
+      columns.name.width,
+      band.height,
+      padding + branchWidth + gap,
+      targetY,
+      nameWidth,
+      band.targetHeight
+    );
+    targetY += band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP;
+  }
+  enhanceProjectScreenshotCanvas(canvas, "soft");
+  return canvas;
+}
+
 function projectScreenshotCropWidth(image) {
   return Math.min(image.width, Math.max(720, Math.round(image.width * PROJECT_SCREENSHOT_LEFT_CROP_RATIO)));
 }
@@ -428,7 +484,71 @@ function detectProjectScreenshotRowBands(image) {
   return bands;
 }
 
+function detectProjectScreenshotKeyColumns(image) {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const sampleStep = Math.max(4, Math.floor(canvas.height / 220));
+  const sampleCount = Math.ceil(canvas.height / sampleStep);
+  const lineXs = [];
+  for (let x = 0; x < canvas.width; x += 1) {
+    let dark = 0;
+    for (let y = 0; y < canvas.height; y += sampleStep) {
+      const offset = (y * canvas.width + x) * 4;
+      if (data[offset] < 145 && data[offset + 1] < 145 && data[offset + 2] < 145) dark += 1;
+    }
+    if (dark / sampleCount > 0.35) lineXs.push(x);
+  }
+  const rawLines = mergeProjectScreenshotLinePositions(lineXs);
+  const lines = normalizeProjectScreenshotTableLines(rawLines, canvas.width);
+  const minBranchWidth = Math.max(44, canvas.width * 0.015);
+  const maxBranchWidth = Math.max(140, canvas.width * 0.08);
+  const minNameWidth = Math.max(180, canvas.width * 0.065);
+  const maxNameWidth = Math.max(520, canvas.width * 0.18);
+  let best = null;
+  for (let index = 0; index < lines.length - 2; index += 1) {
+    const left = lines[index];
+    const branchRight = lines[index + 1];
+    const nameRight = lines[index + 2];
+    const branchWidth = branchRight - left;
+    const nameWidth = nameRight - branchRight;
+    if (left > canvas.width * 0.08) continue;
+    if (branchWidth < minBranchWidth || branchWidth > maxBranchWidth) continue;
+    if (nameWidth < minNameWidth || nameWidth > maxNameWidth) continue;
+    const score = Math.abs(left) + Math.abs(branchWidth - canvas.width * 0.025) + Math.abs(nameWidth - canvas.width * 0.09);
+    if (!best || score < best.score) best = { left, branchRight, nameRight, score };
+  }
+  if (!best) return null;
+  return {
+    branch: projectScreenshotInsetColumn(best.left, best.branchRight, canvas.width),
+    name: projectScreenshotInsetColumn(best.branchRight, best.nameRight, canvas.width),
+  };
+}
+
+function normalizeProjectScreenshotTableLines(lines = [], width = 0) {
+  const normalized = Array.from(new Set(lines))
+    .filter((line) => Number.isFinite(line))
+    .sort((left, right) => left - right);
+  if (!normalized.length || normalized[0] > Math.max(6, width * 0.004)) normalized.unshift(0);
+  if (normalized.at(-1) < width - Math.max(6, width * 0.004)) normalized.push(width - 1);
+  return normalized;
+}
+
+function projectScreenshotInsetColumn(left, right, imageWidth) {
+  const inset = Math.max(2, Math.round(imageWidth * 0.0007));
+  const x = Math.max(0, left + inset);
+  const maxRight = Math.max(x + 1, right - inset);
+  return { x, width: maxRight - x };
+}
+
 function mergeProjectScreenshotLineYs(lineYs = []) {
+  return mergeProjectScreenshotLinePositions(lineYs);
+}
+
+function mergeProjectScreenshotLinePositions(lineYs = []) {
   const lines = [];
   let group = [];
   for (const y of lineYs) {
@@ -443,13 +563,15 @@ function mergeProjectScreenshotLineYs(lineYs = []) {
   return lines;
 }
 
-function enhanceProjectScreenshotCanvas(canvas) {
+function enhanceProjectScreenshotCanvas(canvas, mode = "binary") {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
   for (let index = 0; index < data.length; index += 4) {
     const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
-    const value = gray < 205 ? 0 : 255;
+    const value = mode === "soft"
+      ? Math.max(0, Math.min(255, gray > 242 ? 255 : (gray - 32) * 1.45))
+      : gray < 205 ? 0 : 255;
     data[index] = value;
     data[index + 1] = value;
     data[index + 2] = value;
