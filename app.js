@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260704-domain-login";
+} from "./core.js?v=20260706-project-shot-ocr";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260704-domain-login";
+} from "./lifecycle.js?v=20260706-project-shot-ocr";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260704-domain-login";
+} from "./history-parser.js?v=20260706-project-shot-ocr";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260704-domain-login";
+} from "./protocol-transfer.js?v=20260706-project-shot-ocr";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260704-domain-login";
+} from "./secondary-inventory.js?v=20260706-project-shot-ocr";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -86,7 +86,19 @@ const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build
 const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
 const PROJECT_SCREENSHOT_BRANCHES = ["广州分行", "武汉分行", "青岛分行", "兰州分行", "苏州分行", "太原分行", "西安分行"];
+const PROJECT_SCREENSHOT_BRANCH_PATTERNS = [
+  { branch: "广州分行", pattern: /[广廣厂][州卅]分行/g },
+  { branch: "武汉分行", pattern: /[武式]汉分行/g },
+  { branch: "青岛分行", pattern: /青[岛島鸟鳥]分行/g },
+  { branch: "兰州分行", pattern: /[兰蘭]州分行/g },
+  { branch: "苏州分行", pattern: /[苏蘇]州分行/g },
+  { branch: "太原分行", pattern: /[太大]原分行/g },
+  { branch: "西安分行", pattern: /西安分行/g },
+];
 const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|MTN|PPN|ABN|ABS)";
+const PROJECT_SCREENSHOT_LEFT_CROP_RATIO = 0.31;
+const PROJECT_SCREENSHOT_MIN_OCR_WIDTH = 2600;
+const PROJECT_SCREENSHOT_ROW_GAP = 18;
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -252,10 +264,7 @@ async function handleProjectScreenshotUpload(event) {
   setProjectScreenshotBusy(true, "正在 OCR 图片...");
   try {
     await ensureTesseractReady();
-    const result = await window.Tesseract.recognize(file, "chi_sim+eng", {
-      logger: updateProjectScreenshotOcrProgress,
-    });
-    const entries = parseProjectScreenshotOcrText(result?.data?.text || "");
+    const entries = await recognizeProjectScreenshotEntries(file);
     if (!entries.length) {
       setProjectScreenshotStatus("未识别到七家目标分行的债券名称。");
       showToast("未识别到目标分行项目，请换一张更清晰的截图。");
@@ -285,15 +294,174 @@ async function handleProjectScreenshotUpload(event) {
   }
 }
 
+async function recognizeProjectScreenshotEntries(file) {
+  const image = await loadProjectScreenshotImage(file);
+  try {
+    const targets = createProjectScreenshotOcrTargets(image);
+    let combinedText = "";
+    let bestEntries = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      setProjectScreenshotStatus(`正在 OCR ${target.label} ${index + 1}/${targets.length}...`);
+      const result = await window.Tesseract.recognize(target.canvas, "chi_sim+eng", {
+        logger: (message) => updateProjectScreenshotOcrProgress(message, target.label),
+      });
+      combinedText = `${combinedText}\n${result?.data?.text || ""}`;
+      const entries = parseProjectScreenshotOcrText(combinedText);
+      if (entries.length > bestEntries.length) bestEntries = entries;
+      if (bestEntries.length >= PROJECT_SCREENSHOT_BRANCHES.length) break;
+    }
+    return bestEntries;
+  } finally {
+    if (typeof image.close === "function") image.close();
+  }
+}
+
+async function loadProjectScreenshotImage(file) {
+  if (window.createImageBitmap) return window.createImageBitmap(file);
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    const loaded = new Promise((resolve, reject) => {
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("图片读取失败"));
+    });
+    image.src = url;
+    return await loaded;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function createProjectScreenshotOcrTargets(image) {
+  const rowBands = detectProjectScreenshotRowBands(image);
+  const targets = [];
+  const rowCanvas = rowBands.length >= 3 ? createProjectScreenshotRowCanvas(image, rowBands) : null;
+  if (rowCanvas) targets.push({ label: "表格行", canvas: rowCanvas });
+  targets.push({ label: "左侧两列", canvas: createProjectScreenshotLeftCropCanvas(image) });
+  return targets;
+}
+
+function createProjectScreenshotLeftCropCanvas(image) {
+  const cropWidth = projectScreenshotCropWidth(image);
+  const scale = projectScreenshotScaleForWidth(cropWidth);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(cropWidth * scale);
+  canvas.height = Math.round(image.height * scale);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, cropWidth, image.height, 0, 0, canvas.width, canvas.height);
+  enhanceProjectScreenshotCanvas(canvas);
+  return canvas;
+}
+
+function createProjectScreenshotRowCanvas(image, rowBands = []) {
+  const cropWidth = projectScreenshotCropWidth(image);
+  const scale = projectScreenshotScaleForWidth(cropWidth);
+  const scaledRows = rowBands
+    .map((band) => ({
+      y: Math.max(0, band.y + 2),
+      height: Math.max(1, band.height - 4),
+      targetHeight: Math.max(96, Math.round(Math.max(1, band.height - 4) * scale)),
+    }))
+    .filter((band) => band.height >= 20);
+  if (!scaledRows.length) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(cropWidth * scale);
+  canvas.height = scaledRows.reduce((sum, band) => sum + band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP, PROJECT_SCREENSHOT_ROW_GAP);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  let targetY = PROJECT_SCREENSHOT_ROW_GAP;
+  for (const band of scaledRows) {
+    context.drawImage(image, 0, band.y, cropWidth, band.height, 0, targetY, canvas.width, band.targetHeight);
+    targetY += band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP;
+  }
+  enhanceProjectScreenshotCanvas(canvas);
+  return canvas;
+}
+
+function projectScreenshotCropWidth(image) {
+  return Math.min(image.width, Math.max(720, Math.round(image.width * PROJECT_SCREENSHOT_LEFT_CROP_RATIO)));
+}
+
+function projectScreenshotScaleForWidth(width) {
+  if (!Number.isFinite(width) || width <= 0) return 2;
+  return Math.min(4, Math.max(1.8, PROJECT_SCREENSHOT_MIN_OCR_WIDTH / width));
+}
+
+function detectProjectScreenshotRowBands(image) {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const sampleStep = Math.max(6, Math.floor(canvas.width / 420));
+  const sampleCount = Math.ceil(canvas.width / sampleStep);
+  const lineYs = [];
+  for (let y = 0; y < canvas.height; y += 1) {
+    let dark = 0;
+    for (let x = 0; x < canvas.width; x += sampleStep) {
+      const offset = (y * canvas.width + x) * 4;
+      if (data[offset] < 120 && data[offset + 1] < 120 && data[offset + 2] < 120) dark += 1;
+    }
+    if (dark / sampleCount > 0.42) lineYs.push(y);
+  }
+  const lines = mergeProjectScreenshotLineYs(lineYs);
+  const bands = [];
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const top = lines[index];
+    const bottom = lines[index + 1];
+    const height = bottom - top - 1;
+    if (height >= Math.max(28, image.height * 0.025)) {
+      bands.push({ y: top + 1, height });
+    }
+  }
+  return bands;
+}
+
+function mergeProjectScreenshotLineYs(lineYs = []) {
+  const lines = [];
+  let group = [];
+  for (const y of lineYs) {
+    if (!group.length || y <= group.at(-1) + 1) {
+      group.push(y);
+    } else {
+      lines.push(Math.round(group.reduce((sum, value) => sum + value, 0) / group.length));
+      group = [y];
+    }
+  }
+  if (group.length) lines.push(Math.round(group.reduce((sum, value) => sum + value, 0) / group.length));
+  return lines;
+}
+
+function enhanceProjectScreenshotCanvas(canvas) {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    const value = gray < 205 ? 0 : 255;
+    data[index] = value;
+    data[index + 1] = value;
+    data[index + 2] = value;
+    data[index + 3] = 255;
+  }
+  context.putImageData(imageData, 0, 0);
+}
+
 function parseProjectScreenshotOcrText(text = "") {
   const compact = normalizeProjectScreenshotOcrText(text);
   if (!compact) return [];
-  const branchPattern = new RegExp(PROJECT_SCREENSHOT_BRANCHES.map(escapeRegExpForPattern).join("|"), "g");
-  const matches = [];
-  let match;
-  while ((match = branchPattern.exec(compact))) {
-    matches.push({ branch: match[0], index: match.index });
-  }
+  const matches = findProjectScreenshotBranchMatches(compact);
 
   const entries = [];
   const seen = new Set();
@@ -310,6 +478,20 @@ function parseProjectScreenshotOcrText(text = "") {
     entries.push({ branch: current.branch, fullName });
   }
   return entries;
+}
+
+function findProjectScreenshotBranchMatches(compact = "") {
+  const matches = [];
+  for (const { branch, pattern } of PROJECT_SCREENSHOT_BRANCH_PATTERNS) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(compact))) {
+      matches.push({ branch, index: match.index, length: match[0].length });
+    }
+  }
+  return matches
+    .sort((left, right) => left.index - right.index || right.length - left.length)
+    .filter((match, index, list) => !index || match.index !== list[index - 1].index || match.branch !== list[index - 1].branch);
 }
 
 function normalizeProjectScreenshotOcrText(text = "") {
