@@ -636,6 +636,29 @@ test("defaults same-rate bids to full allocation when no marginal multiple is di
   assert.equal(project.tranches[0].resultStatus, "中标");
 });
 
+test("parses unlabeled result coupon before marginal multiple", () => {
+  const ad = "26广州产投SCP006，012681665，1.47%，边际9.5倍，同一档数，感谢支持";
+  const parsed = parseIssuanceAdvertisement(ad, new Date("2026-07-06T09:00:00"));
+  assert.equal(parsed.items[0].couponRate, 1.47);
+  assert.equal(parsed.items[0].marginalMultiple, 9.5);
+
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26广州产投SCP006",
+    tranches: [{
+      shortName: "26广州产投SCP006",
+      durationText: "270D",
+      bidLevels: [{ bidRate: 1.46, bidAmount: 2.1 }],
+      resultStatus: "待出结果",
+      pricingMode: "综合定价",
+      pricingRate: 1.53,
+    }],
+  }), ad, new Date("2026-07-06T09:00:00"));
+
+  assert.equal(project.tranches[0].winningRate, 1.47);
+  assert.equal(project.tranches[0].winningAmountWan, 21000);
+  assert.equal(project.tranches[0].resultStatus, "中标");
+});
+
 test("treats empty own bid levels as zero allocation after results arrive", () => {
   const ad = `【结果-26晋经01-282977.SH】
 【规模】2.5亿元

@@ -685,7 +685,8 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
   const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
   const couponRate = numberFrom(block, /(?:票面利率|票面)[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
     ?? numberFrom(block, /(?:边际利率|边际)[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
-    ?? numberFrom(block, /(?:^|[\n【\s])利率[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/);
+    ?? numberFrom(block, /(?:^|[\n【\s])利率[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
+    ?? inferUnlabeledCouponRate(block);
   const durationText = block.match(/(?:债券)?期限[】：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:【|规模|发行规模|票面|利率|全场倍数|缴款|$))/)?.[1]?.trim()
     || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
     || "";
@@ -711,6 +712,25 @@ function extractAdvertisementShortName(headerText, block) {
   const resultHeader = headerText.match(/(?:结果|发行结果|截标通知)[-_：:\s]*([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1];
   if (resultHeader) return resultHeader;
   return source.match(/([0-9]{2}[A-Za-z0-9\u4e00-\u9fa5]+(?:SCP|CP|MTN|PPN)?\d*[A-Z]?)/i)?.[1] || "";
+}
+
+function inferUnlabeledCouponRate(block = "") {
+  const text = String(block || "");
+  if (!/(?:发行结果|结果|截标通知|簿记结果|缴款|边际|全场|感谢支持)/.test(text)) return null;
+
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*%/g)) {
+    const value = Number(match[1]);
+    const index = match.index || 0;
+    const before = text.slice(Math.max(0, index - 12), index);
+    const after = text.slice(index + match[0].length, index + match[0].length + 12);
+    if (!Number.isFinite(value) || value <= 0 || value > 15) continue;
+    if (/[-~至—–]\s*$/.test(before) || /^\s*[-~至—–]/.test(after)) continue;
+    if (/(?:区间|询价|下限|上限|不超|不超过|比例|占比|建议|投资比例)$/.test(before.trim())) continue;
+    if (/^\s*(?:投|不超|不超过|比例|占比)/.test(after)) continue;
+    return value;
+  }
+
+  return null;
 }
 
 function extractAdvertisementSecurityCode(headerText) {
