@@ -47,6 +47,11 @@ label { min-width: 0; max-width: 100%; }
 .sidebar-tool-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .sidebar-tool-actions .button, .sidebar-tool-actions .file-button { justify-content: center; min-height: 32px; padding: 0 9px; border-color: rgba(255,255,255,.16); color: #f5f5ff; background: rgba(255,255,255,.08); white-space: nowrap; }
 .sidebar-tool-actions .button:hover, .sidebar-tool-actions .file-button:hover { border-color: rgba(255,255,255,.42); }
+.project-screenshot-dropzone { display: grid; place-items: center; gap: 3px; min-height: 58px; padding: 10px; border: 1px dashed rgba(255,255,255,.28); border-radius: 8px; color: #f7f7ff; background: rgba(255,255,255,.055); text-align: center; cursor: pointer; outline: none; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.project-screenshot-dropzone:hover, .project-screenshot-dropzone:focus-visible, .project-screenshot-dropzone.is-dragging { border-color: rgba(255,255,255,.7); background: rgba(255,255,255,.13); transform: translateY(-1px); }
+.project-screenshot-dropzone.is-busy { cursor: progress; opacity: .72; transform: none; }
+.project-screenshot-dropzone strong { font-size: 12px; line-height: 1.2; }
+.project-screenshot-dropzone span { color: #cfd0ef; font-size: 10px; line-height: 1.35; }
 .project-screenshot-output { display: grid; gap: 8px; max-height: 250px; overflow: auto; padding-top: 2px; scrollbar-width: thin; }
 .project-screenshot-output[hidden] { display: none; }
 .project-screenshot-branch { display: grid; gap: 6px; min-width: 0; }

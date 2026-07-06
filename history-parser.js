@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260706-project-shot-columns";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260706-project-shot-drop";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

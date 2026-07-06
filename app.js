@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260706-project-shot-columns";
+} from "./core.js?v=20260706-project-shot-drop";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260706-project-shot-columns";
+} from "./lifecycle.js?v=20260706-project-shot-drop";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260706-project-shot-columns";
+} from "./history-parser.js?v=20260706-project-shot-drop";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260706-project-shot-columns";
+} from "./protocol-transfer.js?v=20260706-project-shot-drop";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260706-project-shot-columns";
+} from "./secondary-inventory.js?v=20260706-project-shot-drop";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -182,6 +182,8 @@ let valuationAssistTimer = null;
 let valuationAssistController = null;
 let valuationAssistRequestKey = "";
 let projectScreenshotRows = [];
+let projectScreenshotBusy = false;
+let projectScreenshotDragDepth = 0;
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -245,17 +247,77 @@ function switchView(viewName) {
 }
 
 function bindProjectScreenshotTool() {
-  $("#projectScreenshotInput")?.addEventListener("change", handleProjectScreenshotUpload);
+  const input = $("#projectScreenshotInput");
+  const dropzone = $("#projectScreenshotDropzone");
+  const dropTarget = $("#projectScreenshotTool") || dropzone;
+  input?.addEventListener("change", handleProjectScreenshotUpload);
   $("#copyProjectScreenshotShortNamesButton")?.addEventListener("click", copyProjectScreenshotShortNames);
+  if (!dropzone) return;
+  dropzone.addEventListener("click", () => {
+    if (!projectScreenshotBusy) input?.click();
+  });
+  dropzone.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (projectScreenshotBusy) return;
+    input?.click();
+  });
+  dropTarget?.addEventListener("dragenter", handleProjectScreenshotDragEnter);
+  dropTarget?.addEventListener("dragover", handleProjectScreenshotDragOver);
+  dropTarget?.addEventListener("dragleave", handleProjectScreenshotDragLeave);
+  dropTarget?.addEventListener("drop", handleProjectScreenshotDrop);
+  dropTarget?.addEventListener("paste", handleProjectScreenshotPaste);
 }
 
 async function handleProjectScreenshotUpload(event) {
   const input = event.target;
-  const file = input.files?.[0];
+  const file = projectScreenshotImageFileFromList(input.files);
+  await processProjectScreenshotFile(file, input);
+}
+
+async function handleProjectScreenshotDrop(event) {
+  event.preventDefault();
+  projectScreenshotDragDepth = 0;
+  setProjectScreenshotDragging(false);
+  const file = projectScreenshotImageFileFromDataTransfer(event.dataTransfer);
+  await processProjectScreenshotFile(file);
+}
+
+async function handleProjectScreenshotPaste(event) {
+  const file = projectScreenshotImageFileFromDataTransfer(event.clipboardData);
   if (!file) return;
-  if (!file.type.startsWith("image/")) {
+  event.preventDefault();
+  await processProjectScreenshotFile(file);
+}
+
+function handleProjectScreenshotDragEnter(event) {
+  event.preventDefault();
+  if (projectScreenshotBusy) return;
+  projectScreenshotDragDepth += 1;
+  setProjectScreenshotDragging(true);
+}
+
+function handleProjectScreenshotDragOver(event) {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+
+function handleProjectScreenshotDragLeave(event) {
+  event.preventDefault();
+  projectScreenshotDragDepth = Math.max(0, projectScreenshotDragDepth - 1);
+  if (!projectScreenshotDragDepth) setProjectScreenshotDragging(false);
+}
+
+async function processProjectScreenshotFile(file, input = null) {
+  if (!file) return;
+  if (projectScreenshotBusy) {
+    showToast("上一张截图还在识别。");
+    if (input) input.value = "";
+    return;
+  }
+  if (!isProjectScreenshotImageFile(file)) {
     showToast("请上传项目表截图图片。");
-    input.value = "";
+    if (input) input.value = "";
     return;
   }
 
@@ -290,8 +352,28 @@ async function handleProjectScreenshotUpload(event) {
     showToast(error.message || "截图识别失败。");
   } finally {
     setProjectScreenshotBusy(false);
-    input.value = "";
+    setProjectScreenshotDragging(false);
+    if (input) input.value = "";
   }
+}
+
+function projectScreenshotImageFileFromDataTransfer(dataTransfer) {
+  const itemFiles = Array.from(dataTransfer?.items || [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  return projectScreenshotImageFileFromList(itemFiles.length ? itemFiles : dataTransfer?.files);
+}
+
+function projectScreenshotImageFileFromList(files) {
+  return Array.from(files || []).find(isProjectScreenshotImageFile) || null;
+}
+
+function isProjectScreenshotImageFile(file) {
+  if (!file) return false;
+  if (file.type?.startsWith("image/")) return true;
+  if (/\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.name || "")) return true;
+  return !file.type && Number(file.size) > 0;
 }
 
 async function recognizeProjectScreenshotEntries(file) {
@@ -742,13 +824,21 @@ async function copyProjectScreenshotShortNames() {
 }
 
 function setProjectScreenshotBusy(isBusy, message = "") {
+  projectScreenshotBusy = isBusy;
   const input = $("#projectScreenshotInput");
   const upload = $(".project-screenshot-upload");
+  const dropzone = $("#projectScreenshotDropzone");
   const copyButton = $("#copyProjectScreenshotShortNamesButton");
   if (input) input.disabled = isBusy;
   upload?.classList.toggle("busy", isBusy);
+  dropzone?.classList.toggle("is-busy", isBusy);
+  dropzone?.setAttribute("aria-disabled", isBusy ? "true" : "false");
   if (copyButton) copyButton.disabled = isBusy || !projectScreenshotResolvedShortNames().length;
   if (message) setProjectScreenshotStatus(message);
+}
+
+function setProjectScreenshotDragging(isDragging) {
+  $("#projectScreenshotDropzone")?.classList.toggle("is-dragging", isDragging);
 }
 
 function setProjectScreenshotStatus(message) {
