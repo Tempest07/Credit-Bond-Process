@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260706-project-shot-drop";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260706-offering-tags";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

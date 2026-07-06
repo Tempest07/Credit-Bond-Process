@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260706-project-shot-drop";
+} from "./core.js?v=20260706-offering-tags";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260706-project-shot-drop";
+} from "./lifecycle.js?v=20260706-offering-tags";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260706-project-shot-drop";
+} from "./history-parser.js?v=20260706-offering-tags";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260706-project-shot-drop";
+} from "./protocol-transfer.js?v=20260706-offering-tags";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260706-project-shot-drop";
+} from "./secondary-inventory.js?v=20260706-offering-tags";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -3989,7 +3989,7 @@ function renderProjectList() {
           <span>${escapeHtml(formatTrancheDurationSummary(item))}</span>
           <span>${escapeHtml(formatProjectScaleSummary(item))}</span>
           <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
-          <span>${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
+          <span class="project-offering-badge ${projectOfferingBadgeClass(item)}">${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
           <span>${escapeHtml(formatProjectVenueLead(item))}</span>
         </span>
       </button>
@@ -4718,6 +4718,15 @@ function formatProjectOfferingSummary(projectValue) {
   if (/PPN\d*/i.test(shortNameText)) return "私募";
   if (/(SCP|CP|MTN)\d*/i.test(shortNameText)) return "公募";
   return "";
+}
+
+function projectOfferingBadgeClass(projectValue) {
+  const offering = formatProjectOfferingSummary(projectValue);
+  if (offering === "公募") return "is-public";
+  if (offering === "私募") return "is-private";
+  if (offering === "公私募") return "is-mixed";
+  if (/^(ABS|ABN)$/i.test(offering)) return "is-structured";
+  return "is-unknown";
 }
 
 function statusBadgeClass(status) {
