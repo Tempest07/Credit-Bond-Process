@@ -101,6 +101,18 @@ test("project auth session only reflects gateway auth", async () => {
   assert.equal((await sessionResponse.json()).user.nickname, "管理员");
 });
 
+test("project auth session accepts the shared tempest07 cookie", async () => {
+  const token = await gatewayToken("correct");
+  const sessionResponse = await onSessionGet({
+    env: { GATEWAY_AUTH_SECRET: "correct" },
+    request: new Request("https://tempest07.com/bond-centre/api/auth/session", {
+      headers: { Cookie: `tempest07_session=${encodeURIComponent(token)}` },
+    }),
+  });
+  assert.equal(sessionResponse.status, 200);
+  assert.equal((await sessionResponse.json()).user.username, "admin");
+});
+
 test("project login and logout routes are disabled", async () => {
   const loginResponse = await onLoginPost({
     env: {},

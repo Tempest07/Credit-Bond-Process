@@ -2,6 +2,7 @@ const ADMIN_USER_ID = "admin";
 const ADMIN_USERNAME = "admin";
 const ADMIN_NICKNAME = "管理员";
 const GATEWAY_AUTH_HEADER = "X-Tempest-Auth";
+const SESSION_COOKIE = "tempest07_session";
 
 export const EMPTY_APP_STATE = {
   version: 4,
@@ -87,10 +88,10 @@ export function publicUser(row = {}) {
 }
 
 export async function gatewayUserFromRequest(request, env = {}) {
-  const token = request.headers.get(GATEWAY_AUTH_HEADER);
-  if (!token) return null;
   const secret = gatewayAuthSecret(env);
   if (!secret) return null;
+  const token = request.headers.get(GATEWAY_AUTH_HEADER) || cookieValue(request, SESSION_COOKIE);
+  if (!token) return null;
   const payload = await verifySignedPayload(token, secret);
   if (!payload || !payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
   if (payload.username !== ADMIN_USERNAME) return null;
@@ -201,4 +202,18 @@ function bytesToHex(bytes) {
 
 function gatewayAuthSecret(env = {}) {
   return String(env.TEMPEST_AUTH_SECRET || env.GATEWAY_AUTH_SECRET || "").trim();
+}
+
+function cookieValue(request, name) {
+  const cookie = request.headers.get("Cookie") || "";
+  for (const part of cookie.split(";")) {
+    const [rawKey, ...rawValue] = part.trim().split("=");
+    if (rawKey !== name) continue;
+    try {
+      return decodeURIComponent(rawValue.join("=") || "");
+    } catch {
+      return "";
+    }
+  }
+  return "";
 }
