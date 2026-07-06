@@ -466,7 +466,6 @@ test("limits dual-tranche overdue private AA bonds to investable terms only", ()
     legalName: "湛江市基础设施建设投资集团有限公司",
     credit: {
       ...issuer.credit,
-      offeringType: "公私募",
       approvedAmount: 3,
       approvedRatio: 30,
       privateRatio: 30,

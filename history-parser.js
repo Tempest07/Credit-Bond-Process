@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260706-offering-tags";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260706-offering-public-private";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
@@ -167,7 +167,11 @@ export function parseCreditText(rawText, sourceRank = null) {
   const privateRatio = numberOrNull(privateRatioMatch?.[1] ?? parentheticalPrivateRatio?.[1]);
   const approvedRatio = percentages.find((value) => value !== privateRatio) ?? percentages[0] ?? null;
   const termText = [...text.matchAll(/(\d+(?:\.\d+)?\s*(?:年|个月|月|天))/g)].at(-1)?.[1]?.replace(/\s+/g, "") || "";
-  const offeringType = text.includes("公私募") ? "公私募" : text.includes("私募") ? "私募" : text.includes("公募") ? "公募" : "";
+  const offeringBasis = text
+    .replace(/公私募/g, "")
+    .replace(/[（(]私募[^）)]*[）)]/g, "")
+    .replace(/私募\s*[\d.]+\s*(?:亿|%)/g, "");
+  const offeringType = offeringBasis.includes("私募") ? "私募" : offeringBasis.includes("公募") ? "公募" : "";
 
   return {
     approvalLevel,

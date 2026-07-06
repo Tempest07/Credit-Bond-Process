@@ -448,9 +448,8 @@ label[data-recognition-source="cloud"]::after {
 .project-item-facts { display: flex; gap: 5px; flex-wrap: wrap; }
 .project-item-facts span { max-width: 100%; overflow: hidden; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--panel-soft); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 800; }
 .project-item-facts .project-offering-badge { padding-inline: 8px; border-width: 1px; font-size: 10px; box-shadow: inset 0 -1px 0 rgba(255,255,255,.55); }
-.project-offering-badge.is-public { border-color: color-mix(in srgb, var(--secondary) 42%, var(--line)); color: #067789; background: linear-gradient(135deg, #e7f8fb, #f7feff); }
-.project-offering-badge.is-private { border-color: color-mix(in srgb, #d97706 46%, var(--line)); color: #a34a00; background: linear-gradient(135deg, #fff1dc, #fffaf2); }
-.project-offering-badge.is-mixed { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); color: var(--accent-strong); background: linear-gradient(135deg, var(--accent-soft), #fff); }
+.project-offering-badge.is-public { border-color: color-mix(in srgb, #16a34a 44%, var(--line)); color: #137333; background: linear-gradient(135deg, #e9fbe9, #f8fff9); }
+.project-offering-badge.is-private { border-color: color-mix(in srgb, #dc2626 48%, var(--line)); color: #b91c1c; background: linear-gradient(135deg, #fee2e2, #fff7ed); }
 .project-offering-badge.is-structured { border-color: color-mix(in srgb, #7c3aed 36%, var(--line)); color: #6d28d9; background: linear-gradient(135deg, #f1eaff, #fff); }
 .status-badge { padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius: 4px; color: var(--accent); background: var(--accent-soft); font-size: 9px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
 .status-badge.warning { border-color: color-mix(in srgb, var(--warning) 28%, var(--line)); color: var(--warning); background: var(--warning-soft); }

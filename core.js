@@ -883,7 +883,8 @@ export function formatCreditSentence(issuer) {
   const amount = Number.isFinite(numberOrNull(credit.approvedAmount))
     ? `${formatNumber(credit.approvedAmount)}亿`
     : "【待补充批复金额】";
-  const offeringType = credit.offeringType || "【待补充公募/私募】";
+  const offeringType = credit.offeringType
+    || (String(credit.rawText || "").includes("公私募") ? "公募、私募" : "【待补充公募/私募】");
   const ratio = Number.isFinite(numberOrNull(credit.approvedRatio))
     ? `${formatNumber(credit.approvedRatio)}%`
     : "【待补充比例】";

@@ -89,7 +89,7 @@ export function normalizeProjectRecord(input = {}) {
     hiddenRating: String(input.hiddenRating || "").trim().toUpperCase(),
     branch: String(input.branch || "").trim(),
     venue: String(input.venue || "").trim(),
-    offeringType: ["公募", "私募", "公私募"].includes(input.offeringType) ? input.offeringType : "",
+    offeringType: ["公募", "私募"].includes(input.offeringType) ? input.offeringType : "",
     leadUnderwriter: String(input.leadUnderwriter || "").trim(),
     sponsorStatus: String(input.sponsorStatus || "").trim(),
     cutoffAt: String(input.cutoffAt || "").trim(),

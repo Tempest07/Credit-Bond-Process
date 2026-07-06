@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260706-offering-tags";
+} from "./core.js?v=20260706-offering-public-private";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260706-offering-tags";
+} from "./lifecycle.js?v=20260706-offering-public-private";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260706-offering-tags";
+} from "./history-parser.js?v=20260706-offering-public-private";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,7 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260706-offering-tags";
+} from "./protocol-transfer.js?v=20260706-offering-public-private";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +72,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260706-offering-tags";
+} from "./secondary-inventory.js?v=20260706-offering-public-private";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -4707,8 +4707,8 @@ function formatDurationPart(value = "") {
 
 function formatProjectOfferingSummary(projectValue) {
   if (isAbsProject(projectValue)) return projectValue.instrumentType || "ABS";
-  if (["公募", "私募", "公私募"].includes(projectValue.offeringType)) return projectValue.offeringType;
-  const text = `${projectValue.sourceText || ""} ${projectValue.opinion || ""}`;
+  if (["公募", "私募"].includes(projectValue.offeringType)) return projectValue.offeringType;
+  const text = `${projectValue.sourceText || ""} ${projectValue.opinion || ""}`.replace(/公私募/g, "");
   if (/(?:非公开|私募)/.test(text)) return "私募";
   if (/公开发行|(?:^|[\s/，,])(?:公开|公募)(?:$|[\s/，,])/.test(text)) return "公募";
   const shortNameText = [
@@ -4724,7 +4724,6 @@ function projectOfferingBadgeClass(projectValue) {
   const offering = formatProjectOfferingSummary(projectValue);
   if (offering === "公募") return "is-public";
   if (offering === "私募") return "is-private";
-  if (offering === "公私募") return "is-mixed";
   if (/^(ABS|ABN)$/i.test(offering)) return "is-structured";
   return "is-unknown";
 }
@@ -6064,8 +6063,8 @@ function issuerFromDraft(draft) {
 }
 
 function offeringTypeOptions(selected = "") {
-  const labels = { "": "待选择", "公募": "公开发行 / 公募", "私募": "非公开发行 / 私募", "公私募": "公私募" };
-  return ["", "公募", "私募", "公私募"].map((value) =>
+  const labels = { "": "待选择", "公募": "公开发行 / 公募", "私募": "非公开发行 / 私募" };
+  return ["", "公募", "私募"].map((value) =>
     `<option value="${value}" ${value === selected ? "selected" : ""}>${labels[value]}</option>`,
   ).join("");
 }

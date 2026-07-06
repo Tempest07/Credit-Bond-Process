@@ -32,6 +32,7 @@ test("parses public and private credit ratios separately", () => {
   assert.equal(credit.approvedRatio, 30);
   assert.equal(credit.privateRatio, 20);
   assert.equal(credit.privateAmount, 7);
+  assert.equal(credit.offeringType, "");
 });
 
 test("derives reusable issuer aliases from bond short names", () => {
