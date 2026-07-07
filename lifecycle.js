@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260707-lead-underwriter-only";
+import { parseUnderwriterNames } from "./core.js?v=20260707-award-result-variety";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -285,17 +285,16 @@ export function buildBidPositionText(project) {
 
 export function buildAwardResultText(project) {
   const lines = [];
-  for (const tranche of project.tranches || []) {
-    const name = tranche.shortName || tranche.durationText || "本品种";
-    if (tranche.resultStatus === "未中标") {
-      lines.push(`表内未中标（${name}）`);
-    } else if (positiveNumber(tranche.winningAmountWan)) {
-      lines.push(`表内中标${formatWanAmount(tranche.winningAmountWan)}，${formatPricing(tranche.pricingMode, tranche.pricingRate)}，营收${formatBp(tranche.revenueBp)}`);
+  const tranches = project.tranches || [];
+  for (const tranche of tranches) {
+    const variety = formatAwardVarietyLabel(tranche, tranches);
+    if (positiveNumber(tranche.winningAmountWan)) {
+      lines.push(`表内中标${variety}${formatWanAmount(tranche.winningAmountWan)}，${formatPricing(tranche.pricingMode, tranche.pricingRate)}，营收${formatBp(tranche.revenueBp)}`);
     }
     for (const outsourced of tranche.outsourcedBids || []) {
       if (positiveNumber(outsourced.winningAmountWan)) {
         const prefix = outsourced.managerName ? `${outsourced.managerName}委外` : "委外";
-        lines.push(`${prefix}中标${formatWanAmount(outsourced.winningAmountWan)}，${formatPricing(outsourced.pricingMode, outsourced.pricingRate)}`);
+        lines.push(`${prefix}中标${variety}${formatWanAmount(outsourced.winningAmountWan)}，${formatPricing(outsourced.pricingMode, outsourced.pricingRate)}`);
       }
     }
   }
@@ -303,6 +302,32 @@ export function buildAwardResultText(project) {
   return project.resultAdvertisement
     ? `${project.resultAdvertisement.trim()}${report ? `\n\n${report}` : ""}`
     : report;
+}
+
+function formatAwardVarietyLabel(tranche, tranches = []) {
+  const populated = tranches.filter((item) => String(item?.shortName || item?.durationText || "").trim());
+  if (populated.length <= 1) return "";
+  const label = extractAwardVarietyLabel(tranche?.shortName, populated);
+  return label ? `${label} ` : "";
+}
+
+function extractAwardVarietyLabel(shortName, tranches = []) {
+  const value = String(shortName || "").trim().toUpperCase();
+  if (!value) return "";
+  const scienceTech = value.match(/K\d+$/);
+  if (scienceTech) return scienceTech[0];
+
+  const serial = value.match(/(\d{2,})$/)?.[1];
+  if (serial) {
+    const hasLetterVariant = tranches.some((item) => {
+      const sibling = String(item?.shortName || "").trim().toUpperCase();
+      return sibling !== value && new RegExp(`${serial}[A-Z]$`).test(sibling);
+    });
+    return hasLetterVariant ? "" : serial;
+  }
+
+  const letter = value.match(/[A-Z]$/);
+  return letter ? letter[0] : "";
 }
 
 export function applyIssuanceAdvertisement(project, advertisement, referenceDate = new Date()) {

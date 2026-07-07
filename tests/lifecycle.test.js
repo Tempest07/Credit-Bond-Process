@@ -576,7 +576,60 @@ test("maps single base-name result to dual-tranche duration and infers payment d
   assert.equal(deriveProjectStatus({ ...project, resultConfirmed: true }, new Date("2026-06-11T09:00:00")), "待缴款");
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标1.5亿，综合定价至1.85%，营收-7BP`,
+    `${ad}\n\n表内中标B 1.5亿，综合定价至1.85%，营收-7BP`,
+  );
+});
+
+test("omits losing varieties and labels winning exchange K tranche in award report", () => {
+  const ad = "广州工业投资控股集团有限公司2026年面向专业投资者公开发行科技创新公司债券（第四期）";
+  const project = normalizeProjectRecord({
+    shortName: "26工投K4/5",
+    resultAdvertisement: ad,
+    tranches: [
+      {
+        shortName: "26工投K4",
+        resultStatus: "未中标",
+        winningAmountWan: 0,
+      },
+      {
+        shortName: "26工投K5",
+        resultStatus: "中标",
+        winningAmountWan: 8000,
+        pricingMode: "未综",
+        revenueBp: 30,
+      },
+    ],
+  });
+
+  assert.equal(
+    buildAwardResultText(project),
+    `${ad}\n\n表内中标K5 8000万，未综，营收30BP`,
+  );
+});
+
+test("uses numeric variety suffix for dual award report", () => {
+  const project = normalizeProjectRecord({
+    shortName: "26测试04/05",
+    tranches: [
+      {
+        shortName: "26测试04",
+        resultStatus: "未中标",
+        winningAmountWan: 0,
+      },
+      {
+        shortName: "26测试05",
+        resultStatus: "中标",
+        winningAmountWan: 10000,
+        pricingMode: "综合定价",
+        pricingRate: 2.01,
+        revenueBp: 12,
+      },
+    ],
+  });
+
+  assert.equal(
+    buildAwardResultText(project),
+    "表内中标05 1亿，综合定价至2.01%，营收12BP",
   );
 });
 
