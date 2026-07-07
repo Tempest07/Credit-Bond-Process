@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260707-award-result-variety";
+import { parseUnderwriterNames } from "./core.js?v=20260707-full-award-variety";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -316,6 +316,9 @@ function extractAwardVarietyLabel(shortName, tranches = []) {
   if (!value) return "";
   const scienceTech = value.match(/K\d+$/);
   if (scienceTech) return scienceTech[0];
+
+  const serialLetter = value.match(/(\d{2,}[A-Z])$/)?.[1];
+  if (serialLetter) return serialLetter;
 
   const serial = value.match(/(\d{2,})$/)?.[1];
   if (serial) {

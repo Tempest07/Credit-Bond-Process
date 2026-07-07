@@ -576,7 +576,7 @@ test("maps single base-name result to dual-tranche duration and infers payment d
   assert.equal(deriveProjectStatus({ ...project, resultConfirmed: true }, new Date("2026-06-11T09:00:00")), "待缴款");
   assert.equal(
     buildAwardResultText(project),
-    `${ad}\n\n表内中标B 1.5亿，综合定价至1.85%，营收-7BP`,
+    `${ad}\n\n表内中标003B 1.5亿，综合定价至1.85%，营收-7BP`,
   );
 });
 

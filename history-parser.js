@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260707-award-result-variety";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260707-full-award-variety";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
