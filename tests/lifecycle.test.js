@@ -296,7 +296,7 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
   });
   assert.equal(
     buildBidPositionText(revised),
-    "【改标】26越秀交通MTN003，1.76%投1.2亿，1.80%投0.4亿，合计不超30%，主承中信银行、江苏银行",
+    "【改标】26越秀交通MTN003，1.76%投1.2亿，1.80%投0.4亿，合计不超30%，主承中信银行",
   );
 
   const lead = normalizeProjectRecord({

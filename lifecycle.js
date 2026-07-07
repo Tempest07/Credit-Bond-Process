@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260707-cicc-short";
+import { parseUnderwriterNames } from "./core.js?v=20260707-lead-underwriter-only";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -599,7 +599,7 @@ function formatBidLine(project, tranche, participation, dual) {
 
 function formatBidUnderwriter(value = "") {
   const names = parseUnderwriterNames(value);
-  return names.length ? names.join("、") : "【待补主承】";
+  return names[0] || "【待补主承】";
 }
 
 function formatBidPrefix(project, tranche, participation) {
