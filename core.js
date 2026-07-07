@@ -854,12 +854,17 @@ export function parseUnderwriterNames(value = "") {
   );
 }
 
+const UNDERWRITER_SHORT_NAME_OVERRIDES = new Map([
+  ["中国国际金融", "中金公司"],
+]);
+
 function formatUnderwriterName(value = "") {
-  return String(value || "")
+  const normalized = String(value || "")
     .trim()
     .replace(/^(牵头主承销商|主承销商|簿记管理人|簿记人)[:：]?/, "")
     .replace(/(股份有限公司|有限责任公司|责任有限公司|有限公司)$/u, "")
     .trim();
+  return UNDERWRITER_SHORT_NAME_OVERRIDES.get(normalized) || normalized;
 }
 
 function isXingyeUnderwriter(value = "") {

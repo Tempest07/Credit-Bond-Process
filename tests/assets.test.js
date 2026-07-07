@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260707-underwriter-short";
+const VERSION = "20260707-cicc-short";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser] = await Promise.all([

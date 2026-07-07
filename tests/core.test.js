@@ -337,6 +337,20 @@ test("keeps lead bank in joint Xingye underwriter opinions", () => {
   assert.doesNotMatch(generated.opinion, /主承销商为兴业银行，/);
 });
 
+test("shortens China International Capital Corporation to CICC nickname", () => {
+  const project = parseProjectBrief(`26中金测试MTN001 非我行主承 广州分行
+3年期 规模10亿 AAA(联合资信)/隐含AAA
+询价区间1.5-2.5 银行间 中国国际金融股份有限公司`);
+  const generated = generateOpinion(project, {
+    ...issuer,
+    legalName: "测试集团有限公司",
+  });
+
+  assert.equal(project.leadUnderwriter, "中国国际金融股份有限公司");
+  assert.match(generated.opinion, /主承销商为中金公司/);
+  assert.doesNotMatch(generated.opinion, /主承销商为中国国际金融/);
+});
+
 test("states when project tenor is outside credit approval term", () => {
   const project = parseProjectBrief(`26测试MTN001 非我行主承 广州分行
 5年期 规模10亿 AAA(联合资信)/隐含AAA

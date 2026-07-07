@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260707-underwriter-short";
+import { parseUnderwriterNames } from "./core.js?v=20260707-cicc-short";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
