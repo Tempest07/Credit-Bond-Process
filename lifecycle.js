@@ -981,7 +981,17 @@ function formatPercent(value) {
 }
 
 function formatDuration(value) {
-  return String(value || "").replace(/期$/, "");
+  return String(value || "")
+    .trim()
+    .replace(/期$/, "")
+    .replace(/(\d+(?:\.\d+)?|N)\s*Y\b/gi, (_, number) => `${formatTenorNumber(number)}年`)
+    .replace(/(\d+(?:\.\d+)?|N)\s*M\b/gi, (_, number) => `${formatTenorNumber(number)}个月`)
+    .replace(/(\d+(?:\.\d+)?|N)\s*D\b/gi, (_, number) => `${formatTenorNumber(number)}天`);
+}
+
+function formatTenorNumber(value) {
+  if (String(value).toUpperCase() === "N") return "N";
+  return formatNumber(value);
 }
 
 function formatNumber(value) {

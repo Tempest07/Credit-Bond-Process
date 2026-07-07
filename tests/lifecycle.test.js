@@ -330,6 +330,20 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
     buildBidPositionText(dual),
     "【投标】26测试MTN002A，2年期，1.60%投2亿，不超2年期的20%\n【投标】26测试MTN002B，5年期，1.80%投1亿，不超5年期的15%",
   );
+
+  const dualWithDmTenor = normalizeProjectRecord({
+    shortName: "26工投K4/5",
+    venue: "上交所",
+    sponsorStatus: "非我行主承",
+    tranches: [
+      { shortName: "26工投K4", durationText: "5Y", suggestedRatio: 20, bidAction: "投标", bidRate: 2.25, bidAmount: 2 },
+      { shortName: "26工投K5", durationText: "10Y", suggestedRatio: 20, bidAction: "投标", bidRate: 2.75, bidAmount: 2 },
+    ],
+  });
+  assert.equal(
+    buildBidPositionText(dualWithDmTenor),
+    "【投标】26工投K4，5年期，2.25%投2亿，不超5年期的20%\n【投标】26工投K5，10年期，2.75%投2亿，不超10年期的20%",
+  );
 });
 
 test("parses issuance advertisements and infers payment month", () => {
