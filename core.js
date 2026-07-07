@@ -846,7 +846,7 @@ export function buildUnderwriter(project) {
   return underwriters.length ? underwriters.join("、") : "【待补充主承销商】";
 }
 
-function parseUnderwriterNames(value = "") {
+export function parseUnderwriterNames(value = "") {
   return uniqueNonEmpty(
     String(value || "")
       .split(/[、,，;；/]/)

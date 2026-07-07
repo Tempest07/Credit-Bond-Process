@@ -1,3 +1,5 @@
+import { parseUnderwriterNames } from "./core.js?v=20260707-underwriter-short";
+
 const PROJECT_STATUSES = new Set([
   "未投标",
   "已投标待结果",
@@ -590,9 +592,14 @@ function formatBidLine(project, tranche, participation, dual) {
     .join("，");
   const ratio = formatBidRatio(tranche, dual, !isOutsourced && bidLevels.length > 1);
   const underwriter = shouldShowUnderwriter(project, tranche, isOutsourced)
-    ? `，主承${project.leadUnderwriter || "【待补主承】"}`
+    ? `，主承${formatBidUnderwriter(project.leadUnderwriter)}`
     : "";
   return `${prefix}${tranche.shortName || project.shortName}${duration}，${bids}${ratio}${underwriter}`;
+}
+
+function formatBidUnderwriter(value = "") {
+  const names = parseUnderwriterNames(value);
+  return names.length ? names.join("、") : "【待补主承】";
 }
 
 function formatBidPrefix(project, tranche, participation) {
