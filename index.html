@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260707-full-award-variety">
+  <link rel="stylesheet" href="./styles.css?v=20260708-reminder-center">
 </head>
 <body>
   <div class="app-shell">
@@ -301,6 +301,14 @@
             </div>
             <pre class="mail-output" id="mailOutput"></pre>
           </div>
+        </section>
+
+        <section class="unified-reminder-panel" id="unifiedReminderPanel">
+          <div class="payment-todo-head">
+            <div><span class="step">NOW</span><h2>统一待办</h2></div>
+            <span class="pill accent" id="unifiedReminderSummary">0 项</span>
+          </div>
+          <div class="unified-reminder-list" id="unifiedReminderList"></div>
         </section>
 
         <div class="ledger-todo-grid">
@@ -786,6 +794,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260707-full-award-variety"></script>
+  <script type="module" src="./app.js?v=20260708-reminder-center"></script>
 </body>
 </html>

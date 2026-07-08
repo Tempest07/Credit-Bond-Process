@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260707-full-award-variety";
+} from "./core.js?v=20260708-reminder-center";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260707-full-award-variety";
+} from "./lifecycle.js?v=20260708-reminder-center";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260707-full-award-variety";
+} from "./history-parser.js?v=20260708-reminder-center";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,7 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260707-full-award-variety";
+} from "./protocol-transfer.js?v=20260708-reminder-center";
+import {
+  buildUnifiedReminders,
+  markDailyMailSent,
+  normalizeReminderState,
+} from "./reminders.js?v=20260708-reminder-center";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -72,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260707-full-award-variety";
+} from "./secondary-inventory.js?v=20260708-reminder-center";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -1310,6 +1315,7 @@ function bindLedger() {
   $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#collapseMailOutputButton").addEventListener("click", hideMailOutput);
+  $("#unifiedReminderList").addEventListener("click", handleUnifiedReminderClick);
   $("#newProjectButton").addEventListener("click", () => {
     resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
     switchView("generator");
@@ -2827,6 +2833,7 @@ function renderProjectWorkspace() {
   refreshDerivedProjectStatuses();
   const selectedRaw = (state.projects || []).find((item) => item.id === selectedProjectId);
   const selected = ensureProjectCutoff(selectedRaw);
+  renderUnifiedReminders();
   renderDashboard();
   renderCutoffTodo();
   renderPaymentTodo();
@@ -2880,6 +2887,81 @@ function renderDashboard() {
   const counts = dashboardCounts(state.projects || []);
   $("#dashboardAll").textContent = counts.all;
   $("#dashboardToBid").textContent = counts.toBid;
+}
+
+function renderUnifiedReminders() {
+  const panel = $("#unifiedReminderPanel");
+  if (!panel) return;
+  const reminders = buildUnifiedReminders(state, new Date());
+  const urgentCount = reminders.filter((item) => item.severity === "critical").length;
+  const warningCount = reminders.filter((item) => item.severity === "warning").length;
+  $("#unifiedReminderSummary").textContent = [
+    `${reminders.length} 项`,
+    urgentCount ? `${urgentCount} 急` : "",
+    warningCount ? `${warningCount} 待确认` : "",
+  ].filter(Boolean).join(" · ");
+  panel.classList.toggle("empty-state", !reminders.length);
+  $("#unifiedReminderList").innerHTML = reminders.length
+    ? reminders.slice(0, 12).map(renderUnifiedReminderItem).join("")
+    : '<div class="payment-todo-empty">目前没有需要处理的统一待办。</div>';
+}
+
+function renderUnifiedReminderItem(item) {
+  const meta = [reminderSeverityLabel(item.severity), reminderPolicyLabel(item.pushPolicy), item.dueAt ? item.dueAt.replace("T", " ") : ""]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <article class="unified-reminder-item ${escapeAttribute(item.severity || "info")}">
+      <button class="unified-reminder-main" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">
+        <strong>${escapeHtml(item.title || "待办")}</strong>
+        <span>${escapeHtml(item.detail || "")}</span>
+      </button>
+      <div class="unified-reminder-side">
+        <span>${escapeHtml(meta)}</span>
+        <button class="button subtle" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">${escapeHtml(item.actionLabel || "打开")}</button>
+      </div>
+    </article>
+  `;
+}
+
+function reminderSeverityLabel(severity) {
+  if (severity === "critical") return "紧急";
+  if (severity === "warning") return "待确认";
+  return "日常";
+}
+
+function reminderPolicyLabel(policy) {
+  if (policy === "immediate") return "即时";
+  if (policy === "daily") return "早报";
+  return "";
+}
+
+function handleUnifiedReminderClick(event) {
+  const target = event.target.closest("[data-reminder-source]");
+  if (!target) return;
+  const source = target.dataset.reminderSource;
+  const sourceId = target.dataset.reminderTarget;
+  const kind = target.dataset.reminderKind;
+  if (source === "mail") {
+    $("#mailPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    callMailer("preview");
+    return;
+  }
+  if (source === "protocol") {
+    selectedProtocolTransferId = sourceId;
+    protocolTransferEditMode = true;
+    switchView("protocol-transfer");
+    renderProtocolTransferWorkspace();
+    $("#protocolTransferForm").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  if (source === "project") {
+    selectedProjectId = sourceId;
+    switchView("ledger");
+    renderProjectWorkspace();
+    if (kind === "project-result") openResultEntryPanel(false);
+    $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function renderCutoffTodo() {
@@ -2975,6 +3057,13 @@ async function callMailer(action) {
     if (isSend) {
       if (payload?.status === "sent") {
         showMailOutput("邮件已发送", "success", buildMailSuccessMessage(payload));
+        state = {
+          ...state,
+          reminderState: markDailyMailSent(state.reminderState, payload.date || localDate(new Date())),
+          updatedAt: new Date().toISOString(),
+        };
+        persistState();
+        renderUnifiedReminders();
       } else {
         showMailOutput("发送结果", "info", payload?.reason || "邮件发送请求已完成。");
       }
@@ -3066,6 +3155,7 @@ function initializeProtocolTransferImport() {
 function renderProtocolTransferWorkspace() {
   if (!$("#protocolTransferForm")) return;
   const selected = (state.protocolTransfers || []).find((item) => item.id === selectedProtocolTransferId);
+  renderUnifiedReminders();
   renderProtocolTransferTodos();
   renderProtocolTransferList();
   if (selected) fillProtocolTransferForm(selected);
@@ -4564,6 +4654,7 @@ function saveProjectRecordNow(record) {
     $("#projectAutosaveStatus").textContent = "已实时保存";
     updateProjectActionButtons(normalized.status);
   }
+  renderUnifiedReminders();
   renderDashboard();
   renderCutoffTodo();
   renderPaymentTodo();
@@ -6572,6 +6663,7 @@ function normalizeLoadedState(value) {
     secondaryInventoryPositions: normalizeSecondaryInventoryPositions(value.secondaryInventoryPositions || []),
     secondaryOrders: normalizeSecondaryOrders(value.secondaryOrders || []),
     secondaryTrades: normalizeSecondaryTrades(value.secondaryTrades || []),
+    reminderState: normalizeReminderState(value.reminderState),
   };
 }
 

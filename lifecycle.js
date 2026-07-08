@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260707-full-award-variety";
+import { parseUnderwriterNames } from "./core.js?v=20260708-reminder-center";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

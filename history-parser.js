@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260707-full-award-variety";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260708-reminder-center";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

@@ -2,13 +2,14 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260707-full-award-variety";
+const VERSION = "20260708-reminder-center";
 
 test("versions all first-party browser modules together", async () => {
-  const [html, app, historyParser] = await Promise.all([
+  const [html, app, historyParser, reminders] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../history-parser.js", import.meta.url), "utf8"),
+    readFile(new URL("../reminders.js", import.meta.url), "utf8"),
   ]);
 
   assert.match(html, new RegExp(`app\\.js\\?v=${VERSION}`));
@@ -16,8 +17,11 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`history-parser\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
+  assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
+  assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
 });
 
 test("revalidates non-fingerprinted application assets", async () => {

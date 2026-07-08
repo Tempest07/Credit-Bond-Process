@@ -6,6 +6,9 @@ export const DEFAULT_STATE = {
   secondaryInventoryPositions: [],
   secondaryOrders: [],
   secondaryTrades: [],
+  reminderState: {
+    dailyMailSentDates: [],
+  },
   ftpCurve: {
     m3: null,
     m4: null,
