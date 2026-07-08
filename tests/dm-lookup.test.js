@@ -1042,7 +1042,7 @@ test("DM lookup groups green MTN A/B tranches with issuer alias short-name varia
   }
 });
 
-test("DM lookup ignores unmatched fuzzy basic-info rows before resolving issuer", async () => {
+test("DM lookup ignores unrelated same-serial primary rows when resolving issuer aliases", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
   const primaryRequests = [];
@@ -1058,16 +1058,46 @@ test("DM lookup ignores unmatched fuzzy basic-info rows before resolving issuer"
     } else if (url.includes("/bond/primary/data")) {
       primaryRequests.push(request);
       data = {
-        list: request.issuerFullName ? [] : [{
-          security_id: "102682501.IB",
-          sec_short_name: "26YUEXIUXINENGYUANMTN001A(GREEN)",
-          sec_full_name: "Yuexiu new energy 2026 MTN tranche A",
-          issuer_full_name: "Yuexiu New Energy Investment Co Ltd",
-          bond_issue_tenor: "5Y",
-          plan_issue_amount: 30000,
-          subscribe_rate: "1.800000 ~ 2.110000",
-          subscribe_date: "2026-07-08",
-        }],
+        list: request.issuerFullName ? [] : [
+          {
+            security_id: "102682599.IB",
+            sec_short_name: "26LIYANGMTN001",
+            issuer_full_name: "Liyang City Investment Co Ltd",
+            bond_issue_tenor: "3Y",
+            plan_issue_amount: 80000,
+            subscribe_rate: "1.400000 ~ 2.400000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682598.IB",
+            sec_short_name: "26XININGMTN001",
+            issuer_full_name: "Xining Urban Development Co Ltd",
+            bond_issue_tenor: "2Y",
+            plan_issue_amount: 50000,
+            subscribe_rate: "2.000000 ~ 3.500000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682501.IB",
+            sec_short_name: "26YUEXIUXINENGYUANMTN001A(GREEN)",
+            sec_full_name: "Yuexiu new energy 2026 MTN tranche A",
+            issuer_full_name: "Yuexiu New Energy Investment Co Ltd",
+            bond_issue_tenor: "5Y",
+            plan_issue_amount: 30000,
+            subscribe_rate: "1.800000 ~ 2.110000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682502.IB",
+            sec_short_name: "26YUEXIUXINENGYUANMTN001B(GREEN)",
+            sec_full_name: "Yuexiu new energy 2026 MTN tranche B",
+            issuer_full_name: "Yuexiu New Energy Investment Co Ltd",
+            bond_issue_tenor: "7Y",
+            plan_issue_amount: 50000,
+            subscribe_rate: "2.000000 ~ 2.600000",
+            subscribe_date: "2026-07-08",
+          },
+        ],
       };
     } else if (url.includes("/company/basic-info/info")) {
       data = [{ com_full_name: "Yuexiu New Energy Investment Co Ltd" }];
@@ -1081,7 +1111,7 @@ test("DM lookup ignores unmatched fuzzy basic-info rows before resolving issuer"
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26YUEXIUXINENGYUANMTN001A(GREEN)", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26YUEXIUXINENGMTN001A", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1090,6 +1120,55 @@ test("DM lookup ignores unmatched fuzzy basic-info rows before resolving issuer"
     assert.equal(primaryRequests[0].issuerFullName, undefined);
     assert.equal(payload.normalized.shortName, "26YUEXIUXINENGYUANMTN001A(GREEN)");
     assert.equal(payload.normalized.issuerName, "Yuexiu New Energy Investment Co Ltd");
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), [
+      "26YUEXIUXINENGYUANMTN001A(GREEN)",
+      "26YUEXIUXINENGYUANMTN001B(GREEN)",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM lookup does not build a cross-issuer group from a bare same serial match", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    const data = url.includes("/bond/primary/data")
+      ? {
+          list: [
+            {
+              security_id: "102682599.IB",
+              sec_short_name: "26LIYANGMTN001",
+              issuer_full_name: "Liyang City Investment Co Ltd",
+              bond_issue_tenor: "3Y",
+              subscribe_rate: "1.400000 ~ 2.400000",
+            },
+            {
+              security_id: "102682598.IB",
+              sec_short_name: "26XININGMTN001",
+              issuer_full_name: "Xining Urban Development Co Ltd",
+              bond_issue_tenor: "2Y",
+              subscribe_rate: "2.000000 ~ 3.500000",
+            },
+          ],
+        }
+      : [];
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26YUEXIUXINENGMTN001A", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.noResult, true);
+    assert.equal(payload.issueGroup, null);
   } finally {
     globalThis.fetch = originalFetch;
   }

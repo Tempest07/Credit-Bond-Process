@@ -1251,9 +1251,11 @@ function buildIssueGroupFromDmRows(normalized, query, primary) {
   const subscribeDate = normalized?.subscribeDate || "";
   const candidates = rows.filter((row) => {
     const rowNames = rowShortNames(row);
-    const rowFamilyMatched = rowNames.some((name) => issueNameMatchesGroupTargets(name, targets));
-    if (!rowFamilyMatched) return false;
+    const rowNameMatch = rowNames.map((name) => issueNameGroupMatchType(name, targets)).find(Boolean);
+    if (!rowNameMatch) return false;
     const rowIssuer = normalizeIssuerMatchText(pickFirstString(row, ["issuer_full_name", "issuerFullName", "issuer_name", "issuerName"]));
+    const issuerMatched = Boolean(issuerTarget && rowIssuer && issuerMatchScore(rowIssuer, issuerTarget) >= 90);
+    if (rowNameMatch === "series" && !issuerMatched) return false;
     if (issuerTarget && rowIssuer && issuerMatchScore(rowIssuer, issuerTarget) < 90) return false;
     const rowDate = pickFirstDateString(row, ["subscribe_date", "subscribeDate", "issue_start_date", "issueStartDate"]);
     if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
@@ -1707,10 +1709,14 @@ function issueShortNameSeriesKey(value = "") {
 }
 
 function issueNameMatchesGroupTargets(name, targets) {
+  return Boolean(issueNameGroupMatchType(name, targets));
+}
+
+function issueNameGroupMatchType(name, targets) {
   const family = issueShortNameFamily(name);
-  if (family && targets.families.includes(family)) return true;
+  if (family && targets.families.includes(family)) return "family";
   const seriesKey = issueShortNameSeriesKey(name);
-  return Boolean(seriesKey && targets.seriesKeys.includes(seriesKey));
+  return seriesKey && targets.seriesKeys.includes(seriesKey) ? "series" : "";
 }
 
 function projectFullText(project) {
@@ -1782,7 +1788,10 @@ function bestPrimaryRow(primary, shortName, securityId, fullName) {
 }
 
 function primaryRowMatchesQuery(row, { shortName, securityId, fullName }) {
-  return rowMatchesSecurityId(row, securityId) || rowMatchesShortName(row, shortName) || rowMatchesFullName(row, fullName);
+  return rowMatchesSecurityId(row, securityId)
+    || rowMatchesShortName(row, shortName)
+    || rowMatchesFullName(row, fullName)
+    || rowMatchesLikelyShortName(row, shortName);
 }
 
 function primaryRowDedupKey(row = {}) {
@@ -1803,6 +1812,23 @@ function rowMatchesShortName(row, shortName) {
   const queries = splitCombinedShortNames(shortName).map(normalizeLookupName).filter(Boolean);
   if (!queries.length) return false;
   return rowShortNames(row).some((candidate) => queries.includes(normalizeLookupName(candidate)));
+}
+
+function rowMatchesLikelyShortName(row, shortName) {
+  const query = normalizeLookupName(shortName);
+  if (!query) return false;
+  const profile = shortNameProfile(query);
+  if (!profile.product || !Number.isFinite(profile.serial)) return false;
+  return rowShortNames(row).some((candidate) => {
+    const candidateName = normalizeLookupName(candidate);
+    const candidateProfile = shortNameProfile(candidateName);
+    if (profile.year && candidateProfile.year && profile.year !== candidateProfile.year) return false;
+    if (profile.product !== candidateProfile.product || profile.serial !== candidateProfile.serial) return false;
+    const aliasScore = profile.alias && candidateProfile.alias
+      ? stringSimilarity(profile.alias, candidateProfile.alias)
+      : 0;
+    return aliasScore >= 0.75 && scoreShortNameCandidate(query, profile, candidateName).score >= 88;
+  });
 }
 
 function rowMatchesFullName(row, fullName) {
