@@ -1191,6 +1191,8 @@ function projectIssueGroupScore(project, entries, targets) {
     if (entryName && targets.names.some((target) => normalizeLookupName(target) === entryName)) score = Math.max(score, 140);
     const entryFamily = issueShortNameFamily(entry.shortName);
     if (entryFamily && targets.families.includes(entryFamily) && issuerScore >= 80) score = Math.max(score, 95);
+    const entrySeriesKey = issueShortNameSeriesKey(entry.shortName);
+    if (entrySeriesKey && targets.seriesKeys.includes(entrySeriesKey) && issuerScore >= 80) score = Math.max(score, 95);
   }
   if (issuerScore >= 90 && targets.names.some((name) => projectFullText(project).includes(normalizeLookupName(name)))) score = Math.max(score, 92);
   return score;
@@ -1246,10 +1248,9 @@ function buildIssueGroupFromDmRows(normalized, query, primary) {
   const targets = issueGroupTargets(normalized, query);
   const issuerTarget = normalizeIssuerMatchText(normalized?.issuerName || "");
   const subscribeDate = normalized?.subscribeDate || "";
-  const families = targets.families;
   const candidates = rows.filter((row) => {
     const rowNames = rowShortNames(row);
-    const rowFamilyMatched = rowNames.some((name) => families.includes(issueShortNameFamily(name)));
+    const rowFamilyMatched = rowNames.some((name) => issueNameMatchesGroupTargets(name, targets));
     if (!rowFamilyMatched) return false;
     const rowIssuer = normalizeIssuerMatchText(pickFirstString(row, ["issuer_full_name", "issuerFullName", "issuer_name", "issuerName"]));
     if (issuerTarget && rowIssuer && issuerMatchScore(rowIssuer, issuerTarget) < 90) return false;
@@ -1444,6 +1445,7 @@ function issueGroupTargets(normalized, query) {
     securityIds,
     issuerTargets: uniqueStrings([normalized?.issuerName, normalized?.fullName]),
     families: uniqueStrings(names.flatMap((name) => splitCombinedShortNames(name).map(issueShortNameFamily))),
+    seriesKeys: uniqueStrings(names.flatMap((name) => splitCombinedShortNames(name).map(issueShortNameSeriesKey))),
   };
 }
 
@@ -1658,6 +1660,22 @@ function issueShortNameFamily(value = "") {
   return text;
 }
 
+function issueShortNameSeriesKey(value = "") {
+  const names = splitCombinedShortNames(value);
+  const text = normalizeLookupName(names[0] || value);
+  if (!text) return "";
+  const match = text.match(/^(\d{2}).*?(SCP|CP|MTN|PPN|ABN|PRN)(\d{1,3})([A-Z])?$/i);
+  if (!match) return "";
+  return `${match[1]}-${match[2].toUpperCase()}-${match[3].padStart(3, "0")}`;
+}
+
+function issueNameMatchesGroupTargets(name, targets) {
+  const family = issueShortNameFamily(name);
+  if (family && targets.families.includes(family)) return true;
+  const seriesKey = issueShortNameSeriesKey(name);
+  return Boolean(seriesKey && targets.seriesKeys.includes(seriesKey));
+}
+
 function projectFullText(project) {
   return normalizeLookupName([
     project?.shortName,
@@ -1820,7 +1838,10 @@ function stripSecuritySuffix(value = "") {
 
 function normalizeLookupName(value = "") {
   return normalizeName(value)
+    .replace(/[\(（][^\)）]*[\)）]/g, "")
+    .replace(/[\[\{][^\]\}]*[\]\}]/g, "")
     .replace(/_BC$/i, "")
+    .replace(/[·.,，。:：;；"'`]/g, "")
     .replace(/债(?=\d+$)/g, "");
 }
 

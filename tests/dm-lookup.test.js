@@ -974,6 +974,74 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
   }
 });
 
+test("DM lookup groups green MTN A/B tranches with issuer alias short-name variants", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "102682501.IB",
+        sec_short_name: "26YUEXIUXINENGYUANMTN001A(GREEN)",
+        sec_full_name: "Yuexiu new energy 2026 MTN tranche A",
+        issuer_name: "Yuexiu New Energy Investment Co Ltd",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [
+          {
+            security_id: "102682501.IB",
+            sec_short_name: "26YUEXIUXINENGYUANMTN001A(GREEN)",
+            sec_full_name: "Yuexiu new energy 2026 MTN tranche A",
+            issuer_full_name: "Yuexiu New Energy Investment Co Ltd",
+            bond_issue_tenor: "5Y",
+            plan_issue_amount: 30000,
+            subscribe_rate: "1.800000 ~ 2.110000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682502.IB",
+            sec_short_name: "26YUEXIUXINENGMTN001B(GREEN)",
+            sec_full_name: "Yuexiu new energy 2026 MTN tranche B",
+            issuer_full_name: "Yuexiu New Energy Investment Co Ltd",
+            bond_issue_tenor: "7Y",
+            plan_issue_amount: 50000,
+            subscribe_rate: "2.000000 ~ 2.600000",
+            subscribe_date: "2026-07-08",
+          },
+        ],
+      };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "Yuexiu New Energy Investment Co Ltd" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26YUEXIUXINENGYUANMTN001A(GREEN)", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.issueGroup.source, "dm");
+    assert.equal(payload.issueGroup.tranches.length, 2);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), [
+      "26YUEXIUXINENGYUANMTN001A(GREEN)",
+      "26YUEXIUXINENGMTN001B(GREEN)",
+    ]);
+    assert.equal(payload.issueGroup.tranches[0].isQueriedInput, true);
+    assert.equal(payload.issueGroup.tranches[1].tenor, "7Y");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup marks a queried cancelled tranche from D1 issue group", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
