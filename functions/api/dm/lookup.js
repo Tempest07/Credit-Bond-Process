@@ -115,13 +115,14 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: apiHeaders() });
 }
 
-async function lookupBasicInfo(dm, { shortName, securityId }) {
+async function lookupBasicInfo(dm, { shortName, securityId, fullName }) {
   if (!shortName && !securityId) return { raw: null, rows: [] };
   const payload = securityId
     ? { securityIdList: [securityId] }
     : { secShortNameList: [shortName] };
   const raw = await dm.post(BASIC_INFO_PATH, payload);
-  return { raw, rows: rowsFromDm(raw) };
+  const rows = rowsFromDm(raw);
+  return { raw, rows: rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId, fullName })) };
 }
 
 async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, absHintText, startDate, endDate }) {
@@ -1199,7 +1200,7 @@ function projectIssueGroupScore(project, entries, targets) {
 }
 
 function issueGroupFromProject(project, entries, targets, score) {
-  const finalEntries = entries.map((entry) => ({
+  const finalEntries = sortIssueEntries(entries).map((entry) => ({
     ...entry,
     isQueriedInput: entryMatchesTargets(entry, targets.inputNames, targets.inputSecurityIds),
     isDmMatched: entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds),
@@ -1258,7 +1259,7 @@ function buildIssueGroupFromDmRows(normalized, query, primary) {
     if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
     return true;
   });
-  const entries = uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId))
+  const entries = sortIssueEntries(uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId)))
     .map((entry) => entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds) && normalized?.durationText
       ? { ...entry, durationText: normalized.durationText }
       : entry);
@@ -1493,6 +1494,42 @@ function uniqueIssueEntries(entries) {
   return result;
 }
 
+function sortIssueEntries(entries) {
+  return [...(entries || [])].sort(compareIssueEntries);
+}
+
+function compareIssueEntries(left, right) {
+  const a = issueEntrySortParts(left);
+  const b = issueEntrySortParts(right);
+  return a.groupKey.localeCompare(b.groupKey, "zh-Hans-CN")
+    || a.variant - b.variant
+    || a.text.localeCompare(b.text, "zh-Hans-CN");
+}
+
+function issueEntrySortParts(entry = {}) {
+  const text = normalizeLookupName(entry.shortName || entry.securityId || "");
+  const product = text.match(/^(\d{2})(.*?)(SCP|CP|MTN|PPN|ABN|PRN)(\d{1,3})([A-Z])?$/i);
+  if (product) {
+    return {
+      groupKey: `${product[1]}-${product[3].toUpperCase()}-${product[4].padStart(3, "0")}`,
+      variant: issueLetterSortValue(product[5]),
+      text,
+    };
+  }
+  const letter = text.match(/^(.*\d)([A-Z])$/i);
+  if (letter) return { groupKey: letter[1], variant: issueLetterSortValue(letter[2]), text };
+  const number = text.match(/^(.*?)(\d+)$/);
+  if (number) return { groupKey: number[1], variant: Number(number[2]), text };
+  return { groupKey: text, variant: 0, text };
+}
+
+function issueLetterSortValue(letter = "") {
+  const text = String(letter || "").toUpperCase();
+  if (!text) return 0;
+  const code = text.charCodeAt(0);
+  return code >= 65 && code <= 90 ? code - 64 : 99;
+}
+
 function mergeIssueGroups(primaryGroup, secondaryGroup) {
   if (!primaryGroup || !secondaryGroup) return null;
   const mergedTranches = [...primaryGroup.tranches];
@@ -1527,7 +1564,7 @@ function mergeIssueGroups(primaryGroup, secondaryGroup) {
     ...primaryGroup,
     source: "mixed",
     confidence: Math.max(primaryGroup.confidence || 0, secondaryGroup.confidence || 0),
-    tranches: mergedTranches,
+    tranches: sortIssueEntries(mergedTranches),
   };
 }
 
@@ -1763,9 +1800,9 @@ function rowMatchesSecurityId(row, securityId) {
 }
 
 function rowMatchesShortName(row, shortName) {
-  const query = normalizeLookupName(shortName);
-  if (!query) return false;
-  return rowShortNames(row).some((candidate) => normalizeLookupName(candidate) === query);
+  const queries = splitCombinedShortNames(shortName).map(normalizeLookupName).filter(Boolean);
+  if (!queries.length) return false;
+  return rowShortNames(row).some((candidate) => queries.includes(normalizeLookupName(candidate)));
 }
 
 function rowMatchesFullName(row, fullName) {

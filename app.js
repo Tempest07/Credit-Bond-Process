@@ -1873,7 +1873,14 @@ function projectDmUsableTranches(issueGroup) {
   const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
   if (!tranches.length) return [];
   const usable = tranches.filter((tranche) => tranche.status !== "reallocated");
-  return usable.length ? usable : tranches;
+  return sortProjectDmTranches(usable.length ? usable : tranches);
+}
+
+function sortProjectDmTranches(tranches) {
+  return [...(tranches || [])].sort((left, right) => compareProjectShortNameOrder(
+    left?.shortName || left?.securityId || "",
+    right?.shortName || right?.securityId || "",
+  ));
 }
 
 function buildDmProjectSourceText(projectValue) {
@@ -2098,21 +2105,77 @@ function compactProjectDurations(values) {
 }
 
 function compactProjectShortNames(names) {
-  const values = uniqueNonEmpty(names);
+  const values = uniqueNonEmpty(names).sort(compareProjectShortNameOrder);
   if (!values.length) return "";
   if (values.length === 1) return values[0];
-  const first = values[0];
+  const parsed = values.map(projectCompactShortNameParts);
+  const sharedLabel = parsed.every((item) => item.label === parsed[0].label) ? parsed[0].label : "";
+  const cores = sharedLabel ? parsed.map((item) => item.core) : values;
+  const first = cores[0];
   const letter = first.match(/^(.*?)([A-Z])$/i);
   if (letter) {
-    const suffixes = values.map((name) => name.match(new RegExp(`^${escapeRegExpForPattern(letter[1])}([A-Z])$`, "i"))?.[1]?.toUpperCase());
-    if (suffixes.every(Boolean)) return `${first}/${suffixes.slice(1).join("/")}`;
+    const suffixes = cores.map((name) => name.match(new RegExp(`^${escapeRegExpForPattern(letter[1])}([A-Z])$`, "i"))?.[1]?.toUpperCase());
+    if (suffixes.every(Boolean)) return `${first}/${suffixes.slice(1).join("/")}${sharedLabel}`;
   }
   const number = first.match(/^(.*?)(\d+)$/);
   if (number) {
-    const suffixes = values.map((name) => name.match(new RegExp(`^${escapeRegExpForPattern(number[1])}(\\d+)$`))?.[1]);
-    if (suffixes.every(Boolean)) return `${number[1]}${suffixes.join("/")}`;
+    const suffixes = cores.map((name) => name.match(new RegExp(`^${escapeRegExpForPattern(number[1])}(\\d+)$`))?.[1]);
+    if (suffixes.every(Boolean)) return `${number[1]}${suffixes.join("/")}${sharedLabel}`;
   }
   return values.join("/");
+}
+
+function projectCompactShortNameParts(value) {
+  const text = String(value || "").trim();
+  const label = text.match(/(\([^()]*\)|（[^（）]*）)$/)?.[1] || "";
+  return {
+    text,
+    core: label ? text.slice(0, -label.length) : text,
+    label,
+  };
+}
+
+function compareProjectShortNameOrder(left, right) {
+  const a = projectShortNameSortParts(left);
+  const b = projectShortNameSortParts(right);
+  return a.groupKey.localeCompare(b.groupKey, "zh-Hans-CN")
+    || a.variant - b.variant
+    || a.text.localeCompare(b.text, "zh-Hans-CN");
+}
+
+function projectShortNameSortParts(value) {
+  const text = normalizeProjectShortNameForSort(value);
+  const product = text.match(/^(\d{2})(.*?)(SCP|CP|MTN|PPN|ABN|PRN)(\d{1,3})([A-Z])?$/i);
+  if (product) {
+    return {
+      groupKey: `${product[1]}-${product[3].toUpperCase()}-${product[4].padStart(3, "0")}`,
+      variant: projectLetterSortValue(product[5]),
+      text,
+    };
+  }
+  const letter = text.match(/^(.*\d)([A-Z])$/i);
+  if (letter) return { groupKey: letter[1], variant: projectLetterSortValue(letter[2]), text };
+  const number = text.match(/^(.*?)(\d+)$/);
+  if (number) return { groupKey: number[1], variant: Number(number[2]), text };
+  return { groupKey: text, variant: 0, text };
+}
+
+function normalizeProjectShortNameForSort(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase()
+    .replace(/[\(（][^\)）]*[\)）]/g, "")
+    .replace(/[\[\{][^\]\}]*[\]\}]/g, "")
+    .replace(/_BC$/i, "")
+    .replace(/[·.,，。:：;；"'`]/g, "");
+}
+
+function projectLetterSortValue(letter = "") {
+  const text = String(letter || "").toUpperCase();
+  if (!text) return 0;
+  const code = text.charCodeAt(0);
+  return code >= 65 && code <= 90 ? code - 64 : 99;
 }
 
 function uniqueNonEmpty(values) {
