@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260708-reminder-tab";
+} from "./core.js?v=20260708-reminder-workbench";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260708-reminder-tab";
+} from "./lifecycle.js?v=20260708-reminder-workbench";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260708-reminder-tab";
+} from "./history-parser.js?v=20260708-reminder-workbench";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260708-reminder-tab";
+} from "./protocol-transfer.js?v=20260708-reminder-workbench";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260708-reminder-tab";
+} from "./reminders.js?v=20260708-reminder-workbench";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260708-reminder-tab";
+} from "./secondary-inventory.js?v=20260708-reminder-workbench";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -2897,6 +2897,7 @@ function renderUnifiedReminders() {
   const urgentCount = reminders.filter((item) => item.severity === "critical").length;
   const warningCount = reminders.filter((item) => item.severity === "warning").length;
   const dailyCount = reminders.filter((item) => item.pushPolicy === "daily").length;
+  const focusReminder = reminders[0] || null;
   $("#unifiedReminderSummary").textContent = [
     `${reminders.length} 项`,
     urgentCount ? `${urgentCount} 急` : "",
@@ -2905,9 +2906,14 @@ function renderUnifiedReminders() {
   $("#reminderCriticalCount").textContent = urgentCount;
   $("#reminderWarningCount").textContent = warningCount;
   $("#reminderDailyCount").textContent = dailyCount;
+  $("#reminderFocusTitle").textContent = focusReminder?.subject || "暂无待办";
+  $("#reminderFocusDetail").textContent = focusReminder
+    ? [focusReminder.moduleLabel, focusReminder.title, focusReminder.detail].filter(Boolean).join(" · ")
+    : "今日无待处理事项";
+  $("#reminderFocusCard").className = `reminder-focus-card ${focusReminder?.severity || "empty"}`;
   panel.classList.toggle("empty-state", !reminders.length);
   $("#unifiedReminderList").innerHTML = reminders.length
-    ? reminders.slice(0, 12).map(renderUnifiedReminderItem).join("")
+    ? reminders.map(renderUnifiedReminderItem).join("")
     : '<div class="payment-todo-empty">目前没有需要处理的统一待办。</div>';
 }
 
@@ -2922,11 +2928,11 @@ function renderUnifiedReminderItem(item) {
       <button class="unified-reminder-main" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">
         <span class="unified-reminder-task">${escapeHtml(task || "待办")}</span>
         <strong>${escapeHtml(subject)}</strong>
-        <span>${escapeHtml(item.detail || "")}</span>
+        <span class="unified-reminder-detail">${escapeHtml(item.detail || "")}</span>
       </button>
       <div class="unified-reminder-side">
-        <span>${escapeHtml(meta)}</span>
-        <button class="button subtle" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">${escapeHtml(item.actionLabel || "打开")}</button>
+        <span class="unified-reminder-meta">${escapeHtml(meta)}</span>
+        <button class="button subtle unified-reminder-action" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">${escapeHtml(item.actionLabel || "打开")}</button>
       </div>
     </article>
   `;

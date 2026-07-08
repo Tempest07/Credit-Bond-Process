@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260708-reminder-tab">
+  <link rel="stylesheet" href="./styles.css?v=20260708-reminder-workbench">
 </head>
 <body>
   <div class="app-shell">
@@ -763,26 +763,31 @@
       </section>
 
       <section class="view" data-view="reminders">
-        <section class="reminder-hero-panel" id="unifiedReminderPanel">
-          <div class="reminder-hero-copy">
-            <span class="step">TODO</span>
-            <div>
-              <h2>待办中心</h2>
-              <p>集中查看项目、缴款、协议转让和今日流程邮件事项。</p>
-            </div>
+        <section class="reminder-workbench" id="unifiedReminderPanel">
+          <div class="reminder-workbench-head">
+            <div><span class="step">NOW</span><h2>待办中心</h2></div>
+            <span class="pill accent" id="unifiedReminderSummary">0 项</span>
           </div>
-          <span class="pill accent" id="unifiedReminderSummary">0 项</span>
-        </section>
-        <div class="reminder-kpi-grid">
-          <article class="reminder-kpi critical"><span>紧急</span><strong id="reminderCriticalCount">0</strong></article>
-          <article class="reminder-kpi warning"><span>待确认</span><strong id="reminderWarningCount">0</strong></article>
-          <article class="reminder-kpi info"><span>日常/早报</span><strong id="reminderDailyCount">0</strong></article>
-        </div>
-        <section class="reminder-board-panel">
-          <div class="panel-head">
-            <div><span class="step">LIST</span><h2>待处理事项</h2></div>
+          <div class="reminder-shell">
+            <section class="reminder-board-panel">
+              <div class="panel-head compact">
+                <div><span class="step">LIST</span><h2>待处理</h2></div>
+              </div>
+              <div class="unified-reminder-list" id="unifiedReminderList"></div>
+            </section>
+            <aside class="reminder-overview-panel">
+              <div class="reminder-focus-card" id="reminderFocusCard">
+                <span>优先处理</span>
+                <strong id="reminderFocusTitle">暂无待办</strong>
+                <p id="reminderFocusDetail">今日无待处理事项</p>
+              </div>
+              <div class="reminder-kpi-grid">
+                <article class="reminder-kpi critical"><span>紧急</span><strong id="reminderCriticalCount">0</strong></article>
+                <article class="reminder-kpi warning"><span>待确认</span><strong id="reminderWarningCount">0</strong></article>
+                <article class="reminder-kpi info"><span>日常/早报</span><strong id="reminderDailyCount">0</strong></article>
+              </div>
+            </aside>
           </div>
-          <div class="unified-reminder-list" id="unifiedReminderList"></div>
         </section>
       </section>
 
@@ -811,6 +816,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260708-reminder-tab"></script>
+  <script type="module" src="./app.js?v=20260708-reminder-workbench"></script>
 </body>
 </html>
