@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260708-reminder-center";
+} from "./core.js?v=20260708-reminder-tab";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260708-reminder-center";
+} from "./lifecycle.js?v=20260708-reminder-tab";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260708-reminder-center";
+} from "./history-parser.js?v=20260708-reminder-tab";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260708-reminder-center";
+} from "./protocol-transfer.js?v=20260708-reminder-tab";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260708-reminder-center";
+} from "./reminders.js?v=20260708-reminder-tab";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260708-reminder-center";
+} from "./secondary-inventory.js?v=20260708-reminder-tab";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -249,6 +249,7 @@ function switchView(viewName) {
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   if (button) $("#pageTitle").textContent = button.textContent;
+  if (viewName === "reminders") renderUnifiedReminders();
 }
 
 function bindProjectScreenshotTool() {
@@ -2895,11 +2896,15 @@ function renderUnifiedReminders() {
   const reminders = buildUnifiedReminders(state, new Date());
   const urgentCount = reminders.filter((item) => item.severity === "critical").length;
   const warningCount = reminders.filter((item) => item.severity === "warning").length;
+  const dailyCount = reminders.filter((item) => item.pushPolicy === "daily").length;
   $("#unifiedReminderSummary").textContent = [
     `${reminders.length} 项`,
     urgentCount ? `${urgentCount} 急` : "",
     warningCount ? `${warningCount} 待确认` : "",
   ].filter(Boolean).join(" · ");
+  $("#reminderCriticalCount").textContent = urgentCount;
+  $("#reminderWarningCount").textContent = warningCount;
+  $("#reminderDailyCount").textContent = dailyCount;
   panel.classList.toggle("empty-state", !reminders.length);
   $("#unifiedReminderList").innerHTML = reminders.length
     ? reminders.slice(0, 12).map(renderUnifiedReminderItem).join("")
@@ -2910,10 +2915,13 @@ function renderUnifiedReminderItem(item) {
   const meta = [reminderSeverityLabel(item.severity), reminderPolicyLabel(item.pushPolicy), item.dueAt ? item.dueAt.replace("T", " ") : ""]
     .filter(Boolean)
     .join(" · ");
+  const subject = item.subject || item.detail || item.title || "待办事项";
+  const task = [item.moduleLabel, item.title].filter(Boolean).join(" · ");
   return `
     <article class="unified-reminder-item ${escapeAttribute(item.severity || "info")}">
       <button class="unified-reminder-main" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">
-        <strong>${escapeHtml(item.title || "待办")}</strong>
+        <span class="unified-reminder-task">${escapeHtml(task || "待办")}</span>
+        <strong>${escapeHtml(subject)}</strong>
         <span>${escapeHtml(item.detail || "")}</span>
       </button>
       <div class="unified-reminder-side">
@@ -2943,6 +2951,8 @@ function handleUnifiedReminderClick(event) {
   const sourceId = target.dataset.reminderTarget;
   const kind = target.dataset.reminderKind;
   if (source === "mail") {
+    switchView("ledger");
+    renderProjectWorkspace();
     $("#mailPanel").scrollIntoView({ behavior: "smooth", block: "start" });
     callMailer("preview");
     return;

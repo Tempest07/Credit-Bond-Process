@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260708-reminder-center";
+import { parseUnderwriterNames } from "./core.js?v=20260708-reminder-tab";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

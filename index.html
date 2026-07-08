@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260708-reminder-center">
+  <link rel="stylesheet" href="./styles.css?v=20260708-reminder-tab">
 </head>
 <body>
   <div class="app-shell">
@@ -17,6 +17,7 @@
       </a>
 
       <nav class="nav">
+        <button class="nav-item" data-view-target="reminders">待办中心</button>
         <button class="nav-item active" data-view-target="ledger">项目中心</button>
         <button class="nav-item" data-view-target="secondary-inventory">二级库存</button>
         <button class="nav-item" data-view-target="protocol-transfer">协议转让</button>
@@ -301,14 +302,6 @@
             </div>
             <pre class="mail-output" id="mailOutput"></pre>
           </div>
-        </section>
-
-        <section class="unified-reminder-panel" id="unifiedReminderPanel">
-          <div class="payment-todo-head">
-            <div><span class="step">NOW</span><h2>统一待办</h2></div>
-            <span class="pill accent" id="unifiedReminderSummary">0 项</span>
-          </div>
-          <div class="unified-reminder-list" id="unifiedReminderList"></div>
         </section>
 
         <div class="ledger-todo-grid">
@@ -769,6 +762,30 @@
         </section>
       </section>
 
+      <section class="view" data-view="reminders">
+        <section class="reminder-hero-panel" id="unifiedReminderPanel">
+          <div class="reminder-hero-copy">
+            <span class="step">TODO</span>
+            <div>
+              <h2>待办中心</h2>
+              <p>集中查看项目、缴款、协议转让和今日流程邮件事项。</p>
+            </div>
+          </div>
+          <span class="pill accent" id="unifiedReminderSummary">0 项</span>
+        </section>
+        <div class="reminder-kpi-grid">
+          <article class="reminder-kpi critical"><span>紧急</span><strong id="reminderCriticalCount">0</strong></article>
+          <article class="reminder-kpi warning"><span>待确认</span><strong id="reminderWarningCount">0</strong></article>
+          <article class="reminder-kpi info"><span>日常/早报</span><strong id="reminderDailyCount">0</strong></article>
+        </div>
+        <section class="reminder-board-panel">
+          <div class="panel-head">
+            <div><span class="step">LIST</span><h2>待处理事项</h2></div>
+          </div>
+          <div class="unified-reminder-list" id="unifiedReminderList"></div>
+        </section>
+      </section>
+
       <section class="view" data-view="rules">
         <div class="rules-grid">
           <article class="rule-card"><span>比例规则 01</span><h2>授信比例为默认值</h2><p>建议投资比例默认采用主体最新授信记录中的批复比例。</p></article>
@@ -794,6 +811,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260708-reminder-center"></script>
+  <script type="module" src="./app.js?v=20260708-reminder-tab"></script>
 </body>
 </html>

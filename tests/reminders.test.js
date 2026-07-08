@@ -17,7 +17,9 @@ test("builds daily flow mail reminder and suppresses it after mail is sent", () 
   };
 
   const reminders = buildUnifiedReminders(state, new Date("2026-07-08T09:00:00+08:00"));
-  assert.equal(reminders.some((item) => item.kind === "flow-mail"), true);
+  const flowMail = reminders.find((item) => item.kind === "flow-mail");
+  assert.equal(Boolean(flowMail), true);
+  assert.equal(Boolean(flowMail.subject), true);
 
   const sentState = {
     ...state,
@@ -50,6 +52,7 @@ test("keeps tomorrow and morning payment reminders in daily policy", () => {
   const reminders = buildUnifiedReminders(state, new Date("2026-07-08T09:00:00+08:00"));
   const todayPayment = reminders.find((item) => item.id === "project:today:payment:t1");
   const tomorrowPayment = reminders.find((item) => item.id === "project:tomorrow:payment:t2");
+  assert.equal(todayPayment.subject, state.projects[0].tranches[0].shortName);
   assert.equal(todayPayment.title, "今日缴款");
   assert.equal(todayPayment.pushPolicy, "daily");
   assert.equal(todayPayment.severity, "info");

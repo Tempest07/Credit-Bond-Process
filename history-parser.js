@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260708-reminder-center";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260708-reminder-tab";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

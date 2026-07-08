@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260708-reminder-center";
+const VERSION = "20260708-reminder-tab";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
