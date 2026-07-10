@@ -10,6 +10,7 @@ First Android shell for the Tempest07 Bond Centre workbench.
 - Supports file upload from WebView forms.
 - Receives the web app's unified reminders through `Tempest07Android.syncReminders(...)`.
 - Posts local Android notifications for immediate reminders and schedules simple local alarms for dated reminders.
+- Periodically fetches `https://tempest07.com/api/reminders` with the saved Gateway session cookie so reminders can refresh after login even when the workbench page is not currently open.
 
 ## Build
 
@@ -41,4 +42,4 @@ gradle wrapper --gradle-version 8.7
 
 ## Current limitation
 
-Notifications are local and are refreshed when the app opens the Bond Centre page and receives reminder data from the web app. A later version should add a backend reminder endpoint and FCM push for reminders that must arrive when the app has not been opened recently.
+Notifications are still local to the device. The first version refreshes reminders when the app opens the Bond Centre page and through a best-effort background sync. A later version should add FCM push for reminders that must arrive even if Android has stopped background work for the app.

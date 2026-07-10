@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { onRequestPost as onLoginPost } from "../functions/api/auth/login.js";
 import { onRequestPost as onLogoutPost } from "../functions/api/auth/logout.js";
 import { onRequestGet as onSessionGet } from "../functions/api/auth/session.js";
+import { onRequestGet as onRemindersGet } from "../functions/api/reminders.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
 
 test("rejects remote state access without a gateway assertion", async () => {
@@ -89,6 +90,45 @@ test("reads migrated legacy state with gateway auth", async () => {
   assert.equal(statePayload.user.username, "admin");
   assert.equal(statePayload.user.nickname, "管理员");
   assert.equal(statePayload.data.issuers[0].legalName, "测试主体");
+});
+
+test("returns unified reminders for the Android app bridge", async () => {
+  const DB = createMockDb();
+  const writeResponse = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({
+        data: {
+          version: 4,
+          issuers: [],
+          projects: [
+            { id: "p1", shortName: "26测试SCP001", status: "未投标", cutoffAt: "2026-07-08T18:00", cutoffTimeConfirmed: true },
+            {
+              id: "p2",
+              shortName: "26缴款SCP001",
+              status: "待缴款",
+              resultConfirmed: true,
+              tranches: [{ id: "t1", shortName: "26缴款SCP001", resultStatus: "中标", paymentDate: "2026-07-08" }],
+            },
+          ],
+          protocolTransfers: [],
+        },
+      }),
+    }),
+  });
+  assert.equal(writeResponse.status, 200);
+
+  const response = await onRemindersGet({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/reminders?now=2026-07-08T09:00:00%2B08:00"),
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.user.username, "admin");
+  assert.equal(payload.reminders.some((item) => item.kind === "flow-mail"), true);
+  assert.equal(payload.reminders.some((item) => item.kind === "project-payment" && item.pushPolicy === "daily"), true);
 });
 
 test("project auth session only reflects gateway auth", async () => {

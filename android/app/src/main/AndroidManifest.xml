@@ -22,5 +22,9 @@
         <receiver
             android:name=".ReminderReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".ReminderSyncReceiver"
+            android:exported="false" />
     </application>
 </manifest>

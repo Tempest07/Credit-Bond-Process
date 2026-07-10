@@ -48,11 +48,13 @@ test("exposes unified reminders to the Android bridge", async () => {
 });
 
 test("ships Android shell and debug APK workflow", async () => {
-  const [manifest, buildGradle, mainActivity, receiver, workflow, readme] = await Promise.all([
+  const [manifest, buildGradle, mainActivity, receiver, syncReceiver, reminderApi, workflow, readme] = await Promise.all([
     readFile(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8"),
     readFile(new URL("../android/app/build.gradle", import.meta.url), "utf8"),
     readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/MainActivity.java", import.meta.url), "utf8"),
     readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/ReminderReceiver.java", import.meta.url), "utf8"),
+    readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/ReminderSyncReceiver.java", import.meta.url), "utf8"),
+    readFile(new URL("../functions/api/reminders.js", import.meta.url), "utf8"),
     readFile(new URL("../.github/workflows/android-debug.yml", import.meta.url), "utf8"),
     readFile(new URL("../android/README.md", import.meta.url), "utf8"),
   ]);
@@ -62,7 +64,11 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(buildGradle, /applicationId "com\.tempest07\.bondcentre"/);
   assert.match(mainActivity, /https:\/\/tempest07\.com\/bond-centre\//);
   assert.match(mainActivity, /addJavascriptInterface\(new AndroidBridge\(\), "Tempest07Android"\)/);
+  assert.match(mainActivity, /ReminderSyncReceiver\.schedulePeriodicSync\(this\)/);
   assert.match(receiver, /CHANNEL_ID = "bond-centre-reminders"/);
+  assert.match(syncReceiver, /https:\/\/tempest07\.com\/api\/reminders/);
+  assert.match(syncReceiver, /CookieManager\.getInstance\(\)\.getCookie/);
+  assert.match(reminderApi, /buildUnifiedReminders/);
   assert.match(workflow, /Android Debug APK/);
   assert.match(workflow, /gradle -p android :app:assembleDebug --no-daemon/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
