@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260710-unified-command-system";
+import { parseUnderwriterNames } from "./core.js?v=20260710-mobile-alignment";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
