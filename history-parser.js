@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260710-reminder-command-center";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260710-unified-command-system";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

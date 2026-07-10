@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260710-reminder-command-center";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260710-reminder-command-center";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260710-unified-command-system";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260710-unified-command-system";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

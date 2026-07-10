@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260710-reminder-command-center";
+import { parseUnderwriterNames } from "./core.js?v=20260710-unified-command-system";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
