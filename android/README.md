@@ -13,6 +13,18 @@ First Android shell for the Tempest07 Bond Centre workbench.
 
 ## Build
 
+### GitHub Actions debug APK
+
+Pushes that touch the Android app or the reminder bridge run the `Android Debug APK` workflow. After it finishes, open the workflow run in GitHub Actions and download the `tempest07-bond-centre-debug-apk` artifact. The artifact contains:
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+You can also start the workflow manually from GitHub Actions with `Run workflow`.
+
+### Local development build
+
 Install Android Studio with Android SDK 35 and JDK 17, then run from this folder:
 
 ```powershell
