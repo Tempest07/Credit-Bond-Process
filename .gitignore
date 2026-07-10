@@ -1,3 +1,7 @@
 node_modules/
 .wrangler/
 wrangler.toml
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

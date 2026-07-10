@@ -53,6 +53,7 @@ test("accepts and preserves project ledger records under admin", async () => {
           secondaryOrders: [{ id: "o1", code: "280680.SH", shortName: "25联投17", side: "offer", quantityWan: 2000 }],
           secondaryTrades: [{ id: "f1", code: "280680.SH", shortName: "25联投17", side: "sell", quantityWan: 1000 }],
           ftpCurve: { y1: 1.5 },
+          reminderState: { dailyMailSentDates: ["2026-07-10"] },
         },
       }),
     }),
@@ -65,6 +66,7 @@ test("accepts and preserves project ledger records under admin", async () => {
   assert.equal(saved.secondaryOrders[0].side, "offer");
   assert.equal(saved.secondaryTrades[0].quantityWan, 1000);
   assert.equal(saved.ftpCurve.y1, 1.5);
+  assert.deepEqual(saved.reminderState.dailyMailSentDates, ["2026-07-10"]);
 });
 
 test("reads migrated legacy state with gateway auth", async () => {

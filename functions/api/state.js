@@ -85,6 +85,7 @@ function validateState(data) {
     secondaryOrders: data.secondaryOrders || [],
     secondaryTrades: data.secondaryTrades || [],
     ftpCurve: data.ftpCurve || {},
+    reminderState: data.reminderState && typeof data.reminderState === "object" ? data.reminderState : {},
     updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : null,
   };
 }

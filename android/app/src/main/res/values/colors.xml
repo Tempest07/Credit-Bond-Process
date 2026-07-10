@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tempest_navy">#10182f</color>
+    <color name="tempest_panel">#f6f7fb</color>
+    <color name="tempest_accent">#4f46e5</color>
+</resources>

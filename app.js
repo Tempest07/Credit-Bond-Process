@@ -214,6 +214,7 @@ initialize();
 async function initialize() {
   bindPlaceholderSelection();
   bindNavigation();
+  bindRouteHashNavigation();
   bindProjectScreenshotTool();
   bindGenerator();
   bindLedger();
@@ -235,21 +236,36 @@ async function initialize() {
   renderFtpCurveForm();
   clearIssuerForm();
   updateAuthUi();
+  applyRouteFromHash();
   await loadCloudState();
 }
 
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => switchView(button.dataset.viewTarget));
+    button.addEventListener("click", () => switchView(button.dataset.viewTarget, { updateHash: true }));
   });
 }
 
-function switchView(viewName) {
+function bindRouteHashNavigation() {
+  window.addEventListener("hashchange", applyRouteFromHash);
+}
+
+function applyRouteFromHash() {
+  const viewName = String(window.location.hash || "").replace(/^#\/?/, "").split(/[?&]/)[0];
+  if (!viewName) return;
+  if (!$(`.view[data-view="${viewName}"]`)) return;
+  switchView(viewName, { updateHash: false });
+}
+
+function switchView(viewName, options = {}) {
   const button = $(`.nav-item[data-view-target="${viewName}"]`);
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   if (button) $("#pageTitle").textContent = button.textContent;
   if (viewName === "reminders") renderUnifiedReminders();
+  if (options.updateHash && window.location.hash !== `#${viewName}`) {
+    history.replaceState(null, "", `#${viewName}`);
+  }
 }
 
 function bindProjectScreenshotTool() {
@@ -2975,6 +2991,7 @@ function renderUnifiedReminders() {
     : "今日无待处理事项";
   $("#reminderFocusCard").className = `reminder-focus-card ${focusReminder?.severity || "empty"}`;
   panel.classList.toggle("empty-state", !reminders.length);
+  syncAndroidReminders(reminders);
   $("#unifiedReminderList").innerHTML = reminders.length
     ? reminders.map(renderUnifiedReminderItem).join("")
     : '<div class="payment-todo-empty">目前没有需要处理的统一待办。</div>';
@@ -2999,6 +3016,34 @@ function renderUnifiedReminderItem(item) {
       </div>
     </article>
   `;
+}
+
+function syncAndroidReminders(reminders) {
+  const bridge = window.Tempest07Android;
+  if (!bridge || typeof bridge.syncReminders !== "function") return;
+  try {
+    bridge.syncReminders(JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      reminders: reminders.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        sourceType: item.sourceType,
+        sourceId: item.sourceId,
+        moduleLabel: item.moduleLabel,
+        subject: item.subject,
+        title: item.title,
+        detail: item.detail,
+        severity: item.severity,
+        timing: item.timing,
+        pushPolicy: item.pushPolicy,
+        dueAt: item.dueAt,
+        actionLabel: item.actionLabel,
+        route: item.route,
+      })),
+    }));
+  } catch {
+    // Android bridge is best-effort; normal browsers should continue silently.
+  }
 }
 
 function reminderSeverityLabel(severity) {
@@ -6669,6 +6714,7 @@ async function loadCloudState() {
   renderProjectWorkspace();
   renderProtocolTransferWorkspace();
   renderSecondaryInventoryWorkspace();
+  renderUnifiedReminders();
   if (batchItems.length) renderBatchResults();
 }
 

@@ -13,6 +13,7 @@ export const EMPTY_APP_STATE = {
   secondaryOrders: [],
   secondaryTrades: [],
   ftpCurve: {},
+  reminderState: {},
   updatedAt: null,
 };
 

@@ -37,3 +37,12 @@ test("ships the protocol transfer ledger xlsx template", async () => {
   assert.equal(workbook[0], 0x50);
   assert.equal(workbook[1], 0x4b);
 });
+
+test("exposes unified reminders to the Android bridge", async () => {
+  const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
+
+  assert.match(app, /function syncAndroidReminders/);
+  assert.match(app, /window\.Tempest07Android/);
+  assert.match(app, /bridge\.syncReminders/);
+  assert.match(app, /syncAndroidReminders\(reminders\)/);
+});
