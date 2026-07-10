@@ -1436,6 +1436,7 @@ function issueGroupTargets(normalized, query) {
   const inputNames = uniqueStrings([query?.shortName, query?.fullName]);
   const normalizedNames = uniqueStrings([normalized?.shortName, normalized?.fullName]);
   const names = uniqueStrings([...inputNames, ...normalizedNames]);
+  const splitNames = names.flatMap((name) => splitCombinedShortNames(name));
   const inputSecurityIds = uniqueStrings([query?.securityId].map(normalizeSecurityId));
   const normalizedSecurityIds = uniqueStrings([normalized?.securityId].map(normalizeSecurityId));
   const securityIds = uniqueStrings([...inputSecurityIds, ...normalizedSecurityIds]);
@@ -1447,8 +1448,9 @@ function issueGroupTargets(normalized, query) {
     normalizedSecurityIds,
     securityIds,
     issuerTargets: uniqueStrings([normalized?.issuerName, normalized?.fullName]),
-    families: uniqueStrings(names.flatMap((name) => splitCombinedShortNames(name).map(issueShortNameFamily))),
-    seriesKeys: uniqueStrings(names.flatMap((name) => splitCombinedShortNames(name).map(issueShortNameSeriesKey))),
+    families: uniqueStrings(splitNames.map(issueShortNameFamily)),
+    seriesKeys: uniqueStrings(splitNames.map(issueShortNameSeriesKey)),
+    seriesProfiles: splitNames.map(issueShortNameSeriesProfile).filter(Boolean),
   };
 }
 
@@ -1708,6 +1710,25 @@ function issueShortNameSeriesKey(value = "") {
   return `${match[1]}-${match[2].toUpperCase()}-${match[3].padStart(3, "0")}`;
 }
 
+function issueShortNameSeriesProfile(value = "") {
+  const names = splitCombinedShortNames(value);
+  const profile = shortNameProfile(names[0] || value);
+  if (!profile.product || !Number.isFinite(profile.serial) || !profile.alias) return null;
+  return {
+    year: profile.year,
+    alias: profile.alias,
+    product: profile.product,
+    serial: profile.serial,
+  };
+}
+
+function issueSeriesProfilesCompatible(candidate, target) {
+  if (!candidate || !target) return false;
+  if (candidate.year && target.year && candidate.year !== target.year) return false;
+  if (candidate.product !== target.product || candidate.serial !== target.serial) return false;
+  return stringSimilarity(candidate.alias, target.alias) >= 0.75;
+}
+
 function issueNameMatchesGroupTargets(name, targets) {
   return Boolean(issueNameGroupMatchType(name, targets));
 }
@@ -1715,6 +1736,10 @@ function issueNameMatchesGroupTargets(name, targets) {
 function issueNameGroupMatchType(name, targets) {
   const family = issueShortNameFamily(name);
   if (family && targets.families.includes(family)) return "family";
+  const profile = issueShortNameSeriesProfile(name);
+  if (profile && (targets.seriesProfiles || []).some((target) => issueSeriesProfilesCompatible(profile, target))) {
+    return "seriesAlias";
+  }
   const seriesKey = issueShortNameSeriesKey(name);
   return seriesKey && targets.seriesKeys.includes(seriesKey) ? "series" : "";
 }

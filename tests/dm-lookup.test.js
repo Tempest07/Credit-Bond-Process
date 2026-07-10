@@ -1129,6 +1129,92 @@ test("DM lookup ignores unrelated same-serial primary rows when resolving issuer
   }
 });
 
+test("DM lookup keeps Chinese green MTN A/B tranches away from unrelated same-serial rows", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url, init) => {
+    const request = init?.body ? JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret)) : {};
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      assert.deepEqual(request.secShortNameList, ["26越秀新能MTN001A"]);
+      data = [{
+        security_id: "102682599.IB",
+        sec_short_name: "26溧阳城投MTN001",
+        issuer_name: "溧阳市城市建设发展集团有限公司",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [
+          {
+            security_id: "102682599.IB",
+            sec_short_name: "26溧阳城投MTN001",
+            issuer_full_name: "溧阳市城市建设发展集团有限公司",
+            bond_issue_tenor: "3Y",
+            plan_issue_amount: 80000,
+            subscribe_rate: "1.400000 ~ 2.400000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682598.IB",
+            sec_short_name: "26西宁城发MTN001",
+            issuer_full_name: "西宁城市发展投资有限公司",
+            bond_issue_tenor: "2Y",
+            plan_issue_amount: 50000,
+            subscribe_rate: "2.000000 ~ 3.500000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682502.IB",
+            sec_short_name: "26越秀新能源MTN001B(绿色)",
+            sec_full_name: "广州越秀新能源投资有限公司2026年度第一期绿色中期票据品种二",
+            issuer_full_name: "广州越秀新能源投资有限公司",
+            bond_issue_tenor: "7Y",
+            plan_issue_amount: 50000,
+            subscribe_rate: "2.000000 ~ 2.600000",
+            subscribe_date: "2026-07-08",
+          },
+          {
+            security_id: "102682501.IB",
+            sec_short_name: "26越秀新能MTN001A(绿色)",
+            sec_full_name: "广州越秀新能源投资有限公司2026年度第一期绿色中期票据品种一",
+            issuer_full_name: "广州越秀新能源投资有限公司",
+            bond_issue_tenor: "5Y",
+            plan_issue_amount: 30000,
+            subscribe_rate: "1.800000 ~ 2.110000",
+            subscribe_date: "2026-07-08",
+          },
+        ],
+      };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "广州越秀新能源投资有限公司" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E8%B6%8A%E7%A7%80%E6%96%B0%E8%83%BDMTN001A", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.normalized.shortName, "26越秀新能MTN001A(绿色)");
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), [
+      "26越秀新能MTN001A(绿色)",
+      "26越秀新能源MTN001B(绿色)",
+    ]);
+    assert.ok(!payload.issueGroup.tranches.some((item) => /溧阳|西宁/.test(item.shortName)));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup does not build a cross-issuer group from a bare same serial match", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
