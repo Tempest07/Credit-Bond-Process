@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f7f9">
+  <meta name="theme-color" content="#f4f6fb">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260708-reminder-workbench">
+  <link rel="stylesheet" href="./styles.css?v=20260710-reminder-command-center">
 </head>
 <body>
   <div class="app-shell">
@@ -764,30 +764,71 @@
 
       <section class="view" data-view="reminders">
         <section class="reminder-workbench" id="unifiedReminderPanel">
-          <div class="reminder-workbench-head">
-            <div><span class="step">NOW</span><h2>待办中心</h2></div>
-            <span class="pill accent" id="unifiedReminderSummary">0 项</span>
-          </div>
-          <div class="reminder-shell">
-            <section class="reminder-board-panel">
-              <div class="panel-head compact">
-                <div><span class="step">LIST</span><h2>待处理</h2></div>
+          <header class="reminder-hero">
+            <div class="reminder-hero-orbit orbit-one" aria-hidden="true"></div>
+            <div class="reminder-hero-orbit orbit-two" aria-hidden="true"></div>
+            <div class="reminder-hero-copy">
+              <div class="reminder-live-label"><span></span> Today · Action center</div>
+              <p class="reminder-date" id="reminderDateLabel">今日工作台</p>
+              <h2>把注意力留给<br><em>最重要的下一步</em></h2>
+              <p class="reminder-hero-description">自动聚合截标、缴款、发行结果和协议转让，以业务优先级重新编排你的今日行动。</p>
+              <div class="reminder-summary-chip">
+                <span class="reminder-summary-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/></svg>
+                </span>
+                <span id="unifiedReminderSummary">0 项</span>
+                <small>待推进</small>
               </div>
-              <div class="unified-reminder-list" id="unifiedReminderList"></div>
-            </section>
-            <aside class="reminder-overview-panel">
-              <div class="reminder-focus-card" id="reminderFocusCard">
-                <span>优先处理</span>
+            </div>
+            <div class="reminder-focus-card" id="reminderFocusCard">
+              <div class="reminder-focus-head">
+                <span class="reminder-focus-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/><circle cx="12" cy="12" r="4"/></svg>
+                </span>
+                <div><span>Next action</span><small>优先处理</small></div>
+              </div>
+              <div class="reminder-focus-copy">
                 <strong id="reminderFocusTitle">暂无待办</strong>
                 <p id="reminderFocusDetail">今日无待处理事项</p>
               </div>
-              <div class="reminder-kpi-grid">
-                <article class="reminder-kpi critical"><span>紧急</span><strong id="reminderCriticalCount">0</strong></article>
-                <article class="reminder-kpi warning"><span>待确认</span><strong id="reminderWarningCount">0</strong></article>
-                <article class="reminder-kpi info"><span>日常/早报</span><strong id="reminderDailyCount">0</strong></article>
+              <div class="reminder-focus-foot"><span></span> 已按时效与业务风险自动排序</div>
+            </div>
+          </header>
+
+          <section class="reminder-kpi-grid" aria-label="待办概览">
+            <article class="reminder-kpi critical">
+              <span class="reminder-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5M12 17h.01M10.3 3.7 2.7 17a2 2 0 0 0 1.74 3h15.12a2 2 0 0 0 1.74-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg></span>
+              <div><span>紧急事项</span><small>需要立即响应</small></div>
+              <strong id="reminderCriticalCount">0</strong>
+            </article>
+            <article class="reminder-kpi warning">
+              <span class="reminder-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+              <div><span>需关注</span><small>临近时点或待确认</small></div>
+              <strong id="reminderWarningCount">0</strong>
+            </article>
+            <article class="reminder-kpi info">
+              <span class="reminder-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16M8 14h3M8 17h6"/></svg></span>
+              <div><span>日常任务</span><small>早报与常规推进</small></div>
+              <strong id="reminderDailyCount">0</strong>
+            </article>
+          </section>
+
+          <section class="reminder-board-panel">
+            <div class="reminder-board-head">
+              <div>
+                <span class="reminder-section-label">Action queue</span>
+                <h2>行动队列 <small id="reminderQueueCount">0 项</small></h2>
+                <p>清晰掌握每项任务的时效、风险与下一步动作。</p>
               </div>
-            </aside>
-          </div>
+              <div class="reminder-filter-tabs" id="reminderFilters" role="group" aria-label="筛选待办">
+                <button class="reminder-filter active" type="button" data-reminder-filter="all" aria-pressed="true">全部</button>
+                <button class="reminder-filter" type="button" data-reminder-filter="critical" aria-pressed="false"><span class="filter-dot critical"></span>紧急</button>
+                <button class="reminder-filter" type="button" data-reminder-filter="warning" aria-pressed="false"><span class="filter-dot warning"></span>需关注</button>
+                <button class="reminder-filter" type="button" data-reminder-filter="info" aria-pressed="false"><span class="filter-dot info"></span>日常</button>
+              </div>
+            </div>
+            <div class="unified-reminder-list" id="unifiedReminderList" aria-live="polite"></div>
+          </section>
         </section>
       </section>
 
@@ -816,6 +857,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260708-reminder-workbench"></script>
+  <script type="module" src="./app.js?v=20260710-reminder-command-center"></script>
 </body>
 </html>

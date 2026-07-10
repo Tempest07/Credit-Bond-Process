@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260708-reminder-workbench";
+import { parseUnderwriterNames } from "./core.js?v=20260710-reminder-command-center";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

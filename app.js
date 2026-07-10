@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260708-reminder-workbench";
+} from "./core.js?v=20260710-reminder-command-center";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260708-reminder-workbench";
+} from "./lifecycle.js?v=20260710-reminder-command-center";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260708-reminder-workbench";
+} from "./history-parser.js?v=20260710-reminder-command-center";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260708-reminder-workbench";
+} from "./protocol-transfer.js?v=20260710-reminder-command-center";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260708-reminder-workbench";
+} from "./reminders.js?v=20260710-reminder-command-center";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260708-reminder-workbench";
+} from "./secondary-inventory.js?v=20260710-reminder-command-center";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -174,6 +174,7 @@ let selectedProjectId = "";
 let selectedProtocolTransferId = "";
 let protocolTransferEditMode = false;
 let ledgerFilter = "all";
+let reminderFilter = "all";
 let projectAutoSaveTimer = null;
 let projectRecognitionMarks = {};
 let resultRecognitionMarks = {};
@@ -218,6 +219,7 @@ async function initialize() {
   bindProjectScreenshotTool();
   bindGenerator();
   bindLedger();
+  bindReminders();
   bindProtocolTransfer();
   bindSecondaryInventory();
   bindQuickIssuer();
@@ -243,6 +245,18 @@ async function initialize() {
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchView(button.dataset.viewTarget, { updateHash: true }));
+  });
+}
+
+function bindReminders() {
+  $("#unifiedReminderList")?.addEventListener("click", handleUnifiedReminderClick);
+  $("#reminderFilters")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-reminder-filter]");
+    if (!button) return;
+    const filter = button.dataset.reminderFilter;
+    if (!["all", "critical", "warning", "info"].includes(filter)) return;
+    reminderFilter = filter;
+    renderUnifiedReminders();
   });
 }
 
@@ -1376,7 +1390,6 @@ function bindLedger() {
   $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#collapseMailOutputButton").addEventListener("click", hideMailOutput);
-  $("#unifiedReminderList").addEventListener("click", handleUnifiedReminderClick);
   $("#newProjectButton").addEventListener("click", () => {
     resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
     switchView("generator");
@@ -3016,15 +3029,20 @@ function renderDashboard() {
 function renderUnifiedReminders() {
   const panel = $("#unifiedReminderPanel");
   if (!panel) return;
-  const reminders = buildUnifiedReminders(state, new Date());
+  const referenceDate = new Date();
+  const reminders = buildUnifiedReminders(state, referenceDate);
+  const visibleReminders = reminderFilter === "all"
+    ? reminders
+    : reminders.filter((item) => item.severity === reminderFilter);
   const urgentCount = reminders.filter((item) => item.severity === "critical").length;
   const warningCount = reminders.filter((item) => item.severity === "warning").length;
   const dailyCount = reminders.filter((item) => item.pushPolicy === "daily").length;
   const focusReminder = reminders[0] || null;
+  $("#reminderDateLabel").textContent = formatReminderDateLabel(referenceDate);
   $("#unifiedReminderSummary").textContent = [
     `${reminders.length} 项`,
     urgentCount ? `${urgentCount} 急` : "",
-    warningCount ? `${warningCount} 待确认` : "",
+    warningCount ? `${warningCount} 需关注` : "",
   ].filter(Boolean).join(" · ");
   $("#reminderCriticalCount").textContent = urgentCount;
   $("#reminderWarningCount").textContent = warningCount;
@@ -3035,31 +3053,102 @@ function renderUnifiedReminders() {
     : "今日无待处理事项";
   $("#reminderFocusCard").className = `reminder-focus-card ${focusReminder?.severity || "empty"}`;
   panel.classList.toggle("empty-state", !reminders.length);
+  $("#reminderQueueCount").textContent = reminderFilter === "all"
+    ? `${reminders.length} 项`
+    : `${visibleReminders.length} / ${reminders.length} 项`;
+  $$("[data-reminder-filter]").forEach((button) => {
+    const active = button.dataset.reminderFilter === reminderFilter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
   syncAndroidReminders(reminders);
-  $("#unifiedReminderList").innerHTML = reminders.length
-    ? reminders.map(renderUnifiedReminderItem).join("")
-    : '<div class="payment-todo-empty">目前没有需要处理的统一待办。</div>';
+  $("#unifiedReminderList").innerHTML = visibleReminders.length
+    ? visibleReminders.map(renderUnifiedReminderItem).join("")
+    : renderReminderEmptyState(Boolean(reminders.length));
 }
 
 function renderUnifiedReminderItem(item) {
-  const meta = [reminderSeverityLabel(item.severity), reminderPolicyLabel(item.pushPolicy), item.dueAt ? item.dueAt.replace("T", " ") : ""]
-    .filter(Boolean)
-    .join(" · ");
   const subject = item.subject || item.detail || item.title || "待办事项";
-  const task = [item.moduleLabel, item.title].filter(Boolean).join(" · ");
+  const task = item.moduleLabel || "待办";
+  const detail = [item.title, item.detail].filter(Boolean).join(" · ");
+  const severity = item.severity || "info";
+  const policy = [reminderSeverityLabel(severity), reminderPolicyLabel(item.pushPolicy)].filter(Boolean).join(" · ");
   return `
-    <article class="unified-reminder-item ${escapeAttribute(item.severity || "info")}">
-      <button class="unified-reminder-main" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">
-        <span class="unified-reminder-task">${escapeHtml(task || "待办")}</span>
-        <strong>${escapeHtml(subject)}</strong>
-        <span class="unified-reminder-detail">${escapeHtml(item.detail || "")}</span>
+    <article class="unified-reminder-item ${escapeAttribute(severity)}" data-reminder-severity="${escapeAttribute(severity)}">
+      <button class="unified-reminder-main" type="button" aria-label="打开 ${escapeAttribute(subject)}" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">
+        <span class="reminder-item-icon" aria-hidden="true">${renderReminderIcon(item.kind)}</span>
+        <span class="reminder-item-copy">
+          <span class="reminder-item-kicker">
+            <span class="unified-reminder-task">${escapeHtml(task)}</span>
+            ${policy ? `<span class="reminder-policy-chip">${escapeHtml(policy)}</span>` : ""}
+          </span>
+          <strong>${escapeHtml(subject)}</strong>
+          <span class="unified-reminder-detail">${escapeHtml(detail)}</span>
+        </span>
       </button>
       <div class="unified-reminder-side">
-        <span class="unified-reminder-meta">${escapeHtml(meta)}</span>
-        <button class="button subtle unified-reminder-action" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">${escapeHtml(item.actionLabel || "打开")}</button>
+        <span class="unified-reminder-meta">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          ${escapeHtml(formatReminderDueLabel(item.dueAt))}
+        </span>
+        <button class="button subtle unified-reminder-action" type="button" data-reminder-source="${escapeAttribute(item.sourceType)}" data-reminder-target="${escapeAttribute(item.sourceId || "")}" data-reminder-kind="${escapeAttribute(item.kind || "")}">
+          ${escapeHtml(item.actionLabel || "打开")}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
       </div>
     </article>
   `;
+}
+
+function renderReminderIcon(kind = "") {
+  if (kind === "flow-mail") {
+    return '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>';
+  }
+  if (kind === "project-payment") {
+    return '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>';
+  }
+  if (kind === "project-result") {
+    return '<svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 15l4-4 3 2 5-6"/><path d="M16 7h3v3"/></svg>';
+  }
+  if (String(kind).startsWith("protocol-")) {
+    return '<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5M10 13h5M10 17h5"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+}
+
+function renderReminderEmptyState(filtered = false) {
+  return `
+    <div class="reminder-empty-state">
+      <div>
+        <span class="reminder-empty-state-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+        </span>
+        <strong>${filtered ? "此分类下暂无任务" : "今日事项已全部清空"}</strong>
+        <p>${filtered ? "切换其他筛选，查看剩余行动。" : "新的业务提醒出现后，会自动进入行动队列。"}</p>
+      </div>
+    </div>
+  `;
+}
+
+function formatReminderDateLabel(value) {
+  const date = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric" }).format(value);
+  const weekday = new Intl.DateTimeFormat("zh-CN", { weekday: "long" }).format(value);
+  return `${date} · ${weekday} · 工作台已就绪`;
+}
+
+function formatReminderDueLabel(value) {
+  if (!value) return "持续跟进";
+  const raw = String(value);
+  const date = raw.slice(0, 10);
+  const time = raw.includes("T") ? raw.slice(11, 16) : "";
+  const today = localDate(new Date());
+  const tomorrowValue = new Date();
+  tomorrowValue.setDate(tomorrowValue.getDate() + 1);
+  const suffix = time ? ` ${time}` : "";
+  if (date === today) return `今天${suffix}`;
+  if (date === localDate(tomorrowValue)) return `明天${suffix}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日${suffix}`;
+  return raw.replace("T", " ");
 }
 
 function syncAndroidReminders(reminders) {
@@ -3092,7 +3181,7 @@ function syncAndroidReminders(reminders) {
 
 function reminderSeverityLabel(severity) {
   if (severity === "critical") return "紧急";
-  if (severity === "warning") return "待确认";
+  if (severity === "warning") return "需关注";
   return "日常";
 }
 
