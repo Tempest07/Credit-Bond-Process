@@ -251,10 +251,54 @@ function bindRouteHashNavigation() {
 }
 
 function applyRouteFromHash() {
-  const viewName = String(window.location.hash || "").replace(/^#\/?/, "").split(/[?&]/)[0];
-  if (!viewName) return;
-  if (!$(`.view[data-view="${viewName}"]`)) return;
-  switchView(viewName, { updateHash: false });
+  const route = parseRouteFromHash();
+  if (!route?.view) return;
+  if (!$(`.view[data-view="${route.view}"]`)) return;
+  applyRouteSelection(route);
+  switchView(route.view, { updateHash: false });
+  applyRouteFocus(route);
+}
+
+function parseRouteFromHash() {
+  const raw = String(window.location.hash || "").replace(/^#\/?/, "");
+  if (!raw) return null;
+  const [viewPart, queryPart = ""] = raw.split("?");
+  const view = decodeURIComponent(viewPart || "").split(/[&]/)[0];
+  const params = new URLSearchParams(queryPart);
+  return {
+    view,
+    target: params.get("target") || "",
+    step: params.get("step") || "",
+    trancheId: params.get("trancheId") || "",
+    kind: params.get("kind") || "",
+  };
+}
+
+function applyRouteSelection(route = {}) {
+  if (route.view === "ledger" && route.target && route.target !== "mail") {
+    selectedProjectId = route.target;
+  }
+  if (route.view === "protocol-transfer" && route.target) {
+    selectedProtocolTransferId = route.target;
+    protocolTransferEditMode = true;
+  }
+}
+
+function applyRouteFocus(route = {}) {
+  if (route.view === "ledger") {
+    renderProjectWorkspace();
+    if (route.target === "mail") {
+      $("#mailPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (route.target) {
+      if (route.step === "result" || route.kind === "project-result") openResultEntryPanel(false);
+      $("#projectForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    return;
+  }
+  if (route.view === "protocol-transfer") {
+    renderProtocolTransferWorkspace();
+    $("#protocolTransferForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function switchView(viewName, options = {}) {

@@ -45,14 +45,18 @@ test("exposes unified reminders to the Android bridge", async () => {
   assert.match(app, /window\.Tempest07Android/);
   assert.match(app, /bridge\.syncReminders/);
   assert.match(app, /syncAndroidReminders\(reminders\)/);
+  assert.match(app, /function parseRouteFromHash/);
+  assert.match(app, /params\.get\("target"\)/);
+  assert.match(app, /route\.kind === "project-result"/);
 });
 
 test("ships Android shell and debug APK workflow", async () => {
-  const [manifest, buildGradle, mainActivity, receiver, syncReceiver, reminderApi, workflow, readme] = await Promise.all([
+  const [manifest, buildGradle, mainActivity, receiver, reminderSync, syncReceiver, reminderApi, workflow, readme] = await Promise.all([
     readFile(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8"),
     readFile(new URL("../android/app/build.gradle", import.meta.url), "utf8"),
     readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/MainActivity.java", import.meta.url), "utf8"),
     readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/ReminderReceiver.java", import.meta.url), "utf8"),
+    readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/ReminderSync.java", import.meta.url), "utf8"),
     readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/ReminderSyncReceiver.java", import.meta.url), "utf8"),
     readFile(new URL("../functions/api/reminders.js", import.meta.url), "utf8"),
     readFile(new URL("../.github/workflows/android-debug.yml", import.meta.url), "utf8"),
@@ -66,9 +70,12 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(mainActivity, /addJavascriptInterface\(new AndroidBridge\(\), "Tempest07Android"\)/);
   assert.match(mainActivity, /ReminderSyncReceiver\.schedulePeriodicSync\(this\)/);
   assert.match(receiver, /CHANNEL_ID = "bond-centre-reminders"/);
+  assert.match(reminderSync, /routeUrl\(item\)/);
+  assert.match(reminderSync, /appendQueryParam\(builder, "kind"/);
   assert.match(syncReceiver, /https:\/\/tempest07\.com\/api\/reminders/);
   assert.match(syncReceiver, /CookieManager\.getInstance\(\)\.getCookie/);
   assert.match(reminderApi, /buildUnifiedReminders/);
+  assert.match(readme, /background sync/);
   assert.match(workflow, /Android Debug APK/);
   assert.match(workflow, /gradle -p android :app:assembleDebug --no-daemon/);
   assert.match(workflow, /actions\/upload-artifact@v4/);

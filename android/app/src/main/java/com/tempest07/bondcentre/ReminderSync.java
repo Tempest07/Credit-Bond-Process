@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.net.URLEncoder;
 
 final class ReminderSync {
     private static final String PREFS = "tempest07-bond-centre";
@@ -37,7 +38,7 @@ final class ReminderSync {
                 if (reminder.id.isEmpty()) continue;
                 activeIds.add(reminder.id);
                 if (reminder.shouldNotifyNow() && markNotified(preferences, reminder)) {
-                    ReminderReceiver.showNotification(context, reminder.notificationTitle(), reminder.notificationText(), MainActivity.BASE_URL + "#reminders", reminder.id);
+                    ReminderReceiver.showNotification(context, reminder.notificationTitle(), reminder.notificationText(), reminder.openUrl, reminder.id);
                 }
                 scheduleReminder(context, reminder);
             }
@@ -61,7 +62,7 @@ final class ReminderSync {
         Intent intent = new Intent(context, ReminderReceiver.class);
         intent.putExtra("title", reminder.notificationTitle());
         intent.putExtra("text", reminder.notificationText());
-        intent.putExtra("url", MainActivity.BASE_URL + "#reminders");
+        intent.putExtra("url", reminder.openUrl);
         intent.putExtra("reminderId", reminder.id);
         PendingIntent pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -86,8 +87,9 @@ final class ReminderSync {
         final String timing;
         final String pushPolicy;
         final String dueAt;
+        final String openUrl;
 
-        Reminder(String id, String kind, String moduleLabel, String subject, String title, String detail, String severity, String timing, String pushPolicy, String dueAt) {
+        Reminder(String id, String kind, String moduleLabel, String subject, String title, String detail, String severity, String timing, String pushPolicy, String dueAt, String openUrl) {
             this.id = id;
             this.kind = kind;
             this.moduleLabel = moduleLabel;
@@ -98,6 +100,7 @@ final class ReminderSync {
             this.timing = timing;
             this.pushPolicy = pushPolicy;
             this.dueAt = dueAt;
+            this.openUrl = openUrl;
         }
 
         static Reminder fromJson(JSONObject item) {
@@ -111,7 +114,8 @@ final class ReminderSync {
                 item.optString("severity", ""),
                 item.optString("timing", ""),
                 item.optString("pushPolicy", ""),
-                item.optString("dueAt", "")
+                item.optString("dueAt", ""),
+                routeUrl(item)
             );
         }
 
@@ -175,6 +179,37 @@ final class ReminderSync {
                 builder.append(value.trim());
             }
             return builder.toString();
+        }
+
+        private static String routeUrl(JSONObject item) {
+            JSONObject route = item.optJSONObject("route");
+            if (route == null) return MainActivity.BASE_URL + "#reminders";
+            String view = route.optString("view", "reminders").trim();
+            if (view.isEmpty()) view = "reminders";
+            StringBuilder builder = new StringBuilder(MainActivity.BASE_URL)
+                .append("#")
+                .append(encode(view));
+            appendQueryParam(builder, "target", route.optString("target", ""));
+            appendQueryParam(builder, "step", route.optString("step", ""));
+            appendQueryParam(builder, "trancheId", route.optString("trancheId", ""));
+            appendQueryParam(builder, "kind", item.optString("kind", ""));
+            return builder.toString();
+        }
+
+        private static void appendQueryParam(StringBuilder builder, String key, String value) {
+            if (value == null || value.trim().isEmpty()) return;
+            builder.append(builder.indexOf("?") >= 0 ? "&" : "?")
+                .append(encode(key))
+                .append("=")
+                .append(encode(value.trim()));
+        }
+
+        private static String encode(String value) {
+            try {
+                return URLEncoder.encode(String.valueOf(value), "UTF-8");
+            } catch (Exception error) {
+                return String.valueOf(value);
+            }
         }
     }
 }

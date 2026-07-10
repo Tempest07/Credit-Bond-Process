@@ -11,6 +11,7 @@ First Android shell for the Tempest07 Bond Centre workbench.
 - Receives the web app's unified reminders through `Tempest07Android.syncReminders(...)`.
 - Posts local Android notifications for immediate reminders and schedules simple local alarms for dated reminders.
 - Periodically fetches `https://tempest07.com/api/reminders` with the saved Gateway session cookie so reminders can refresh after login even when the workbench page is not currently open.
+- Opens reminder notifications back into the relevant workbench module, such as the project ledger or protocol transfer record.
 
 ## Build
 
