@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-ledger-command-deck";
+import { parseUnderwriterNames } from "./core.js?v=20260713-ledger-separated-actions";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-ledger-command-deck";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-ledger-separated-actions";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
