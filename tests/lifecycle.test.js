@@ -26,6 +26,7 @@ test("creates a project ledger record with one tranche per bond variety", () => 
     durationParts: ["3年", "5年"],
     inquiryRanges: [{ low: 1.3, high: 2.3 }, { low: 1.5, high: 2.5 }],
     issueScale: 20,
+    valuations: [1.64, 1.82],
     guidancePrices: [1.7, 1.91],
     suggestedRatios: [20, 15],
     branch: "广州分行",
@@ -42,8 +43,26 @@ test("creates a project ledger record with one tranche per bond variety", () => 
   assert.deepEqual(record.tranches.map((item) => item.shortName), ["26广越05", "26广越06"]);
   assert.deepEqual(record.tranches.map((item) => item.durationText), ["3年", "5年"]);
   assert.deepEqual(record.tranches.map((item) => item.suggestedRatio), [20, 15]);
+  assert.deepEqual(record.tranches.map((item) => item.marketValuation), [1.64, 1.82]);
   assert.deepEqual(record.tranches.map((item) => item.pricingMode), ["综合定价", "综合定价"]);
   assert.deepEqual(record.tranches.map((item) => item.pricingRate), [1.7, 1.91]);
+});
+
+test("keeps blank second-tranche valuation and pricing independent from the first tranche", () => {
+  const record = createProjectRecord({
+    shortName: "26广州产投MTN003A/B",
+    shortNames: ["26广州产投MTN003A", "26广州产投MTN003B"],
+    durationParts: ["3Y", "5Y"],
+    inquiryRanges: [{ low: 1.4, high: 2.4 }, { low: 1.6, high: 2.6 }],
+    tranchePricing: [
+      { shortName: "26广州产投MTN003A", durationText: "3Y", marketValuation: 1.64, guidancePrice: 1.66 },
+      { shortName: "26广州产投MTN003B", durationText: "5Y", marketValuation: null, guidancePrice: null },
+    ],
+  }, null, { opinion: "流程意见" });
+
+  assert.deepEqual(record.tranches.map((item) => item.marketValuation), [1.64, null]);
+  assert.deepEqual(record.tranches.map((item) => item.pricingRate), [1.66, null]);
+  assert.deepEqual(record.tranches.map((item) => item.pricingMode), ["综合定价", "未综"]);
 });
 
 test("preserves rating fields on project ledger records", () => {

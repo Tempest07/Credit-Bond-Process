@@ -421,6 +421,21 @@ test("parses and generates interbank dual-tranche mutual-allocation projects", (
   assert.match(generated.opinion, /预计利率区间为2年期1.4%-1.9%\/5年期1.5%-2%/);
   assert.match(generated.opinion, /拟申请投资金额合计不超过3.6亿元/);
   assert.match(generated.opinion, /2年期一级投标利率不低于1.65%、5年期一级投标利率不低于1.83%/);
+
+  const missingSecondValuation = generateOpinion({
+    ...project,
+    valuations: [1.65, null],
+    tranchePricing: [
+      { shortName: "26越秀交通MTN003A", durationText: "2年", marketValuation: 1.65 },
+      { shortName: "26越秀交通MTN003B", durationText: "5年", marketValuation: null },
+    ],
+  }, {
+    ...issuer,
+    legalName: "广州越秀集团股份有限公司",
+    credit: { ...issuer.credit, approvedRatio: 30, investmentTermDays: 1825, rawText: "总行批40亿，公募，30%，5年" },
+  });
+  assert.match(missingSecondValuation.opinion, /2年期一级投标利率不低于1.65%、5年期一级投标利率不低于【待填写】%/);
+  assert.doesNotMatch(missingSecondValuation.opinion, /5年期一级投标利率不低于1.65%/);
 });
 
 test("strips DM variety suffix from dual-tranche project full names", () => {

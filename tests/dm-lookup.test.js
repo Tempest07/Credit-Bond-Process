@@ -260,7 +260,7 @@ test("DM lookup prefers callable tenor from basic bond fields over final issue t
     const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
     let data;
     if (url.includes("/bond/basic-info/info")) {
-      assert.deepEqual(request.secShortNameList, ["26含权MTN001"]);
+      assert.deepEqual(request.secShortNameList, ["26含权MTN001", "26含权MTN001A", "26含权MTN001B"]);
       data = [{
         security_id: "102681234.IB",
         sec_short_name: "26含权MTN001",
@@ -296,7 +296,7 @@ test("DM lookup prefers callable tenor from basic bond fields over final issue t
         headers: { Authorization: "Bearer pw" },
       }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, await response.clone().text());
     const payload = await response.json();
     assert.equal(payload.ok, true);
     assert.equal(payload.normalized.durationText, "3+2Y");
@@ -1190,6 +1190,69 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
   }
 });
 
+test("DM lookup expands a base MTN short name and discovers equal A/B tranches", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      assert.deepEqual(request.secShortNameList, [
+        "26广州产投MTN003",
+        "26广州产投MTN003A",
+        "26广州产投MTN003B",
+      ]);
+      data = [
+        {
+          security_id: "102682631.IB",
+          sec_short_name: "26广州产投MTN003A",
+          issuer_name: "广州产业投资控股集团有限公司",
+          bond_matu: "3Y",
+          subject_rating: "AAA",
+          rating_agency: "中诚信国际",
+          implied_rating: "AAA",
+        },
+        {
+          security_id: "102682632.IB",
+          sec_short_name: "26广州产投MTN003B",
+          issuer_name: "广州产业投资控股集团有限公司",
+          bond_matu: "5Y",
+          subject_rating: "AAA",
+          rating_agency: "中诚信国际",
+          implied_rating: "AAA",
+        },
+      ];
+    } else if (url.includes("/bond/primary/data")) {
+      data = { list: [] };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "广州产业投资控股集团有限公司" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%B9%BF%E5%B7%9E%E4%BA%A7%E6%8A%95MTN003", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), [
+      "26广州产投MTN003A",
+      "26广州产投MTN003B",
+    ]);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.tenor), ["3Y", "5Y"]);
+    assert.equal(payload.issueGroup.tranches.every((item) => item.status !== "reallocated"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup groups green MTN A/B tranches with issuer alias short-name variants", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
@@ -1243,7 +1306,7 @@ test("DM lookup groups green MTN A/B tranches with issuer alias short-name varia
         headers: { Authorization: "Bearer pw" },
       }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, await response.clone().text());
     const payload = await response.json();
     assert.equal(payload.issueGroup.source, "dm");
     assert.equal(payload.issueGroup.tranches.length, 2);

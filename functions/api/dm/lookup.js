@@ -73,7 +73,7 @@ export async function onRequestGet(context) {
     const d1State = await readD1AppState(context.env.DB, auth.user.id);
     const issuerRatingFallback = lookupIssuerRatingFallback(d1State, dmEnrichedNormalized);
     const enrichedNormalized = applyIssuerRatingFallback(dmEnrichedNormalized, issuerRatingFallback);
-    const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId, fullName }, primary);
+    const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId, fullName }, primary, basic);
     if (!dmMatched && !issuerRatingFallback && !issueGroup) {
       return json(dmNoResultPayload({ shortName, securityId, fullName, basic, primary }));
     }
@@ -119,10 +119,18 @@ async function lookupBasicInfo(dm, { shortName, securityId, fullName }) {
   if (!shortName && !securityId) return { raw: null, rows: [] };
   const payload = securityId
     ? { securityIdList: [securityId] }
-    : { secShortNameList: [shortName] };
+    : { secShortNameList: basicShortNameCandidates(shortName) };
   const raw = await dm.post(BASIC_INFO_PATH, payload);
   const rows = rowsFromDm(raw);
   return { raw, rows: rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId, fullName })) };
+}
+
+function basicShortNameCandidates(shortName = "") {
+  const value = String(shortName || "").trim();
+  const label = value.match(/(\([^()]*\)|（[^（）]*）)$/)?.[1] || "";
+  const core = label ? value.slice(0, -label.length) : value;
+  if (!/^(?:.*)(?:MTN|PPN|PRN)\d{3}$/i.test(core)) return [value];
+  return [value, `${core}A${label}`, `${core}B${label}`];
 }
 
 async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, absHintText, startDate, endDate }) {
@@ -1154,8 +1162,8 @@ function applyIssuerRatingFallback(normalized, issuer) {
   return next;
 }
 
-function lookupIssueGroup(data, normalized, query, primary) {
-  const dmGroup = buildIssueGroupFromDmRows(normalized, query, primary);
+function lookupIssueGroup(data, normalized, query, primary, basic) {
+  const dmGroup = buildIssueGroupFromDmRows(normalized, query, primary, basic);
   let dbGroup = null;
   if (data) {
     const projects = Array.isArray(data?.projects) ? data.projects : [];
@@ -1239,8 +1247,11 @@ function issueGroupFromProject(project, entries, targets, score) {
   };
 }
 
-function buildIssueGroupFromDmRows(normalized, query, primary) {
-  const rows = rowsFromDm(primary?.raw);
+function buildIssueGroupFromDmRows(normalized, query, primary, basic) {
+  const rows = uniqueRowsByKey([
+    ...rowsFromDm(primary?.raw),
+    ...rowsFromDm(basic?.raw),
+  ]);
   if (!rows.length) return null;
   if (normalized?.isAbs || normalized?.absInfo) {
     const absGroup = buildAbsIssueGroupFromDmRows(normalized, query, rows);
@@ -1825,6 +1836,16 @@ function primaryRowDedupKey(row = {}) {
     normalizeLookupName(pickFirstString(row, ["sec_short_name", "secShortName"])),
     normalizeFullNameForLookup(pickFirstString(row, ["sec_full_name", "secFullName", "bond_full_name", "bondFullName"])),
   ].filter(Boolean).join("|") || JSON.stringify(row);
+}
+
+function uniqueRowsByKey(rows = []) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = primaryRowDedupKey(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function rowMatchesSecurityId(row, securityId) {

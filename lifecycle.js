@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-valuation-accuracy";
+import { parseUnderwriterNames } from "./core.js?v=20260713-dual-tranche-pricing";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -140,14 +140,13 @@ export function removeProject(state, id) {
 
 export function applyGuidancePricing(project, guidancePrices = []) {
   const prices = (Array.isArray(guidancePrices) ? guidancePrices : [guidancePrices])
-    .map(numberOrNull)
-    .filter(Number.isFinite);
-  if (!prices.length) return project;
+    .map(numberOrNull);
+  if (!prices.some(Number.isFinite)) return project;
 
   const normalized = normalizeProjectRecord(project);
   let changed = false;
   const tranches = normalized.tranches.map((tranche, index) => {
-    const pricingRate = numberOrNull(prices[index] ?? prices[0]);
+    const pricingRate = numberOrNull(prices[index]);
     if (!Number.isFinite(pricingRate) || Number.isFinite(numberOrNull(tranche.pricingRate))) return tranche;
     changed = true;
     return {
@@ -494,18 +493,29 @@ function buildTranches(project) {
   const ranges = project.inquiryRanges?.length
     ? project.inquiryRanges
     : [{ low: project.inquiryLow, high: project.inquiryHigh }];
-  const guidancePrices = project.guidancePrices?.length
+  const pricingRows = Array.isArray(project.tranchePricing) ? project.tranchePricing : [];
+  const valuations = Array.isArray(project.valuations) && project.valuations.length
+    ? project.valuations
+    : [project.valuation];
+  const guidancePrices = Array.isArray(project.guidancePrices) && project.guidancePrices.length
     ? project.guidancePrices
-    : [project.guidancePrice].filter((value) => Number.isFinite(numberOrNull(value)));
-  const count = Math.max(names.length, durations.length, ranges.length, 1);
+    : [project.guidancePrice];
+  const count = Math.max(names.length, durations.length, ranges.length, pricingRows.length, valuations.length, guidancePrices.length, 1);
   return Array.from({ length: count }, (_, index) => {
-    const pricingRate = numberOrNull(guidancePrices[index] ?? guidancePrices[0]);
+    const pricingRow = pricingRows[index] || {};
+    const marketValuation = Object.prototype.hasOwnProperty.call(pricingRow, "marketValuation")
+      ? numberOrNull(pricingRow.marketValuation)
+      : numberOrNull(valuations[index]);
+    const pricingRate = Object.prototype.hasOwnProperty.call(pricingRow, "guidancePrice")
+      ? numberOrNull(pricingRow.guidancePrice)
+      : numberOrNull(guidancePrices[index]);
     return normalizeTranche({
-      shortName: names[index] || names[0] || project.shortName,
-      durationText: durations[index] || "",
+      shortName: pricingRow.shortName || names[index] || names[0] || project.shortName,
+      durationText: pricingRow.durationText || durations[index] || "",
       inquiryLow: ranges[index]?.low,
       inquiryHigh: ranges[index]?.high,
       suggestedRatio: project.suggestedRatios?.[index] ?? project.suggestedRatio,
+      marketValuation,
       pricingMode: Number.isFinite(pricingRate) ? "综合定价" : "未综",
       pricingRate,
     });
@@ -540,6 +550,7 @@ function normalizeTranche(input = {}) {
     inquiryLow: numberOrNull(input.inquiryLow),
     inquiryHigh: numberOrNull(input.inquiryHigh),
     suggestedRatio: numberOrNull(input.suggestedRatio),
+    marketValuation: numberOrNull(input.marketValuation),
     bidAction: BID_ACTIONS.has(input.bidAction) ? input.bidAction : "",
     bidLevels,
     bidRate: numberOrNull(primaryBid.bidRate),

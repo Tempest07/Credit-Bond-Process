@@ -1480,9 +1480,13 @@ function recommendationTrancheSuggestions(suggestion) {
 }
 
 function bidRateValue(project, index = 0) {
+  const pricingRow = Array.isArray(project?.tranchePricing) ? project.tranchePricing[index] : null;
+  if (pricingRow && Object.prototype.hasOwnProperty.call(pricingRow, "marketValuation")) {
+    return numberOrNull(pricingRow.marketValuation);
+  }
   const valuations = Array.isArray(project?.valuations) ? project.valuations : [];
-  const value = valuations[index] ?? project?.valuation;
-  return numberOrNull(value);
+  if (index < valuations.length) return numberOrNull(valuations[index]);
+  return index === 0 ? numberOrNull(project?.valuation) : null;
 }
 
 function formatBidRate(project, index = 0) {

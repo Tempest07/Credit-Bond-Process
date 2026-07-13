@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260713-valuation-accuracy";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260713-valuation-accuracy";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260713-dual-tranche-pricing";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260713-dual-tranche-pricing";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

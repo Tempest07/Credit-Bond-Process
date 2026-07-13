@@ -206,12 +206,12 @@ label[data-recognition-source="cloud"]::after {
 .brief-template-guide span { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .brief-template-guide small { flex-basis: 100%; color: var(--warning); }
 .project-dm-entry-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
-.project-dm-entry-form label, .project-pricing-grid label, .project-dm-history-label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.project-dm-entry-form input, .project-pricing-grid input, .project-dm-history-label select { min-height: 40px; padding: 9px 11px; font-size: 13px; }
+.project-dm-entry-form label, .project-dm-history-label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.project-dm-entry-form input, .project-dm-history-label select { min-height: 40px; padding: 9px 11px; font-size: 13px; }
 .project-dm-entry-form .button { min-height: 40px; white-space: nowrap; }
 .project-dm-toolbar { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 8px; align-items: end; margin-top: 10px; }
 .project-dm-toolbar .button { min-height: 36px; white-space: nowrap; }
-.project-pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.project-pricing-panel { margin-top: 12px; }
 .valuation-assist { display: grid; gap: 9px; margin-top: 10px; padding: 11px; border: 1px solid color-mix(in srgb, var(--secondary) 24%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, #f7fffc, #fff); }
 .valuation-assist[hidden] { display: none; }
 .valuation-assist-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
@@ -241,16 +241,22 @@ label[data-recognition-source="cloud"]::after {
 .rule-trace { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
 .trace-item { padding: 6px 8px; border-radius: 5px; color: var(--muted); background: var(--panel-soft); font-size: 10px; }
 .trace-item.active { color: var(--accent); background: var(--accent-soft); }
-.tranche-inquiry-panel { display: grid; gap: 10px; padding: 12px; border: 1px dashed color-mix(in srgb, var(--accent) 34%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, var(--panel-soft), #fff); }
-.tranche-inquiry-panel[hidden] { display: none; }
+.tranche-term-panel { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 28%, #fff), #fff); }
+.tranche-term-panel[hidden] { display: none; }
+.tranche-term-head { display: flex; align-items: center; min-height: 20px; }
+.tranche-term-head strong { color: var(--text); font-size: 13px; }
+.tranche-term-rows { display: grid; gap: 9px; min-width: 0; }
+.tranche-term-row { display: grid; grid-template-columns: minmax(160px, .85fr) repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.92); box-shadow: 0 6px 18px rgba(45,61,115,.045); }
+.project-pricing-panel .tranche-term-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.project-pricing-panel .tranche-term-identity { grid-column: 1 / -1; }
+.tranche-term-identity { display: flex; align-items: center; align-self: center; gap: 8px; min-width: 0; }
+.tranche-term-identity strong { min-width: 0; overflow: hidden; color: var(--text); font-size: 12px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.tranche-term-tenor { flex: 0 0 auto; padding: 4px 7px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line)); border-radius: 6px; color: var(--accent); background: var(--accent-soft); font-size: 11px; font-weight: 800; line-height: 1; }
+.tranche-term-row label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 700; }
+.tranche-term-row input { min-height: 40px; padding: 9px 11px; font-size: 13px; }
 .tranche-inquiry-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .tranche-inquiry-head strong { color: var(--accent); font-size: 11px; }
 .tranche-inquiry-head span { color: var(--muted); font-size: 10px; }
-.tranche-inquiry-rows { display: grid; gap: 8px; }
-.tranche-inquiry-row { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(120px, 1fr) minmax(120px, 1fr); gap: 8px; align-items: end; }
-.tranche-inquiry-row > span { align-self: center; color: var(--text); font-size: 11px; font-weight: 800; }
-.tranche-inquiry-row label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
-.tranche-inquiry-row input { min-height: 34px; padding: 6px 8px; font-size: 11px; }
 .abs-field-panel { display: grid; gap: 12px; margin-top: 12px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); border-radius: 8px; background: linear-gradient(135deg, #fff, var(--panel-soft)); }
 .abs-field-panel[hidden] { display: none; }
 .abs-tranche-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 2px; border-top: 1px solid var(--line); }
@@ -979,7 +985,7 @@ label[data-recognition-source="cloud"]::after {
   .field-grid > *,
   .project-dm-entry-form > *,
   .project-dm-toolbar > *,
-  .project-pricing-grid > *,
+  .tranche-term-row > *,
   .dm-test-form > *,
   .review-grid > *,
   .batch-issuer-grid > *,
@@ -994,13 +1000,15 @@ label[data-recognition-source="cloud"]::after {
     min-width: 0;
     max-width: 100%;
   }
-  .field-grid, .rules-grid, .secondary-summary-grid, .project-dm-entry-form, .project-dm-toolbar, .project-pricing-grid, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list, .abs-tranche-main, .abs-tranche-secondary { grid-template-columns: 1fr; }
+  .field-grid, .rules-grid, .secondary-summary-grid, .project-dm-entry-form, .project-dm-toolbar, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list, .abs-tranche-main, .abs-tranche-secondary { grid-template-columns: 1fr; }
   .abs-tranche-row-head { grid-template-columns: minmax(0, 1fr) auto; }
   .abs-invest-switch { grid-column: 1 / -1; }
   .abs-tranche-main .is-wide { grid-column: span 1; }
   .valuation-assist-head, .valuation-suggestion-main { flex-direction: column; }
   .valuation-assist-head span { text-align: left; }
-  .tranche-inquiry-row { grid-template-columns: 1fr; }
+  .tranche-term-row,
+  .project-pricing-panel .tranche-term-row { grid-template-columns: 1fr; }
+  .project-pricing-panel .tranche-term-identity { grid-column: auto; }
   .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid { grid-template-columns: 1fr; max-width: none; }
   .tranche-grid .span-3 { grid-column: span 1; }
   .ledger-command-panel { padding: 18px; border-radius: 19px; }

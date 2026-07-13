@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260713-valuation-accuracy";
+} from "./core.js?v=20260713-dual-tranche-pricing";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260713-valuation-accuracy";
+} from "./lifecycle.js?v=20260713-dual-tranche-pricing";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260713-valuation-accuracy";
+} from "./history-parser.js?v=20260713-dual-tranche-pricing";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260713-valuation-accuracy";
+} from "./protocol-transfer.js?v=20260713-dual-tranche-pricing";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260713-valuation-accuracy";
+} from "./reminders.js?v=20260713-dual-tranche-pricing";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260713-valuation-accuracy";
+} from "./secondary-inventory.js?v=20260713-dual-tranche-pricing";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -1051,13 +1051,12 @@ function bindGenerator() {
     $('[data-project-field="shortName"]').value = project.shortName;
     regenerate();
   });
-  $("#projectValuationInput").addEventListener("input", () => {
-    updateProjectPricingFromInputs();
-    regenerate();
-    scheduleProjectDmHistorySave();
-  });
-  $("#projectGuidancePriceInput").addEventListener("input", () => {
-    updateProjectPricingFromInputs();
+  $("#projectPricingRows").addEventListener("input", (event) => {
+    const input = event.target.closest("[data-pricing-index][data-pricing-field]");
+    if (!input) return;
+    updateDynamicPricingField(input);
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
     regenerate();
     scheduleProjectDmHistorySave();
   });
@@ -1099,7 +1098,9 @@ function bindGenerator() {
         project.durationDays = durationToDays(project.durationText);
         project.durationParts = durationParts(project.durationText);
         ensureInquiryRangeCapacity(project);
+        ensureProjectPricingCapacity(project);
         renderTrancheInquiryFields();
+        renderProjectPricingFields();
       }
       if (field.startsWith("inquiry")) {
         rebuildInquiryRanges(project);
@@ -1108,7 +1109,11 @@ function bindGenerator() {
       if (field === "offeringType") applyOfferingTypeChoice(project, project.offeringType, true);
       if (field === "exchangeIssueNumber") applyExchangeIssueNumberChoice(project, project.exchangeIssueNumber, true);
       if (field === "venue" || field === "instrumentType") syncProjectConditionalFields();
-      if (field === "shortName" && $("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
+      if (field === "shortName") {
+        if ($("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
+        renderTrancheInquiryFields();
+        renderProjectPricingFields();
+      }
       project.sourceText = buildDmProjectSourceText(project);
       $("#briefInput").value = project.sourceText;
       regenerate();
@@ -1442,6 +1447,7 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
               inquiryLow: tranche.inquiryLow,
               inquiryHigh: tranche.inquiryHigh,
               suggestedRatio: tranche.suggestedRatio,
+              marketValuation: tranche.marketValuation,
               issueScale: tranche.issueScale ?? existing.tranches[index].issueScale,
               securityCode: tranche.securityCode || existing.tranches[index].securityCode,
               absClassName: tranche.absClassName || existing.tranches[index].absClassName,
@@ -1556,9 +1562,11 @@ function bindLedger() {
   });
   $("#editProjectOpinionButton").addEventListener("click", () => {
     const record = readProjectForm();
+    const recordTranches = isAbsProject(record) ? [] : (record.tranches || []);
     project = {
       ...parseProjectBrief(record.sourceText),
       shortName: record.shortName,
+      shortNames: recordTranches.map((tranche) => tranche.shortName).filter(Boolean),
       branch: record.branch,
       venue: record.venue,
       leadUnderwriter: record.leadUnderwriter,
@@ -1566,6 +1574,25 @@ function bindLedger() {
       instrumentType: record.instrumentType,
       absInfo: record.absInfo,
       issueScale: record.issueScale,
+      durationText: recordTranches.length > 1
+        ? compactProjectDurations(recordTranches.map((tranche) => tranche.durationText).filter(Boolean))
+        : recordTranches[0]?.durationText || "",
+      durationParts: recordTranches.map((tranche) => tranche.durationText).filter(Boolean),
+      inquiryRanges: recordTranches.map((tranche) => ({ low: tranche.inquiryLow, high: tranche.inquiryHigh })),
+      inquiryLow: recordTranches[0]?.inquiryLow ?? null,
+      inquiryHigh: recordTranches[0]?.inquiryHigh ?? null,
+      inquiryLow2: recordTranches[1]?.inquiryLow ?? null,
+      inquiryHigh2: recordTranches[1]?.inquiryHigh ?? null,
+      valuations: recordTranches.map((tranche) => tranche.marketValuation ?? null),
+      valuation: recordTranches[0]?.marketValuation ?? null,
+      guidancePrices: recordTranches.map((tranche) => tranche.pricingRate ?? null),
+      guidancePrice: recordTranches[0]?.pricingRate ?? null,
+      tranchePricing: recordTranches.map((tranche) => ({
+        shortName: tranche.shortName,
+        durationText: tranche.durationText,
+        marketValuation: tranche.marketValuation ?? null,
+        guidancePrice: tranche.pricingRate ?? null,
+      })),
       sourceText: record.sourceText,
     };
     selectedIssuerId = record.issuerId || "";
@@ -1714,16 +1741,26 @@ function applyDmLookupToCurrentProject(payload) {
 }
 
 function updateProjectPricingFromInputs(updateSourceText = true) {
-  const valuations = parseRateListInput($("#projectValuationInput")?.value || "");
-  const guidancePrices = parseRateListInput($("#projectGuidancePriceInput")?.value || "");
-  project.valuations = valuations;
-  project.valuation = valuations[0] ?? null;
-  project.guidancePrices = guidancePrices;
-  project.guidancePrice = guidancePrices[0] ?? null;
+  ensureProjectPricingCapacity(project);
+  $$("#projectPricingRows [data-pricing-index][data-pricing-field]").forEach((input) => {
+    updateDynamicPricingField(input);
+  });
   if (updateSourceText) {
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
   }
+}
+
+function updateDynamicPricingField(input) {
+  const index = Number(input.dataset.pricingIndex);
+  const field = input.dataset.pricingField;
+  if (!Number.isInteger(index) || index < 0 || !["marketValuation", "guidancePrice"].includes(field)) return;
+  ensureProjectPricingCapacity(project);
+  project.tranchePricing[index] = {
+    ...project.tranchePricing[index],
+    [field]: numberOrNull(input.value),
+  };
+  syncProjectPricingMirrors(project);
 }
 
 function projectPatchFromDmLookup(payload) {
@@ -2532,8 +2569,8 @@ function fillProjectFields() {
   });
   fillAbsFields();
   if ($("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
-  if ($("#projectValuationInput")) $("#projectValuationInput").value = formatRateListInput(project.valuations?.length ? project.valuations : [project.valuation]);
-  if ($("#projectGuidancePriceInput")) $("#projectGuidancePriceInput").value = formatRateListInput(project.guidancePrices?.length ? project.guidancePrices : [project.guidancePrice]);
+  ensureProjectPricingCapacity(project);
+  renderProjectPricingFields();
   ensureInquiryRangeCapacity(project);
   renderTrancheInquiryFields();
   syncProjectConditionalFields();
@@ -2553,7 +2590,7 @@ function syncProjectConditionalFields() {
   if (abs) {
     $("#trancheInquiryPanel").hidden = true;
   } else {
-    $("#trancheInquiryPanel").hidden = inquiryVarietyCount(project) <= 1;
+    $("#trancheInquiryPanel").hidden = false;
   }
 }
 
@@ -2776,17 +2813,19 @@ function buildProjectRecognitionMarks(projectValue, issuer) {
   }
 
   const count = inquiryVarietyCount(projectValue);
-  if (count > 1) {
-    ensureInquiryRangeCapacity(projectValue);
-    for (let index = 1; index < count; index += 1) {
-      const range = projectValue.inquiryRanges?.[index] || {};
-      marks[`inquiryRanges.${index}.low`] = Number.isFinite(numberOrNull(range.low))
+  ensureInquiryRangeCapacity(projectValue);
+  for (let index = 0; index < count; index += 1) {
+    const range = projectValue.inquiryRanges?.[index] || {};
+    marks[`inquiryRanges.${index}.low`] = index === 0 && marks.inquiryLow
+      ? marks.inquiryLow
+      : Number.isFinite(numberOrNull(range.low))
         ? recognitionMark("success", `${inquiryVarietyLabel(projectValue, index)}询价下限已识别`)
         : recognitionMark("error", `${inquiryVarietyLabel(projectValue, index)}询价下限未识别，请补充`);
-      marks[`inquiryRanges.${index}.high`] = Number.isFinite(numberOrNull(range.high))
+    marks[`inquiryRanges.${index}.high`] = index === 0 && marks.inquiryHigh
+      ? marks.inquiryHigh
+      : Number.isFinite(numberOrNull(range.high))
         ? recognitionMark("success", `${inquiryVarietyLabel(projectValue, index)}询价上限已识别`)
         : recognitionMark("error", `${inquiryVarietyLabel(projectValue, index)}询价上限未识别，请补充`);
-    }
   }
 
   if (!issuer) {
@@ -4593,6 +4632,7 @@ function renderTranches(tranches) {
           </label>
           <label>票面 / 中标利率（%）<input data-tranche-field="winningRate" type="number" step="0.0001" value="${escapeAttribute(tranche.winningRate ?? "")}"></label>
           <label>表内中标量（万元）<input data-tranche-field="winningAmountWan" type="number" step="0.01" value="${escapeAttribute(tranche.winningAmountWan ?? "")}"></label>
+          <label>市场估值（%）<input data-tranche-field="marketValuation" type="number" step="0.0001" value="${escapeAttribute(tranche.marketValuation ?? "")}"></label>
           <label>综合定价
             <select data-tranche-field="pricingMode">
               <option ${tranche.pricingMode === "未综" ? "selected" : ""}>未综</option>
@@ -6577,7 +6617,6 @@ function rebuildInquiryRanges(projectValue) {
 
 function ensureInquiryRangeCapacity(projectValue) {
   const count = inquiryVarietyCount(projectValue);
-  if (count <= 1) return;
   const ranges = Array.isArray(projectValue.inquiryRanges) ? [...projectValue.inquiryRanges] : [];
   if (!ranges.length && (Number.isFinite(projectValue.inquiryLow) || Number.isFinite(projectValue.inquiryHigh))) {
     ranges[0] = { low: numberOrNull(projectValue.inquiryLow), high: numberOrNull(projectValue.inquiryHigh) };
@@ -6594,17 +6633,12 @@ function renderTrancheInquiryFields() {
   const count = inquiryVarietyCount(project);
   const panel = $("#trancheInquiryPanel");
   const rows = $("#trancheInquiryRows");
-  panel.hidden = count <= 1;
-  if (count <= 1) {
-    rows.innerHTML = "";
-    return;
-  }
+  panel.hidden = isAbsProject(project);
   ensureInquiryRangeCapacity(project);
-  rows.innerHTML = project.inquiryRanges.slice(1, count).map((range, offset) => {
-    const index = offset + 1;
+  rows.innerHTML = project.inquiryRanges.slice(0, count).map((range, index) => {
     return `
-      <div class="tranche-inquiry-row">
-        <span>${escapeHtml(inquiryVarietyLabel(project, index))}</span>
+      <div class="tranche-term-row">
+        ${trancheTermIdentityHtml(project, index)}
         <label>下限（%）<input type="number" step="0.0001" data-inquiry-index="${index}" data-inquiry-bound="low" value="${escapeAttribute(range?.low ?? "")}"></label>
         <label>上限（%）<input type="number" step="0.0001" data-inquiry-index="${index}" data-inquiry-bound="high" value="${escapeAttribute(range?.high ?? "")}"></label>
       </div>
@@ -6615,12 +6649,14 @@ function renderTrancheInquiryFields() {
 function updateDynamicInquiryRange(input) {
   const index = Number(input.dataset.inquiryIndex);
   const bound = input.dataset.inquiryBound;
-  if (!Number.isInteger(index) || index < 1 || !["low", "high"].includes(bound)) return;
+  if (!Number.isInteger(index) || index < 0 || !["low", "high"].includes(bound)) return;
   ensureInquiryRangeCapacity(project);
   project.inquiryRanges[index] = {
     ...(project.inquiryRanges[index] || { low: null, high: null }),
     [bound]: numberOrNull(input.value),
   };
+  project.inquiryLow = project.inquiryRanges[0]?.low ?? null;
+  project.inquiryHigh = project.inquiryRanges[0]?.high ?? null;
   project.inquiryLow2 = project.inquiryRanges[1]?.low ?? null;
   project.inquiryHigh2 = project.inquiryRanges[1]?.high ?? null;
 }
@@ -6639,6 +6675,77 @@ function inquiryVarietyLabel(projectValue, index) {
   const fallback = `品种${index + 1}`;
   const durationText = duration ? `（${formatDurationSummaryValue(duration)}）` : "";
   return `${shortName || fallback}${durationText}`;
+}
+
+function pricingVarietyCount(projectValue) {
+  const pricingRows = Array.isArray(projectValue?.tranchePricing) ? projectValue.tranchePricing.length : 0;
+  const valuations = Array.isArray(projectValue?.valuations) ? projectValue.valuations.length : 0;
+  const guidancePrices = Array.isArray(projectValue?.guidancePrices) ? projectValue.guidancePrices.length : 0;
+  return Math.max(inquiryVarietyCount(projectValue), pricingRows, valuations, guidancePrices, 1);
+}
+
+function ensureProjectPricingCapacity(projectValue) {
+  const count = pricingVarietyCount(projectValue);
+  const existingRows = Array.isArray(projectValue.tranchePricing) ? projectValue.tranchePricing : [];
+  const valuations = Array.isArray(projectValue.valuations) ? projectValue.valuations : [];
+  const guidancePrices = Array.isArray(projectValue.guidancePrices) ? projectValue.guidancePrices : [];
+  projectValue.tranchePricing = Array.from({ length: count }, (_, index) => {
+    const existing = existingRows[index] || {};
+    const hasMarketValuation = Object.prototype.hasOwnProperty.call(existing, "marketValuation");
+    const hasGuidancePrice = Object.prototype.hasOwnProperty.call(existing, "guidancePrice");
+    return {
+      shortName: projectValue.shortNames?.[index] || existing.shortName || (count === 1 ? projectValue.shortName || "" : ""),
+      durationText: projectValue.durationParts?.[index] || existing.durationText || (count === 1 ? projectValue.durationText || "" : ""),
+      marketValuation: hasMarketValuation
+        ? numberOrNull(existing.marketValuation)
+        : index < valuations.length
+          ? numberOrNull(valuations[index])
+          : index === 0
+            ? numberOrNull(projectValue.valuation)
+            : null,
+      guidancePrice: hasGuidancePrice
+        ? numberOrNull(existing.guidancePrice)
+        : index < guidancePrices.length
+          ? numberOrNull(guidancePrices[index])
+          : index === 0
+            ? numberOrNull(projectValue.guidancePrice)
+            : null,
+    };
+  });
+  syncProjectPricingMirrors(projectValue);
+}
+
+function syncProjectPricingMirrors(projectValue) {
+  const rows = Array.isArray(projectValue.tranchePricing) ? projectValue.tranchePricing : [];
+  projectValue.valuations = rows.map((row) => numberOrNull(row.marketValuation));
+  projectValue.valuation = projectValue.valuations[0] ?? null;
+  projectValue.guidancePrices = rows.map((row) => numberOrNull(row.guidancePrice));
+  projectValue.guidancePrice = projectValue.guidancePrices[0] ?? null;
+}
+
+function renderProjectPricingFields() {
+  const rows = $("#projectPricingRows");
+  if (!rows) return;
+  ensureProjectPricingCapacity(project);
+  rows.innerHTML = project.tranchePricing.map((pricing, index) => `
+    <div class="tranche-term-row">
+      ${trancheTermIdentityHtml(project, index)}
+      <label>市场估值（%）<input type="number" step="0.0001" inputmode="decimal" autocomplete="off" data-pricing-index="${index}" data-pricing-field="marketValuation" value="${escapeAttribute(pricing.marketValuation ?? "")}"></label>
+      <label>综合定价至（%）<input type="number" step="0.0001" inputmode="decimal" autocomplete="off" data-pricing-index="${index}" data-pricing-field="guidancePrice" value="${escapeAttribute(pricing.guidancePrice ?? "")}"></label>
+    </div>
+  `).join("");
+}
+
+function trancheTermIdentityHtml(projectValue, index) {
+  const shortName = projectValue.shortNames?.[index]
+    || projectValue.tranchePricing?.[index]?.shortName
+    || (pricingVarietyCount(projectValue) === 1 ? projectValue.shortName : "")
+    || `品种${index + 1}`;
+  const duration = projectValue.durationParts?.[index]
+    || projectValue.tranchePricing?.[index]?.durationText
+    || (pricingVarietyCount(projectValue) === 1 ? projectValue.durationText : "");
+  const tenor = duration ? `<span class="tranche-term-tenor">${escapeHtml(formatDurationSummaryValue(duration))}</span>` : "";
+  return `<div class="tranche-term-identity"><strong>${escapeHtml(shortName)}</strong>${tenor}</div>`;
 }
 
 function formatSuggestionRatios(suggestion) {

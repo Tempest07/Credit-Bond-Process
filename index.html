@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260713-valuation-accuracy">
+  <link rel="stylesheet" href="./styles.css?v=20260713-dual-tranche-pricing">
 </head>
 <body>
   <div class="app-shell">
@@ -111,9 +111,9 @@
                 </select>
               </label>
             </div>
-            <div class="project-pricing-grid">
-              <label>市场估值（%）<input id="projectValuationInput" inputmode="decimal" autocomplete="off" placeholder="如 1.65；多期限用 1.65/1.83"></label>
-              <label>综合定价至（%）<input id="projectGuidancePriceInput" inputmode="decimal" autocomplete="off" placeholder="留空为未综；多期限用 1.68/1.85"></label>
+            <div class="tranche-term-panel project-pricing-panel" id="projectPricingPanel">
+              <div class="tranche-term-head"><strong>分品种估值与定价</strong></div>
+              <div class="tranche-term-rows" id="projectPricingRows"></div>
             </div>
             <div class="valuation-assist" id="valuationAssist" hidden></div>
             <textarea id="briefInput" hidden></textarea>
@@ -156,14 +156,9 @@
               <label data-standard-project-field>主体评级<input data-project-field="subjectRating"></label>
               <label data-standard-project-field>评级机构<input data-project-field="ratingAgency"></label>
               <label data-standard-project-field>隐含评级<input data-project-field="hiddenRating"></label>
-              <label data-standard-project-field>询价下限（%）<input data-project-field="inquiryLow" type="number" step="0.0001"></label>
-              <label data-standard-project-field>询价上限（%）<input data-project-field="inquiryHigh" type="number" step="0.0001"></label>
-              <div class="tranche-inquiry-panel span-2" id="trancheInquiryPanel" data-standard-project-field hidden>
-                <div class="tranche-inquiry-head">
-                  <strong>多品种询价区间</strong>
-                  <span>识别到多个品种时显示，可补充品种二、品种三等区间。</span>
-                </div>
-                <div class="tranche-inquiry-rows" id="trancheInquiryRows"></div>
+              <div class="tranche-term-panel span-2" id="trancheInquiryPanel" data-standard-project-field>
+                <div class="tranche-term-head"><strong>分品种询价区间</strong></div>
+                <div class="tranche-term-rows" id="trancheInquiryRows"></div>
               </div>
               <label>发行场所<input data-project-field="venue"></label>
               <label data-standard-project-field>发行方式
@@ -864,6 +859,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260713-valuation-accuracy"></script>
+  <script type="module" src="./app.js?v=20260713-dual-tranche-pricing"></script>
 </body>
 </html>
