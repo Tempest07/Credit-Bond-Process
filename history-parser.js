@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-login-action-alignment";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-mail-preview-panel";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

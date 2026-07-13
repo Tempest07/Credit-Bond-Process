@@ -408,23 +408,26 @@ label[data-recognition-source="cloud"]::after {
 .command-card-signal { width: 24px; height: 24px; border: 1px solid rgba(89,103,239,.16); border-radius: 50%; background: radial-gradient(circle, rgba(89,103,239,.4) 0 2px, transparent 3px), rgba(89,103,239,.06); box-shadow: 0 0 0 6px rgba(89,103,239,.025); }
 .cutoff-signal { border-color: rgba(245,158,11,.2); background: radial-gradient(circle, rgba(245,158,11,.6) 0 2px, transparent 3px), rgba(245,158,11,.07); box-shadow: 0 0 0 6px rgba(245,158,11,.03); }
 .payment-signal { border-color: rgba(25,183,163,.2); background: radial-gradient(circle, rgba(25,183,163,.58) 0 2px, transparent 3px), rgba(25,183,163,.07); box-shadow: 0 0 0 6px rgba(25,183,163,.03); }
-.mail-panel { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; padding: 7px; border: 1px solid rgba(216,222,235,.92); border-radius: 13px; background: rgba(255,255,255,.78); box-shadow: 0 8px 22px rgba(15,23,42,.05), inset 0 1px 0 #fff; }
+.mail-panel { display: flex; flex: 0 1 auto; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; padding: 7px; border: 1px solid rgba(216,222,235,.92); border-radius: 13px; background: rgba(255,255,255,.78); box-shadow: 0 8px 22px rgba(15,23,42,.05), inset 0 1px 0 #fff; }
 .mail-panel-main { display: flex; align-items: center; gap: 8px; padding: 0 3px; }
 .mail-panel-main h3 { margin: 0; color: var(--ledger-ink); font-size: 12px; letter-spacing: -.01em; white-space: nowrap; }
 .mail-panel-actions { display: flex; gap: 7px; }
 .mail-panel-actions .button { min-height: 34px; padding: 0 11px; white-space: nowrap; }
-.mail-output-card { position: relative; z-index: 2; flex-basis: 100%; width: 100%; overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius: 11px; background: rgba(255,255,255,.9); box-shadow: inset 0 1px 0 rgba(255,255,255,.75); }
+.mail-output-card { position: relative; z-index: 2; width: 100%; margin-bottom: 14px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line)); border-radius: 14px; background: #fff; box-shadow: 0 12px 30px rgba(15,23,42,.065), inset 0 1px 0 #fff; }
 .mail-output-card[hidden] { display: none; }
+.mail-output-card[data-status="preview"] { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); background: linear-gradient(180deg, #fff, #fbfcff); }
 .mail-output-card[data-status="success"] { border-color: color-mix(in srgb, var(--secondary) 32%, var(--line)); background: linear-gradient(135deg, #f7fffe, #fff); }
 .mail-output-card[data-status="warning"] { border-color: color-mix(in srgb, var(--warning) 34%, var(--line)); background: linear-gradient(135deg, #fffaf4, #fff); }
 .mail-output-card[data-status="error"] { border-color: color-mix(in srgb, var(--danger) 34%, var(--line)); background: linear-gradient(135deg, #fff6f8, #fff); }
 .mail-output-card[data-status="loading"] { background: linear-gradient(135deg, #f7f7ff, #fff); }
-.mail-output-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); color: var(--accent); font-size: 11px; font-weight: 900; }
+.mail-output-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 13px 11px 15px; border-bottom: 1px solid rgba(220,226,237,.92); color: var(--ledger-ink); background: linear-gradient(90deg, rgba(91,108,255,.055), rgba(255,255,255,.72)); font-size: 13px; font-weight: 850; }
+.mail-output-card[data-status="preview"] .mail-output-head { color: var(--accent); }
 .mail-output-card[data-status="success"] .mail-output-head { color: var(--secondary); }
 .mail-output-card[data-status="warning"] .mail-output-head { color: var(--warning); }
 .mail-output-card[data-status="error"] .mail-output-head { color: var(--danger); }
-.mail-output-head .text-button { padding: 0; font-size: 11px; }
-.mail-output { max-height: 220px; margin: 0; overflow: auto; padding: 12px; border: 0; border-radius: 0; color: var(--text); background: transparent; white-space: pre-wrap; word-break: break-word; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 11px; line-height: 1.75; }
+.mail-output-head .text-button { min-height: 30px; padding: 0 10px; border: 1px solid rgba(211,218,232,.95); border-radius: 9px; color: inherit; background: rgba(255,255,255,.84); font-size: 12px; }
+.mail-output { max-height: 330px; margin: 0; overflow: auto; padding: 16px 18px 18px; border: 0; border-radius: 0; color: #24304a; background: rgba(251,252,255,.74); white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 12px; line-height: 1.85; }
+.mail-output-card[data-status="error"] .mail-output { font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 11px; }
 .mail-output-card[data-status="success"] .mail-output { position: relative; min-height: 54px; padding-left: 46px; color: color-mix(in srgb, var(--secondary) 72%, var(--text)); font-family: inherit; font-size: 12px; font-weight: 800; line-height: 1.8; }
 .mail-output-card[data-status="success"] .mail-output::before { content: "✓"; position: absolute; top: 14px; left: 14px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; color: #fff; background: linear-gradient(135deg, #11bfa0, var(--secondary)); font-size: 13px; font-weight: 900; }
 .view[data-view="reminders"] { min-height: calc(100vh - 92px); background: radial-gradient(circle at 88% 4%, rgba(99,102,241,.075), transparent 30%), linear-gradient(180deg, #f7f8fc 0%, #f2f5fa 100%); }

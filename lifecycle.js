@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-login-action-alignment";
+import { parseUnderwriterNames } from "./core.js?v=20260713-mail-preview-panel";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

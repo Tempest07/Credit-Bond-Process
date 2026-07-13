@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260713-login-action-alignment">
+  <link rel="stylesheet" href="./styles.css?v=20260713-mail-preview-panel">
 </head>
 <body>
   <div class="app-shell">
@@ -278,14 +278,14 @@
                 <button class="button subtle" id="previewMailButton" type="button">预览邮件</button>
                 <button class="button primary" id="sendMailButton" type="button">发送今日邮件</button>
               </div>
-              <div class="mail-output-card" id="mailOutputPanel" hidden>
-                <div class="mail-output-head">
-                  <span id="mailOutputTitle">邮件输出</span>
-                  <button class="text-button" id="collapseMailOutputButton" type="button">收起</button>
-                </div>
-                <pre class="mail-output" id="mailOutput"></pre>
-              </div>
             </section>
+          </div>
+          <div class="mail-output-card" id="mailOutputPanel" aria-live="polite" hidden>
+            <div class="mail-output-head">
+              <span id="mailOutputTitle">邮件输出</span>
+              <button class="text-button" id="collapseMailOutputButton" type="button">收起</button>
+            </div>
+            <pre class="mail-output" id="mailOutput"></pre>
           </div>
           <div class="ledger-filter-bar" id="ledgerFilterBar">
             <div class="ledger-filter-tabs" role="group" aria-label="项目筛选">
@@ -864,6 +864,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260713-login-action-alignment"></script>
+  <script type="module" src="./app.js?v=20260713-mail-preview-panel"></script>
 </body>
 </html>
