@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260710-mobile-alignment";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-ledger-command-deck";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
