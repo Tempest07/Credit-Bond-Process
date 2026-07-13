@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-mail-preview-panel";
+import { parseUnderwriterNames } from "./core.js?v=20260713-project-empty-state";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

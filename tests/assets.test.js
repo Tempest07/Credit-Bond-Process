@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260713-mail-preview-panel";
+const VERSION = "20260713-project-empty-state";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -29,6 +29,12 @@ test("revalidates non-fingerprinted application assets", async () => {
 
   assert.match(headers, /\/\*\.js\s+Cache-Control: no-cache/);
   assert.match(headers, /\/\*\.css\s+Cache-Control: no-cache/);
+});
+
+test("hides the project empty state once a project is selected", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
 });
 
 test("ships the protocol transfer ledger xlsx template", async () => {
