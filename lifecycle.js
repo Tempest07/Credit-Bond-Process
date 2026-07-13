@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-dual-tranche-pricing";
+import { parseUnderwriterNames } from "./core.js?v=20260713-date-picker";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

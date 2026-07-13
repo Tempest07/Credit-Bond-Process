@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-dual-tranche-pricing";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260713-date-picker";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
