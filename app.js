@@ -83,8 +83,10 @@ import { initializeDatePickers } from "./date-picker.js?v=20260713-date-picker";
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
+const POLICY_CURVE_TERMS = ["3M", "6M", "9M", "1Y"];
 const API_URL = "./api/state";
 const DM_VALUATION_URL = "./api/dm/valuation";
+const DM_POLICY_CURVE_URL = "./api/dm/curve?curve=cdb";
 const MAILER_URL = "./api/mail/today";
 const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
@@ -188,6 +190,7 @@ let projectDmHistorySaveTimer = null;
 let valuationAssistTimer = null;
 let valuationAssistController = null;
 let valuationAssistRequestKey = "";
+let policyCurveController = null;
 let projectScreenshotRows = [];
 let projectScreenshotBusy = false;
 let projectScreenshotDragDepth = 0;
@@ -253,7 +256,7 @@ async function initialize() {
   clearIssuerForm();
   updateAuthUi();
   applyRouteFromHash();
-  await loadCloudState();
+  await Promise.all([loadCloudState(), loadPolicyCurve()]);
 }
 
 function bindNavigation() {
@@ -1480,6 +1483,7 @@ function bindLedger() {
   $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#collapseMailOutputButton").addEventListener("click", hideMailOutput);
+  $("#policyCurveRetry").addEventListener("click", () => loadPolicyCurve({ refresh: true }));
   $("#newProjectButton").addEventListener("click", () => {
     resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
     switchView("generator");
@@ -3412,6 +3416,102 @@ function renderCutoffTodo() {
         `;
       }).join("")
     : '<div class="payment-todo-empty">目前没有临近截标或待确认项目。</div>';
+}
+
+async function loadPolicyCurve({ refresh = false } = {}) {
+  const card = $("#policyCurveCard");
+  const retry = $("#policyCurveRetry");
+  if (!card || !retry) return;
+
+  if (policyCurveController) policyCurveController.abort();
+  const controller = new AbortController();
+  policyCurveController = controller;
+  renderPolicyCurveMessage("loading", refresh ? "正在刷新 DM 曲线" : "正在读取 DM 曲线");
+  retry.disabled = true;
+
+  try {
+    const response = await fetch(DM_POLICY_CURVE_URL, {
+      credentials: "same-origin",
+      headers: { ...authHeaders(), Accept: "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const payload = parseJson(text);
+    if (!response.ok) {
+      renderPolicyCurveMessage("error", payload?.hint || "曲线读取失败");
+      return;
+    }
+    if (!payload?.ok || !Array.isArray(payload.nodes)) {
+      renderPolicyCurveMessage("empty", payload?.hint || "暂无可用曲线数据");
+      return;
+    }
+    renderPolicyCurve(payload);
+  } catch (error) {
+    if (error.name !== "AbortError") renderPolicyCurveMessage("error", "曲线读取失败");
+  } finally {
+    if (policyCurveController === controller) {
+      policyCurveController = null;
+      retry.disabled = false;
+    }
+  }
+}
+
+function renderPolicyCurve(payload) {
+  const card = $("#policyCurveCard");
+  const points = $("#policyCurvePoints");
+  const updatedAt = $("#policyCurveUpdatedAt");
+  const nodes = new Map((payload.nodes || []).map((node) => [String(node.tenor || "").toUpperCase(), node]));
+  card.dataset.curveState = payload.stale ? "stale" : "ready";
+  card.setAttribute("aria-busy", "false");
+  points.innerHTML = POLICY_CURVE_TERMS.map((tenor) => {
+    const rawValue = nodes.get(tenor)?.yieldPct;
+    const value = rawValue === null || rawValue === undefined || rawValue === "" ? Number.NaN : Number(rawValue);
+    const available = Number.isFinite(value);
+    return `
+      <span class="policy-curve-point ${available ? "" : "is-missing"}" data-curve-term="${tenor}">
+        <span>${tenor}</span><strong>${available ? `${value.toFixed(3)}%` : "—"}</strong>
+      </span>
+    `;
+  }).join("");
+  const labels = [
+    payload.actualValuationDate ? `估值日 ${formatPolicyCurveDate(payload.actualValuationDate)}` : "",
+    payload.retrievedAt ? `查询 ${formatPolicyCurveQueryTime(payload.retrievedAt)}` : "",
+    payload.partial ? "部分档位" : "",
+    payload.stale ? "旧数据" : "",
+  ].filter(Boolean);
+  updatedAt.textContent = labels.join(" · ");
+}
+
+function renderPolicyCurveMessage(stateName, message) {
+  const card = $("#policyCurveCard");
+  const points = $("#policyCurvePoints");
+  const updatedAt = $("#policyCurveUpdatedAt");
+  if (!card || !points || !updatedAt) return;
+  card.dataset.curveState = stateName;
+  card.setAttribute("aria-busy", String(stateName === "loading"));
+  points.innerHTML = stateName === "loading"
+    ? POLICY_CURVE_TERMS.map(() => '<span class="policy-curve-placeholder"></span>').join("")
+    : `<span class="policy-curve-message">${escapeHtml(message)}</span>`;
+  updatedAt.textContent = stateName === "loading" ? message : "DM · 中债国开债收益率曲线";
+}
+
+function formatPolicyCurveDate(value = "") {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "—";
+}
+
+function formatPolicyCurveQueryTime(value = "") {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 async function callMailer(action) {

@@ -282,26 +282,38 @@
             </div>
             <pre class="mail-output" id="mailOutput"></pre>
           </div>
-          <div class="ledger-filter-bar" id="ledgerFilterBar">
-            <div class="ledger-filter-tabs" role="group" aria-label="项目筛选">
-              <button class="ledger-filter-chip active" data-ledger-filter="all" type="button" aria-pressed="true">
-                <span>全部项目</span><strong id="dashboardAll">0</strong>
-              </button>
-              <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button" aria-pressed="false">
-                <span>待投标</span><strong id="dashboardToBid">0</strong>
-              </button>
+          <div class="ledger-command-bottom">
+            <div class="ledger-filter-bar" id="ledgerFilterBar">
+              <div class="ledger-filter-tabs" role="group" aria-label="项目筛选">
+                <button class="ledger-filter-chip active" data-ledger-filter="all" type="button" aria-pressed="true">
+                  <span>全部项目</span><strong id="dashboardAll">0</strong>
+                </button>
+                <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button" aria-pressed="false">
+                  <span>待投标</span><strong id="dashboardToBid">0</strong>
+                </button>
+              </div>
+              <label class="ledger-filter-select">
+                <span>状态筛选</span>
+                <select id="ledgerFilterSelect">
+                  <option value="all">全部项目</option>
+                  <option value="toBid">待投标</option>
+                  <option value="awaitingResult">等待结果</option>
+                  <option value="won">中标项目</option>
+                  <option value="notWon">未中标</option>
+                </select>
+              </label>
+              <span class="ledger-filter-status" id="ledgerFilterLabel">当前：全部项目</span>
             </div>
-            <label class="ledger-filter-select">
-              <span>状态筛选</span>
-              <select id="ledgerFilterSelect">
-                <option value="all">全部项目</option>
-                <option value="toBid">待投标</option>
-                <option value="awaitingResult">等待结果</option>
-                <option value="won">中标项目</option>
-                <option value="notWon">未中标</option>
-              </select>
-            </label>
-            <span class="ledger-filter-status" id="ledgerFilterLabel">当前：全部项目</span>
+            <aside class="policy-curve-card" id="policyCurveCard" data-curve-state="loading" aria-labelledby="policyCurveTitle" aria-live="polite" aria-busy="true">
+              <div class="policy-curve-head">
+                <div><strong id="policyCurveTitle">1年内国开债曲线</strong><span>DM</span></div>
+                <button class="policy-curve-retry" id="policyCurveRetry" type="button" aria-label="刷新国开债曲线">↻</button>
+              </div>
+              <div class="policy-curve-points" id="policyCurvePoints">
+                <span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span>
+              </div>
+              <p id="policyCurveUpdatedAt">正在读取 DM 曲线</p>
+            </aside>
           </div>
         </section>
 

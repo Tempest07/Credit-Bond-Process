@@ -66,6 +66,22 @@ test("ships liquid selection motion with accessible fallback", async () => {
   assert.match(styles, /prefers-reduced-motion:\s*reduce/);
 });
 
+test("shows the compact DM policy-bank curve in the project command corner", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /class="ledger-command-bottom"[\s\S]+id="policyCurveCard"/);
+  assert.match(html, /id="policyCurvePoints"/);
+  assert.match(html, /id="policyCurveUpdatedAt"/);
+  assert.match(app, /DM_POLICY_CURVE_URL/);
+  assert.match(app, /loadPolicyCurve\(\{ refresh: true \}\)/);
+  assert.match(styles, /\.ledger-command-bottom\s*\{[^}]*grid-template-columns:/s);
+  assert.match(styles, /@media \(max-width: 1050px\)[\s\S]+\.ledger-command-bottom\s*\{\s*grid-template-columns:\s*1fr;/);
+});
+
 test("ships the protocol transfer ledger xlsx template", async () => {
   const workbook = await readFile(new URL("../templates/protocol-transfer-ledger-template.xlsx", import.meta.url));
 
