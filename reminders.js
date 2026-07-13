@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260713-project-empty-state";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260713-project-empty-state";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260713-liquid-motion";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260713-liquid-motion";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

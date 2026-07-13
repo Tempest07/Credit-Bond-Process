@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260713-project-empty-state">
+  <link rel="stylesheet" href="./styles.css?v=20260713-liquid-motion">
 </head>
 <body>
   <div class="app-shell">
@@ -289,10 +289,10 @@
           </div>
           <div class="ledger-filter-bar" id="ledgerFilterBar">
             <div class="ledger-filter-tabs" role="group" aria-label="项目筛选">
-              <button class="ledger-filter-chip active" data-ledger-filter="all" type="button">
+              <button class="ledger-filter-chip active" data-ledger-filter="all" type="button" aria-pressed="true">
                 <span>全部项目</span><strong id="dashboardAll">0</strong>
               </button>
-              <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button">
+              <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button" aria-pressed="false">
                 <span>待投标</span><strong id="dashboardToBid">0</strong>
               </button>
             </div>
@@ -864,6 +864,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260713-project-empty-state"></script>
+  <script type="module" src="./app.js?v=20260713-liquid-motion"></script>
 </body>
 </html>

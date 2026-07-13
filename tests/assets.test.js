@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260713-project-empty-state";
+const VERSION = "20260713-liquid-motion";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -35,6 +35,22 @@ test("hides the project empty state once a project is selected", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
+});
+
+test("ships liquid selection motion with accessible fallback", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /data-ledger-filter="all"[^>]+aria-pressed="true"/);
+  assert.match(app, /function initializeLiquidMotion/);
+  assert.match(app, /function syncLiquidTrack/);
+  assert.match(app, /item\.setAttribute\("aria-pressed", String\(active\)\)/);
+  assert.match(styles, /\.liquid-track::before/);
+  assert.match(styles, /@keyframes liquidSelectorMorph/);
+  assert.match(styles, /prefers-reduced-motion:\s*reduce/);
 });
 
 test("ships the protocol transfer ledger xlsx template", async () => {

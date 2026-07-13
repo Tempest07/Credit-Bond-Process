@@ -43,6 +43,11 @@ label { min-width: 0; max-width: 100%; }
 .nav-item:hover { color: #fff; background: rgba(255,255,255,.055); transform: translateX(2px); }
 .nav-item.active { border-color: rgba(138,154,255,.18); color: #fff; background: linear-gradient(90deg, rgba(91,108,255,.22), rgba(255,255,255,.065)); box-shadow: inset 3px 0 0 #7f8cff, 0 8px 24px rgba(0,0,0,.08); }
 .nav-item.active::after { opacity: 1; transform: translateY(-50%) scale(1); }
+.liquid-track { --liquid-x: 0px; --liquid-y: 0px; --liquid-width: 0px; --liquid-height: 0px; position: relative; isolation: isolate; }
+.liquid-track::before { content: ""; position: absolute; z-index: 0; top: 0; left: 0; width: var(--liquid-width); height: var(--liquid-height); border: 1px solid transparent; border-radius: 12px; opacity: 0; pointer-events: none; transform: translate3d(var(--liquid-x), var(--liquid-y), 0); transform-origin: center; transition: width .42s cubic-bezier(.22,1,.36,1), height .42s cubic-bezier(.22,1,.36,1), opacity .16s ease, transform .54s cubic-bezier(.22,1.28,.36,1); will-change: width, height, transform; }
+.liquid-track.liquid-ready::before { opacity: 1; }
+.liquid-track > button { position: relative; z-index: 1; }
+.liquid-track.is-liquid-moving::before { animation: liquidSelectorMorph .56s ease-out; }
 .sidebar-card { margin-top: 18px; padding: 14px; border: 1px solid rgba(255,255,255,.11); border-radius: 14px; background: rgba(255,255,255,.055); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(10px); }
 .sidebar-card span, .sidebar-card strong, .sidebar-card small { display: block; }
 .sidebar-card span, .sidebar-card small { color: #8e9ab6; font-size: 10px; }
@@ -144,6 +149,9 @@ h3 { margin: 24px 0 12px; font-size: 13px; }
 .button.danger-button:hover { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(198, 63, 85, .09); }
 .button.danger { margin-right: auto; color: var(--danger); }
 .button.wide { width: 100%; margin-top: 10px; }
+.view[data-view="ledger"] .button { position: relative; overflow: hidden; }
+.view[data-view="ledger"] .button::after { content: ""; position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; border-radius: 50%; opacity: 0; background: currentColor; pointer-events: none; transform: translate(-50%, -50%) scale(0); }
+.view[data-view="ledger"] .button:active:not(:disabled)::after { animation: liquidButtonRipple .46s ease-out; }
 .text-button { display: inline-flex; align-items: center; justify-content: center; border: 0; color: var(--accent); background: transparent; text-align: center; font-size: 12px; font-weight: 700; line-height: 1.2; -webkit-appearance: none; appearance: none; }
 .file-button { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
 .file-button input { display: none; }
@@ -394,7 +402,10 @@ label[data-recognition-source="cloud"]::after {
 .ledger-filter-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 .ledger-filter-chip { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 38px; padding: 0 14px; border: 1px solid transparent; border-radius: 10px; color: #778299; background: transparent; box-shadow: none; font-size: 11px; font-weight: 850; }
 .ledger-filter-chip:hover { border-color: rgba(202,210,228,.9); color: #34415b; background: rgba(255,255,255,.78); }
+.ledger-filter-chip:focus-visible, .project-item:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 72%, #fff); outline-offset: 2px; }
 .ledger-filter-chip.active { border-color: rgba(84,101,235,.9); color: #fff; background: linear-gradient(135deg, #6675f4, #5361e8); box-shadow: 0 9px 20px rgba(83,97,232,.22), inset 0 1px 0 rgba(255,255,255,.2); }
+.ledger-filter-tabs.liquid-track::before { border-color: rgba(84,101,235,.92); border-radius: 11px; background: radial-gradient(circle at 82% 18%, rgba(255,255,255,.42), transparent 24%), radial-gradient(circle at 14% 88%, rgba(126,230,255,.26), transparent 31%), linear-gradient(135deg, #6e7cff, #4d5be5); box-shadow: 0 10px 24px rgba(83,97,232,.25), inset 0 1px 0 rgba(255,255,255,.34); }
+.ledger-filter-tabs.liquid-ready .ledger-filter-chip.active { border-color: transparent; background: transparent; box-shadow: none; }
 .ledger-filter-chip strong { display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; color: #26314a; background: rgba(255,255,255,.85); font-size: 12px; line-height: 1; }
 .ledger-filter-chip.active strong { color: #4c59d7; background: #fff; }
 .ledger-filter-select { display: flex; align-items: center; gap: 9px; margin-left: auto; padding-left: 13px; border-left: 1px solid rgba(211,218,232,.9); color: #7d879b; font-size: 10px; font-weight: 850; white-space: nowrap; }
@@ -493,6 +504,8 @@ label[data-recognition-source="cloud"]::after {
 .reminder-filter { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 11px; border: 0; border-radius: 8px; color: #7a8497; background: transparent; font-size: 10px; font-weight: 800; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
 .reminder-filter:hover { color: #334155; }
 .reminder-filter.active { color: #172033; background: #fff; box-shadow: 0 3px 10px rgba(15,23,42,.09); }
+.reminder-filter-tabs.liquid-track::before { border-color: rgba(216,222,237,.95); border-radius: 9px; background: radial-gradient(circle at 82% 20%, rgba(105,122,255,.14), transparent 28%), linear-gradient(145deg, #fff, #f9faff); box-shadow: 0 5px 15px rgba(15,23,42,.1), inset 0 1px 0 #fff; }
+.reminder-filter-tabs.liquid-ready .reminder-filter.active { background: transparent; box-shadow: none; }
 .filter-dot { width: 6px; height: 6px; border-radius: 50%; background: #536ee8; }
 .filter-dot.critical { background: #e83e68; }
 .filter-dot.warning { background: #e59a20; }
@@ -569,6 +582,11 @@ label[data-recognition-source="cloud"]::after {
 .project-item:hover { border-color: var(--accent); background: linear-gradient(145deg, var(--accent-soft), #fff); }
 .project-item.active { border-color: color-mix(in srgb, var(--accent) 62%, var(--line)); background: radial-gradient(circle at 100% 0, rgba(91,108,255,.1), transparent 33%), linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 76%, #fff), #fff 80%); box-shadow: inset 4px 0 0 var(--accent), 0 11px 26px rgba(89,87,217,.14); transform: translateX(2px); }
 .project-item.active::after { content: ""; position: absolute; inset: -1px; pointer-events: none; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); border-radius: inherit; }
+.project-list.liquid-track::before { z-index: 2; border-color: color-mix(in srgb, var(--accent) 48%, var(--line)); border-radius: 14px; background: radial-gradient(circle at 92% 8%, rgba(91,108,255,.16), transparent 33%), radial-gradient(circle at 7% 92%, rgba(66,211,224,.12), transparent 27%), linear-gradient(145deg, color-mix(in srgb, var(--accent-soft) 78%, #fff), #fff 82%); box-shadow: inset 4px 0 0 var(--accent), 0 12px 28px rgba(89,87,217,.14), inset 0 1px 0 rgba(255,255,255,.85); }
+.project-list.liquid-track > .project-item { z-index: auto; }
+.project-list.liquid-track .project-item > * { position: relative; z-index: 3; }
+.project-list.liquid-ready .project-item.active { border-color: transparent; background: transparent; box-shadow: none; transform: none; }
+.project-list.liquid-ready .project-item.active::after { display: none; }
 .project-item-head, .project-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .project-item-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .project-item-meta { color: var(--muted); font-size: 10px; }
@@ -777,6 +795,18 @@ label[data-recognition-source="cloud"]::after {
 .result-entry-dialog { padding: 22px; border-radius: 20px; box-shadow: 0 28px 80px rgba(15,23,42,.26); }
 .dm-json-output { border-radius: 13px; background: linear-gradient(145deg, #0a1021, #111b37); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
 
+@keyframes liquidSelectorMorph {
+  0%, 100% { border-radius: 12px; filter: saturate(1); }
+  34% { border-radius: 18px 9px 16px 10px / 12px 17px 10px 15px; filter: saturate(1.12); }
+  68% { border-radius: 9px 17px 10px 16px / 16px 10px 17px 11px; }
+}
+
+@keyframes liquidButtonRipple {
+  0% { opacity: .2; transform: translate(-50%, -50%) scale(0); }
+  68% { opacity: .08; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(10); }
+}
+
 @keyframes workspaceSurfaceIn {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
@@ -824,6 +854,9 @@ label[data-recognition-source="cloud"]::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .liquid-track::before { transition: none; }
+  .liquid-track.is-liquid-moving::before,
+  .view[data-view="ledger"] .button:active:not(:disabled)::after,
   .cloud-gate::before,
   .cloud-orb-ring,
   .cloud-pulse-lines span::after,
@@ -980,7 +1013,7 @@ label[data-recognition-source="cloud"]::after {
   .ledger-filter-select { width: 100%; margin-left: 0; padding-top: 7px; padding-left: 0; border-top: 1px solid rgba(211,218,232,.9); border-left: 0; }
   .ledger-filter-select select { flex: 1; width: 100%; }
   .ledger-filter-status { padding: 4px 6px 2px; white-space: normal; }
-  .ledger-filter-chip { width: 100%; }
+  .ledger-filter-chip { width: 100%; min-height: 44px; }
   .ledger-todo-zone { grid-template-columns: 1fr; gap: 11px; }
   .ledger-command-card { min-height: 0; padding: 15px; border-radius: 16px; }
   .payment-todo-empty { min-height: 54px; }
@@ -1008,7 +1041,7 @@ label[data-recognition-source="cloud"]::after {
   .reminder-board-panel { padding: 16px; border-radius: 17px; }
   .reminder-board-head { align-items: stretch; flex-direction: column; margin-bottom: 16px; padding-bottom: 16px; }
   .reminder-filter-tabs { justify-content: flex-start; }
-  .reminder-filter { flex: 1 1 auto; }
+  .reminder-filter { flex: 1 1 auto; min-height: 44px; }
   .unified-reminder-list { grid-template-columns: 1fr; }
   .unified-reminder-item { grid-template-columns: minmax(0, 1fr); gap: 13px; padding: 15px; }
   .unified-reminder-side { justify-content: space-between; min-width: 0; padding-left: 58px; }

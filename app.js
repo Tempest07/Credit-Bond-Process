@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260713-project-empty-state";
+} from "./core.js?v=20260713-liquid-motion";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260713-project-empty-state";
+} from "./lifecycle.js?v=20260713-liquid-motion";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260713-project-empty-state";
+} from "./history-parser.js?v=20260713-liquid-motion";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260713-project-empty-state";
+} from "./protocol-transfer.js?v=20260713-liquid-motion";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260713-project-empty-state";
+} from "./reminders.js?v=20260713-liquid-motion";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260713-project-empty-state";
+} from "./secondary-inventory.js?v=20260713-liquid-motion";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -190,6 +190,16 @@ let valuationAssistRequestKey = "";
 let projectScreenshotRows = [];
 let projectScreenshotBusy = false;
 let projectScreenshotDragDepth = 0;
+let liquidMotionFrame = null;
+let liquidMotionObserver = null;
+let liquidResizeObserver = null;
+
+const LIQUID_TRACK_CONFIGS = [
+  { container: ".ledger-filter-tabs", active: ".ledger-filter-chip.active" },
+  { container: ".reminder-filter-tabs", active: ".reminder-filter.active" },
+  { container: ".project-list", active: ".project-item.active" },
+];
+const liquidMotionTimers = new WeakMap();
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -228,6 +238,7 @@ async function initialize() {
   bindDmTest();
   initializeHistoryImport();
   bindDataActions();
+  initializeLiquidMotion();
   resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
   renderProjectDmHistoryControls();
   renderIssuerOptions();
@@ -246,6 +257,76 @@ function bindNavigation() {
   $$(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchView(button.dataset.viewTarget, { updateHash: true }));
   });
+}
+
+function initializeLiquidMotion() {
+  const containers = LIQUID_TRACK_CONFIGS
+    .map(({ container }) => $(container))
+    .filter(Boolean);
+  if (!containers.length) return;
+
+  containers.forEach((container) => container.classList.add("liquid-track"));
+  liquidMotionObserver = new MutationObserver(scheduleLiquidMotionSync);
+  containers.forEach((container) => {
+    liquidMotionObserver.observe(container, {
+      attributes: true,
+      attributeFilter: ["class", "aria-pressed", "aria-current"],
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+  });
+
+  if ("ResizeObserver" in window) {
+    liquidResizeObserver = new ResizeObserver(scheduleLiquidMotionSync);
+    containers.forEach((container) => liquidResizeObserver.observe(container));
+  } else {
+    window.addEventListener("resize", scheduleLiquidMotionSync);
+  }
+
+  scheduleLiquidMotionSync();
+}
+
+function scheduleLiquidMotionSync() {
+  if (liquidMotionFrame) cancelAnimationFrame(liquidMotionFrame);
+  liquidMotionFrame = requestAnimationFrame(() => {
+    liquidMotionFrame = null;
+    LIQUID_TRACK_CONFIGS.forEach(syncLiquidTrack);
+  });
+}
+
+function syncLiquidTrack({ container: containerSelector, active: activeSelector }) {
+  const container = $(containerSelector);
+  const active = container?.querySelector(activeSelector);
+  if (!container || !active || !active.offsetWidth || !active.offsetHeight) {
+    container?.classList.remove("liquid-ready", "is-liquid-moving");
+    if (container) delete container.dataset.liquidPosition;
+    return;
+  }
+
+  const x = active.offsetLeft;
+  const y = active.offsetTop;
+  const width = active.offsetWidth;
+  const height = active.offsetHeight;
+  const nextPosition = `${x}:${y}:${width}:${height}`;
+  const previousPosition = container.dataset.liquidPosition || "";
+
+  container.style.setProperty("--liquid-x", `${x}px`);
+  container.style.setProperty("--liquid-y", `${y}px`);
+  container.style.setProperty("--liquid-width", `${width}px`);
+  container.style.setProperty("--liquid-height", `${height}px`);
+  container.dataset.liquidPosition = nextPosition;
+  container.classList.add("liquid-ready");
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!previousPosition || previousPosition === nextPosition || reduceMotion) return;
+
+  container.classList.remove("is-liquid-moving");
+  requestAnimationFrame(() => container.classList.add("is-liquid-moving"));
+  clearTimeout(liquidMotionTimers.get(container));
+  liquidMotionTimers.set(container, setTimeout(() => {
+    container.classList.remove("is-liquid-moving");
+  }, 560));
 }
 
 function bindReminders() {
@@ -4290,7 +4371,9 @@ function setLedgerFilter(nextFilter) {
 
 function syncLedgerFilterControls() {
   $$("[data-ledger-filter]").forEach((item) => {
-    item.classList.toggle("active", item.dataset.ledgerFilter === ledgerFilter);
+    const active = item.dataset.ledgerFilter === ledgerFilter;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-pressed", String(active));
   });
   const select = $("#ledgerFilterSelect");
   if (select) {
