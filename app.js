@@ -212,6 +212,7 @@ const LEDGER_FILTER_LABELS = {
   paymentToday: "今日缴款",
 };
 const LEDGER_FILTER_SELECT_VALUES = new Set(["all", "toBid", "awaitingResult", "won", "notWon"]);
+const SHORT_PROJECT_LIST_LIMIT = 3;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const $ = (selector) => document.querySelector(selector);
@@ -4459,7 +4460,11 @@ function renderProjectList() {
     })
     .sort(compareProjects);
 
-  $("#projectList").innerHTML = projects.length
+  const projectList = $("#projectList");
+  const isShortList = projects.length <= SHORT_PROJECT_LIST_LIMIT;
+  projectList.classList.toggle("is-short-list", isShortList);
+  projectList.closest(".project-list-panel")?.classList.toggle("has-short-list", isShortList);
+  projectList.innerHTML = projects.length
     ? projects.map((item) => `
       <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
         <span class="project-item-head">

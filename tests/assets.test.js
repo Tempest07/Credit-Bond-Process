@@ -38,6 +38,18 @@ test("hides the project empty state once a project is selected", async () => {
   assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
 });
 
+test("lets short project lists expand without internal scrolling", async () => {
+  const [app, styles] = await Promise.all([
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(app, /SHORT_PROJECT_LIST_LIMIT = 3/);
+  assert.match(app, /classList\.toggle\("is-short-list", isShortList\)/);
+  assert.match(styles, /\.project-list\.is-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+  assert.match(styles, /\.project-list-panel\.has-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+});
+
 test("ships liquid selection motion with accessible fallback", async () => {
   const [html, app, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
