@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260713-ledger-separated-actions";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260713-ledger-separated-actions";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260713-login-action-alignment";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260713-login-action-alignment";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

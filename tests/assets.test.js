@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260713-ledger-separated-actions";
+const VERSION = "20260713-login-action-alignment";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([

@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260713-ledger-separated-actions";
+} from "./core.js?v=20260713-login-action-alignment";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260713-ledger-separated-actions";
+} from "./lifecycle.js?v=20260713-login-action-alignment";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260713-ledger-separated-actions";
+} from "./history-parser.js?v=20260713-login-action-alignment";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260713-ledger-separated-actions";
+} from "./protocol-transfer.js?v=20260713-login-action-alignment";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260713-ledger-separated-actions";
+} from "./reminders.js?v=20260713-login-action-alignment";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260713-ledger-separated-actions";
+} from "./secondary-inventory.js?v=20260713-login-action-alignment";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
