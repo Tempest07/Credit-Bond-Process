@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-liquid-motion";
+import { parseUnderwriterNames } from "./core.js?v=20260713-valuation-accuracy";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

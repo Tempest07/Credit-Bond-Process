@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260713-liquid-motion";
+} from "./core.js?v=20260713-valuation-accuracy";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260713-liquid-motion";
+} from "./lifecycle.js?v=20260713-valuation-accuracy";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260713-liquid-motion";
+} from "./history-parser.js?v=20260713-valuation-accuracy";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260713-liquid-motion";
+} from "./protocol-transfer.js?v=20260713-valuation-accuracy";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260713-liquid-motion";
+} from "./reminders.js?v=20260713-valuation-accuracy";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,7 +77,7 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260713-liquid-motion";
+} from "./secondary-inventory.js?v=20260713-valuation-accuracy";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -2899,7 +2899,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
   output.innerHTML = `
     <div class="valuation-assist-head">
       <strong>估值助手</strong>
-      <span>正在读取 DM 存续债上一日估值...</span>
+      <span>正在读取 DM 存续债最近可用估值...</span>
     </div>
   `;
 }
@@ -2961,7 +2961,11 @@ function renderDmValuationAssist(payload) {
     renderDmValuationEmpty({ hint: payload?.hint || "暂无 DM 存续债可比估值。" });
     return;
   }
-  const summary = `${suggestions.length} 个期限 · ${payload.pricedCandidateCount || 0}/${payload.candidateCount || 0} 条 DM 可比券 · ${payload.valuationDate || "上一日"}`;
+  const actualValuationDate = payload.actualValuationDate || payload.valuationDate || "上一日";
+  const dateText = payload.actualValuationDate && payload.valuationDate && payload.actualValuationDate !== payload.valuationDate
+    ? `${actualValuationDate}（最近可用）`
+    : actualValuationDate;
+  const summary = `${suggestions.length} 个期限 · ${payload.pricedCandidateCount || 0}/${payload.candidateCount || 0} 条 DM 可比券 · ${dateText}`;
   output.hidden = false;
   output.innerHTML = `
     <div class="valuation-assist-head">
@@ -2975,15 +2979,21 @@ function renderDmValuationAssist(payload) {
 }
 
 function renderValuationSuggestionCard(item) {
-  const range = item.low === item.high
-    ? formatValuationRate(item.center)
-    : `${formatValuationRate(item.low)}-${formatValuationRate(item.high)}`;
+  const referenceOnly = Boolean(item.referenceOnly);
+  const range = referenceOnly
+    ? "仅列参考券"
+    : item.low === item.high
+      ? formatValuationRate(item.center)
+      : `${formatValuationRate(item.low)}-${formatValuationRate(item.high)}`;
   const confidenceText = [item.confidence, item.clusterNote].filter(Boolean).join(" · ");
+  const headline = referenceOnly
+    ? `${item.durationText || "目标期限"} 暂无可靠建议`
+    : `${item.durationText || "目标期限"} 参考 ${formatValuationRate(item.center)}`;
   return `
     <article class="valuation-suggestion-card">
       <div class="valuation-suggestion-main">
         <div>
-          <strong>${escapeHtml(item.durationText || "目标期限")} 参考 ${formatValuationRate(item.center)}</strong>
+          <strong>${escapeHtml(headline)}</strong>
           <span>${escapeHtml(item.profileLabel || "同类债券")} · 置信度${escapeHtml(confidenceText)}</span>
         </div>
         <span>${escapeHtml(range)}</span>
@@ -3004,7 +3014,11 @@ function renderValuationComparable(item) {
   const facts = [
     item.durationText,
     `${formatValuationRate(item.rate)} ${item.source}`,
+    item.yieldBasis || "",
+    item.valuationDate || "",
     Number.isFinite(numberOrNull(item.curveResidualBp)) ? `曲线偏离${item.curveResidualBp > 0 ? "+" : ""}${formatNumber(item.curveResidualBp)}bp` : "",
+    Number(item.sourceSpreadBp) >= 1 ? `多源差${formatNumber(item.sourceSpreadBp)}bp` : "",
+    item.stale ? `滞后${formatNumber(item.ageDays)}天` : "",
     item.reliability ? `推荐度${item.reliability}` : "",
     adjustmentText,
   ].filter(Boolean);

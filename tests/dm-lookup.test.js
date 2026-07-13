@@ -420,7 +420,8 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
         };
       });
     } else if (url.includes("/bond/market-data/date")) {
-      assert.deepEqual(request.startDate, "2026-06-26");
+      assert.deepEqual(request.startDate, "2026-06-19");
+      assert.deepEqual(request.endDate, "2026-06-26");
       assert.ok(request.securityIdList.length <= 5);
       assert.ok(request.securityIdList.includes("102600010.IB"));
       assert.ok(!request.securityIdList.includes("102600999.IB"));
@@ -431,9 +432,9 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
           : securityId === "102600010.IB"
             ? "25青岛城投MTN010"
             : "25青岛城投MTN001",
-        issue_date: "2026-06-26",
+        valuation_date: "2026-06-26",
         cb_ytm: securityId === "2520001.SH" ? 2.46 : securityId === "102600010.IB" ? 2.51 : 2.5,
-        cb_yte: null,
+        cb_yte: securityId === "102600010.IB" ? 2.51 : null,
         cb_reliability: "推荐",
       }));
     } else {
@@ -615,10 +616,9 @@ test("DM valuation assistant calibrates sparse tenors with implied-rating ChinaB
     ["102600103.IB", 1.8351],
   ]);
   const curveYields = new Map([
+    ["3", 1.69],
+    ["4", 1.77],
     ["5", 1.88],
-    ["3.78", 1.75],
-    ["3.72", 1.745],
-    ["3.69", 1.742],
   ]);
 
   globalThis.fetch = async (url, init) => {
@@ -640,14 +640,17 @@ test("DM valuation assistant calibrates sparse tenors with implied-rating ChinaB
         security_id: securityId,
         sec_short_name: securities.find((item) => item.security_id === securityId)?.sec_short_name,
         valuation_date: "2026-06-26",
-        cb_yte: rates.get(securityId),
+        cb_ytm: rates.get(securityId),
         cb_reliability: "推荐",
+        cs_ytm: rates.get(securityId) + 0.2,
+        cs_reliability: "推荐",
       }));
     } else if (url.includes("/bond/yield-curve/data")) {
       assert.equal(request.curveName, "中债中短期票据收益率曲线(AA+)");
       assert.equal(request.dataSource, "18");
       assert.equal(request.curveType, "1");
       assert.ok(!request.curveName.includes("AAA"));
+      assert.deepEqual(request.curveTermList, ["5", "3", "4"]);
       data = request.curveTermList.map((term) => ({
         curve_ch_name: request.curveName,
         curve_term: Number(term),
@@ -677,12 +680,225 @@ test("DM valuation assistant calibrates sparse tenors with implied-rating ChinaB
     assert.equal(payload.trancheSuggestions[0].curveCalibration.targetCurveYield, 1.88);
     assert.ok(payload.trancheSuggestions[0].curveCalibration.averageResidualBp > 8);
     assert.ok(payload.trancheSuggestions[0].center > 1.95 && payload.trancheSuggestions[0].center < 1.98);
+    assert.ok(payload.trancheSuggestions[0].high - payload.trancheSuggestions[0].low >= 0.19);
+    assert.equal(payload.trancheSuggestions[0].confidence, "较低");
     assert.ok(payload.trancheSuggestions[0].method.includes("不使用主体评级"));
     assert.ok(payload.trancheSuggestions[0].comparableItems.every((item) => Number.isFinite(item.curveResidualBp)));
     assert.ok(calls.some((call) => call.url.includes("/bond/yield-curve/data")));
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("DM valuation assistant interpolates standard ChinaBond nodes for the Wushang screenshot scenario", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const issuerName = "武商集团股份有限公司";
+  const securityId = "102580001.IB";
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      data = { list: [{
+        security_id: securityId,
+        sec_short_name: "25武商MTN001",
+        sec_full_name: "武商集团股份有限公司2025年度第一期中期票据",
+        issuer_name: issuerName,
+        remaining_tenor: "2.11Y",
+        bond_issue_tenor: "3Y",
+        bond_type_desc: "中期票据",
+      }], maxOffset: null };
+    } else if (url.includes("/bond/basic-info/info")) {
+      data = request.securityIdList.map(() => ({
+        security_id: securityId,
+        sec_short_name: "25武商MTN001",
+        sec_full_name: "武商集团股份有限公司2025年度第一期中期票据",
+        issuer_name: issuerName,
+        remaining_tenor: "2.11Y",
+        bond_issue_tenor: "3Y",
+        bond_type_desc: "中期票据",
+        payment_order: "普通债权",
+        special_item: "",
+      }));
+    } else if (url.includes("/bond/market-data/date")) {
+      assert.equal(request.startDate, "2026-07-03");
+      assert.equal(request.endDate, "2026-07-10");
+      data = [{
+        security_id: securityId,
+        sec_short_name: "25武商MTN001",
+        valuation_date: "2026-07-10",
+        cb_ytm: 1.7106,
+        cb_reliability: "推荐",
+      }];
+    } else if (url.includes("/bond/yield-curve/data")) {
+      assert.equal(request.curveName, "中债中短期票据收益率曲线(AA)");
+      assert.deepEqual(request.curveTermList, ["3", "2"]);
+      data = [
+        { curve_term: 2, valuation_date: "2026-07-10", yield: 1.7 },
+        { curve_term: 3, valuation_date: "2026-07-10", yield: 1.78 },
+      ];
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onValuationRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request(`http://127.0.0.1:8788/api/dm/valuation?issuerName=${encodeURIComponent(issuerName)}&durationText=3Y&offeringType=${encodeURIComponent("公募")}&venue=${encodeURIComponent("银行间")}&shortName=26武商MTN001&hiddenRating=AA&valuationDate=2026-07-10`, {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.actualValuationDate, "2026-07-10");
+    assert.equal(payload.trancheSuggestions[0].clusterMode, "curveResidualCalibration");
+    assert.equal(payload.trancheSuggestions[0].center, 1.78);
+    assert.equal(payload.trancheSuggestions[0].referenceOnly, undefined);
+    assert.equal(payload.trancheSuggestions[0].comparableItems[0].adjustment, 0.0712);
+    assert.ok(payload.trancheSuggestions[0].method.includes("标准节点线性插值"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM valuation assistant does not publish a point estimate from one remote anchor without a curve", () => {
+  const profile = {
+    bondClass: "MTN",
+    market: "interbank",
+    exchangeTech: false,
+    perpetual: false,
+    subordinated: false,
+    structured: false,
+  };
+  const rawSuggestion = valuationTest.buildTrancheSuggestion(
+    { durationText: "3Y", years: 3 },
+    0,
+    [valuationCandidate("remote-only", 2.11, 1.7106, profile)],
+    profile,
+    false,
+  );
+  const suggestion = valuationTest.enforceSingleAnchorReliability(rawSuggestion);
+  assert.equal(suggestion.referenceOnly, true);
+  assert.equal(suggestion.center, null);
+  assert.equal(suggestion.low, null);
+  assert.equal(suggestion.high, null);
+  assert.equal(suggestion.confidence, "不足");
+});
+
+test("DM valuation assistant uses each bond's own YTE or YTM basis and rejects unreliable sources", () => {
+  const rows = [{
+    valuation_date: "2026-07-10",
+    data_source: 1,
+    cb_yte: 1.72,
+    cb_ytm: 1.91,
+    cb_reliability: "不推荐",
+    cs_yte: 1.74,
+    cs_ytm: 1.93,
+    cs_reliability: "推荐",
+  }];
+  const exercise = valuationTest.pickDmValuationRate(rows, true, "2026-07-10", "2026-07-10");
+  const maturity = valuationTest.pickDmValuationRate(rows, false, "2026-07-10", "2026-07-10");
+  assert.equal(exercise.rate, 1.74);
+  assert.equal(exercise.sourceField, "csYte");
+  assert.equal(exercise.yieldBasis, "行权收益率");
+  assert.equal(maturity.rate, 1.93);
+  assert.equal(maturity.sourceField, "csYtm");
+  assert.equal(maturity.yieldBasis, "到期收益率");
+  assert.deepEqual(valuationTest.targetDurationParts("3Y/5+5Y"), [
+    { durationText: "3Y", years: 3, hasExercise: false },
+    { durationText: "5+5Y", years: 5, hasExercise: true },
+  ]);
+});
+
+test("DM valuation assistant tracks cross-source spread and never treats issue date as valuation date", () => {
+  const rows = [
+    { valuation_date: "2026-07-09", data_source: 1, cb_ytm: 1.8, cb_reliability: "推荐" },
+    { valuation_date: "2026-07-09", data_source: 2, cs_ytm: 1.86, cs_reliability: "推荐" },
+    { issue_date: "2026-07-10", cb_ytm: 9.99, cb_reliability: "推荐" },
+  ];
+  assert.equal(valuationTest.latestValuationDate(rows, "2026-07-10"), "2026-07-09");
+  const valuation = valuationTest.pickDmValuationRate(rows, false, "2026-07-09", "2026-07-10");
+  assert.equal(valuation.rate, 1.8);
+  assert.equal(valuation.sourceCount, 2);
+  assert.equal(valuation.sourceSpreadBp, 6);
+  assert.equal(valuation.ageDays, 1);
+  assert.equal(valuation.stale, true);
+  assert.equal(valuationTest.latestValuationDate([
+    { security_id: "A.IB", valuation_date: "2026-07-10", cb_ytm: 1.81 },
+    { security_id: "A.IB", valuation_date: "2026-07-09", cb_ytm: 1.8 },
+    { security_id: "B.IB", valuation_date: "2026-07-09", cb_ytm: 1.9 },
+  ], "2026-07-10"), "2026-07-09");
+  const datedRows = new Map([["A.IB", [
+    { security_id: "A.IB", valuation_date: "2026-07-10", cb_ytm: null, cb_reliability: "推荐" },
+    { security_id: "A.IB", valuation_date: "2026-07-09", cb_ytm: 1.8, cb_reliability: "推荐" },
+  ]]]);
+  assert.equal(valuationTest.latestValuationDate(datedRows.get("A.IB"), "2026-07-10"), "2026-07-09");
+  assert.equal(valuationTest.commonValuationDateForCandidates([
+    { securityId: "A.IB", profile: { exercisable: false } },
+  ], datedRows, "2026-07-10"), "2026-07-09");
+});
+
+test("DM valuation assistant removes a large comparable outlier before calculating the center", () => {
+  const profile = {
+    bondClass: "MTN",
+    market: "interbank",
+    exchangeTech: false,
+    perpetual: false,
+    subordinated: false,
+    structured: false,
+  };
+  const suggestion = valuationTest.buildTrancheSuggestion(
+    { durationText: "3Y", years: 3 },
+    0,
+    [
+      valuationCandidate("normal-1", 2.8, 1.79, profile),
+      valuationCandidate("normal-2", 2.9, 1.8, profile),
+      valuationCandidate("normal-3", 3, 1.81, profile),
+      valuationCandidate("outlier", 3.1, 2.3, profile),
+    ],
+    profile,
+    false,
+  );
+  assert.equal(suggestion.excludedOutlierCount, 1);
+  assert.equal(suggestion.comparableItems.some((item) => item.shortName === "outlier"), false);
+  assert.ok(suggestion.center >= 1.79 && suggestion.center <= 1.82);
+
+  const divergentCandidates = [
+    valuationCandidate("divergence-1", 2.8, 1.79, profile),
+    valuationCandidate("divergence-2", 2.9, 1.8, profile),
+    valuationCandidate("divergence-3", 3, 1.81, profile),
+    valuationCandidate("divergence-4", 3.1, 1.82, profile),
+  ];
+  divergentCandidates[0].valuation.sourceSpreadBp = 12;
+  const divergentSuggestion = valuationTest.buildTrancheSuggestion(
+    { durationText: "3Y", years: 3 },
+    0,
+    divergentCandidates,
+    profile,
+    false,
+  );
+  assert.equal(divergentSuggestion.confidence, "中等");
+});
+
+test("DM valuation curve interpolation does not extrapolate beyond returned standard nodes", () => {
+  assert.deepEqual(valuationTest.normalizeCurveTerms([2.11, 3]), ["2", "3"]);
+  const curve = valuationTest.curveRowsByTerm([
+    { curve_term: 2, yield: 1.7 },
+    { curve_term: 3, yield: 1.78 },
+  ]);
+  assert.equal(valuationTest.curveYieldForTerm(curve, 2.5), 1.74);
+  assert.equal(valuationTest.curveYieldForTerm(curve, 1.5), null);
+  assert.equal(valuationTest.curveYieldForTerm(curve, 3.5), null);
+  const residuals = valuationTest.filterNumericOutliers([
+    { curveResidual: 0.08 },
+    { curveResidual: 0.09 },
+    { curveResidual: 0.45 },
+  ], "curveResidual", 0.05, 3);
+  assert.equal(residuals.excludedCount, 1);
+  assert.deepEqual(residuals.items.map((item) => item.curveResidual), [0.08, 0.09]);
 });
 
 test("DM lookup searches additional DM issuer data before falling back to D1", async () => {

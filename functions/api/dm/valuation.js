@@ -17,12 +17,19 @@ const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
 const MARKET_DATA_DATE_PATH = "/dm-quant-func-service/api/v1/bond/market-data/date";
 const YIELD_CURVE_PATH = "/dm-quant-func-service/api/v1/bond/yield-curve/data";
-const MAX_MARKET_DATA_SECURITIES = 25;
+const MAX_MARKET_DATA_SECURITIES = 60;
 const MARKET_DATA_BATCH_SIZE = 5;
-const MAX_CURVE_TERMS = 5;
+const MAX_CURVE_TERMS = 12;
 const DURATION_SLOPE_BP_PER_YEAR = 5;
 const PRIMARY_DURATION_CLUSTER_MIN_ITEMS = 2;
 const MAX_DISPLAY_COMPARABLES = 5;
+const MARKET_DATA_LOOKBACK_DAYS = 7;
+const MIN_LOCAL_SLOPE_SPAN_YEARS = 0.15;
+const MIN_LOCAL_SLOPE_BP_PER_YEAR = -10;
+const MAX_LOCAL_SLOPE_BP_PER_YEAR = 30;
+const OUTLIER_MIN_DISTANCE = 0.08;
+const CURVE_RESIDUAL_OUTLIER_MIN_DISTANCE = 0.05;
+const STANDARD_CURVE_TERMS = [0.25, 0.5, 0.75, 1, 2, 3, 4, 5, 7, 10, 15, 20, 30];
 const DATA_SOURCE_LIST = [1, 2, 3, 4, 7];
 const CHINABOND_CURVE_SOURCE = "18";
 const CURVE_TYPE_YTM = "1";
@@ -33,7 +40,7 @@ const MARKET_DATA_FIELDS = [
   "issuerName",
   "remainingTenor",
   "dataSource",
-  "issueDate",
+  "valuationDate",
   "cbReliability",
   "cbYtm",
   "cbYte",
@@ -90,9 +97,8 @@ export async function onRequestGet(context) {
       durationText,
     });
     const targetOffering = normalizeOffering(offeringType);
-    const targetHasExercise = durationHasExercise(durationText);
     const candidates = enrichedRows
-      .map((row) => candidateFromOutstandingRow(row, { valuationDate, targetHasExercise }))
+      .map((row) => candidateFromOutstandingRow(row, { valuationDate }))
       .filter((candidate) => candidate && candidate.securityId)
       .filter((candidate) => !sameSecurity(candidate, { shortName }))
       .filter((candidate) => offeringMatches(targetOffering, candidate.offeringType))
@@ -105,27 +111,39 @@ export async function onRequestGet(context) {
     const valuationUniverse = candidatesForMarketData(candidates, targetDurations);
     const marketRows = await lookupMarketDataRows(dm, valuationUniverse.map((item) => item.securityId), valuationDate);
     const marketRowsBySecurityId = groupMarketRowsBySecurityId(marketRows);
+    const actualValuationDate = commonValuationDateForCandidates(
+      candidates,
+      marketRowsBySecurityId,
+      valuationDate,
+    );
     const pricedCandidates = candidates
       .map((candidate) => ({
         ...candidate,
-        valuation: pickDmValuationRate(marketRowsBySecurityId.get(candidate.securityId) || [], targetHasExercise),
+        valuation: pickDmValuationRate(
+          marketRowsBySecurityId.get(candidate.securityId) || [],
+          candidate.profile.exercisable,
+          actualValuationDate,
+          valuationDate,
+        ),
       }))
-      .filter((candidate) => Number.isFinite(candidate.valuation?.rate));
+      .filter((candidate) => Number.isFinite(candidate.valuation?.rate))
+      .filter((candidate) => !candidate.valuation.basisFallback);
 
     let trancheSuggestions = targetDurations
-      .map((target, index) => buildTrancheSuggestion(target, index, pricedCandidates, targetProfile, targetHasExercise))
+      .map((target, index) => buildTrancheSuggestion(target, index, pricedCandidates, targetProfile, target.hasExercise))
       .filter(Boolean);
     if (impliedRating && trancheSuggestions.some(shouldTryCurveCalibration)) {
       trancheSuggestions = await Promise.all(trancheSuggestions.map((suggestion) => maybeApplyCurveCalibration(dm, {
         suggestion,
         impliedRating,
-        valuationDate,
+        valuationDate: actualValuationDate || valuationDate,
         targetProfile,
       })));
     }
+    trancheSuggestions = trancheSuggestions.map(enforceSingleAnchorReliability);
 
     if (!trancheSuggestions.length) {
-      return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noValuation", hint: "DM 有可比存续债，但上一日估值字段未返回中债/中证/上清所收益率。" }));
+      return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noValuation", hint: "DM 有可比存续债，但近7日未返回同口径的中债/中证/上清所收益率。" }));
     }
 
     return json({
@@ -133,6 +151,7 @@ export async function onRequestGet(context) {
       source: "DM market-data/date",
       query: { issuerName, societyCode, durationText, offeringType, shortName, impliedRating, valuationDate },
       valuationDate,
+      actualValuationDate,
       targetProfile,
       candidateCount: candidates.length,
       pricedCandidateCount: pricedCandidates.length,
@@ -141,6 +160,7 @@ export async function onRequestGet(context) {
         outstandingRows: outstanding.rows.length,
         outstandingPages: outstanding.pages,
         marketRows: marketRows.length,
+        marketDataLookbackDays: MARKET_DATA_LOOKBACK_DAYS,
         curveCalibratedSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveResidualCalibration").length,
       },
     });
@@ -235,7 +255,7 @@ async function lookupMarketDataRows(dm, securityIds, valuationDate) {
     const raw = await dm.post(MARKET_DATA_DATE_PATH, {
       securityIdList,
       dataSourceList: DATA_SOURCE_LIST,
-      startDate: valuationDate,
+      startDate: offsetIsoDate(valuationDate, -MARKET_DATA_LOOKBACK_DAYS),
       endDate: valuationDate,
       fieldNames: MARKET_DATA_FIELDS,
     });
@@ -260,14 +280,14 @@ async function lookupYieldCurveRows(dm, { impliedRating, terms, valuationDate })
   return { curveName, rows: rowsFromDm(raw), raw };
 }
 
-function candidateFromOutstandingRow(row, { valuationDate, targetHasExercise }) {
+function candidateFromOutstandingRow(row, { valuationDate }) {
   const securityId = normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"]));
   const shortName = pickFirstString(row, ["sec_short_name", "secShortName"]);
   const fullName = pickFirstString(row, ["sec_full_name", "secFullName"]);
   const nextOptionDate = pickFirstDateString(row, ["next_option_date", "nextOptionDate"]);
-  const years = comparableYears(row, valuationDate, targetHasExercise);
-  if (!Number.isFinite(years) || years <= 0) return null;
   const profile = comparableProfile(row);
+  const years = comparableYears(row, valuationDate, profile.exercisable);
+  if (!Number.isFinite(years) || years <= 0) return null;
   return {
     securityId,
     shortName,
@@ -283,9 +303,9 @@ function candidateFromOutstandingRow(row, { valuationDate, targetHasExercise }) 
   };
 }
 
-function comparableYears(row, valuationDate, targetHasExercise) {
+function comparableYears(row, valuationDate, candidateHasExercise) {
   const nextOptionDate = pickFirstDateString(row, ["next_option_date", "nextOptionDate"]);
-  if (targetHasExercise && nextOptionDate) {
+  if (candidateHasExercise && nextOptionDate) {
     const years = yearsBetween(valuationDate, nextOptionDate);
     if (Number.isFinite(years) && years > 0) return years;
   }
@@ -311,9 +331,10 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
       const durationGapYears = target.years - candidate.years;
       const absoluteGapYears = Math.abs(durationGapYears);
       if (absoluteGapYears > maxGap) return null;
-      const durationAdjustment = (durationGapYears * DURATION_SLOPE_BP_PER_YEAR) / 100;
       const marketAdjustment = marketQualityAdjustment(targetProfile, candidate.profile);
-      const adjustment = durationAdjustment + marketAdjustment;
+      const reliabilityWeight = Number.isFinite(candidate.valuation.reliabilityWeight)
+        ? candidate.valuation.reliabilityWeight
+        : 0.8;
       return {
         shortName: candidate.shortName,
         securityId: candidate.securityId,
@@ -321,28 +342,53 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
         years: round(candidate.years, 2),
         rate: candidate.valuation.rate,
         source: candidate.valuation.source,
+        sourceField: candidate.valuation.sourceField,
+        dataSource: candidate.valuation.dataSource,
+        sourceCount: candidate.valuation.sourceCount,
+        sourceSpreadBp: candidate.valuation.sourceSpreadBp,
+        yieldBasis: candidate.valuation.yieldBasis,
         reliability: candidate.valuation.reliability,
+        reliabilityWeight,
         valuationDate: candidate.valuation.valuationDate,
+        ageDays: candidate.valuation.ageDays,
+        stale: candidate.valuation.stale,
         durationGapYears: round(durationGapYears, 4),
-        durationAdjustment: round(durationAdjustment, 4),
         marketAdjustment: round(marketAdjustment, 4),
-        adjustment: round(adjustment, 4),
-        adjustedRate: round(candidate.valuation.rate + adjustment, 4),
         absoluteGapYears: round(absoluteGapYears, 4),
         candidateMarketPremiumBp: marketQualityPremiumBp(candidate.profile),
         targetMarketPremiumBp: marketQualityPremiumBp(targetProfile),
-        weight: 1 / (0.35 + absoluteGapYears),
+        ordinaryEquivalentRate: round(candidate.valuation.rate + marketAdjustment, 4),
+        weight: reliabilityWeight / (0.35 + absoluteGapYears),
       };
     })
     .filter(Boolean)
     .sort(compareDurationGapThenName);
 
   const cluster = selectPrimaryDurationCluster(allComparableItems, target.years);
-  const comparableItems = cluster.items;
-  if (!comparableItems.length) return null;
+  if (!cluster.items.length) return null;
+  const durationModel = deriveDurationSlope(cluster.items, cluster.mode);
+  const adjustedClusterItems = cluster.items.map((item) => {
+    const durationAdjustment = (item.durationGapYears * durationModel.slopeBpPerYear) / 100;
+    const adjustment = durationAdjustment + item.marketAdjustment;
+    return {
+      ...item,
+      durationAdjustment: round(durationAdjustment, 4),
+      adjustment: round(adjustment, 4),
+      adjustedRate: round(item.rate + adjustment, 4),
+    };
+  });
+  const outlierResult = filterNumericOutliers(adjustedClusterItems, "adjustedRate", OUTLIER_MIN_DISTANCE, 4);
+  const comparableItems = outlierResult.items.length ? outlierResult.items : adjustedClusterItems;
   const totalWeight = comparableItems.reduce((sum, item) => sum + item.weight, 0);
   const center = round(comparableItems.reduce((sum, item) => sum + item.adjustedRate * item.weight, 0) / totalWeight, 2);
-  const spread = suggestionSpread(comparableItems, center, cluster);
+  const spread = Math.max(
+    suggestionSpread(comparableItems, center, cluster),
+    valuationQualitySpreadFloor(comparableItems),
+  );
+  const clusterNote = [
+    cluster.note,
+    outlierResult.excludedCount ? `剔除${outlierResult.excludedCount}只明显偏离券` : "",
+  ].filter(Boolean).join("；");
   return {
     index,
     durationText: target.durationText,
@@ -350,16 +396,65 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
     center,
     low: round(center - spread, 2),
     high: round(center + spread, 2),
-    confidence: confidenceLabel(comparableItems, cluster),
+    confidence: adjustConfidenceForValuationQuality(confidenceLabel(comparableItems, cluster), comparableItems),
     clusterMode: cluster.mode,
-    clusterNote: cluster.note,
+    clusterNote,
     comparableCount: comparableItems.length,
+    excludedOutlierCount: outlierResult.excludedCount,
+    durationModel,
     profileLabel: comparableProfileLabel(targetProfile),
     valuationDate: comparableItems[0]?.valuationDate || "",
     preferredYield: preferExercise ? "行权收益率" : "到期收益率",
-    method: `DM 存续债上一日估值；${cluster.note}；期限差按约 ${DURATION_SLOPE_BP_PER_YEAR}bp/年机械调整，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
+    method: `DM 存续债实际估值日数据；${clusterNote}；${durationModel.description}，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
     comparableItems,
   };
+}
+
+function deriveDurationSlope(items, clusterMode) {
+  const sorted = [...items].sort((left, right) => left.years - right.years);
+  const pairSlopes = [];
+  for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
+      const left = sorted[leftIndex];
+      const right = sorted[rightIndex];
+      const span = right.years - left.years;
+      if (span < MIN_LOCAL_SLOPE_SPAN_YEARS) continue;
+      const slope = ((right.ordinaryEquivalentRate - left.ordinaryEquivalentRate) * 100) / span;
+      if (slope < MIN_LOCAL_SLOPE_BP_PER_YEAR || slope > MAX_LOCAL_SLOPE_BP_PER_YEAR) continue;
+      pairSlopes.push(slope);
+    }
+  }
+  if (pairSlopes.length) {
+    const slopeBpPerYear = round(median(pairSlopes), 2);
+    return {
+      type: clusterMode === "bracketInterpolation" ? "bracketSlope" : "issuerLocalSlope",
+      slopeBpPerYear,
+      pairCount: pairSlopes.length,
+      description: `期限差按主体可比券局部斜率约${formatNumber(slopeBpPerYear)}bp/年调整`,
+    };
+  }
+  return {
+    type: "mechanicalFallback",
+    slopeBpPerYear: DURATION_SLOPE_BP_PER_YEAR,
+    pairCount: 0,
+    description: `缺少可验证局部斜率，期限差仅按保守兜底${DURATION_SLOPE_BP_PER_YEAR}bp/年调整`,
+  };
+}
+
+function valuationQualitySpreadFloor(items) {
+  const sourceSpreadBp = Math.max(0, ...items.map((item) => Number(item.sourceSpreadBp) || 0));
+  const stale = items.some((item) => item.stale);
+  return Math.max(sourceSpreadBp / 200, stale ? 0.08 : 0);
+}
+
+function adjustConfidenceForValuationQuality(confidence, items) {
+  const maxSourceSpreadBp = Math.max(0, ...items.map((item) => Number(item.sourceSpreadBp) || 0));
+  const penalty = (items.some((item) => item.stale) ? 1 : 0) + (maxSourceSpreadBp >= 8 ? 1 : 0);
+  if (!penalty) return confidence;
+  const levels = ["较低", "中等", "较高"];
+  const currentIndex = levels.indexOf(confidence);
+  if (currentIndex < 0) return confidence;
+  return levels[Math.max(0, currentIndex - penalty)];
 }
 
 function shouldTryCurveCalibration(suggestion) {
@@ -378,30 +473,45 @@ async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valua
   const curveByTerm = curveRowsByTerm(curve.rows);
   const targetCurveYield = curveYieldForTerm(curveByTerm, suggestion.years);
   if (!Number.isFinite(targetCurveYield)) return suggestion;
+  const targetPremium = marketQualityPremiumBp(targetProfile) / 100;
+  const targetCurveAdjusted = targetCurveYield - targetPremium;
 
-  const residualItems = suggestion.comparableItems
+  const rawResidualItems = suggestion.comparableItems
     .map((item) => {
       const curveYield = curveYieldForTerm(curveByTerm, item.years);
       if (!Number.isFinite(curveYield)) return null;
       const ordinaryEquivalentRate = item.rate + ((item.candidateMarketPremiumBp || 0) / 100);
       const residual = ordinaryEquivalentRate - curveYield;
+      const curveAdjustedRate = targetCurveAdjusted + residual;
+      const adjustment = curveAdjustedRate - item.rate;
       return {
         ...item,
         curveYield: round(curveYield, 4),
         curveResidual: round(residual, 4),
         curveResidualBp: round(residual * 100, 1),
+        curveAdjustedRate: round(curveAdjustedRate, 4),
+        adjustment: round(adjustment, 4),
+        adjustedRate: round(curveAdjustedRate, 4),
       };
     })
     .filter(Boolean);
-  if (!residualItems.length) return suggestion;
+  if (!rawResidualItems.length) return suggestion;
+  const residualOutlierResult = filterNumericOutliers(
+    rawResidualItems,
+    "curveResidual",
+    CURVE_RESIDUAL_OUTLIER_MIN_DISTANCE,
+    3,
+  );
+  const residualItems = residualOutlierResult.items.length ? residualOutlierResult.items : rawResidualItems;
 
   const totalWeight = residualItems.reduce((sum, item) => sum + item.weight, 0);
   const averageResidual = residualItems.reduce((sum, item) => sum + item.curveResidual * item.weight, 0) / totalWeight;
   const residualDeviation = weightedValueDeviation(residualItems, averageResidual, "curveResidual");
-  const targetPremium = marketQualityPremiumBp(targetProfile) / 100;
-  const targetCurveAdjusted = targetCurveYield - targetPremium;
   const center = round(targetCurveAdjusted + averageResidual, 2);
-  const spread = curveCalibrationSpread(residualItems, residualDeviation);
+  const spread = Math.max(
+    curveCalibrationSpread(residualItems, residualDeviation),
+    valuationQualitySpreadFloor(residualItems),
+  );
   const residualDeviationBp = round(residualDeviation * 100, 1);
   const averageResidualBp = round(averageResidual * 100, 1);
 
@@ -410,10 +520,13 @@ async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valua
     center,
     low: round(center - spread, 2),
     high: round(center + spread, 2),
-    confidence: curveCalibrationConfidence(residualItems, residualDeviationBp),
+    confidence: adjustConfidenceForValuationQuality(
+      curveCalibrationConfidence(residualItems, residualDeviationBp),
+      residualItems,
+    ),
     clusterMode: "curveResidualCalibration",
-    clusterNote: "目标附近无足够券，采用隐含评级中债中短票曲线 + 主体曲线偏离校准",
-    method: `DM 存续债上一日估值；目标附近无足够券，按${impliedRating}隐含评级中债中短票曲线加主体曲线偏离${formatSignedBp(averageResidualBp)}校准；不使用主体评级`,
+    clusterNote: `目标附近无足够券，采用隐含评级中债中短票曲线 + 主体曲线偏离校准${residualOutlierResult.excludedCount ? `；剔除${residualOutlierResult.excludedCount}个曲线残差异常值` : ""}`,
+    method: `DM 存续债实际估值日数据；按${impliedRating}隐含评级中债中短票标准节点线性插值，并加主体曲线偏离${formatSignedBp(averageResidualBp)}校准；不使用主体评级`,
     comparableItems: residualItems,
     curveCalibration: {
       curveName,
@@ -425,6 +538,7 @@ async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valua
       residualDeviation: round(residualDeviation, 4),
       residualDeviationBp,
       itemCount: residualItems.length,
+      excludedOutlierCount: residualOutlierResult.excludedCount,
       valuationDate,
     },
   };
@@ -449,13 +563,12 @@ function curveRowsByTerm(rows = []) {
 function curveYieldForTerm(curveByTerm, years) {
   const exact = curveByTerm.get(curveTermKey(years));
   if (exact) return exact.yieldRate;
-  let best = null;
-  for (const value of curveByTerm.values()) {
-    const gap = Math.abs(value.term - years);
-    if (gap > 0.02) continue;
-    if (!best || gap < best.gap) best = { ...value, gap };
-  }
-  return best?.yieldRate ?? null;
+  const sorted = [...curveByTerm.values()].sort((left, right) => left.term - right.term);
+  const lower = [...sorted].reverse().find((value) => value.term < years);
+  const upper = sorted.find((value) => value.term > years);
+  if (!lower || !upper) return null;
+  const weight = (years - lower.term) / (upper.term - lower.term);
+  return lower.yieldRate + ((upper.yieldRate - lower.yieldRate) * weight);
 }
 
 function normalizeCurveTerms(terms = []) {
@@ -464,10 +577,16 @@ function normalizeCurveTerms(terms = []) {
   for (const term of terms) {
     const value = Number(term);
     if (!Number.isFinite(value) || value <= 0) continue;
-    const key = curveTermKey(value);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(formatCurveTerm(value));
+    const exact = STANDARD_CURVE_TERMS.find((candidate) => Math.abs(candidate - value) < 0.0001);
+    const lower = [...STANDARD_CURVE_TERMS].reverse().find((candidate) => candidate < value);
+    const upper = STANDARD_CURVE_TERMS.find((candidate) => candidate > value);
+    for (const curveTerm of exact ? [exact] : [lower, upper]) {
+      if (!Number.isFinite(curveTerm)) continue;
+      const key = curveTermKey(curveTerm);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(formatCurveTerm(curveTerm));
+    }
   }
   return result;
 }
@@ -510,6 +629,25 @@ function weightedValueDeviation(items, center, key) {
   const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
   const variance = items.reduce((sum, item) => sum + ((item[key] - center) ** 2) * item.weight, 0) / totalWeight;
   return Math.sqrt(variance);
+}
+
+function filterNumericOutliers(items, key, minimumDistance, minimumItems) {
+  if (items.length < minimumItems) return { items, excludedCount: 0 };
+  const values = items.map((item) => Number(item[key])).filter(Number.isFinite);
+  if (values.length < minimumItems) return { items, excludedCount: 0 };
+  const middle = median(values);
+  const medianAbsoluteDeviation = median(values.map((value) => Math.abs(value - middle)));
+  const threshold = Math.max(minimumDistance, medianAbsoluteDeviation * 1.4826 * 3);
+  const kept = items.filter((item) => Math.abs(Number(item[key]) - middle) <= threshold);
+  if (!kept.length) return { items, excludedCount: 0 };
+  return { items: kept, excludedCount: items.length - kept.length };
+}
+
+function median(values) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function formatSignedBp(value) {
@@ -569,6 +707,25 @@ function selectPrimaryDurationCluster(items, targetYears) {
   };
 }
 
+function enforceSingleAnchorReliability(suggestion) {
+  if (!suggestion || suggestion.curveCalibration || suggestion.referenceOnly) return suggestion;
+  const items = suggestion.comparableItems || [];
+  if (items.length !== 1) return suggestion;
+  const gap = itemAbsoluteGap(items[0]);
+  if (gap <= primaryDurationClusterGapYears(suggestion.years)) return suggestion;
+  const clusterNote = `${suggestion.clusterNote}；单只远端可比券且无可用隐含评级曲线，不输出点估值`;
+  return {
+    ...suggestion,
+    center: null,
+    low: null,
+    high: null,
+    confidence: "不足",
+    referenceOnly: true,
+    clusterNote,
+    method: `DM 存续债实际估值日数据；${clusterNote}；该券仅供人工参考`,
+  };
+}
+
 function suggestionSpread(items, center, cluster) {
   const baseSpread = items.length === 1 ? 0.05 : Math.max(0.03, Math.min(0.15, weightedDeviation(items, center)));
   if (cluster.mode === "nearestCluster") return baseSpread;
@@ -602,35 +759,155 @@ function itemAbsoluteGap(item) {
   return Number.isFinite(item.absoluteGapYears) ? item.absoluteGapYears : Math.abs(item.durationGapYears || 0);
 }
 
-function pickDmValuationRate(rows, preferExercise) {
-  const priorities = preferExercise
-    ? [
-        [["cb_yte", "cbYte"], "中债行权估值", ["cb_reliability", "cbReliability"]],
-        [["cs_yte", "csYte"], "中证行权估值", ["cs_reliability", "csReliability"]],
-        [["cb_ytm", "cbYtm"], "中债到期估值", ["cb_reliability", "cbReliability"]],
-        [["cs_ytm", "csYtm"], "中证到期估值", ["cs_reliability", "csReliability"]],
-        [["spider_yield", "spiderYield"], "上清所估值", []],
-      ]
-    : [
-        [["cb_ytm", "cbYtm"], "中债到期估值", ["cb_reliability", "cbReliability"]],
-        [["cs_ytm", "csYtm"], "中证到期估值", ["cs_reliability", "csReliability"]],
-        [["cb_yte", "cbYte"], "中债行权估值", ["cb_reliability", "cbReliability"]],
-        [["cs_yte", "csYte"], "中证行权估值", ["cs_reliability", "csReliability"]],
-        [["spider_yield", "spiderYield"], "上清所估值", []],
-      ];
-  for (const [keys, source, reliabilityKeys] of priorities) {
-    for (const row of rows) {
-      const rate = numberFromRow(row, keys);
-      if (!Number.isFinite(rate)) continue;
-      return {
-        rate,
-        source,
-        reliability: pickFirstString(row, reliabilityKeys),
-        valuationDate: pickFirstDateString(row, ["valuation_date", "valuationDate", "issue_date", "issueDate"]),
-      };
+function pickDmValuationRate(rows, preferExercise, valuationDate = "", requestedDate = valuationDate) {
+  const actualDate = valuationDate || latestValuationDate(rows, requestedDate);
+  if (!actualDate) return null;
+  const sameDateRows = rows.filter((row) => marketRowValuationDate(row) === actualDate);
+  const descriptors = {
+    yte: [
+      { keys: ["cb_yte", "cbYte"], source: "中债行权估值", sourceField: "cbYte", reliabilityKeys: ["cb_reliability", "cbReliability"], priority: 0 },
+      { keys: ["cs_yte", "csYte"], source: "中证行权估值", sourceField: "csYte", reliabilityKeys: ["cs_reliability", "csReliability"], priority: 1 },
+    ],
+    ytm: [
+      { keys: ["cb_ytm", "cbYtm"], source: "中债到期估值", sourceField: "cbYtm", reliabilityKeys: ["cb_reliability", "cbReliability"], priority: 0 },
+      { keys: ["cs_ytm", "csYtm"], source: "中证到期估值", sourceField: "csYtm", reliabilityKeys: ["cs_reliability", "csReliability"], priority: 1 },
+      { keys: ["spider_yield", "spiderYield"], source: "上清所到期估值", sourceField: "spiderYield", reliabilityKeys: [], priority: 2 },
+    ],
+  };
+  const groups = preferExercise
+    ? [{ key: "yte", yieldBasis: "行权收益率", basisFallback: false }, { key: "ytm", yieldBasis: "到期收益率", basisFallback: true }]
+    : [{ key: "ytm", yieldBasis: "到期收益率", basisFallback: false }, { key: "yte", yieldBasis: "行权收益率", basisFallback: true }];
+
+  for (const group of groups) {
+    const observations = [];
+    for (const descriptor of descriptors[group.key]) {
+      for (const row of sameDateRows) {
+        const rate = numberFromRow(row, descriptor.keys);
+        if (!Number.isFinite(rate) || rate <= 0 || rate > 50) continue;
+        const reliability = pickFirstString(row, descriptor.reliabilityKeys);
+        const reliabilityWeight = valuationReliabilityWeight(reliability, descriptor.sourceField);
+        if (reliabilityWeight <= 0) continue;
+        observations.push({
+          ...descriptor,
+          rate,
+          reliability,
+          reliabilityWeight,
+          dataSource: pickFirstString(row, ["data_source", "dataSource"]),
+        });
+      }
     }
+    if (!observations.length) continue;
+    observations.sort((left, right) => right.reliabilityWeight - left.reliabilityWeight
+      || left.priority - right.priority
+      || left.rate - right.rate);
+    const best = observations[0];
+    const uniqueObservations = deduplicateValuationObservations(observations);
+    const rates = uniqueObservations.map((item) => item.rate);
+    const sourceSpreadBp = rates.length > 1 ? (Math.max(...rates) - Math.min(...rates)) * 100 : 0;
+    const ageDays = Math.max(0, daysBetweenIsoDates(actualDate, requestedDate));
+    return {
+      rate: best.rate,
+      source: best.source,
+      sourceField: best.sourceField,
+      dataSource: best.dataSource,
+      sourceCount: uniqueObservations.length,
+      sourceSpreadBp: round(sourceSpreadBp, 1),
+      reliability: best.reliability,
+      reliabilityWeight: best.reliabilityWeight,
+      valuationDate: actualDate,
+      ageDays,
+      stale: ageDays > 0,
+      yieldBasis: group.yieldBasis,
+      basisFallback: group.basisFallback,
+    };
   }
   return null;
+}
+
+function valuationReliabilityWeight(reliability, sourceField = "") {
+  const text = String(reliability || "").trim();
+  if (/不推荐|异常|无效|待核实|不可用/.test(text)) return 0;
+  if (/强推荐|推荐|高|可靠|优/.test(text)) return 1;
+  if (!text) return sourceField === "spiderYield" ? 0.65 : 0.8;
+  return 0.7;
+}
+
+function deduplicateValuationObservations(observations) {
+  const seen = new Set();
+  return observations.filter((item) => {
+    const key = `${item.sourceField}:${item.dataSource || "default"}:${round(item.rate, 6)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function marketRowValuationDate(row) {
+  return pickFirstDateString(row, ["valuation_date", "valuationDate"]);
+}
+
+function latestValuationDate(rows, ceilingDate = "") {
+  const ceiling = parseDate(ceilingDate);
+  const coverageByDate = new Map();
+  rows.forEach((row, index) => {
+    const value = marketRowValuationDate(row);
+    if (
+      !value
+      || (ceiling && parseDate(value)?.getTime() > ceiling.getTime())
+      || !marketRowHasUsableValuation(row)
+    ) return;
+    if (!coverageByDate.has(value)) coverageByDate.set(value, new Set());
+    coverageByDate.get(value).add(
+      normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"])) || `row-${index}`,
+    );
+  });
+  return [...coverageByDate.entries()]
+    .sort((left, right) => right[1].size - left[1].size || right[0].localeCompare(left[0]))
+    .at(0)?.[0] || "";
+}
+
+function commonValuationDateForCandidates(candidates, marketRowsBySecurityId, requestedDate) {
+  const requested = parseDate(requestedDate);
+  const dates = [...new Set(
+    [...marketRowsBySecurityId.values()]
+      .flat()
+      .map(marketRowValuationDate)
+      .filter(Boolean)
+      .filter((value) => !requested || parseDate(value)?.getTime() <= requested.getTime()),
+  )];
+  const scoredDates = dates.map((date) => ({
+    date,
+    coverage: candidates.reduce((count, candidate) => {
+      const valuation = pickDmValuationRate(
+        marketRowsBySecurityId.get(candidate.securityId) || [],
+        candidate.profile.exercisable,
+        date,
+        requestedDate,
+      );
+      return count + (Number.isFinite(valuation?.rate) && !valuation.basisFallback ? 1 : 0);
+    }, 0),
+  }));
+  return scoredDates
+    .filter((item) => item.coverage > 0)
+    .sort((left, right) => right.coverage - left.coverage || right.date.localeCompare(left.date))
+    .at(0)?.date || "";
+}
+
+function marketRowHasUsableValuation(row) {
+  const checks = [
+    [["cb_yte", "cbYte"], ["cb_reliability", "cbReliability"], "cbYte"],
+    [["cb_ytm", "cbYtm"], ["cb_reliability", "cbReliability"], "cbYtm"],
+    [["cs_yte", "csYte"], ["cs_reliability", "csReliability"], "csYte"],
+    [["cs_ytm", "csYtm"], ["cs_reliability", "csReliability"], "csYtm"],
+    [["spider_yield", "spiderYield"], [], "spiderYield"],
+  ];
+  return checks.some(([rateKeys, reliabilityKeys, sourceField]) => {
+    const rate = numberFromRow(row, rateKeys);
+    return Number.isFinite(rate)
+      && rate > 0
+      && rate <= 50
+      && valuationReliabilityWeight(pickFirstString(row, reliabilityKeys), sourceField) > 0;
+  });
 }
 
 function groupMarketRowsBySecurityId(rows) {
@@ -658,7 +935,7 @@ function noComparablePayload({ issuerName, durationText, valuationDate, reason, 
 
 function targetDurationParts(durationText) {
   return splitDurationParts(durationText)
-    .map((part) => ({ durationText: part, years: durationToYears(part) }))
+    .map((part) => ({ durationText: part, years: durationToYears(part), hasExercise: durationHasExercise(part) }))
     .filter((item) => Number.isFinite(item.years) && item.years > 0);
 }
 
@@ -666,7 +943,10 @@ function splitDurationParts(value = "") {
   const text = String(value || "").trim().toUpperCase().replace(/期$/, "");
   const unit = text.match(/(D|M|Y|天|日|月|年)$/i)?.[1] || "";
   if (!unit) return text ? [text] : [];
-  return text.slice(0, -unit.length).split("/").map((part) => `${part}${unit}`).filter(Boolean);
+  return text
+    .split("/")
+    .map((part) => (/(D|M|Y|天|日|月|年)$/i.test(part) ? part : `${part}${unit}`))
+    .filter(Boolean);
 }
 
 function durationToYears(value = "") {
@@ -688,7 +968,7 @@ function durationToYears(value = "") {
 }
 
 function durationHasExercise(value = "") {
-  return /\d\s*\+/.test(String(value || ""));
+  return /\d\s*\+|[Y年]\s*\+\s*\d/i.test(String(value || ""));
 }
 
 function maxDurationGapYears(years) {
@@ -709,6 +989,20 @@ function parseDate(value = "") {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
   return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+}
+
+function offsetIsoDate(value, offsetDays) {
+  const date = parseDate(value);
+  if (!date) return value;
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function daysBetweenIsoDates(earlier, later) {
+  const start = parseDate(earlier);
+  const end = parseDate(later);
+  if (!start || !end) return 0;
+  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
 }
 
 function comparableProfile(source = {}) {
@@ -735,6 +1029,8 @@ function comparableProfile(source = {}) {
     source.paymentOrder,
     source.special_item,
     source.specialItem,
+    source.next_option_date,
+    source.nextOptionDate,
     source.durationText,
     tenorText,
   ].filter(Boolean).join(" ").toUpperCase();
@@ -745,6 +1041,12 @@ function comparableProfile(source = {}) {
     perpetual: textHasPerpetualTerms(text) || tenorLooksPerpetual(tenorText),
     subordinated: /次级|二级资本|资本补充|TLAC|清偿顺序|劣后/.test(text),
     structured: /ABS|ABN|资产支持|可转债|可交换|REIT|项目收益/.test(text),
+    exercisable: Boolean(
+      pickFirstDateString(source, ["next_option_date", "nextOptionDate"])
+      || durationHasExercise(source.durationText)
+      || durationHasExercise(tenorText)
+      || /回售|赎回|调整票面利率|投资者选择权|发行人选择权/.test(text)
+    ),
   };
 }
 
@@ -872,9 +1174,18 @@ function previousChinaBusinessDate(reference = new Date()) {
 export const __test__ = {
   buildTrancheSuggestion,
   chinaBondMtnCurveName,
+  commonValuationDateForCandidates,
+  comparableProfile,
+  curveRowsByTerm,
+  curveYieldForTerm,
   durationToYears,
+  enforceSingleAnchorReliability,
+  filterNumericOutliers,
+  latestValuationDate,
   normalizeCurveRating,
+  normalizeCurveTerms,
   previousChinaBusinessDate,
   pickDmValuationRate,
   selectPrimaryDurationCluster,
+  targetDurationParts,
 };
