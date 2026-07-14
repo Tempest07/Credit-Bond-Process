@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260715-ocr-rows";
+const VERSION = "20260715-ocr-tiles";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -20,8 +20,9 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`date-picker\\.js\\?v=${VERSION}`));
-  assert.match(app, /project-screenshot-ocr\.js\?v=20260715-ocr-rows/);
-  assert.match(app, /project-screenshot-layout\.js\?v=20260715-ocr-rows/);
+  assert.match(app, new RegExp(`project-screenshot-ocr\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`project-screenshot-layout\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`project-screenshot-image\\.js\\?v=${VERSION}`));
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
@@ -101,8 +102,18 @@ test("uses a reusable, layout-aware OCR worker for project screenshots", async (
   assert.match(app, /analyzeProjectScreenshotLayout/);
   assert.match(app, /detectProjectScreenshotContentBounds/);
   assert.match(app, /splitProjectScreenshotRegionVertically/);
+  assert.match(app, /buildProjectScreenshotAnalysisTiles/);
   assert.match(app, /projectScreenshotUniformScale/);
-  assert.match(app, /sourceKey:\s*`row:\$\{rowIndex\}`/);
+  assert.match(app, /inspectProjectScreenshotImageHeader/);
+  assert.match(app, /projectScreenshotResizeDimensions/);
+  assert.match(app, /PROJECT_SCREENSHOT_MAX_FILE_BYTES/);
+  assert.match(app, /for \(const degrees of \[90, 270, 180\]\)/);
+  assert.match(app, /createProjectScreenshotRotatedCanvas/);
+  assert.match(app, /selectProjectScreenshotOrientationProbe/);
+  assert.match(app, /limitProjectScreenshotOcrTargets/);
+  assert.match(app, /projectScreenshotWorkerGeneration/);
+  assert.match(app, /source-y:/);
+  assert.match(app, /sourceKey:\s*`source-y:\$\{Math\.round\(band\.y \+ band\.height \/ 2\)\}/);
   assert.doesNotMatch(app, /targetHeight:\s*Math\.max\((?:96|108),/);
   assert.doesNotMatch(app, /fitProjectScreenshot(?:Rows|Height|Columns)ToCanvas/);
   assert.match(app, /if \(rowBands\.length >= 2 && columns\)/);

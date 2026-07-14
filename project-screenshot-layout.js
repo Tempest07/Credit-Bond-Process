@@ -12,6 +12,7 @@ export function detectProjectScreenshotKeyColumns(
   const sampleStep = Math.max(3, Math.floor(regionHeight / 220));
   const sampleCount = Math.ceil(regionHeight / sampleStep);
   const binCount = Math.min(8, Math.max(1, sampleCount));
+  const edgeOffset = 3;
   const lineXs = [];
   for (let x = startX; x < endX; x += 1) {
     let strong = 0;
@@ -24,12 +25,15 @@ export function detectProjectScreenshotKeyColumns(
       const bin = Math.min(binCount - 1, Math.floor(sampleIndex * binCount / sampleCount));
       const offset = (y * width + x) * 4;
       const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+      const leftGray = projectScreenshotGrayAt(data, width, Math.max(startX, x - edgeOffset), y);
+      const rightGray = projectScreenshotGrayAt(data, width, Math.min(endX - 1, x + edgeOffset), y);
+      const localContrast = Math.max(leftGray, rightGray) - gray;
       totalBins[bin] += 1;
-      if (gray < 170) {
+      if (gray < 170 || localContrast >= 38) {
         strong += 1;
         strongBins[bin] += 1;
       }
-      if (gray < 232) {
+      if (gray < 232 || localContrast >= 12) {
         light += 1;
         lightBins[bin] += 1;
       }
@@ -48,6 +52,37 @@ export function detectProjectScreenshotKeyColumns(
   }
   const rawLines = mergeLinePositions(lineXs);
   return selectProjectScreenshotKeyColumns(rawLines, startX, endX - 1);
+}
+
+export function buildProjectScreenshotAnalysisTiles(
+  width,
+  height,
+  { maxPixels = 1_600_000, maxWidth = 1_300, maxHeight = 1_900 } = {},
+) {
+  const sourceWidth = Math.max(1, Number(width) || 1);
+  const sourceHeight = Math.max(1, Number(height) || 1);
+  const scale = Math.min(1, Math.max(Number.EPSILON, maxWidth / sourceWidth));
+  const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const targetHeightLimit = Math.max(64, Math.min(
+    maxHeight,
+    Math.floor(maxPixels / targetWidth),
+  ));
+  const sourceTileHeight = Math.max(1, Math.floor(targetHeightLimit / scale));
+  if (sourceHeight <= sourceTileHeight) return [{ y: 0, height: sourceHeight, scale }];
+
+  const overlap = Math.min(
+    Math.round(sourceTileHeight * 0.08),
+    Math.max(40, Math.round(160 / scale)),
+  );
+  const stride = Math.max(1, sourceTileHeight - overlap);
+  const tiles = [];
+  for (let y = 0; y < sourceHeight; y += stride) {
+    const remaining = sourceHeight - y;
+    const tileHeight = Math.min(sourceTileHeight, remaining);
+    tiles.push({ y, height: tileHeight, scale });
+    if (tileHeight >= remaining) break;
+  }
+  return tiles;
 }
 
 export function projectScreenshotLineCoverageMatches({
@@ -120,6 +155,11 @@ function insetProjectScreenshotColumn(left, right, imageWidth) {
   const x = Math.max(0, left + inset);
   const maxRight = Math.max(x + 1, right - inset);
   return { x, width: maxRight - x };
+}
+
+function projectScreenshotGrayAt(data, width, x, y) {
+  const offset = (y * width + x) * 4;
+  return data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
 }
 
 function mergeLinePositions(positions = []) {

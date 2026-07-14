@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260715-ocr-rows";
+} from "./core.js?v=20260715-ocr-tiles";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260715-ocr-rows";
+} from "./lifecycle.js?v=20260715-ocr-tiles";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260715-ocr-rows";
+} from "./history-parser.js?v=20260715-ocr-tiles";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260715-ocr-rows";
+} from "./protocol-transfer.js?v=20260715-ocr-tiles";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260715-ocr-rows";
+} from "./reminders.js?v=20260715-ocr-tiles";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,8 +77,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260715-ocr-rows";
-import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-rows";
+} from "./secondary-inventory.js?v=20260715-ocr-tiles";
+import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-tiles";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -86,11 +86,16 @@ import {
   groupProjectScreenshotOcrPhysicalRows,
   mergeProjectScreenshotOcrPasses,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260715-ocr-rows";
+} from "./project-screenshot-ocr.js?v=20260715-ocr-tiles";
 import {
+  buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260715-ocr-rows";
+} from "./project-screenshot-layout.js?v=20260715-ocr-tiles";
+import {
+  inspectProjectScreenshotImageHeader,
+  projectScreenshotResizeDimensions,
+} from "./project-screenshot-image.js?v=20260715-ocr-tiles";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -108,6 +113,12 @@ const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exce
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
 const PROJECT_SCREENSHOT_MIN_OCR_WIDTH = 2600;
 const PROJECT_SCREENSHOT_ROW_GAP = 18;
+const PROJECT_SCREENSHOT_MAX_FILE_BYTES = 30 * 1024 * 1024;
+const PROJECT_SCREENSHOT_IMAGE_MIME_TYPES = new Set([
+  "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff",
+  "image/heic", "image/heif", "image/avif",
+]);
+const PROJECT_SCREENSHOT_IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif|avif)$/i;
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -201,6 +212,7 @@ let projectScreenshotSessionId = 0;
 let projectScreenshotRowSequence = 0;
 let projectScreenshotWorker = null;
 let projectScreenshotWorkerPromise = null;
+let projectScreenshotWorkerGeneration = 0;
 let projectScreenshotOcrProgressContext = null;
 let liquidMotionFrame = null;
 let liquidMotionObserver = null;
@@ -659,8 +671,9 @@ async function processProjectScreenshotFile(file, input = null) {
     if (input) input.value = "";
     return;
   }
-  if (!isProjectScreenshotImageFile(file)) {
-    showToast("请上传项目表截图图片。");
+  const validationError = projectScreenshotImageFileValidationError(file);
+  if (validationError) {
+    showToast(validationError);
     if (input) input.value = "";
     return;
   }
@@ -742,91 +755,196 @@ function projectScreenshotImageFileFromDataTransfer(dataTransfer) {
 }
 
 function projectScreenshotImageFileFromList(files) {
-  return Array.from(files || []).find(isProjectScreenshotImageFile) || null;
+  const list = Array.from(files || []);
+  return list.find(isProjectScreenshotImageFile) || list[0] || null;
 }
 
 function isProjectScreenshotImageFile(file) {
-  if (!file) return false;
-  if (file.type?.startsWith("image/")) return true;
-  if (/\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.name || "")) return true;
-  return !file.type && Number(file.size) > 0;
+  return !projectScreenshotImageFileValidationError(file);
+}
+
+function projectScreenshotImageFileValidationError(file) {
+  if (!file || !Number(file.size)) return "图片文件为空，请重新选择。";
+  if (Number(file.size) > PROJECT_SCREENSHOT_MAX_FILE_BYTES) return "图片超过 30MB，请先裁剪或分段上传。";
+  const type = String(file.type || "").toLowerCase();
+  if (type && !PROJECT_SCREENSHOT_IMAGE_MIME_TYPES.has(type)) return "请上传 PNG、JPEG、WebP、HEIC 等项目表图片。";
+  if (!type && !PROJECT_SCREENSHOT_IMAGE_EXTENSIONS.test(file.name || "")) return "无法确认图片格式，请改用 PNG 或 JPEG。";
+  return "";
 }
 
 async function recognizeProjectScreenshotEntries(file) {
   const image = await loadProjectScreenshotImage(file);
   try {
-    const targets = createProjectScreenshotOcrTargets(image);
-    const passes = [];
-    const passErrors = [];
-    let successfulPasses = 0;
-    const worker = await getProjectScreenshotWorker();
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index];
-      projectScreenshotOcrProgressContext = { label: target.label, index, total: targets.length };
-      setProjectScreenshotStatus(`正在 OCR ${target.label} ${index + 1}/${targets.length}...`);
-      let canvas = null;
+    const originalEntries = await recognizeProjectScreenshotImage(image);
+    if (isReliableProjectScreenshotOcrResult(originalEntries)) return originalEntries;
+    let bestEntries = originalEntries;
+
+    for (const degrees of [90, 270, 180]) {
+      const rotated = createProjectScreenshotRotatedCanvas(image, degrees);
       try {
-        canvas = target.createCanvas();
-        if (!canvas) continue;
-        const pageSegMode = window.Tesseract.PSM?.[target.pageSegMode]
-          || { SINGLE_BLOCK: "6", SINGLE_LINE: "7", SPARSE_TEXT: "11" }[target.pageSegMode]
-          || "6";
-        if (worker?.setParameters) {
-          await worker.setParameters({
-            tessedit_pageseg_mode: pageSegMode,
-            preserve_interword_spaces: "1",
-            user_defined_dpi: "300",
-          });
-        }
-        const result = worker
-          ? await worker.recognize(canvas)
-          : await window.Tesseract.recognize(canvas, "chi_sim+eng", {
-            logger: (message) => updateProjectScreenshotOcrProgress(message, target.label, index, targets.length),
-            tessedit_pageseg_mode: pageSegMode,
-            preserve_interword_spaces: "1",
-            user_defined_dpi: "300",
-          });
-        const physicalRows = groupProjectScreenshotOcrPhysicalRows(result?.data?.lines || []);
-        if (physicalRows.length) {
-          const baseSourceKey = target.sourceKey || `target:${index}`;
-          physicalRows.forEach((row, rowIndex) => passes.push({
-            label: `${target.label} 物理行 ${rowIndex + 1}`,
-            sourceKey: target.kind === "row"
-              ? baseSourceKey
-              : target.sourceRowKeyForBbox?.(row.bbox)
-                || `${baseSourceKey}:y:${Math.round((row.bbox.y0 + row.bbox.y1) / 20)}`,
-            text: row.text,
-            confidence: row.confidence || result?.data?.confidence,
-          }));
-          passes.push({
-            label: `${target.label} 行序`,
-            sourceKey: target.kind === "row" ? baseSourceKey : `${baseSourceKey}:layout`,
-            text: physicalRows.map((row) => row.text).join("\n"),
-            confidence: result?.data?.confidence,
-          });
-        } else {
-          passes.push({
-            label: target.label,
-            sourceKey: target.sourceKey || "",
-            text: result?.data?.text || "",
-            confidence: result?.data?.confidence,
-          });
-        }
-        successfulPasses += 1;
-      } catch (error) {
-        passErrors.push(`${target.label}: ${error?.message || "识别失败"}`);
+        const probe = await recognizeProjectScreenshotImage(rotated, `旋转 ${degrees}° 探测`, { probeOnly: true });
+        if (!probe.length) continue;
+        const entries = await recognizeProjectScreenshotImage(rotated, `旋转 ${degrees}°`);
+        if (projectScreenshotOcrResultScore(entries) > projectScreenshotOcrResultScore(bestEntries)) bestEntries = entries;
+        if (isReliableProjectScreenshotOcrResult(entries)) return entries;
       } finally {
-        if (canvas) {
-          canvas.width = 1;
-          canvas.height = 1;
-        }
+        rotated.width = 1;
+        rotated.height = 1;
       }
     }
-    if (!successfulPasses && passErrors.length) throw new Error(`OCR 识别失败：${passErrors[0]}`);
-    return mergeProjectScreenshotOcrPasses(passes);
+    return bestEntries;
   } finally {
     projectScreenshotOcrProgressContext = null;
-    if (typeof image.close === "function") image.close();
+    releaseProjectScreenshotImage(image);
+  }
+}
+
+async function recognizeProjectScreenshotImage(image, orientationLabel = "", { probeOnly = false } = {}) {
+  const availableTargets = createProjectScreenshotOcrTargets(image);
+  const targets = probeOnly
+    ? [selectProjectScreenshotOrientationProbe(availableTargets)].filter(Boolean)
+    : limitProjectScreenshotOcrTargets(availableTargets);
+  const passes = [];
+  const passErrors = [];
+  let successfulPasses = 0;
+  const worker = await getProjectScreenshotWorker();
+  for (let index = 0; index < targets.length; index += 1) {
+    const target = targets[index];
+    const label = [orientationLabel, target.label].filter(Boolean).join(" · ");
+    projectScreenshotOcrProgressContext = { label, index, total: targets.length };
+    setProjectScreenshotStatus(`正在 OCR ${label} ${index + 1}/${targets.length}...`);
+    let canvas = null;
+    try {
+      canvas = target.createCanvas();
+      if (!canvas) continue;
+      const pageSegMode = window.Tesseract.PSM?.[target.pageSegMode]
+        || { SINGLE_BLOCK: "6", SINGLE_LINE: "7", SPARSE_TEXT: "11" }[target.pageSegMode]
+        || "6";
+      if (worker?.setParameters) {
+        await worker.setParameters({
+          tessedit_pageseg_mode: pageSegMode,
+          preserve_interword_spaces: "1",
+          user_defined_dpi: "300",
+        });
+      }
+      const result = worker
+        ? await worker.recognize(canvas)
+        : await window.Tesseract.recognize(canvas, "chi_sim+eng", {
+          logger: (message) => updateProjectScreenshotOcrProgress(message, label, index, targets.length),
+          tessedit_pageseg_mode: pageSegMode,
+          preserve_interword_spaces: "1",
+          user_defined_dpi: "300",
+        });
+      const physicalRows = groupProjectScreenshotOcrPhysicalRows(result?.data?.lines || []);
+      if (physicalRows.length) {
+        const baseSourceKey = target.sourceKey || `target:${index}`;
+        physicalRows.forEach((row, rowIndex) => passes.push({
+          label: `${label} 物理行 ${rowIndex + 1}`,
+          sourceKey: target.kind === "row"
+            ? baseSourceKey
+            : target.sourceRowKeyForBbox?.(row.bbox)
+              || `${baseSourceKey}:y:${Math.round((row.bbox.y0 + row.bbox.y1) / 20)}`,
+          text: row.text,
+          confidence: row.confidence || result?.data?.confidence,
+        }));
+        passes.push({
+          label: `${label} 行序`,
+          sourceKey: target.kind === "row" ? baseSourceKey : `${baseSourceKey}:layout`,
+          text: physicalRows.map((row) => row.text).join("\n"),
+          confidence: result?.data?.confidence,
+        });
+      } else {
+        passes.push({
+          label,
+          sourceKey: target.sourceKey || "",
+          text: result?.data?.text || "",
+          confidence: result?.data?.confidence,
+        });
+      }
+      successfulPasses += 1;
+    } catch (error) {
+      passErrors.push(`${label}: ${error?.message || "识别失败"}`);
+    } finally {
+      if (canvas) {
+        canvas.width = 1;
+        canvas.height = 1;
+      }
+    }
+  }
+  if (!successfulPasses && passErrors.length) throw new Error(`OCR 识别失败：${passErrors[0]}`);
+  return mergeProjectScreenshotOcrPasses(passes);
+}
+
+function selectProjectScreenshotOrientationProbe(targets = []) {
+  return targets.find((target) => target.sourceKey === "column:0")
+    || targets.find((target) => target.sourceKey?.startsWith("region:0:"))
+    || targets.find((target) => target.kind === "row")
+    || targets[0]
+    || null;
+}
+
+function limitProjectScreenshotOcrTargets(targets = []) {
+  const compact = window.matchMedia?.("(max-width: 760px)")?.matches;
+  const limit = compact ? 72 : 96;
+  if (targets.length <= limit) return targets;
+  const rowTargets = targets.filter((target) => target.kind === "row").slice(0, Math.floor(limit / 2));
+  const otherTargets = targets.filter((target) => target.kind !== "row");
+  const remaining = Math.max(1, limit - rowTargets.length);
+  const sampled = Array.from({ length: remaining }, (_, index) => (
+    otherTargets[Math.round(index * (otherTargets.length - 1) / Math.max(1, remaining - 1))]
+  )).filter(Boolean);
+  return [...rowTargets, ...sampled];
+}
+
+function isReliableProjectScreenshotOcrResult(entries = []) {
+  return entries.length >= 3 || entries.some((entry) => Number(entry.ocrVotes) >= 2);
+}
+
+function projectScreenshotOcrResultScore(entries = []) {
+  return entries.length * 100
+    + entries.reduce((sum, entry) => sum + Math.min(10, Number(entry.ocrVotes) || 0), 0);
+}
+
+function createProjectScreenshotRotatedCanvas(image, degrees) {
+  const quarterTurn = Math.abs(degrees) % 180 === 90;
+  const rotatedWidth = quarterTurn ? image.height : image.width;
+  const rotatedHeight = quarterTurn ? image.width : image.height;
+  const compact = window.matchMedia?.("(max-width: 760px)")?.matches;
+  const maxPixels = compact ? 9_000_000 : 18_000_000;
+  const maxDimension = compact ? 16_000 : 24_000;
+  const scale = Math.min(
+    1,
+    Math.sqrt(maxPixels / Math.max(1, rotatedWidth * rotatedHeight)),
+    maxDimension / Math.max(1, rotatedWidth, rotatedHeight),
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(rotatedWidth * scale));
+  canvas.height = Math.max(1, Math.round(rotatedHeight * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.translate(canvas.width / 2, canvas.height / 2);
+  context.rotate(degrees * Math.PI / 180);
+  context.drawImage(
+    image,
+    -Math.round(image.width * scale) / 2,
+    -Math.round(image.height * scale) / 2,
+    Math.round(image.width * scale),
+    Math.round(image.height * scale),
+  );
+  return canvas;
+}
+
+function releaseProjectScreenshotImage(image) {
+  if (typeof image?.close === "function") {
+    image.close();
+    return;
+  }
+  if (typeof image?.getContext === "function") {
+    image.width = 1;
+    image.height = 1;
   }
 }
 
@@ -834,23 +952,32 @@ async function getProjectScreenshotWorker() {
   if (!window.Tesseract?.createWorker) return null;
   if (projectScreenshotWorker) return projectScreenshotWorker;
   if (!projectScreenshotWorkerPromise) {
+    const generation = projectScreenshotWorkerGeneration;
     projectScreenshotWorkerPromise = window.Tesseract.createWorker("chi_sim+eng", window.Tesseract.OEM?.LSTM_ONLY, {
       logger: (message) => {
         const context = projectScreenshotOcrProgressContext || {};
         updateProjectScreenshotOcrProgress(message, context.label, context.index, context.total);
       },
     }).then((worker) => {
+      if (generation !== projectScreenshotWorkerGeneration) {
+        worker?.terminate?.();
+        throw new Error("OCR worker was released during initialization");
+      }
       projectScreenshotWorker = worker;
       return worker;
-    }).catch((error) => {
-      projectScreenshotWorkerPromise = null;
-      throw error;
     });
   }
-  return projectScreenshotWorkerPromise;
+  const pendingWorker = projectScreenshotWorkerPromise;
+  try {
+    return await pendingWorker;
+  } catch (error) {
+    if (projectScreenshotWorkerPromise === pendingWorker) projectScreenshotWorkerPromise = null;
+    throw error;
+  }
 }
 
 function releaseProjectScreenshotWorker() {
+  projectScreenshotWorkerGeneration += 1;
   const worker = projectScreenshotWorker;
   projectScreenshotWorker = null;
   projectScreenshotWorkerPromise = null;
@@ -862,19 +989,72 @@ function releaseProjectScreenshotWorker() {
 }
 
 async function loadProjectScreenshotImage(file) {
-  if (window.createImageBitmap) return window.createImageBitmap(file);
+  const header = inspectProjectScreenshotImageHeader(await file.slice(0, 512 * 1024).arrayBuffer());
+  if (!header?.width || !header?.height) {
+    throw new Error("无法安全读取图片尺寸，请转为 PNG 或 JPEG 后重试");
+  }
+  const limits = projectScreenshotDecodedImageLimits();
+  const planned = projectScreenshotResizeDimensions(header.width, header.height, limits);
+  let bitmapError = null;
+  if (window.createImageBitmap) {
+    try {
+      const options = planned && planned.scale < 1
+        ? {
+          imageOrientation: "from-image",
+          resizeWidth: planned.width,
+          resizeHeight: planned.height,
+          resizeQuality: "high",
+        }
+        : { imageOrientation: "from-image" };
+      const bitmap = await window.createImageBitmap(file, options);
+      return await constrainProjectScreenshotDecodedImage(bitmap, limits);
+    } catch (error) {
+      bitmapError = error;
+    }
+  }
+  if (planned && planned.scale < 1) {
+    throw new Error("图片尺寸过大，当前浏览器无法安全压缩；请裁剪或分段上传");
+  }
   const url = URL.createObjectURL(file);
   try {
     const image = new Image();
     image.decoding = "async";
     const loaded = new Promise((resolve, reject) => {
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error("图片读取失败"));
+      image.onerror = () => reject(new Error(
+        /heic|heif/i.test(`${file.type} ${file.name}`)
+          ? "当前浏览器无法读取 HEIC，请转为 PNG 或 JPEG"
+          : `图片读取失败${bitmapError?.message ? `：${bitmapError.message}` : ""}`,
+      ));
     });
     image.src = url;
-    return await loaded;
+    return await constrainProjectScreenshotDecodedImage(await loaded, limits);
   } finally {
     URL.revokeObjectURL(url);
+  }
+}
+
+function projectScreenshotDecodedImageLimits() {
+  const compact = window.matchMedia?.("(max-width: 760px)")?.matches;
+  return compact
+    ? { maxPixels: 18_000_000, maxDimension: 16_000 }
+    : { maxPixels: 36_000_000, maxDimension: 24_000 };
+}
+
+async function constrainProjectScreenshotDecodedImage(image, limits) {
+  const planned = projectScreenshotResizeDimensions(image.width, image.height, limits);
+  if (!planned || planned.scale >= 1 || !window.createImageBitmap) return image;
+  try {
+    const resized = await window.createImageBitmap(image, {
+      resizeWidth: planned.width,
+      resizeHeight: planned.height,
+      resizeQuality: "high",
+    });
+    image.close?.();
+    return resized;
+  } catch {
+    image.close?.();
+    throw new Error("图片像素过大，请裁剪或分段上传");
   }
 }
 
@@ -892,6 +1072,12 @@ function createProjectScreenshotOcrTargets(image) {
       label: `分行债券列 ${index + 1}/${rowChunks.length}`,
       sourceKey: `column:${index}`,
       pageSegMode: "SINGLE_BLOCK",
+      sourceRowKeyForBbox: (bbox) => projectScreenshotChunkSourceRowKey(
+        bbox,
+        chunk,
+        columns.branch.width + columns.name.width,
+        50,
+      ),
       createCanvas: () => createProjectScreenshotColumnCanvas(image, chunk, columns),
     }));
   }
@@ -900,6 +1086,12 @@ function createProjectScreenshotOcrTargets(image) {
       label: `表格行 ${index + 1}/${rowChunks.length}`,
       sourceKey: `rows:${index}`,
       pageSegMode: "SINGLE_BLOCK",
+      sourceRowKeyForBbox: (bbox) => projectScreenshotChunkSourceRowKey(
+        bbox,
+        chunk,
+        primaryRegion.width,
+        0,
+      ),
       createCanvas: () => createProjectScreenshotRowCanvas(image, chunk, primaryRegion),
     }));
   }
@@ -929,7 +1121,7 @@ function createProjectScreenshotCellRowTargets(image, rowBands = [], columns) {
       });
   return selectedRows.map(({ band, rowIndex }) => ({
     label: `表格第 ${rowIndex + 1} 行`,
-    sourceKey: `row:${rowIndex}`,
+    sourceKey: `source-y:${Math.round(band.y + band.height / 2)}:${Math.round(band.height)}`,
     pageSegMode: "SINGLE_LINE",
     kind: "row",
     createCanvas: () => createProjectScreenshotCellRowCanvas(image, band, columns),
@@ -1016,7 +1208,34 @@ function projectScreenshotRegionSourceRowKey(bbox, region, rowBands = []) {
   });
   if (!best) return "";
   const tolerance = Math.max(24, best.band.height * 0.7);
-  return best.distance <= tolerance ? `row:${best.rowIndex}` : "";
+  return best.distance <= tolerance
+    ? `source-y:${Math.round(sourceCenter)}:${Math.round(best.band.height)}`
+    : "";
+}
+
+function projectScreenshotChunkSourceRowKey(bbox, rowBands = [], sourceWidth = 1, overheadWidth = 0) {
+  if (!bbox || !rowBands.length) return "";
+  const sourceHeight = rowBands.reduce((sum, band) => sum + Math.max(1, band.height - 4), 0);
+  const scale = projectScreenshotUniformScale(
+    sourceWidth,
+    sourceHeight,
+    overheadWidth,
+    PROJECT_SCREENSHOT_ROW_GAP * (rowBands.length + 1),
+  );
+  const center = (Number(bbox.y0) + Number(bbox.y1)) / 2;
+  if (!Number.isFinite(center)) return "";
+  let targetY = PROJECT_SCREENSHOT_ROW_GAP;
+  let best = null;
+  for (const band of rowBands) {
+    const height = Math.max(1, band.height - 4);
+    if (height < 20) continue;
+    const targetHeight = Math.max(1, Math.round(height * scale));
+    const distance = Math.abs(center - (targetY + targetHeight / 2));
+    if (!best || distance < best.distance) best = { band, distance, targetHeight };
+    targetY += targetHeight + PROJECT_SCREENSHOT_ROW_GAP;
+  }
+  if (!best || best.distance > best.targetHeight * 0.75 + PROJECT_SCREENSHOT_ROW_GAP) return "";
+  return `source-y:${Math.round(best.band.y + best.band.height / 2)}:${Math.round(best.band.height)}`;
 }
 
 function splitProjectScreenshotRegionVertically(region, maxSlices = 8) {
@@ -1034,7 +1253,10 @@ function splitProjectScreenshotRegionVertically(region, maxSlices = 8) {
   const naturalSourceHeight = Math.max(160, Math.floor(maxTargetHeight / Math.max(Number.EPSILON, scale)));
   if (region.height <= naturalSourceHeight) return [region];
 
-  const sliceLimit = Math.max(1, Math.floor(maxSlices));
+  // Keep text at a legible scale even for full-page mobile screenshots. The
+  // caller's maxSlices is a preference, not a reason to crush 30,000px into a
+  // handful of unreadable canvases; a bounded expanded budget is safer.
+  const sliceLimit = Math.max(12, Math.min(48, Math.floor(maxSlices) * 6));
   const minimumCappedHeight = Math.ceil(region.height / Math.max(1, sliceLimit * 0.9 + 0.1));
   const maxSourceHeight = Math.max(naturalSourceHeight, minimumCappedHeight);
   const overlap = Math.min(Math.round(maxSourceHeight * 0.1), Math.max(60, Math.round(region.height * 0.02)));
@@ -1218,52 +1440,107 @@ function projectScreenshotCanvasLimits() {
 }
 
 function analyzeProjectScreenshotLayout(image) {
-  const { maxPixels, maxWidth, maxHeight } = projectScreenshotAnalysisLimits();
-  const scale = Math.min(
-    1,
-    maxWidth / Math.max(1, image.width),
-    maxHeight / Math.max(1, image.height),
-    Math.sqrt(maxPixels / Math.max(1, image.width * image.height)),
-  );
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.width * scale));
-  canvas.height = Math.max(1, Math.round(image.height * scale));
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  try {
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    const scaleX = image.width / canvas.width;
-    const scaleY = image.height / canvas.height;
-    const analysisBounds = detectProjectScreenshotContentBounds(data, canvas.width, canvas.height);
-    const rowBands = detectProjectScreenshotRowBands(data, canvas.width, canvas.height, analysisBounds)
-      .map((band) => ({
-        y: Math.max(0, Math.round(band.y * scaleY)),
-        height: Math.max(1, Math.round(band.height * scaleY)),
-      }));
-    const analysisColumns = detectProjectScreenshotKeyColumns(data, canvas.width, canvas.height, analysisBounds);
-    const columns = analysisColumns ? {
-      branch: {
-        x: Math.max(0, Math.round(analysisColumns.branch.x * scaleX)),
-        width: Math.max(1, Math.round(analysisColumns.branch.width * scaleX)),
-      },
-      name: {
-        x: Math.max(0, Math.round(analysisColumns.name.x * scaleX)),
-        width: Math.max(1, Math.round(analysisColumns.name.width * scaleX)),
-      },
-    } : null;
-    const contentBounds = {
-      x: Math.max(0, Math.round(analysisBounds.x * scaleX)),
-      y: Math.max(0, Math.round(analysisBounds.y * scaleY)),
-      width: Math.max(1, Math.round(analysisBounds.width * scaleX)),
-      height: Math.max(1, Math.round(analysisBounds.height * scaleY)),
-    };
-    return { rowBands, columns, contentBounds };
-  } finally {
-    canvas.width = 1;
-    canvas.height = 1;
+  const limits = projectScreenshotAnalysisLimits();
+  const tiles = buildProjectScreenshotAnalysisTiles(image.width, image.height, limits);
+  const layouts = [];
+  for (const tile of tiles) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * tile.scale));
+    canvas.height = Math.max(1, Math.round(tile.height * tile.scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    try {
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, tile.y, image.width, tile.height, 0, 0, canvas.width, canvas.height);
+      const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const scaleX = image.width / canvas.width;
+      const scaleY = tile.height / canvas.height;
+      const analysisBounds = detectProjectScreenshotContentBounds(data, canvas.width, canvas.height);
+      const rowBands = detectProjectScreenshotRowBands(data, canvas.width, canvas.height, analysisBounds)
+        .map((band) => ({
+          y: Math.max(0, Math.round(tile.y + band.y * scaleY)),
+          height: Math.max(1, Math.round(band.height * scaleY)),
+        }));
+      const analysisColumns = detectProjectScreenshotKeyColumns(data, canvas.width, canvas.height, analysisBounds);
+      const columns = analysisColumns ? {
+        branch: {
+          x: Math.max(0, Math.round(analysisColumns.branch.x * scaleX)),
+          width: Math.max(1, Math.round(analysisColumns.branch.width * scaleX)),
+        },
+        name: {
+          x: Math.max(0, Math.round(analysisColumns.name.x * scaleX)),
+          width: Math.max(1, Math.round(analysisColumns.name.width * scaleX)),
+        },
+      } : null;
+      layouts.push({
+        rowBands,
+        columns,
+        contentBounds: {
+          x: Math.max(0, Math.round(analysisBounds.x * scaleX)),
+          y: Math.max(0, Math.round(tile.y + analysisBounds.y * scaleY)),
+          width: Math.max(1, Math.round(analysisBounds.width * scaleX)),
+          height: Math.max(1, Math.round(analysisBounds.height * scaleY)),
+        },
+      });
+    } finally {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
   }
+  return mergeProjectScreenshotAnalysisLayouts(layouts, image.width, image.height);
+}
+
+function mergeProjectScreenshotAnalysisLayouts(layouts = [], imageWidth = 1, imageHeight = 1) {
+  const rowBands = mergeProjectScreenshotAnalysisRowBands(layouts.flatMap((layout) => layout.rowBands || []));
+  const columnCandidates = layouts.map((layout) => layout.columns).filter(Boolean);
+  const median = (values) => {
+    const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
+    return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  };
+  const columns = columnCandidates.length ? {
+    branch: {
+      x: Math.max(0, Math.round(median(columnCandidates.map((item) => item.branch.x)))),
+      width: Math.max(1, Math.round(median(columnCandidates.map((item) => item.branch.width)))),
+    },
+    name: {
+      x: Math.max(0, Math.round(median(columnCandidates.map((item) => item.name.x)))),
+      width: Math.max(1, Math.round(median(columnCandidates.map((item) => item.name.width)))),
+    },
+  } : null;
+  const bounds = layouts.map((layout) => layout.contentBounds).filter(Boolean);
+  const left = bounds.length ? Math.min(...bounds.map((item) => item.x)) : 0;
+  const top = bounds.length ? Math.min(...bounds.map((item) => item.y)) : 0;
+  const right = bounds.length ? Math.max(...bounds.map((item) => item.x + item.width)) : imageWidth;
+  const bottom = bounds.length ? Math.max(...bounds.map((item) => item.y + item.height)) : imageHeight;
+  return {
+    rowBands,
+    columns,
+    contentBounds: {
+      x: Math.max(0, left),
+      y: Math.max(0, top),
+      width: Math.max(1, Math.min(imageWidth, right) - Math.max(0, left)),
+      height: Math.max(1, Math.min(imageHeight, bottom) - Math.max(0, top)),
+    },
+  };
+}
+
+function mergeProjectScreenshotAnalysisRowBands(bands = []) {
+  const merged = [];
+  const sorted = bands
+    .filter((band) => Number.isFinite(band?.y) && Number.isFinite(band?.height) && band.height > 0)
+    .sort((left, right) => left.y - right.y || right.height - left.height);
+  for (const band of sorted) {
+    const existingIndex = merged.findIndex((candidate) => {
+      const overlap = Math.max(0, Math.min(candidate.y + candidate.height, band.y + band.height) - Math.max(candidate.y, band.y));
+      return overlap / Math.max(1, Math.min(candidate.height, band.height)) >= 0.55;
+    });
+    if (existingIndex < 0) {
+      merged.push({ ...band });
+    } else if (band.height > merged[existingIndex].height) {
+      merged[existingIndex] = { ...band };
+    }
+  }
+  return merged.sort((left, right) => left.y - right.y);
 }
 
 function detectProjectScreenshotContentBounds(data, width, height) {
@@ -1320,6 +1597,7 @@ function detectProjectScreenshotRowBands(data, width, height, bounds = { x: 0, y
   const sampleStep = Math.max(3, Math.floor(regionWidth / 420));
   const sampleCount = Math.ceil(regionWidth / sampleStep);
   const binCount = Math.min(8, Math.max(1, sampleCount));
+  const edgeOffset = 3;
   const lineYs = [];
   for (let y = startY; y < endY; y += 1) {
     let strong = 0;
@@ -1332,12 +1610,17 @@ function detectProjectScreenshotRowBands(data, width, height, bounds = { x: 0, y
       const bin = Math.min(binCount - 1, Math.floor(sampleIndex * binCount / sampleCount));
       const offset = (y * width + x) * 4;
       const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+      const topOffset = (Math.max(startY, y - edgeOffset) * width + x) * 4;
+      const bottomOffset = (Math.min(endY - 1, y + edgeOffset) * width + x) * 4;
+      const topGray = data[topOffset] * 0.299 + data[topOffset + 1] * 0.587 + data[topOffset + 2] * 0.114;
+      const bottomGray = data[bottomOffset] * 0.299 + data[bottomOffset + 1] * 0.587 + data[bottomOffset + 2] * 0.114;
+      const localContrast = Math.max(topGray, bottomGray) - gray;
       totalBins[bin] += 1;
-      if (gray < 155) {
+      if (gray < 155 || localContrast >= 42) {
         strong += 1;
         strongBins[bin] += 1;
       }
-      if (gray < 232) {
+      if (gray < 232 || localContrast >= 12) {
         light += 1;
         lightBins[bin] += 1;
       }

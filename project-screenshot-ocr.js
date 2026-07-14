@@ -18,13 +18,20 @@ const BOND_TYPE_ALIASES = [
   { canonical: "定向工具", pattern: /定向工具/gi },
   { canonical: "公司债券", pattern: /公司[债債][券卷劵眷]/gi },
   { canonical: "企业债券", pattern: /企[业業][债債][券卷劵眷]/gi },
+  { canonical: "无固定期限资本债券", pattern: /无固定期限资本[债債][券卷劵眷]/gi },
+  { canonical: "二级资本债券", pattern: /二级资本[债債][券卷劵眷]/gi },
+  { canonical: "混合资本债券", pattern: /混合资本[债債][券卷劵眷]/gi },
+  { canonical: "资本补充债券", pattern: /资本补充[债債][券卷劵眷]/gi },
+  { canonical: "次级债券", pattern: /次级[债債][券卷劵眷]/gi },
+  { canonical: "金融债券", pattern: /金融[债債][券卷劵眷]/gi },
+  { canonical: "TLAC非资本债券", pattern: /TLAC非资本[债債][券卷劵眷]/gi },
   { canonical: "资产支持票据", pattern: /[资資]产[支文广]持票[据劇根居]/gi },
   { canonical: "资产支持证券", pattern: /[资資]产支持[证證]券/gi },
   { canonical: "资产支持专项计划", pattern: /[资資]产支持[专專]项[计計][划刬]/gi },
 ];
 
-const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|CP|MTN|PPN|ABN|ABS)";
-const PROJECT_SCREENSHOT_TRANCHE_PATTERN = "(?:品种(?:[一二三四五六七八九十]+|[A-Z]|[0-9]{1,2})|(?:优先(?:级|档)?|次级|劣后)(?:[一二三四五六七八九十]+|[A-Z][0-9]{0,2}|[0-9]{1,2})?(?:级|档)?|[AB])";
+const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|无固定期限资本债券|二级资本债券|混合资本债券|资本补充债券|TLAC非资本债券|次级债券|金融债券|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|CP|MTN|PPN|ABN|ABS)";
+const PROJECT_SCREENSHOT_TRANCHE_PATTERN = "(?:品种(?:[一二三四五六七八九十]+|[A-Z]|[0-9]{1,2})|(?:优先(?:级|档)?|次级|劣后)(?:[一二三四五六七八九十]+|[A-Z][0-9]{0,2}|[0-9]{1,2})?(?:级|档)?|夹层|中间级|权益级|[AB])";
 const PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN = `(?:(?:[()（）]?${PROJECT_SCREENSHOT_TRANCHE_PATTERN}[()（）]?)|(?:[()（）][^()（）]{1,24}[()（）])){0,4}`;
 const PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN = `${PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN}(?:${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN})?`;
 const BOND_NAME_CHARACTERS = "\\u4e00-\\u9fffA-Za-z0-9()（）·-";
@@ -54,10 +61,13 @@ function normalizeProjectScreenshotBondTokens(value = "") {
     .replace(/集困/g, "集团")
     .replace(/公同/g, "公司")
     .replace(/股分/g, "股份")
-    .replace(/([2Zz])([0OoQ])([0-9OoQIiLlZzSsGg])([0-9OoQIiLlZzSsGg])(?=年|年度)/g, (...match) => (
+    .replace(/永读(?=中期票据|公司债券|企业债券)/g, "永续")
+    .replace(/可续朋(?=公司债券|企业债券)/g, "可续期")
+    .replace(/有担堡(?=公司债券|企业债券)/g, "有担保")
+    .replace(/([2Zz])([0OoQ])([0-9OoQIiLlZzSsGgBb])([0-9OoQIiLlZzSsGgBb])(?=年|年度)/g, (...match) => (
       match.slice(1, 5).map(normalizeOcrDigit).join("")
     ))
-    .replace(/第([0-9OoQIiLlZzSsGg]+)(?=期|号)/g, (_, value) => `第${[...value].map(normalizeOcrDigit).join("")}`)
+    .replace(/第([0-9OoQIiLlZzSsGgBb]+)(?=期|号)/g, (_, value) => `第${[...value].map(normalizeOcrDigit).join("")}`)
     .replace(/优先A[IiLl](?=级)/g, "优先A1");
 
   for (const alias of BOND_TYPE_ALIASES) normalized = normalized.replace(alias.pattern, alias.canonical);
@@ -101,15 +111,19 @@ export function parseProjectScreenshotOcrText(text = "") {
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const branchMatches = findProjectScreenshotBranchMatches(lines[lineIndex]);
     if (!branchMatches.length && carryBranch && carryAdditionalRows && !hasDetachedBranchColumn) {
-      const carriedNames = lineIndex === carryLineIndex + 1
-        ? extractProjectScreenshotWrappedBondNames(lines, lineIndex)
-        : [];
+      const directNames = extractProjectScreenshotBondFullNames(lines[lineIndex]);
+      const carriedNames = directNames.length
+        ? directNames
+        : lineIndex === carryLineIndex + 1
+          ? extractProjectScreenshotWrappedBondNames(lines, lineIndex)
+          : [];
       let carried = false;
       for (const fullName of carriedNames) {
         addEntry(carryBranch, fullName);
         carried = true;
       }
       if (carried) carryLineIndex = lineIndex;
+      else if (isProjectScreenshotTableMetadataLine(lines[lineIndex])) carryLineIndex = lineIndex;
       else {
         carryBranch = "";
         carryAdditionalRows = false;
@@ -124,8 +138,8 @@ export function parseProjectScreenshotOcrText(text = "") {
         branchMatches[branchIndex + 1]?.index ?? lines[lineIndex].length,
       );
       const currentHasBond = Boolean(extractProjectScreenshotBondFullName(currentSegment));
-      carryAdditionalRows = currentHasBond;
-      carryLineIndex = currentHasBond ? lineIndex : -1;
+      carryAdditionalRows = currentHasBond || Boolean(projectScreenshotIssueYear(currentSegment));
+      carryLineIndex = carryAdditionalRows ? lineIndex : -1;
       const previousHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex - 1] || "").length > 0;
       const previousPreviousHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex - 2] || "").length > 0;
       const nextHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex + 1] || "").length > 0;
@@ -223,18 +237,20 @@ export function mergeProjectScreenshotOcrPasses(passes = []) {
   for (const pass of passes) {
     const confidence = Number(pass?.confidence);
     const sourceKey = String(pass?.sourceKey || "");
-    const physicalRowKey = /^row:\d+$/.test(sourceKey) ? sourceKey : "";
+    const physicalRowKey = /^(?:row:\d+|source-y:\d+:\d+)$/.test(sourceKey) ? sourceKey : "";
     for (const entry of parseProjectScreenshotOcrText(pass?.text || "")) {
       const normalizedName = normalizeProjectScreenshotOcrText(entry.fullName);
       let cluster = physicalRowKey
         ? clusters.find((candidate) => candidate.branch === entry.branch
-          && candidate.sourceKeys.has(physicalRowKey)
+          && [...candidate.sourceKeys].some((key) => projectScreenshotSourceRowsMatch(key, physicalRowKey))
           && [...candidate.names].some((name) => projectScreenshotBondNamesMatch(name, normalizedName, { sameSourceRow: true })))
         : null;
       if (!cluster) cluster = clusters.find((candidate) => candidate.branch === entry.branch
         && [...candidate.names].some((name) => projectScreenshotBondNamesMatch(name, normalizedName, {
             sameSourceRow: Boolean(sourceKey && candidate.sourceKeys.has(sourceKey)),
           })));
+      if (!cluster) cluster = clusters.find((candidate) => candidate.branch === entry.branch
+        && [...candidate.names].some((name) => projectScreenshotBondNamesHaveShortNoisePrefix(name, normalizedName)));
       if (!cluster) {
         cluster = { branch: entry.branch, names: new Set([normalizedName]), candidates: [], labels: new Set(), sourceKeys: new Set(), order: order++ };
         clusters.push(cluster);
@@ -364,11 +380,16 @@ export function groupProjectScreenshotOcrPhysicalRows(lines = []) {
     });
   const mergedRows = [];
   for (const row of physicalRows) {
-    const previous = mergedRows.at(-1);
+    let previousIndex = mergedRows.length - 1;
+    while (previousIndex >= 0 && isProjectScreenshotTableMetadataLine(mergedRows[previousIndex].text)) previousIndex -= 1;
+    const previous = mergedRows[previousIndex];
     const previousLooksIncomplete = previous
       && projectScreenshotIssueYear(previous.text)
+      && !projectScreenshotIssueYear(row.text)
       && !findProjectScreenshotBranchMatches(row.text).length
+      && mergedRows.slice(previousIndex + 1).every((candidate) => isProjectScreenshotTableMetadataLine(candidate.text))
       && !extractProjectScreenshotBondFullName(previous.text)
+      && !extractProjectScreenshotBondFullName(row.text)
       && projectScreenshotCanContinueWrappedBond(row.text, previous.text);
     if (!previousLooksIncomplete) {
       mergedRows.push(row);
@@ -452,6 +473,8 @@ export function cleanProjectScreenshotBondFullName(value = "") {
   let text = normalizeProjectScreenshotOcrText(value)
     .replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, "")
     .replace(/^(?:序号|项目|分行|主承|牵头|联席|债券全称|债项名称)+/, "")
+    .replace(/^[\u4e00-\u9fffA-Za-z]{0,2}\d[一二三四五六七八九十](?=[\u4e00-\u9fff]{4,60}20\d{2})/, "")
+    .replace(/^[一二三四五六七八九十](?=(?:广州|武汉|青岛|兰州|苏州|太原|西安)[\u4e00-\u9fff]{3,60}20\d{2})/, "")
     .replace(/[,:;，。；：].*$/, "");
   const ocrBranchPrefix = findProjectScreenshotBranchMatches(text).find((match) => match.index === 0);
   if (ocrBranchPrefix) text = text.slice(ocrBranchPrefix.length);
@@ -483,6 +506,7 @@ function normalizeOcrDigit(value) {
   if (/[Zz]/.test(value)) return "2";
   if (/[Ss]/.test(value)) return "5";
   if (/[Gg]/.test(value)) return "6";
+  if (/[Bb]/.test(value)) return "8";
   return value;
 }
 
@@ -529,12 +553,13 @@ function isStructurallyValidProjectScreenshotBondName(value = "") {
   const familyIndex = text.search(new RegExp(PROJECT_SCREENSHOT_BOND_TYPE_PATTERN, "i"));
   const productPrefix = familyIndex > 0 ? text.slice(0, familyIndex) : "";
   if (!productPrefix || /^(?:本期|本次|项目|债券|发行|计划|汇总|清单)/.test(productPrefix)) return false;
-  return /(?:第[一二三四五六七八九十百0-9]+(?:期|号)|优先|次级|劣后|[A-Z][0-9]+级?)/i.test(text);
+  return /(?:第[一二三四五六七八九十百0-9]+(?:期|号)|优先|次级|劣后|夹层|中间级|权益级|[A-Z][0-9]+级?)/i.test(text);
 }
 
 function projectScreenshotBondNameQuality(value = "") {
   const text = normalizeProjectScreenshotOcrText(value);
   let score = Math.min(4, text.length / 24);
+  if (/^[0-9A-Za-z][一二三四五六七八九十](?=[\u4e00-\u9fff]{4})/.test(text)) score -= 3;
   if (projectScreenshotIssueYear(text)) score += 4;
   if (projectScreenshotBondFamily(text)) score += 5;
   if (/(?:第[一二三四五六七八九十0-9]+期|[A-Z]?[0-9]{2,3})/i.test(text)) score += 1;
@@ -565,19 +590,48 @@ function projectScreenshotBondNamesMatch(left = "", right = "", { sameSourceRow 
   return projectScreenshotTextSimilarity(left, right) >= 0.84;
 }
 
+function projectScreenshotSourceRowsMatch(left = "", right = "") {
+  if (left === right) return true;
+  const parse = (value) => value.match(/^source-y:(\d+):(\d+)$/)?.slice(1).map(Number) || null;
+  const leftPosition = parse(left);
+  const rightPosition = parse(right);
+  if (!leftPosition || !rightPosition) return false;
+  const [leftY, leftHeight] = leftPosition;
+  const [rightY, rightHeight] = rightPosition;
+  return Math.abs(leftY - rightY) <= Math.max(8, Math.min(leftHeight, rightHeight) * 0.72);
+}
+
+function projectScreenshotBondNamesHaveShortNoisePrefix(left = "", right = "") {
+  if (left === right) return true;
+  if (projectScreenshotIssueYear(left) !== projectScreenshotIssueYear(right)) return false;
+  if (projectScreenshotBondFamily(left) !== projectScreenshotBondFamily(right)) return false;
+  if (projectScreenshotBondVariant(left) !== projectScreenshotBondVariant(right)) return false;
+  if (projectScreenshotBondFeatureKey(left) !== projectScreenshotBondFeatureKey(right)) return false;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = shorter === left ? right : left;
+  const prefixLength = longer.length - shorter.length;
+  return prefixLength > 0 && prefixLength <= 4 && longer.endsWith(shorter);
+}
+
 function projectScreenshotBondFeatureKey(value = "") {
   const text = normalizeProjectScreenshotOcrText(value).toUpperCase();
   const features = [];
-  if (/(?:永续|可续期|无固定期限|PERP)/i.test(text)) features.push("PERPETUAL");
+  if (/(?:永续|可续期|无固定期限|发行人续期选择权|递延付息|可递延|PERP)/i.test(text)) features.push("PERPETUAL");
+  if (/(?:非公开发行|私募发行|私募)/.test(text)) features.push("PRIVATE");
+  else if (/(?:公开发行|公募发行|公募)/.test(text)) features.push("PUBLIC");
   if (/(?:绿色|碳中和)/.test(text)) features.push("GREEN");
   if (/(?:科创|科技创新)/.test(text)) features.push("TECH");
   if (/乡村振兴/.test(text)) features.push("RURAL");
   if (/(?:可持续发展挂钩|可持续挂钩)/.test(text)) features.push("SUSTAINABILITY_LINKED");
-  if (/(?:次级|二级资本|资本补充|总损失吸收能力|TLAC)/i.test(text)) features.push("SUBORDINATED");
+  if (/非次级/.test(text)) features.push("NON_SUBORDINATED");
+  else if (/(?:次级|二级资本|资本补充|混合资本|总损失吸收能力|TLAC)/i.test(text)) features.push("SUBORDINATED");
   if (/(?:无担保|无增信)/.test(text)) features.push("UNSECURED");
-  else if (/(?:有担保|保证担保|担保债券)/.test(text)) features.push("GUARANTEED");
-  if (/抵押/.test(text)) features.push("MORTGAGE");
-  if (/质押/.test(text)) features.push("PLEDGED");
+  else if (/(?:有担保|保证担保|保证公司债券|保证企业债券|提供担保|连带责任保证|担保债券)/.test(text)) features.push("GUARANTEED");
+  if (/无抵押/.test(text)) features.push("NO_MORTGAGE");
+  else if (/抵质押/.test(text)) features.push("MORTGAGE_AND_PLEDGE");
+  else if (/抵押/.test(text)) features.push("MORTGAGE");
+  if (/无质押/.test(text)) features.push("NO_PLEDGE");
+  else if (!/抵质押/.test(text) && /质押/.test(text)) features.push("PLEDGED");
   return features.join("|");
 }
 
@@ -643,7 +697,7 @@ function projectScreenshotTrancheToken(text = "") {
   const familyTranche = text.match(new RegExp(`${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}([AB])(?=[()（）]|$)`, "i"))?.[1] || "";
   if (familyTranche === "A") return "TRANCHE:1";
   if (familyTranche === "B") return "TRANCHE:2";
-  const priority = text.match(/(优先(?:级|档)?[一二三四五六七八九十A-Z0-9-]*|次级[一二三四五六七八九十A-Z0-9-]*|劣后[一二三四五六七八九十A-Z0-9-]*)/)?.[1] || "";
+  const priority = text.match(/(优先(?:级|档)?[一二三四五六七八九十A-Z0-9-]*|次级[一二三四五六七八九十A-Z0-9-]*|劣后[一二三四五六七八九十A-Z0-9-]*|夹层|中间级|权益级)/)?.[1] || "";
   return priority ? `CLASS:${priority}` : "";
 }
 

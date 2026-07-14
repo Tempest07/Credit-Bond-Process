@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   normalizeProjectScreenshotTableLines,
   selectProjectScreenshotKeyColumns,
@@ -84,4 +85,36 @@ test("detects light dashed table columns distributed across the screenshot", () 
     branch: { x: 192, width: 216 },
     name: { x: 412, width: 946 },
   });
+});
+
+test("detects very light table lines from local contrast", () => {
+  const width = 2200;
+  const height = 120;
+  const data = new Uint8ClampedArray(width * height * 4);
+  data.fill(255);
+  for (const x of [0, 190, 410, 1360, 1680, 2199]) {
+    for (let y = 0; y < height; y += 1) {
+      const offset = (y * width + x) * 4;
+      data[offset] = 238;
+      data[offset + 1] = 238;
+      data[offset + 2] = 238;
+    }
+  }
+  assert.deepEqual(detectProjectScreenshotKeyColumns(data, width, height), {
+    branch: { x: 192, width: 216 },
+    name: { x: 412, width: 946 },
+  });
+});
+
+test("tiles very tall screenshots without sacrificing horizontal resolution", () => {
+  const tiles = buildProjectScreenshotAnalysisTiles(1200, 30000, {
+    maxPixels: 1_600_000,
+    maxWidth: 1300,
+    maxHeight: 1900,
+  });
+
+  assert.ok(tiles.length > 10);
+  assert.equal(tiles[0].scale, 1);
+  assert.ok(tiles.every((tile) => 1200 * tile.height * tile.scale ** 2 <= 1_600_000));
+  assert.equal(tiles.at(-1).y + tiles.at(-1).height, 30000);
 });
