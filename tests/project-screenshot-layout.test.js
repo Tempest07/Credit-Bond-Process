@@ -65,3 +65,23 @@ test("detects branch and name columns from synthetic screenshot pixels", () => {
     name: { x: 412, width: 946 },
   });
 });
+
+test("detects light dashed table columns distributed across the screenshot", () => {
+  const width = 2200;
+  const height = 120;
+  const data = new Uint8ClampedArray(width * height * 4);
+  data.fill(255);
+  for (const x of [0, 190, 410, 1360, 1680, 2199]) {
+    for (let y = 0; y < height; y += 1) {
+      if (Math.floor(y / 3) % 3 === 2) continue;
+      const offset = (y * width + x) * 4;
+      data[offset] = 220;
+      data[offset + 1] = 220;
+      data[offset + 2] = 220;
+    }
+  }
+  assert.deepEqual(detectProjectScreenshotKeyColumns(data, width, height), {
+    branch: { x: 192, width: 216 },
+    name: { x: 412, width: 946 },
+  });
+});

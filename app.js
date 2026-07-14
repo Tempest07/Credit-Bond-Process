@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260715-ocr-layout";
+} from "./core.js?v=20260715-ocr-rows";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260715-ocr-layout";
+} from "./lifecycle.js?v=20260715-ocr-rows";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260715-ocr-layout";
+} from "./history-parser.js?v=20260715-ocr-rows";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260715-ocr-layout";
+} from "./protocol-transfer.js?v=20260715-ocr-rows";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260715-ocr-layout";
+} from "./reminders.js?v=20260715-ocr-rows";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,16 +77,20 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260715-ocr-layout";
-import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-layout";
+} from "./secondary-inventory.js?v=20260715-ocr-rows";
+import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-rows";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
   collapseProjectScreenshotRowsWithVerifiedMatches,
+  groupProjectScreenshotOcrPhysicalRows,
   mergeProjectScreenshotOcrPasses,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260715-ocr-layout";
-import { detectProjectScreenshotKeyColumns } from "./project-screenshot-layout.js?v=20260715-ocr-layout";
+} from "./project-screenshot-ocr.js?v=20260715-ocr-rows";
+import {
+  detectProjectScreenshotKeyColumns,
+  projectScreenshotLineCoverageMatches,
+} from "./project-screenshot-layout.js?v=20260715-ocr-rows";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -689,9 +693,11 @@ async function processProjectScreenshotFile(file, input = null) {
       isEditing: false,
     }));
     renderProjectScreenshotResults(projectScreenshotRows);
-    for (let index = 0; index < entries.length; index += 1) {
-      setProjectScreenshotStatus(`已识别 ${entries.length} 条，正在查 DM ${index + 1}/${entries.length}...`);
-      const requested = projectScreenshotRows[index];
+    const initialRowIds = projectScreenshotRows.map((row) => row.id);
+    for (let index = 0; index < initialRowIds.length; index += 1) {
+      setProjectScreenshotStatus(`已识别 ${initialRowIds.length} 条，正在查 DM ${index + 1}/${initialRowIds.length}...`);
+      const requested = projectScreenshotRows.find((row) => row.id === initialRowIds[index]);
+      if (!requested) continue;
       const requestedRevision = requested.revision;
       const lookupController = new AbortController();
       requested.lookupController = lookupController;
@@ -780,13 +786,32 @@ async function recognizeProjectScreenshotEntries(file) {
             preserve_interword_spaces: "1",
             user_defined_dpi: "300",
           });
-        const pass = {
-          label: target.label,
-          sourceKey: target.sourceKey || "",
-          text: result?.data?.text || "",
-          confidence: result?.data?.confidence,
-        };
-        passes.push(pass);
+        const physicalRows = groupProjectScreenshotOcrPhysicalRows(result?.data?.lines || []);
+        if (physicalRows.length) {
+          const baseSourceKey = target.sourceKey || `target:${index}`;
+          physicalRows.forEach((row, rowIndex) => passes.push({
+            label: `${target.label} 物理行 ${rowIndex + 1}`,
+            sourceKey: target.kind === "row"
+              ? baseSourceKey
+              : target.sourceRowKeyForBbox?.(row.bbox)
+                || `${baseSourceKey}:y:${Math.round((row.bbox.y0 + row.bbox.y1) / 20)}`,
+            text: row.text,
+            confidence: row.confidence || result?.data?.confidence,
+          }));
+          passes.push({
+            label: `${target.label} 行序`,
+            sourceKey: target.kind === "row" ? baseSourceKey : `${baseSourceKey}:layout`,
+            text: physicalRows.map((row) => row.text).join("\n"),
+            confidence: result?.data?.confidence,
+          });
+        } else {
+          passes.push({
+            label: target.label,
+            sourceKey: target.sourceKey || "",
+            text: result?.data?.text || "",
+            confidence: result?.data?.confidence,
+          });
+        }
         successfulPasses += 1;
       } catch (error) {
         passErrors.push(`${target.label}: ${error?.message || "识别失败"}`);
@@ -865,6 +890,7 @@ function createProjectScreenshotOcrTargets(image) {
   if (rowBands.length >= 2 && columns) {
     rowChunks.forEach((chunk, index) => targets.push({
       label: `分行债券列 ${index + 1}/${rowChunks.length}`,
+      sourceKey: `column:${index}`,
       pageSegMode: "SINGLE_BLOCK",
       createCanvas: () => createProjectScreenshotColumnCanvas(image, chunk, columns),
     }));
@@ -872,11 +898,17 @@ function createProjectScreenshotOcrTargets(image) {
   if (rowBands.length >= 3) {
     rowChunks.forEach((chunk, index) => targets.push({
       label: `表格行 ${index + 1}/${rowChunks.length}`,
+      sourceKey: `rows:${index}`,
       pageSegMode: "SINGLE_BLOCK",
       createCanvas: () => createProjectScreenshotRowCanvas(image, chunk, primaryRegion),
     }));
   }
-  targets.push(...createProjectScreenshotFallbackTargets(image, { columns, contentBounds, primaryRegion }));
+  targets.push(...createProjectScreenshotFallbackTargets(image, {
+    columns,
+    contentBounds,
+    primaryRegion,
+    rowBands,
+  }));
   return targets;
 }
 
@@ -923,7 +955,7 @@ function projectScreenshotPrimaryOcrRegion(image, columns, contentBounds) {
   return { x: left, y: bounds.y, width: Math.max(1, right - left), height: bounds.height };
 }
 
-function createProjectScreenshotFallbackTargets(image, { columns, contentBounds, primaryRegion }) {
+function createProjectScreenshotFallbackTargets(image, { columns, contentBounds, primaryRegion, rowBands = [] }) {
   const bounds = contentBounds || { x: 0, y: 0, width: image.width, height: image.height };
   const regions = [];
   const addRegion = (region) => {
@@ -962,10 +994,29 @@ function createProjectScreenshotFallbackTargets(image, { columns, contentBounds,
       label: `内容区 ${regionIndex + 1}.${sliceIndex + 1}/${slices.length}`,
       sourceKey: `region:${regionIndex}:${sliceIndex}`,
       pageSegMode: "SPARSE_TEXT",
+      sourceRowKeyForBbox: (bbox) => projectScreenshotRegionSourceRowKey(bbox, slice, rowBands),
       createCanvas: () => createProjectScreenshotRegionCanvas(image, slice),
     }));
   });
   return targets;
+}
+
+function projectScreenshotRegionSourceRowKey(bbox, region, rowBands = []) {
+  if (!bbox || !rowBands.length) return "";
+  const padding = 16;
+  const scale = projectScreenshotUniformScale(region.width, region.height, padding * 2, padding * 2);
+  const canvasCenter = (Number(bbox.y0) + Number(bbox.y1)) / 2;
+  if (!Number.isFinite(canvasCenter) || !Number.isFinite(scale) || scale <= 0) return "";
+  const sourceCenter = region.y + (canvasCenter - padding) / scale;
+  let best = null;
+  rowBands.forEach((band, rowIndex) => {
+    const bandCenter = band.y + band.height / 2;
+    const distance = Math.abs(sourceCenter - bandCenter);
+    if (!best || distance < best.distance) best = { rowIndex, band, distance };
+  });
+  if (!best) return "";
+  const tolerance = Math.max(24, best.band.height * 0.7);
+  return best.distance <= tolerance ? `row:${best.rowIndex}` : "";
 }
 
 function splitProjectScreenshotRegionVertically(region, maxSlices = 8) {
@@ -1179,6 +1230,8 @@ function analyzeProjectScreenshotLayout(image) {
   canvas.height = Math.max(1, Math.round(image.height * scale));
   const context = canvas.getContext("2d", { willReadFrequently: true });
   try {
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
     const scaleX = image.width / canvas.width;
@@ -1266,17 +1319,40 @@ function detectProjectScreenshotRowBands(data, width, height, bounds = { x: 0, y
   const regionHeight = Math.max(1, endY - startY);
   const sampleStep = Math.max(3, Math.floor(regionWidth / 420));
   const sampleCount = Math.ceil(regionWidth / sampleStep);
+  const binCount = Math.min(8, Math.max(1, sampleCount));
   const lineYs = [];
   for (let y = startY; y < endY; y += 1) {
     let strong = 0;
     let light = 0;
+    const strongBins = new Uint16Array(binCount);
+    const lightBins = new Uint16Array(binCount);
+    const totalBins = new Uint16Array(binCount);
+    let sampleIndex = 0;
     for (let x = startX; x < endX; x += sampleStep) {
+      const bin = Math.min(binCount - 1, Math.floor(sampleIndex * binCount / sampleCount));
       const offset = (y * width + x) * 4;
       const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
-      if (gray < 155) strong += 1;
-      if (gray < 232) light += 1;
+      totalBins[bin] += 1;
+      if (gray < 155) {
+        strong += 1;
+        strongBins[bin] += 1;
+      }
+      if (gray < 232) {
+        light += 1;
+        lightBins[bin] += 1;
+      }
+      sampleIndex += 1;
     }
-    if (strong / sampleCount > 0.34 || light / sampleCount > 0.72) lineYs.push(y);
+    if (projectScreenshotLineCoverageMatches({
+      strong,
+      light,
+      sampleCount,
+      strongBins,
+      lightBins,
+      totalBins,
+      strongThreshold: 0.34,
+      lightThreshold: 0.72,
+    })) lineYs.push(y);
   }
   const lines = mergeProjectScreenshotLineYs(lineYs);
   if (lines.length >= 2) {
@@ -1571,6 +1647,8 @@ function projectScreenshotRowSnapshot(row) {
     shortName: row.shortName || "",
     securityId: row.securityId || "",
     issuerName: row.issuerName || "",
+    candidateShortName: row.candidateShortName || "",
+    candidateSecurityId: row.candidateSecurityId || "",
     error: row.error || "",
     correctionDismissed: Boolean(row.correctionDismissed),
   };
@@ -1635,8 +1713,14 @@ function handleProjectScreenshotCorrectionClick(event) {
     cancelProjectScreenshotRowLookup(row);
     if (row.isManual && !row.verifiedFullName) {
       projectScreenshotRows = projectScreenshotRows.filter((item) => item.id !== row.id);
+      let replacement = null;
+      if (!projectScreenshotRows.length) {
+        replacement = createManualProjectScreenshotRow(row.sessionId || projectScreenshotSessionId);
+        projectScreenshotRows = [replacement];
+      }
       renderProjectScreenshotResults();
-      setProjectScreenshotStatus("已移除补录行。" );
+      setProjectScreenshotStatus(replacement ? "补录内容已清空，可继续填写。" : "已移除补录行。" );
+      if (replacement) requestAnimationFrame(() => keepProjectScreenshotRowVisible(replacement.id, "input"));
       return;
     }
     row.revision += 1;
@@ -1649,6 +1733,8 @@ function handleProjectScreenshotCorrectionClick(event) {
       shortName: row.verifiedShortName || "",
       securityId: row.verifiedSecurityId || "",
       issuerName: row.verifiedIssuerName || "",
+      candidateShortName: "",
+      candidateSecurityId: "",
       error: row.verifiedFullName ? "" : "DM 无结果",
       correctionDismissed: true,
     };
@@ -1657,6 +1743,8 @@ function handleProjectScreenshotCorrectionClick(event) {
     row.isEditing = false;
     row.correctionDismissed = row.status !== "ok";
     renderProjectScreenshotResults();
+    setProjectScreenshotStatus(row.status === "ok" ? "已取消校正，恢复 DM 核验结果。" : "已取消校正，恢复原识别内容。" );
+    requestAnimationFrame(() => keepProjectScreenshotRowVisible(row.id, "edit"));
     return;
   }
 }
@@ -1670,7 +1758,9 @@ function keepProjectScreenshotRowVisible(rowId, control = "input") {
   if (control === "card") return;
   const selector = control === "select"
     ? "[data-project-screenshot-branch-select]"
-    : "[data-project-screenshot-correction-input]";
+    : control === "edit"
+      ? "[data-project-screenshot-action=\"edit\"]"
+      : "[data-project-screenshot-correction-input]";
   card.querySelector(selector)?.focus({ preventScroll: true });
 }
 
@@ -1703,7 +1793,7 @@ async function handleProjectScreenshotCorrectionSubmit(event) {
   cancelProjectScreenshotRowLookup(row);
   const lookupController = new AbortController();
   row.lookupController = lookupController;
-  renderProjectScreenshotResults();
+  renderProjectScreenshotResults(projectScreenshotRows, { force: true });
   setProjectScreenshotStatus(`正在重查：${draft}`);
   const resolved = await lookupProjectScreenshotEntry(
     { ...row, lookupController: null, fullName: draft },
@@ -1733,10 +1823,25 @@ function syncProjectScreenshotCopyControls() {
   else if (copyBox) copyBox.remove();
 }
 
-function renderProjectScreenshotResults(rows = projectScreenshotRows) {
+function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = false } = {}) {
   const output = $("#projectScreenshotOutput");
   const copyButton = $("#copyProjectScreenshotShortNamesButton");
   if (!output || !copyButton) return;
+  const activeEditor = document.activeElement?.closest?.(
+    "[data-project-screenshot-correction-input], [data-project-screenshot-branch-select]",
+  );
+  if (!force && activeEditor && output.contains(activeEditor)) {
+    syncProjectScreenshotCopyControls();
+    if (output.dataset.projectScreenshotRenderPending !== "true") {
+      output.dataset.projectScreenshotRenderPending = "true";
+      activeEditor.addEventListener("blur", () => {
+        delete output.dataset.projectScreenshotRenderPending;
+        renderProjectScreenshotResults(projectScreenshotRows, { force: true });
+      }, { once: true });
+    }
+    return;
+  }
+  delete output.dataset.projectScreenshotRenderPending;
   const previousScrollTop = output.scrollTop;
   const activeCorrection = document.activeElement?.matches?.("[data-project-screenshot-correction-input]")
     ? {

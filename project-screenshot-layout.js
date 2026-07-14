@@ -11,20 +11,66 @@ export function detectProjectScreenshotKeyColumns(
   const regionHeight = Math.max(1, endY - startY);
   const sampleStep = Math.max(3, Math.floor(regionHeight / 220));
   const sampleCount = Math.ceil(regionHeight / sampleStep);
+  const binCount = Math.min(8, Math.max(1, sampleCount));
   const lineXs = [];
   for (let x = startX; x < endX; x += 1) {
     let strong = 0;
     let light = 0;
+    const strongBins = new Uint16Array(binCount);
+    const lightBins = new Uint16Array(binCount);
+    const totalBins = new Uint16Array(binCount);
+    let sampleIndex = 0;
     for (let y = startY; y < endY; y += sampleStep) {
+      const bin = Math.min(binCount - 1, Math.floor(sampleIndex * binCount / sampleCount));
       const offset = (y * width + x) * 4;
       const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
-      if (gray < 170) strong += 1;
-      if (gray < 232) light += 1;
+      totalBins[bin] += 1;
+      if (gray < 170) {
+        strong += 1;
+        strongBins[bin] += 1;
+      }
+      if (gray < 232) {
+        light += 1;
+        lightBins[bin] += 1;
+      }
+      sampleIndex += 1;
     }
-    if (strong / sampleCount > 0.28 || light / sampleCount > 0.62) lineXs.push(x);
+    if (projectScreenshotLineCoverageMatches({
+      strong,
+      light,
+      sampleCount,
+      strongBins,
+      lightBins,
+      totalBins,
+      strongThreshold: 0.28,
+      lightThreshold: 0.62,
+    })) lineXs.push(x);
   }
   const rawLines = mergeLinePositions(lineXs);
   return selectProjectScreenshotKeyColumns(rawLines, startX, endX - 1);
+}
+
+export function projectScreenshotLineCoverageMatches({
+  strong = 0,
+  light = 0,
+  sampleCount = 1,
+  strongBins = [],
+  lightBins = [],
+  totalBins = [],
+  strongThreshold = 0.28,
+  lightThreshold = 0.62,
+} = {}) {
+  const total = Math.max(1, sampleCount);
+  if (strong / total > strongThreshold || light / total > lightThreshold) return true;
+  const binCount = Math.max(1, totalBins.length || lightBins.length || strongBins.length);
+  const requiredBins = Math.max(2, Math.ceil(binCount * 0.625));
+  const distributedStrong = Array.from({ length: binCount }, (_, index) => (
+    (strongBins[index] || 0) / Math.max(1, totalBins[index] || 0) > strongThreshold * 0.82
+  )).filter(Boolean).length;
+  const distributedLight = Array.from({ length: binCount }, (_, index) => (
+    (lightBins[index] || 0) / Math.max(1, totalBins[index] || 0) > lightThreshold * 0.82
+  )).filter(Boolean).length;
+  return distributedStrong >= requiredBins || distributedLight >= requiredBins;
 }
 
 export function selectProjectScreenshotKeyColumns(rawLines = [], start = 0, end = 0) {
