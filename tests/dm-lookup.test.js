@@ -764,6 +764,84 @@ test("DM valuation assistant interpolates standard ChinaBond nodes for the Wusha
   }
 });
 
+test("DM valuation assistant falls back to implied-rating curve when comparables have no valuation yield", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  const issuerName = "中国葛洲坝集团有限公司";
+  const securityId = "012580001.IB";
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    calls.push({ url: String(url), request });
+    let data;
+    if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      data = { list: [{
+        security_id: securityId,
+        sec_short_name: "25葛洲集SCP003",
+        sec_full_name: "中国葛洲坝集团有限公司2025年度第三期超短期融资券",
+        issuer_name: issuerName,
+        remaining_tenor: "120D",
+        bond_issue_tenor: "270D",
+        bond_type_desc: "超短期融资券",
+      }], maxOffset: null };
+    } else if (url.includes("/bond/basic-info/info")) {
+      data = request.securityIdList.map(() => ({
+        security_id: securityId,
+        sec_short_name: "25葛洲集SCP003",
+        sec_full_name: "中国葛洲坝集团有限公司2025年度第三期超短期融资券",
+        issuer_name: issuerName,
+        remaining_tenor: "120D",
+        bond_issue_tenor: "270D",
+        bond_type_desc: "超短期融资券",
+        payment_order: "普通债权",
+        special_item: "",
+      }));
+    } else if (url.includes("/bond/market-data/date")) {
+      assert.equal(request.startDate, "2026-07-06");
+      assert.equal(request.endDate, "2026-07-13");
+      data = [{
+        security_id: securityId,
+        sec_short_name: "25葛洲集SCP003",
+        valuation_date: "2026-07-13",
+        cb_ytm: null,
+        cb_reliability: "推荐",
+      }];
+    } else if (url.includes("/bond/yield-curve/data")) {
+      assert.equal(request.curveName, "中债中短期票据收益率曲线(AAA)");
+      assert.deepEqual(request.curveTermList, ["0.25", "0.5"]);
+      data = [
+        { curve_ch_name: request.curveName, curve_term: 0.25, curve_type: 1, valuation_date: "2026-07-13", yield: 1.55 },
+        { curve_ch_name: request.curveName, curve_term: 0.5, curve_type: 1, valuation_date: "2026-07-13", yield: 1.6 },
+      ];
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onValuationRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request(`http://127.0.0.1:8788/api/dm/valuation?issuerName=${encodeURIComponent(issuerName)}&durationText=155D&offeringType=${encodeURIComponent("公募")}&venue=${encodeURIComponent("银行间")}&shortName=26葛洲集SCP004&hiddenRating=AAA&subjectRating=AAA&valuationDate=2026-07-13`, {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.pricedCandidateCount, 0);
+    assert.equal(payload.actualValuationDate, "2026-07-13");
+    assert.equal(payload.trancheSuggestions[0].clusterMode, "curveOnlyFallback");
+    assert.equal(payload.trancheSuggestions[0].confidence, "较低");
+    assert.equal(payload.trancheSuggestions[0].curveCalibration.fallbackOnly, true);
+    assert.ok(payload.trancheSuggestions[0].center > 1.57 && payload.trancheSuggestions[0].center < 1.6);
+    assert.ok(payload.trancheSuggestions[0].method.includes("不使用主体评级"));
+    assert.ok(calls.some((call) => call.url.includes("/bond/yield-curve/data")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM valuation assistant does not publish a point estimate from one remote anchor without a curve", () => {
   const profile = {
     bondClass: "MTN",
@@ -811,6 +889,13 @@ test("DM valuation assistant uses each bond's own YTE or YTM basis and rejects u
     { durationText: "3Y", years: 3, hasExercise: false },
     { durationText: "5+5Y", years: 5, hasExercise: true },
   ]);
+  const aliasRows = [{
+    valuation_date: "2026-07-10",
+    cb_yield_to_maturity: 1.61,
+    cb_reliability: "推荐",
+  }];
+  const aliasValuation = valuationTest.pickDmValuationRate(aliasRows, false, "2026-07-10", "2026-07-10");
+  assert.equal(aliasValuation.rate, 1.61);
 });
 
 test("DM valuation assistant tracks cross-source spread and never treats issue date as valuation date", () => {

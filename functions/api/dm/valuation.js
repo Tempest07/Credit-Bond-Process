@@ -44,10 +44,19 @@ const MARKET_DATA_FIELDS = [
   "cbReliability",
   "cbYtm",
   "cbYte",
+  "cbYield",
+  "cbYieldToMaturity",
+  "cbYieldToExercise",
   "csReliability",
   "csYtm",
   "csYte",
+  "csYield",
+  "csYieldToMaturity",
+  "csYieldToExercise",
   "spiderYield",
+  "shchYtm",
+  "shchYte",
+  "shchYield",
 ];
 
 export async function onRequestGet(context) {
@@ -111,7 +120,7 @@ export async function onRequestGet(context) {
     const valuationUniverse = candidatesForMarketData(candidates, targetDurations);
     const marketRows = await lookupMarketDataRows(dm, valuationUniverse.map((item) => item.securityId), valuationDate);
     const marketRowsBySecurityId = groupMarketRowsBySecurityId(marketRows);
-    const actualValuationDate = commonValuationDateForCandidates(
+    let actualValuationDate = commonValuationDateForCandidates(
       candidates,
       marketRowsBySecurityId,
       valuationDate,
@@ -141,6 +150,15 @@ export async function onRequestGet(context) {
       })));
     }
     trancheSuggestions = trancheSuggestions.map(enforceSingleAnchorReliability);
+    if (!trancheSuggestions.length && impliedRating) {
+      trancheSuggestions = await buildCurveOnlyFallbackSuggestions(dm, {
+        targetDurations,
+        impliedRating,
+        valuationDate: actualValuationDate || valuationDate,
+        targetProfile,
+      });
+      actualValuationDate = trancheSuggestions[0]?.valuationDate || actualValuationDate;
+    }
 
     if (!trancheSuggestions.length) {
       return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noValuation", hint: "DM 有可比存续债，但近7日未返回同口径的中债/中证/上清所收益率。" }));
@@ -162,6 +180,7 @@ export async function onRequestGet(context) {
         marketRows: marketRows.length,
         marketDataLookbackDays: MARKET_DATA_LOOKBACK_DAYS,
         curveCalibratedSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveResidualCalibration").length,
+        curveOnlyFallbackSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveOnlyFallback").length,
       },
     });
   } catch (error) {
@@ -273,7 +292,7 @@ async function lookupYieldCurveRows(dm, { impliedRating, terms, valuationDate })
     curveName,
     curveTermList,
     curveType: CURVE_TYPE_YTM,
-    startDate: valuationDate,
+    startDate: offsetIsoDate(valuationDate, -MARKET_DATA_LOOKBACK_DAYS),
     endDate: valuationDate,
     fieldNames: ["curveChName", "curveTerm", "curveType", "valuationDate", "yield"],
   });
@@ -470,7 +489,7 @@ async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valua
   };
   const curveTerms = [suggestion.years, ...suggestion.comparableItems.map((item) => item.years)];
   const curve = await lookupYieldCurveRows(dm, { impliedRating, terms: curveTerms, valuationDate });
-  const curveByTerm = curveRowsByTerm(curve.rows);
+  const curveByTerm = curveRowsByTerm(curve.rows, valuationDate);
   const targetCurveYield = curveYieldForTerm(curveByTerm, suggestion.years);
   if (!Number.isFinite(targetCurveYield)) return suggestion;
   const targetPremium = marketQualityPremiumBp(targetProfile) / 100;
@@ -544,31 +563,170 @@ async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valua
   };
 }
 
-function curveRowsByTerm(rows = []) {
+async function buildCurveOnlyFallbackSuggestions(dm, { targetDurations, impliedRating, valuationDate, targetProfile }) {
+  const curveName = chinaBondMtnCurveName(impliedRating);
+  if (!curveName) return [];
+  const curve = await lookupYieldCurveRows(dm, {
+    impliedRating,
+    terms: targetDurations.map((target) => target.years),
+    valuationDate,
+  });
+  const curveByTerm = curveRowsByTerm(curve.rows, valuationDate);
+  return targetDurations
+    .map((target, index) => buildCurveOnlyFallbackSuggestion({
+      target,
+      index,
+      impliedRating,
+      curveName,
+      curveByTerm,
+      targetProfile,
+    }))
+    .filter(Boolean);
+}
+
+function buildCurveOnlyFallbackSuggestion({ target, index, impliedRating, curveName, curveByTerm, targetProfile }) {
+  const curveInfo = curveYieldInfoForTerm(curveByTerm, target.years);
+  if (!curveInfo || !Number.isFinite(curveInfo.yieldRate)) return null;
+  const targetPremium = marketQualityPremiumBp(targetProfile) / 100;
+  const targetCurveAdjusted = curveInfo.yieldRate - targetPremium;
+  const center = round(targetCurveAdjusted, 2);
+  const spread = curveOnlyFallbackSpread(target.years);
+  const nodesText = curveInfo.nodes.length > 1
+    ? `标准节点${curveInfo.nodes.map((node) => `${formatNumber(node)}Y`).join("/")}线性插值`
+    : `标准节点${formatNumber(curveInfo.nodes[0] || target.years)}Y`;
+  const curveItem = {
+    shortName: `中债中短票曲线(${impliedRating})`,
+    securityId: "",
+    durationText: `${formatNumber(target.years)}Y`,
+    years: round(target.years, 4),
+    rate: round(curveInfo.yieldRate, 4),
+    source: "曲线到期收益率",
+    sourceField: "yield",
+    dataSource: CHINABOND_CURVE_SOURCE,
+    sourceCount: 1,
+    sourceSpreadBp: 0,
+    yieldBasis: "到期收益率",
+    reliability: "曲线兜底",
+    reliabilityWeight: 0.45,
+    valuationDate: curveInfo.valuationDate || "",
+    ageDays: 0,
+    stale: false,
+    durationGapYears: 0,
+    marketAdjustment: round(-targetPremium, 4),
+    absoluteGapYears: 0,
+    candidateMarketPremiumBp: 0,
+    targetMarketPremiumBp: marketQualityPremiumBp(targetProfile),
+    ordinaryEquivalentRate: round(curveInfo.yieldRate, 4),
+    weight: 0.45,
+    durationAdjustment: 0,
+    adjustment: round(-targetPremium, 4),
+    adjustedRate: round(targetCurveAdjusted, 4),
+    curveYield: round(curveInfo.yieldRate, 4),
+    curveResidual: null,
+    curveResidualBp: null,
+    curveAdjustedRate: round(targetCurveAdjusted, 4),
+  };
+  return {
+    index,
+    durationText: target.durationText,
+    years: round(target.years, 2),
+    center,
+    low: round(center - spread, 2),
+    high: round(center + spread, 2),
+    confidence: "较低",
+    clusterMode: "curveOnlyFallback",
+    clusterNote: "同主体可比债未返回估值收益率，使用隐含评级曲线兜底",
+    comparableCount: 0,
+    excludedOutlierCount: 0,
+    durationModel: {
+      type: "curveOnlyFallback",
+      slopeBpPerYear: null,
+      pairCount: 0,
+      description: "未取得同主体可比券曲线偏离，未做主体残差校准",
+    },
+    profileLabel: comparableProfileLabel(targetProfile),
+    valuationDate: curveInfo.valuationDate || "",
+    preferredYield: "到期收益率",
+    method: `DM 有可比存续债但未返回同口径估值收益率；按${impliedRating}隐含评级中债中短票${nodesText}给参考；未做主体曲线偏离校准；不使用主体评级`,
+    comparableItems: [curveItem],
+    curveCalibration: {
+      curveName,
+      impliedRating,
+      targetCurveYield: round(curveInfo.yieldRate, 4),
+      targetCurveAdjusted: round(targetCurveAdjusted, 4),
+      averageResidual: null,
+      averageResidualBp: null,
+      residualDeviation: null,
+      residualDeviationBp: null,
+      itemCount: 0,
+      excludedOutlierCount: 0,
+      valuationDate: curveInfo.valuationDate || "",
+      fallbackOnly: true,
+    },
+  };
+}
+
+function curveOnlyFallbackSpread(years) {
+  if (years <= 1) return 0.08;
+  if (years <= 3) return 0.1;
+  return 0.12;
+}
+
+function curveRowsByTerm(rows = [], ceilingDate = "") {
   const map = new Map();
-  for (const row of rows) {
+  const normalizedRows = rows.map((row) => {
     const term = numberFromRow(row, ["curve_term", "curveTerm"]);
     const yieldRate = numberFromRow(row, ["yield"]);
-    if (!Number.isFinite(term) || !Number.isFinite(yieldRate)) continue;
-    map.set(curveTermKey(term), {
+    const valuationDate = pickFirstDateString(row, ["valuation_date", "valuationDate"]) || "";
+    if (!Number.isFinite(term) || !Number.isFinite(yieldRate)) return null;
+    if (valuationDate && ceilingDate && parseDate(valuationDate)?.getTime() > parseDate(ceilingDate)?.getTime()) return null;
+    return {
       term,
       yieldRate,
       curveName: pickFirstString(row, ["curve_ch_name", "curveChName"]),
-      valuationDate: pickFirstDateString(row, ["valuation_date", "valuationDate"]),
-    });
+      valuationDate,
+    };
+  }).filter(Boolean);
+  const selectedDate = selectCurveSnapshotDate(normalizedRows);
+  for (const row of normalizedRows) {
+    if (selectedDate && row.valuationDate !== selectedDate) continue;
+    map.set(curveTermKey(row.term), row);
   }
   return map;
 }
 
+function selectCurveSnapshotDate(rows = []) {
+  const coverageByDate = new Map();
+  for (const row of rows) {
+    if (!coverageByDate.has(row.valuationDate)) coverageByDate.set(row.valuationDate, new Set());
+    coverageByDate.get(row.valuationDate).add(curveTermKey(row.term));
+  }
+  return [...coverageByDate.entries()]
+    .sort((left, right) => right[1].size - left[1].size || right[0].localeCompare(left[0]))
+    .at(0)?.[0] || "";
+}
+
 function curveYieldForTerm(curveByTerm, years) {
+  return curveYieldInfoForTerm(curveByTerm, years)?.yieldRate ?? null;
+}
+
+function curveYieldInfoForTerm(curveByTerm, years) {
   const exact = curveByTerm.get(curveTermKey(years));
-  if (exact) return exact.yieldRate;
+  if (exact) return {
+    yieldRate: exact.yieldRate,
+    valuationDate: exact.valuationDate,
+    nodes: [exact.term],
+  };
   const sorted = [...curveByTerm.values()].sort((left, right) => left.term - right.term);
   const lower = [...sorted].reverse().find((value) => value.term < years);
   const upper = sorted.find((value) => value.term > years);
   if (!lower || !upper) return null;
   const weight = (years - lower.term) / (upper.term - lower.term);
-  return lower.yieldRate + ((upper.yieldRate - lower.yieldRate) * weight);
+  return {
+    yieldRate: lower.yieldRate + ((upper.yieldRate - lower.yieldRate) * weight),
+    valuationDate: [lower.valuationDate, upper.valuationDate].filter(Boolean).sort().at(-1) || "",
+    nodes: [lower.term, upper.term],
+  };
 }
 
 function normalizeCurveTerms(terms = []) {
@@ -765,13 +923,14 @@ function pickDmValuationRate(rows, preferExercise, valuationDate = "", requested
   const sameDateRows = rows.filter((row) => marketRowValuationDate(row) === actualDate);
   const descriptors = {
     yte: [
-      { keys: ["cb_yte", "cbYte"], source: "中债行权估值", sourceField: "cbYte", reliabilityKeys: ["cb_reliability", "cbReliability"], priority: 0 },
-      { keys: ["cs_yte", "csYte"], source: "中证行权估值", sourceField: "csYte", reliabilityKeys: ["cs_reliability", "csReliability"], priority: 1 },
+      { keys: ["cb_yte", "cbYte", "cb_yield_to_exercise", "cbYieldToExercise"], source: "中债行权估值", sourceField: "cbYte", reliabilityKeys: ["cb_reliability", "cbReliability"], priority: 0 },
+      { keys: ["cs_yte", "csYte", "cs_yield_to_exercise", "csYieldToExercise"], source: "中证行权估值", sourceField: "csYte", reliabilityKeys: ["cs_reliability", "csReliability"], priority: 1 },
+      { keys: ["shch_yte", "shchYte"], source: "上清所行权估值", sourceField: "shchYte", reliabilityKeys: [], priority: 2 },
     ],
     ytm: [
-      { keys: ["cb_ytm", "cbYtm"], source: "中债到期估值", sourceField: "cbYtm", reliabilityKeys: ["cb_reliability", "cbReliability"], priority: 0 },
-      { keys: ["cs_ytm", "csYtm"], source: "中证到期估值", sourceField: "csYtm", reliabilityKeys: ["cs_reliability", "csReliability"], priority: 1 },
-      { keys: ["spider_yield", "spiderYield"], source: "上清所到期估值", sourceField: "spiderYield", reliabilityKeys: [], priority: 2 },
+      { keys: ["cb_ytm", "cbYtm", "cb_yield_to_maturity", "cbYieldToMaturity", "cb_yield", "cbYield"], source: "中债到期估值", sourceField: "cbYtm", reliabilityKeys: ["cb_reliability", "cbReliability"], priority: 0 },
+      { keys: ["cs_ytm", "csYtm", "cs_yield_to_maturity", "csYieldToMaturity", "cs_yield", "csYield"], source: "中证到期估值", sourceField: "csYtm", reliabilityKeys: ["cs_reliability", "csReliability"], priority: 1 },
+      { keys: ["spider_yield", "spiderYield", "shch_ytm", "shchYtm", "shch_yield", "shchYield"], source: "上清所到期估值", sourceField: "spiderYield", reliabilityKeys: [], priority: 2 },
     ],
   };
   const groups = preferExercise
@@ -895,11 +1054,11 @@ function commonValuationDateForCandidates(candidates, marketRowsBySecurityId, re
 
 function marketRowHasUsableValuation(row) {
   const checks = [
-    [["cb_yte", "cbYte"], ["cb_reliability", "cbReliability"], "cbYte"],
-    [["cb_ytm", "cbYtm"], ["cb_reliability", "cbReliability"], "cbYtm"],
-    [["cs_yte", "csYte"], ["cs_reliability", "csReliability"], "csYte"],
-    [["cs_ytm", "csYtm"], ["cs_reliability", "csReliability"], "csYtm"],
-    [["spider_yield", "spiderYield"], [], "spiderYield"],
+    [["cb_yte", "cbYte", "cb_yield_to_exercise", "cbYieldToExercise"], ["cb_reliability", "cbReliability"], "cbYte"],
+    [["cb_ytm", "cbYtm", "cb_yield_to_maturity", "cbYieldToMaturity", "cb_yield", "cbYield"], ["cb_reliability", "cbReliability"], "cbYtm"],
+    [["cs_yte", "csYte", "cs_yield_to_exercise", "csYieldToExercise"], ["cs_reliability", "csReliability"], "csYte"],
+    [["cs_ytm", "csYtm", "cs_yield_to_maturity", "csYieldToMaturity", "cs_yield", "csYield"], ["cs_reliability", "csReliability"], "csYtm"],
+    [["spider_yield", "spiderYield", "shch_ytm", "shchYtm", "shch_yte", "shchYte", "shch_yield", "shchYield"], [], "spiderYield"],
   ];
   return checks.some(([rateKeys, reliabilityKeys, sourceField]) => {
     const rate = numberFromRow(row, rateKeys);
