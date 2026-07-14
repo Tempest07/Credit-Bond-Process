@@ -49,7 +49,10 @@
 6. 在 Pages 项目的 Settings / Variables and Secrets 中添加加密 Secret：
    - Variable name：`GATEWAY_AUTH_SECRET`
    - Value：与 `tempest07.com` Gateway Worker 中的 `GATEWAY_AUTH_SECRET` / `TEMPEST_AUTH_SECRET` 保持一致，用于校验 gateway 注入的短期签名身份
-7. 重新部署 Pages。
+7. 为债券数据查询配置服务端 Secrets：
+   - `INNO_APP_KEY` / `INNO_APP_SECRET`：DM 债券档案、发行、主体评级与评级机构
+   - `WIND_API_KEY`：Wind 中债隐含评级；仅由 Pages Function 读取，不下发到浏览器
+8. 重新部署 Pages。
 
 Pages Function 会在首次通过 gateway 访问资料库时自动创建所需表，并把旧 `app_state` 数据迁移到 `admin` 管理员账号名下；也可以手动执行 `schema.sql`。
 
@@ -75,6 +78,13 @@ https://tempest07.com/bond-centre/
 资料库 API 不再在项目中心内登录，也不接受 `Authorization: Bearer APP_PASSWORD`。用户先访问 `https://tempest07.com/login/` 完成统一登录；Gateway Worker 校验 `admin` 密码后签发 `tempest07_session` cookie，并在代理到项目中心时注入短期 `X-Tempest-Auth` 签名身份。项目中心 Pages Function 只校验该签名，默认管理员用户名为 `admin`，昵称为“管理员”。
 
 正式启用后仍建议使用 Cloudflare Access 进一步保护 Gateway 路径和 Pages 项目。直接访问 `*.pages.dev` 时，前端会跳转至 Gateway，但跳转本身不能替代访问控制。
+
+## 隐含评级数据源
+
+- 配置 `WIND_API_KEY` 后，中债隐含评级以 Wind 返回值为准，DM 不再作为隐含评级回退来源。
+- Wind 无结果时，可使用明确标注的云端主体库历史隐含评级；不得用主体评级替代。
+- 项目记录保存 `hiddenRatingSource` 和 `hiddenRatingAsOf`，用于区分 Wind、云端主体库和人工录入。
+- 尚未配置 `WIND_API_KEY` 的环境继续沿用旧 DM 行为，便于先合并代码、后配置 Secret；完成 Secret 配置后即自动启用 Wind 替代。
 
 ## Word 历史流程导入
 

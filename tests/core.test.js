@@ -249,6 +249,23 @@ test("uses stored common issuer fields and warns on mismatches", () => {
   assert.match(applied.warnings.join("；"), /主体库要素市场隐含评级为“AAA-”，输入简表为“AA\+”/);
 });
 
+test("keeps a Wind ChinaBond implied rating ahead of a stale issuer-database value", () => {
+  const applied = applyIssuerCommonFields({
+    hiddenRating: "AA",
+    hiddenRatingSource: "wind-analytics",
+    hiddenRatingAsOf: "2026-07-13",
+    warnings: [],
+  }, {
+    legalName: "武商集团股份有限公司",
+    hiddenRating: "AA+",
+  });
+
+  assert.equal(applied.hiddenRating, "AA");
+  assert.equal(applied.hiddenRatingSource, "wind-analytics");
+  assert.equal(applied.hiddenRatingAsOf, "2026-07-13");
+  assert.match(applied.warnings.join("；"), /Wind 中债隐含评级为“AA”，已优先使用 Wind/);
+});
+
 test("builds standard interbank bond full name", () => {
   assert.equal(
     buildBondFullName("26粤交投SCP002", issuer.legalName),

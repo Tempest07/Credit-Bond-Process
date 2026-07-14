@@ -1,6 +1,8 @@
 node_modules/
 .wrangler/
 wrangler.toml
+.dev.vars*
+.env*
 android/.gradle/
 android/build/
 android/app/build/

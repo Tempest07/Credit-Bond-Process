@@ -1212,7 +1212,16 @@ export function applyIssuerCommonFields(project, issuer) {
   applyIssuerCommonField(next, { branch: issuer.linkedBranch || issuer.defaultBranch }, "branch", "联动分行", normalizeBranchName);
   applyIssuerCommonField(next, issuer, "subjectRating", "主体评级", normalizeRatingValue);
   applyIssuerCommonField(next, issuer, "ratingAgency", "评级机构", normalizeTextValue);
-  applyIssuerCommonField(next, issuer, "hiddenRating", "市场隐含评级", normalizeRatingValue);
+  if (next.hiddenRatingSource === "wind-analytics" && String(next.hiddenRating || "").trim()) {
+    const windRating = normalizeRatingValue(next.hiddenRating);
+    const issuerRating = normalizeRatingValue(issuer.hiddenRating);
+    if (issuerRating && issuerRating !== windRating) {
+      next.warnings.push(`主体库要素市场隐含评级为“${issuerRating}”，Wind 中债隐含评级为“${windRating}”，已优先使用 Wind，请检查。`);
+    }
+    next.hiddenRating = windRating;
+  } else {
+    applyIssuerCommonField(next, issuer, "hiddenRating", "市场隐含评级", normalizeRatingValue);
+  }
   return next;
 }
 

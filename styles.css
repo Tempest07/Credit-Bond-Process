@@ -200,6 +200,19 @@ label[data-recognition-source="cloud"]::after {
   font-weight: 900;
   line-height: 1.25;
 }
+label[data-recognition-source="wind"]::after {
+  content: "Wind";
+  justify-self: start;
+  margin-top: -2px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 4px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.25;
+}
 .brief-input { min-height: 350px; padding: 14px; resize: vertical; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 12px; line-height: 1.8; }
 .brief-template-guide { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding: 10px; border: 1px dashed color-mix(in srgb, var(--accent) 34%, var(--line)); border-radius: 8px; color: var(--muted); background: var(--panel-soft); font-size: 10px; line-height: 1.6; }
 .brief-template-guide strong { margin-right: 2px; color: var(--accent); }
@@ -355,11 +368,13 @@ label[data-recognition-source="cloud"]::after {
 .dm-normalized-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .dm-normalized-item { display: grid; gap: 4px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .dm-normalized-item.source-cloud { border-color: color-mix(in srgb, var(--secondary) 34%, var(--line)); background: linear-gradient(135deg, var(--secondary-soft), #fff); }
+.dm-normalized-item.source-wind { border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); background: linear-gradient(135deg, var(--accent-soft), #fff); }
 .dm-normalized-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .dm-normalized-label span { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 800; }
 .dm-source-badge { flex: 0 0 auto; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 9px; font-weight: 900; line-height: 1.2; }
 .dm-source-badge.dm { color: var(--muted); background: #fff; }
 .dm-source-badge.cloud { border-color: color-mix(in srgb, var(--secondary) 38%, var(--line)); color: var(--secondary); background: #fff; }
+.dm-source-badge.wind { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); color: var(--accent); background: #fff; }
 .dm-normalized-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .dm-normalized-item.empty-field { background: var(--panel-soft); }
 .dm-normalized-item.empty-field strong { color: var(--muted); font-weight: 700; }

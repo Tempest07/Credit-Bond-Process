@@ -72,11 +72,15 @@ test("preserves rating fields on project ledger records", () => {
     subjectRating: "aa+",
     ratingAgency: "Agency One",
     hiddenRating: "aa",
+    hiddenRatingSource: "wind-analytics",
+    hiddenRatingAsOf: "2026-07-13",
   }, null, { opinion: "ok" });
 
   assert.equal(record.subjectRating, "AA+");
   assert.equal(record.ratingAgency, "Agency One");
   assert.equal(record.hiddenRating, "AA");
+  assert.equal(record.hiddenRatingSource, "wind-analytics");
+  assert.equal(record.hiddenRatingAsOf, "2026-07-13");
 });
 
 test("preserves ABS structured fields on project ledger records", () => {

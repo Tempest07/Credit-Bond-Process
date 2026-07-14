@@ -1251,6 +1251,10 @@ function bindGenerator() {
       clearRecognitionForInput(input);
       const field = input.dataset.projectField;
       project[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+      if (field === "hiddenRating") {
+        project.hiddenRatingSource = "manual";
+        project.hiddenRatingAsOf = "";
+      }
       if (field === "durationText") {
         project.durationDays = durationToDays(project.durationText);
         project.durationParts = durationParts(project.durationText);
@@ -2003,6 +2007,10 @@ function projectPatchFromDmLookup(payload) {
   assignProjectDmValueWithSource(patch, sourceMap, "subjectRating", normalized.subjectRating, normalizedProjectFieldSource(normalized, "subjectRating"));
   assignProjectDmValueWithSource(patch, sourceMap, "ratingAgency", normalized.ratingAgency, normalizedProjectFieldSource(normalized, "ratingAgency"));
   assignProjectDmValueWithSource(patch, sourceMap, "hiddenRating", normalized.impliedRating, normalizedProjectFieldSource(normalized, "impliedRating"));
+  if (patch.hiddenRating) {
+    patch.hiddenRatingSource = normalized.ratingSource?.impliedRating || "dm";
+    patch.hiddenRatingAsOf = normalized.impliedRatingAsOf || payload?.diagnostic?.rating?.windImpliedRating?.asOf || "";
+  }
 
   if (!patch.inquiryRanges?.length) {
     const range = parseDmInquiryRange(normalized.inquiryRange);
@@ -2106,6 +2114,7 @@ function projectSourceFromDmIssueGroup(issueGroup) {
 
 function normalizedProjectFieldSource(normalized, key) {
   const source = normalized?.ratingSource?.[key] || "";
+  if (source === "wind-analytics") return "wind";
   return source === "issuer-db" || source === "local-issuer-db" ? "cloud" : "dm";
 }
 
@@ -2197,6 +2206,7 @@ function buildProjectDmRecognitionMarks(patch) {
 
 function sourcedRecognitionMark(label, source) {
   if (source === "cloud") return recognitionMark("success", `${label}已由云端数据库预填`, "cloud");
+  if (source === "wind") return recognitionMark("success", `${label}已由 Wind 预填`, "wind");
   return recognitionMark("success", `${label}已由 DM 预填`, "dm");
 }
 
@@ -2210,7 +2220,7 @@ function buildIssuerCloudRecognitionMarks(projectValue, issuer, existingMarks = 
     { field: "hiddenRating", label: "隐含评级", value: issuer.hiddenRating },
   ];
   for (const item of fields) {
-    if (existingMarks[item.field]?.source === "dm") continue;
+    if (["dm", "wind"].includes(existingMarks[item.field]?.source)) continue;
     if (!valueHasContent(item.value) || !valueHasContent(projectValue[item.field])) continue;
     if (normalizeSourceComparable(projectValue[item.field]) !== normalizeSourceComparable(item.value)) continue;
     marks[item.field] = recognitionMark("success", `${item.label}已由云端数据库预填`, "cloud");
@@ -2410,7 +2420,11 @@ function renderProjectDmReallocationReason(tranche) {
 
 function dmPayloadSourceLabel(payload) {
   const fields = Object.values(payload?.normalized?.ratingSource || {});
-  if (fields.includes("issuer-db")) return "DM+云端数据库";
+  const hasWind = fields.includes("wind-analytics");
+  const hasCloud = fields.some((source) => source === "issuer-db" || source === "local-issuer-db");
+  if (hasWind && hasCloud) return "DM+Wind+云端数据库";
+  if (hasWind) return "DM+Wind";
+  if (hasCloud) return "DM+云端数据库";
   if (payload?.issueGroup?.source === "cloud-db") return "云端数据库";
   if (payload?.issueGroup?.source === "mixed") return "DM+云端数据库";
   return "DM";
@@ -6350,6 +6364,9 @@ const DM_RATING_SOURCE_FIELDS = new Set(["subjectRating", "ratingAgency", "impli
 function dmNormalizedSourceBadge(normalized, key, isMissing) {
   if (isMissing || !DM_RATING_SOURCE_FIELDS.has(key)) return null;
   const source = normalized?.ratingSource?.[key] || "";
+  if (source === "wind-analytics") {
+    return { label: "Wind", className: "wind" };
+  }
   const isCloudDb = source === "issuer-db" || source === "local-issuer-db";
   return {
     label: isCloudDb ? "云端数据库" : "DM",
@@ -6401,7 +6418,7 @@ function renderDmNormalized(payload) {
     const text = isMissing ? "未返回" : formatDmNormalizedFieldValue(key, value);
     const sourceBadge = dmNormalizedSourceBadge(normalized, key, isMissing);
     return `
-      <div class="dm-normalized-item ${isMissing ? "empty-field" : ""} ${sourceBadge?.className === "cloud" ? "source-cloud" : ""}">
+      <div class="dm-normalized-item ${isMissing ? "empty-field" : ""} ${sourceBadge?.className ? `source-${sourceBadge.className}` : ""}">
         <div class="dm-normalized-label">
           <span>${escapeHtml(label)}</span>
           ${sourceBadge ? `<small class="dm-source-badge ${escapeAttribute(sourceBadge.className)}">${escapeHtml(sourceBadge.label)}</small>` : ""}
