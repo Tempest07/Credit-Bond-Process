@@ -28,7 +28,7 @@
         <button class="nav-item" data-view-target="rules">规则说明</button>
       </nav>
 
-      <section class="sidebar-tool project-screenshot-tool" id="projectScreenshotTool">
+      <section class="sidebar-tool project-screenshot-tool" id="projectScreenshotTool" aria-busy="false">
         <div class="sidebar-tool-head">
           <span>SHOT</span>
           <strong>项目表截图</strong>
@@ -45,8 +45,8 @@
           </label>
           <button class="button subtle" id="copyProjectScreenshotShortNamesButton" type="button" disabled>复制简称</button>
         </div>
-        <small id="projectScreenshotStatus">未上传</small>
-        <div class="project-screenshot-output" id="projectScreenshotOutput" hidden></div>
+        <small id="projectScreenshotStatus" role="status" aria-live="polite">未上传</small>
+        <div class="project-screenshot-output" id="projectScreenshotOutput" aria-live="polite" hidden></div>
       </section>
 
       <div class="sidebar-card">

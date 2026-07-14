@@ -79,6 +79,11 @@ import {
   upsertSecondaryTrades,
 } from "./secondary-inventory.js?v=20260714-mobile-ledger";
 import { initializeDatePickers } from "./date-picker.js?v=20260714-mobile-ledger";
+import {
+  PROJECT_SCREENSHOT_BRANCHES,
+  mergeProjectScreenshotOcrPasses,
+  selectReliableProjectScreenshotSuggestion,
+} from "./project-screenshot-ocr.js?v=20260714-ocr-quality";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -89,23 +94,12 @@ const API_URL = "./api/state";
 const DM_VALUATION_URL = "./api/dm/valuation";
 const DM_POLICY_CURVE_URL = "./api/dm/curve?curve=cdb";
 const MAILER_URL = "./api/mail/today";
-const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+const TESSERACT_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
 const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
-const PROJECT_SCREENSHOT_BRANCHES = ["广州分行", "武汉分行", "青岛分行", "兰州分行", "苏州分行", "太原分行", "西安分行"];
-const PROJECT_SCREENSHOT_BRANCH_PATTERNS = [
-  { branch: "广州分行", pattern: /[广廣厂][州卅]分行/g },
-  { branch: "武汉分行", pattern: /[武式]汉分行/g },
-  { branch: "青岛分行", pattern: /青[岛島鸟鳥]分行/g },
-  { branch: "兰州分行", pattern: /[兰蘭]州分行/g },
-  { branch: "苏州分行", pattern: /[苏蘇]州分行/g },
-  { branch: "太原分行", pattern: /[太大]原分行/g },
-  { branch: "西安分行", pattern: /西安分行/g },
-];
-const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|MTN|PPN|ABN|ABS)";
-const PROJECT_SCREENSHOT_LEFT_CROP_RATIO = 0.31;
+const PROJECT_SCREENSHOT_LEFT_CROP_RATIO = 0.45;
 const PROJECT_SCREENSHOT_MIN_OCR_WIDTH = 2600;
 const PROJECT_SCREENSHOT_ROW_GAP = 18;
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
@@ -590,6 +584,7 @@ function bindProjectScreenshotTool() {
 async function handleProjectScreenshotUpload(event) {
   const input = event.target;
   const file = projectScreenshotImageFileFromList(input.files);
+  if (!file && input.files?.length) notifyProjectScreenshotFileRequired();
   await processProjectScreenshotFile(file, input);
 }
 
@@ -598,14 +593,28 @@ async function handleProjectScreenshotDrop(event) {
   projectScreenshotDragDepth = 0;
   setProjectScreenshotDragging(false);
   const file = projectScreenshotImageFileFromDataTransfer(event.dataTransfer);
+  if (!file) {
+    notifyProjectScreenshotFileRequired();
+    return;
+  }
   await processProjectScreenshotFile(file);
 }
 
 async function handleProjectScreenshotPaste(event) {
   const file = projectScreenshotImageFileFromDataTransfer(event.clipboardData);
-  if (!file) return;
+  if (!file) {
+    const containsFile = Array.from(event.clipboardData?.items || []).some((item) => item.kind === "file");
+    if (containsFile) notifyProjectScreenshotFileRequired();
+    return;
+  }
   event.preventDefault();
   await processProjectScreenshotFile(file);
+}
+
+function notifyProjectScreenshotFileRequired() {
+  const message = "没有找到可识别的图片，请拖入 PNG、JPG 或直接粘贴截图。";
+  setProjectScreenshotStatus(message);
+  showToast(message);
 }
 
 function handleProjectScreenshotDragEnter(event) {
@@ -696,24 +705,66 @@ function isProjectScreenshotImageFile(file) {
 
 async function recognizeProjectScreenshotEntries(file) {
   const image = await loadProjectScreenshotImage(file);
+  let worker = null;
   try {
     const targets = createProjectScreenshotOcrTargets(image);
-    let combinedText = "";
-    let bestEntries = [];
+    const passes = [];
+    const passErrors = [];
+    let successfulPasses = 0;
+    if (window.Tesseract?.createWorker) {
+      worker = await window.Tesseract.createWorker("chi_sim+eng", window.Tesseract.OEM?.LSTM_ONLY, {
+        logger: (message) => updateProjectScreenshotOcrProgress(message),
+      });
+    }
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index];
       setProjectScreenshotStatus(`正在 OCR ${target.label} ${index + 1}/${targets.length}...`);
-      const result = await window.Tesseract.recognize(target.canvas, "chi_sim+eng", {
-        logger: (message) => updateProjectScreenshotOcrProgress(message, target.label),
-      });
-      combinedText = `${combinedText}\n${result?.data?.text || ""}`;
-      const entries = parseProjectScreenshotOcrText(combinedText);
-      if (entries.length > bestEntries.length) bestEntries = entries;
-      if (bestEntries.length >= PROJECT_SCREENSHOT_BRANCHES.length) break;
+      let canvas = null;
+      try {
+        canvas = target.createCanvas();
+        if (!canvas) continue;
+        const pageSegMode = window.Tesseract.PSM?.[target.pageSegMode]
+          || { SINGLE_BLOCK: "6", SINGLE_LINE: "7", SPARSE_TEXT: "11" }[target.pageSegMode]
+          || "6";
+        if (worker?.setParameters) {
+          await worker.setParameters({
+            tessedit_pageseg_mode: pageSegMode,
+            preserve_interword_spaces: "1",
+            user_defined_dpi: "300",
+          });
+        }
+        const result = worker
+          ? await worker.recognize(canvas)
+          : await window.Tesseract.recognize(canvas, "chi_sim+eng", {
+            logger: (message) => updateProjectScreenshotOcrProgress(message, target.label),
+            tessedit_pageseg_mode: pageSegMode,
+            preserve_interword_spaces: "1",
+            user_defined_dpi: "300",
+          });
+        const pass = {
+          label: target.label,
+          text: result?.data?.text || "",
+          confidence: result?.data?.confidence,
+        };
+        passes.push(pass);
+        successfulPasses += 1;
+      } catch (error) {
+        passErrors.push(`${target.label}: ${error?.message || "识别失败"}`);
+      } finally {
+        if (canvas) {
+          canvas.width = 1;
+          canvas.height = 1;
+        }
+      }
     }
-    return bestEntries;
+    if (!successfulPasses && passErrors.length) throw new Error(`OCR 识别失败：${passErrors[0]}`);
+    return mergeProjectScreenshotOcrPasses(passes);
   } finally {
-    if (typeof image.close === "function") image.close();
+    try {
+      if (worker?.terminate) await worker.terminate();
+    } finally {
+      if (typeof image.close === "function") image.close();
+    }
   }
 }
 
@@ -735,20 +786,82 @@ async function loadProjectScreenshotImage(file) {
 }
 
 function createProjectScreenshotOcrTargets(image) {
-  const rowBands = detectProjectScreenshotRowBands(image);
-  const columns = detectProjectScreenshotKeyColumns(image);
+  const { rowBands, columns } = analyzeProjectScreenshotLayout(image);
   const targets = [];
-  const columnCanvas = rowBands.length >= 3 && columns ? createProjectScreenshotColumnCanvas(image, rowBands, columns) : null;
-  if (columnCanvas) targets.push({ label: "分行债券列", canvas: columnCanvas });
-  const rowCanvas = rowBands.length >= 3 ? createProjectScreenshotRowCanvas(image, rowBands) : null;
-  if (rowCanvas) targets.push({ label: "表格行", canvas: rowCanvas });
-  targets.push({ label: "左侧两列", canvas: createProjectScreenshotLeftCropCanvas(image) });
+  const rowTargets = rowBands.length >= 2 && columns
+    ? createProjectScreenshotCellRowTargets(image, rowBands, columns)
+    : [];
+  targets.push(...rowTargets);
+  const rowChunks = chunkProjectScreenshotRowBands(rowBands);
+  if (rowBands.length >= 2 && columns) {
+    rowChunks.forEach((chunk, index) => targets.push({
+      label: `分行债券列 ${index + 1}/${rowChunks.length}`,
+      pageSegMode: "SINGLE_BLOCK",
+      createCanvas: () => createProjectScreenshotColumnCanvas(image, chunk, columns),
+    }));
+  }
+  if (rowBands.length >= 3) {
+    rowChunks.forEach((chunk, index) => targets.push({
+      label: `表格行 ${index + 1}/${rowChunks.length}`,
+      pageSegMode: "SINGLE_BLOCK",
+      createCanvas: () => createProjectScreenshotRowCanvas(image, chunk),
+    }));
+  }
+  targets.push({
+    label: "左侧区域",
+    pageSegMode: "SPARSE_TEXT",
+    createCanvas: () => createProjectScreenshotLeftCropCanvas(image),
+  });
   return targets;
+}
+
+function chunkProjectScreenshotRowBands(rowBands = []) {
+  const chunkSize = window.matchMedia?.("(max-width: 760px)")?.matches ? 16 : 22;
+  const chunks = [];
+  for (let index = 0; index < rowBands.length; index += chunkSize) chunks.push(rowBands.slice(index, index + chunkSize));
+  return chunks;
+}
+
+function createProjectScreenshotCellRowTargets(image, rowBands = [], columns) {
+  const maxRows = window.matchMedia?.("(max-width: 760px)")?.matches ? 14 : 24;
+  return rowBands.slice(0, maxRows).map((band, index) => ({
+    label: `表格第 ${index + 1} 行`,
+    pageSegMode: "SINGLE_LINE",
+    kind: "row",
+    createCanvas: () => createProjectScreenshotCellRowCanvas(image, band, columns),
+  }));
+}
+
+function createProjectScreenshotCellRowCanvas(image, band, columns) {
+  const combinedWidth = columns.branch.width + columns.name.width;
+  const y = Math.max(0, band.y + 2);
+  const height = Math.max(1, band.height - 4);
+  if (height < 20) return null;
+  const scale = projectScreenshotScaleForWidth(combinedWidth, height);
+  const gap = Math.max(18, Math.round(10 * scale));
+  const padding = Math.max(16, Math.round(8 * scale));
+  let branchWidth = Math.round(columns.branch.width * scale);
+  let nameWidth = Math.round(columns.name.width * scale);
+  ({ branchWidth, nameWidth } = fitProjectScreenshotColumnsToCanvas(branchWidth, nameWidth, padding * 2 + gap));
+  let targetHeight = Math.max(108, Math.round(height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = padding * 2 + branchWidth + gap + nameWidth;
+  targetHeight = fitProjectScreenshotHeightToCanvas(targetHeight, canvas.width, padding * 2);
+  canvas.height = targetHeight + padding * 2;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, columns.branch.x, y, columns.branch.width, height, padding, padding, branchWidth, targetHeight);
+  context.drawImage(image, columns.name.x, y, columns.name.width, height, padding + branchWidth + gap, padding, nameWidth, targetHeight);
+  enhanceProjectScreenshotCanvas(canvas, "soft");
+  return canvas;
 }
 
 function createProjectScreenshotLeftCropCanvas(image) {
   const cropWidth = projectScreenshotCropWidth(image);
-  const scale = projectScreenshotScaleForWidth(cropWidth);
+  const scale = projectScreenshotScaleForWidth(cropWidth, image.height);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(cropWidth * scale);
   canvas.height = Math.round(image.height * scale);
@@ -758,14 +871,15 @@ function createProjectScreenshotLeftCropCanvas(image) {
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, cropWidth, image.height, 0, 0, canvas.width, canvas.height);
-  enhanceProjectScreenshotCanvas(canvas);
+  enhanceProjectScreenshotCanvas(canvas, "soft");
   return canvas;
 }
 
 function createProjectScreenshotRowCanvas(image, rowBands = []) {
   const cropWidth = projectScreenshotCropWidth(image);
-  const scale = projectScreenshotScaleForWidth(cropWidth);
-  const scaledRows = rowBands
+  const sourceHeight = rowBands.reduce((sum, band) => sum + Math.max(1, band.height - 4), 0);
+  const scale = projectScreenshotScaleForWidth(cropWidth, sourceHeight);
+  let scaledRows = rowBands
     .map((band) => ({
       y: Math.max(0, band.y + 2),
       height: Math.max(1, band.height - 4),
@@ -776,6 +890,7 @@ function createProjectScreenshotRowCanvas(image, rowBands = []) {
 
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(cropWidth * scale);
+  scaledRows = fitProjectScreenshotRowsToCanvas(scaledRows, canvas.width, PROJECT_SCREENSHOT_ROW_GAP);
   canvas.height = scaledRows.reduce((sum, band) => sum + band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP, PROJECT_SCREENSHOT_ROW_GAP);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = "#fff";
@@ -787,17 +902,20 @@ function createProjectScreenshotRowCanvas(image, rowBands = []) {
     context.drawImage(image, 0, band.y, cropWidth, band.height, 0, targetY, canvas.width, band.targetHeight);
     targetY += band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP;
   }
-  enhanceProjectScreenshotCanvas(canvas);
+  enhanceProjectScreenshotCanvas(canvas, "binary");
   return canvas;
 }
 
 function createProjectScreenshotColumnCanvas(image, rowBands = [], columns) {
-  const scale = projectScreenshotScaleForWidth(columns.branch.width + columns.name.width);
+  const combinedWidth = columns.branch.width + columns.name.width;
+  const sourceHeight = rowBands.reduce((sum, band) => sum + Math.max(1, band.height - 4), 0);
+  const scale = projectScreenshotScaleForWidth(combinedWidth, sourceHeight);
   const gap = Math.max(18, Math.round(10 * scale));
   const padding = Math.max(16, Math.round(8 * scale));
-  const branchWidth = Math.round(columns.branch.width * scale);
-  const nameWidth = Math.round(columns.name.width * scale);
-  const scaledRows = rowBands
+  let branchWidth = Math.round(columns.branch.width * scale);
+  let nameWidth = Math.round(columns.name.width * scale);
+  ({ branchWidth, nameWidth } = fitProjectScreenshotColumnsToCanvas(branchWidth, nameWidth, padding * 2 + gap));
+  let scaledRows = rowBands
     .map((band) => ({
       y: Math.max(0, band.y + 2),
       height: Math.max(1, band.height - 4),
@@ -808,6 +926,7 @@ function createProjectScreenshotColumnCanvas(image, rowBands = [], columns) {
 
   const canvas = document.createElement("canvas");
   canvas.width = padding * 2 + branchWidth + gap + nameWidth;
+  scaledRows = fitProjectScreenshotRowsToCanvas(scaledRows, canvas.width, PROJECT_SCREENSHOT_ROW_GAP);
   canvas.height = scaledRows.reduce((sum, band) => sum + band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP, PROJECT_SCREENSHOT_ROW_GAP);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = "#fff";
@@ -848,66 +967,152 @@ function projectScreenshotCropWidth(image) {
   return Math.min(image.width, Math.max(720, Math.round(image.width * PROJECT_SCREENSHOT_LEFT_CROP_RATIO)));
 }
 
-function projectScreenshotScaleForWidth(width) {
+function projectScreenshotScaleForWidth(width, height = 0) {
   if (!Number.isFinite(width) || width <= 0) return 2;
-  return Math.min(4, Math.max(1.8, PROJECT_SCREENSHOT_MIN_OCR_WIDTH / width));
+  const widthScale = Math.min(4, Math.max(1.8, PROJECT_SCREENSHOT_MIN_OCR_WIDTH / width));
+  if (!Number.isFinite(height) || height <= 0) return widthScale;
+  const { maxPixels, maxWidth, maxHeight } = projectScreenshotCanvasLimits();
+  const pixelScale = Math.sqrt(maxPixels / Math.max(1, width * height));
+  const dimensionScale = Math.min(maxWidth / width, maxHeight / height);
+  return Math.max(0.01, Math.min(widthScale, pixelScale, dimensionScale));
 }
 
-function detectProjectScreenshotRowBands(image) {
+function fitProjectScreenshotColumnsToCanvas(branchWidth, nameWidth, overheadWidth = 0) {
+  const { maxWidth } = projectScreenshotCanvasLimits();
+  const available = Math.max(2, maxWidth - overheadWidth);
+  const total = Math.max(1, branchWidth + nameWidth);
+  if (total <= available) return { branchWidth, nameWidth };
+  const ratio = available / total;
+  return {
+    branchWidth: Math.max(1, Math.floor(branchWidth * ratio)),
+    nameWidth: Math.max(1, Math.floor(nameWidth * ratio)),
+  };
+}
+
+function fitProjectScreenshotHeightToCanvas(targetHeight, canvasWidth, overheadHeight = 0) {
+  const { maxPixels, maxHeight } = projectScreenshotCanvasLimits();
+  const allowedHeight = Math.max(1, Math.min(maxHeight, Math.floor(maxPixels / Math.max(1, canvasWidth))));
+  return Math.max(1, Math.min(targetHeight, allowedHeight - overheadHeight));
+}
+
+function fitProjectScreenshotRowsToCanvas(rows = [], canvasWidth, gap) {
+  const { maxPixels, maxHeight } = projectScreenshotCanvasLimits();
+  const allowedHeight = Math.max(1, Math.min(maxHeight, Math.floor(maxPixels / Math.max(1, canvasWidth))));
+  const gapHeight = gap * (rows.length + 1);
+  const contentHeight = rows.reduce((sum, row) => sum + row.targetHeight, 0);
+  if (contentHeight + gapHeight <= allowedHeight) return rows;
+  const ratio = Math.max(0.01, (allowedHeight - gapHeight) / Math.max(1, contentHeight));
+  return rows.map((row) => ({ ...row, targetHeight: Math.max(1, Math.floor(row.targetHeight * ratio)) }));
+}
+
+function projectScreenshotCanvasLimits() {
+  const compact = window.matchMedia?.("(max-width: 760px)")?.matches;
+  return compact
+    ? { maxPixels: 4_500_000, maxWidth: 2_100, maxHeight: 2_800 }
+    : { maxPixels: 9_000_000, maxWidth: 3_050, maxHeight: 5_200 };
+}
+
+function analyzeProjectScreenshotLayout(image) {
+  const { maxPixels, maxWidth, maxHeight } = projectScreenshotAnalysisLimits();
+  const scale = Math.min(
+    1,
+    maxWidth / Math.max(1, image.width),
+    maxHeight / Math.max(1, image.height),
+    Math.sqrt(maxPixels / Math.max(1, image.width * image.height)),
+  );
   const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(image, 0, 0);
-  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-  const sampleStep = Math.max(6, Math.floor(canvas.width / 420));
-  const sampleCount = Math.ceil(canvas.width / sampleStep);
+  try {
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const scaleX = image.width / canvas.width;
+    const scaleY = image.height / canvas.height;
+    const rowBands = detectProjectScreenshotRowBands(data, canvas.width, canvas.height)
+      .map((band) => ({
+        y: Math.max(0, Math.round(band.y * scaleY)),
+        height: Math.max(1, Math.round(band.height * scaleY)),
+      }));
+    const analysisColumns = detectProjectScreenshotKeyColumns(data, canvas.width, canvas.height);
+    const columns = analysisColumns ? {
+      branch: {
+        x: Math.max(0, Math.round(analysisColumns.branch.x * scaleX)),
+        width: Math.max(1, Math.round(analysisColumns.branch.width * scaleX)),
+      },
+      name: {
+        x: Math.max(0, Math.round(analysisColumns.name.x * scaleX)),
+        width: Math.max(1, Math.round(analysisColumns.name.width * scaleX)),
+      },
+    } : null;
+    return { rowBands, columns };
+  } finally {
+    canvas.width = 1;
+    canvas.height = 1;
+  }
+}
+
+function projectScreenshotAnalysisLimits() {
+  const compact = window.matchMedia?.("(max-width: 760px)")?.matches;
+  return compact
+    ? { maxPixels: 1_600_000, maxWidth: 1_300, maxHeight: 1_900 }
+    : { maxPixels: 2_800_000, maxWidth: 1_800, maxHeight: 2_600 };
+}
+
+function detectProjectScreenshotRowBands(data, width, height) {
+  const sampleStep = Math.max(3, Math.floor(width / 420));
+  const sampleCount = Math.ceil(width / sampleStep);
   const lineYs = [];
-  for (let y = 0; y < canvas.height; y += 1) {
-    let dark = 0;
-    for (let x = 0; x < canvas.width; x += sampleStep) {
-      const offset = (y * canvas.width + x) * 4;
-      if (data[offset] < 120 && data[offset + 1] < 120 && data[offset + 2] < 120) dark += 1;
+  for (let y = 0; y < height; y += 1) {
+    let strong = 0;
+    let light = 0;
+    for (let x = 0; x < width; x += sampleStep) {
+      const offset = (y * width + x) * 4;
+      const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+      if (gray < 155) strong += 1;
+      if (gray < 232) light += 1;
     }
-    if (dark / sampleCount > 0.42) lineYs.push(y);
+    if (strong / sampleCount > 0.34 || light / sampleCount > 0.72) lineYs.push(y);
   }
   const lines = mergeProjectScreenshotLineYs(lineYs);
+  if (lines.length >= 2) {
+    if (lines[0] > height * 0.03) lines.unshift(0);
+    if (lines.at(-1) < height * 0.97) lines.push(height - 1);
+  }
   const bands = [];
+  const minRowHeight = Math.max(10, Math.min(24, Math.round(height * 0.008)));
   for (let index = 0; index < lines.length - 1; index += 1) {
     const top = lines[index];
     const bottom = lines[index + 1];
-    const height = bottom - top - 1;
-    if (height >= Math.max(28, image.height * 0.025)) {
-      bands.push({ y: top + 1, height });
+    const bandHeight = bottom - top - 1;
+    if (bandHeight >= minRowHeight) {
+      bands.push({ y: top + 1, height: bandHeight });
     }
   }
   return bands;
 }
 
-function detectProjectScreenshotKeyColumns(image) {
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(image, 0, 0);
-  const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-  const sampleStep = Math.max(4, Math.floor(canvas.height / 220));
-  const sampleCount = Math.ceil(canvas.height / sampleStep);
+function detectProjectScreenshotKeyColumns(data, width, height) {
+  const sampleStep = Math.max(3, Math.floor(height / 220));
+  const sampleCount = Math.ceil(height / sampleStep);
   const lineXs = [];
-  for (let x = 0; x < canvas.width; x += 1) {
-    let dark = 0;
-    for (let y = 0; y < canvas.height; y += sampleStep) {
-      const offset = (y * canvas.width + x) * 4;
-      if (data[offset] < 145 && data[offset + 1] < 145 && data[offset + 2] < 145) dark += 1;
+  for (let x = 0; x < width; x += 1) {
+    let strong = 0;
+    let light = 0;
+    for (let y = 0; y < height; y += sampleStep) {
+      const offset = (y * width + x) * 4;
+      const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+      if (gray < 170) strong += 1;
+      if (gray < 232) light += 1;
     }
-    if (dark / sampleCount > 0.35) lineXs.push(x);
+    if (strong / sampleCount > 0.28 || light / sampleCount > 0.62) lineXs.push(x);
   }
   const rawLines = mergeProjectScreenshotLinePositions(lineXs);
-  const lines = normalizeProjectScreenshotTableLines(rawLines, canvas.width);
-  const minBranchWidth = Math.max(44, canvas.width * 0.015);
-  const maxBranchWidth = Math.max(140, canvas.width * 0.08);
-  const minNameWidth = Math.max(180, canvas.width * 0.065);
-  const maxNameWidth = Math.max(520, canvas.width * 0.18);
+  const lines = normalizeProjectScreenshotTableLines(rawLines, width);
+  const minBranchWidth = Math.max(30, width * 0.015);
+  const maxBranchWidth = Math.max(100, width * 0.08);
+  const minNameWidth = Math.max(120, width * 0.065);
+  const maxNameWidth = Math.max(360, width * 0.18);
   let best = null;
   for (let index = 0; index < lines.length - 2; index += 1) {
     const left = lines[index];
@@ -915,16 +1120,16 @@ function detectProjectScreenshotKeyColumns(image) {
     const nameRight = lines[index + 2];
     const branchWidth = branchRight - left;
     const nameWidth = nameRight - branchRight;
-    if (left > canvas.width * 0.08) continue;
+    if (left > width * 0.08) continue;
     if (branchWidth < minBranchWidth || branchWidth > maxBranchWidth) continue;
     if (nameWidth < minNameWidth || nameWidth > maxNameWidth) continue;
-    const score = Math.abs(left) + Math.abs(branchWidth - canvas.width * 0.025) + Math.abs(nameWidth - canvas.width * 0.09);
+    const score = Math.abs(left) + Math.abs(branchWidth - width * 0.025) + Math.abs(nameWidth - width * 0.09);
     if (!best || score < best.score) best = { left, branchRight, nameRight, score };
   }
   if (!best) return null;
   return {
-    branch: projectScreenshotInsetColumn(best.left, best.branchRight, canvas.width),
-    name: projectScreenshotInsetColumn(best.branchRight, best.nameRight, canvas.width),
+    branch: projectScreenshotInsetColumn(best.left, best.branchRight, width),
+    name: projectScreenshotInsetColumn(best.branchRight, best.nameRight, width),
   };
 }
 
@@ -967,97 +1172,110 @@ function enhanceProjectScreenshotCanvas(canvas, mode = "binary") {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
+  const histogram = new Uint32Array(256);
+  for (let index = 0; index < data.length; index += 4) {
+    const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+    histogram[gray] += 1;
+  }
+  const adaptiveThreshold = Math.max(150, Math.min(225, projectScreenshotOtsuThreshold(histogram, data.length / 4)));
   for (let index = 0; index < data.length; index += 4) {
     const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
     const value = mode === "soft"
-      ? Math.max(0, Math.min(255, gray > 242 ? 255 : (gray - 32) * 1.45))
-      : gray < 205 ? 0 : 255;
+      ? Math.max(0, Math.min(255, gray > 248 ? 255 : (gray - 128) * 1.2 + 128))
+      : gray < adaptiveThreshold ? 0 : 255;
     data[index] = value;
     data[index + 1] = value;
     data[index + 2] = value;
     data[index + 3] = 255;
   }
   context.putImageData(imageData, 0, 0);
+  eraseProjectScreenshotTableLines(canvas, mode === "binary" ? 0.58 : 0.72);
 }
 
-function parseProjectScreenshotOcrText(text = "") {
-  const compact = normalizeProjectScreenshotOcrText(text);
-  if (!compact) return [];
-  const matches = findProjectScreenshotBranchMatches(compact);
-
-  const entries = [];
-  const seen = new Set();
-  for (let index = 0; index < matches.length; index += 1) {
-    const current = matches[index];
-    const nextIndex = matches[index + 1]?.index ?? compact.length;
-    const segmentEnd = Math.min(nextIndex, current.index + 280);
-    const segment = compact.slice(current.index + current.branch.length, segmentEnd);
-    const fullName = extractProjectScreenshotBondFullName(segment);
-    if (!fullName) continue;
-    const key = `${current.branch}|${normalizeProjectScreenshotOcrText(fullName)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    entries.push({ branch: current.branch, fullName });
-  }
-  return entries;
-}
-
-function findProjectScreenshotBranchMatches(compact = "") {
-  const matches = [];
-  for (const { branch, pattern } of PROJECT_SCREENSHOT_BRANCH_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(compact))) {
-      matches.push({ branch, index: match.index, length: match[0].length });
+function projectScreenshotOtsuThreshold(histogram, totalPixels) {
+  let weightedTotal = 0;
+  for (let value = 0; value < histogram.length; value += 1) weightedTotal += value * histogram[value];
+  let backgroundWeight = 0;
+  let backgroundSum = 0;
+  let bestVariance = -1;
+  let threshold = 205;
+  for (let value = 0; value < histogram.length; value += 1) {
+    backgroundWeight += histogram[value];
+    if (!backgroundWeight) continue;
+    const foregroundWeight = totalPixels - backgroundWeight;
+    if (!foregroundWeight) break;
+    backgroundSum += value * histogram[value];
+    const backgroundMean = backgroundSum / backgroundWeight;
+    const foregroundMean = (weightedTotal - backgroundSum) / foregroundWeight;
+    const variance = backgroundWeight * foregroundWeight * (backgroundMean - foregroundMean) ** 2;
+    if (variance > bestVariance) {
+      bestVariance = variance;
+      threshold = value;
     }
   }
-  return matches
-    .sort((left, right) => left.index - right.index || right.length - left.length)
-    .filter((match, index, list) => !index || match.index !== list[index - 1].index || match.branch !== list[index - 1].branch);
+  return threshold;
 }
 
-function normalizeProjectScreenshotOcrText(text = "") {
-  return String(text || "")
-    .normalize("NFKC")
-    .replace(/[|｜]/g, "")
-    .replace(/\s+/g, "");
-}
-
-function extractProjectScreenshotBondFullName(segment = "") {
-  const text = normalizeProjectScreenshotOcrText(segment);
-  if (!text) return "";
-  const fullNamePattern = new RegExp(`([\\u4e00-\\u9fffA-Za-z0-9()（）]{4,140}?20\\d{2}(?:年度|年)[\\u4e00-\\u9fffA-Za-z0-9()（）]{0,90}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}(?:[()（）][^()（）]{1,24}[()（）])?)`, "i");
-  const fallbackPattern = new RegExp(`([\\u4e00-\\u9fffA-Za-z0-9()（）]{8,160}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}(?:[()（）][^()（）]{1,24}[()（）])?)`, "i");
-  const match = text.match(fullNamePattern) || text.match(fallbackPattern);
-  return cleanProjectScreenshotBondFullName(match?.[1] || "");
-}
-
-function cleanProjectScreenshotBondFullName(value = "") {
-  let text = normalizeProjectScreenshotOcrText(value)
-    .replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, "")
-    .replace(/[,:;，。；：].*$/, "");
-  const endPattern = new RegExp(`^(.+?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}(?:[()（）][^()（）]{1,24}[()（）])?)`, "i");
-  const endMatch = text.match(endPattern);
-  if (endMatch) text = endMatch[1];
-  return text.length >= 8 ? text : "";
+function eraseProjectScreenshotTableLines(canvas, coverageThreshold) {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const isDark = (x, y) => data[(y * canvas.width + x) * 4] < 215;
+  const rows = [];
+  const columns = [];
+  const xStep = Math.max(1, Math.floor(canvas.width / 700));
+  const yStep = Math.max(1, Math.floor(canvas.height / 500));
+  for (let y = 0; y < canvas.height; y += 1) {
+    let dark = 0;
+    let sampled = 0;
+    for (let x = 0; x < canvas.width; x += xStep) {
+      dark += isDark(x, y) ? 1 : 0;
+      sampled += 1;
+    }
+    if (dark / sampled >= coverageThreshold) rows.push(y);
+  }
+  for (let x = 0; x < canvas.width; x += 1) {
+    let dark = 0;
+    let sampled = 0;
+    for (let y = 0; y < canvas.height; y += yStep) {
+      dark += isDark(x, y) ? 1 : 0;
+      sampled += 1;
+    }
+    if (dark / sampled >= coverageThreshold) columns.push(x);
+  }
+  context.fillStyle = "#fff";
+  for (const y of rows) context.fillRect(0, Math.max(0, y - 1), canvas.width, 3);
+  for (const x of columns) context.fillRect(Math.max(0, x - 1), 0, 3, canvas.height);
 }
 
 async function lookupProjectScreenshotEntry(entry) {
-  const params = new URLSearchParams({ fullName: entry.fullName });
   try {
-    const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
-      cache: "no-store",
-      credentials: "same-origin",
-      headers: authHeaders(),
-    });
-    let payload;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
-    }
+    const { response, payload } = await requestProjectScreenshotDmLookup({ fullName: entry.fullName });
     if (!response.ok || !payload.ok) {
-      const suggestion = Array.isArray(payload.suggestions) ? payload.suggestions[0] : null;
+      const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+      const suggestion = suggestions[0] || null;
+      const reliableSuggestion = payload?.noResult
+        ? selectReliableProjectScreenshotSuggestion(entry.fullName, suggestions)
+        : null;
+      if (reliableSuggestion) {
+        const exactQuery = reliableSuggestion.securityId
+          ? { securityId: reliableSuggestion.securityId }
+          : { shortName: reliableSuggestion.shortName };
+        const exact = await requestProjectScreenshotDmLookup(exactQuery);
+        const exactNormalized = exact.payload?.normalized || {};
+        if (exact.response.ok && exact.payload?.ok && exactNormalized.shortName) {
+          return {
+            ...entry,
+            status: "ok",
+            shortName: exactNormalized.shortName,
+            securityId: exactNormalized.securityId || reliableSuggestion.securityId || "",
+            issuerName: exactNormalized.issuerName || reliableSuggestion.issuerName || "",
+            correctedFullName: reliableSuggestion.fullName || "",
+            correctionSource: "DM 高置信全称校正",
+            error: "",
+          };
+        }
+      }
       return {
         ...entry,
         status: "error",
@@ -1081,10 +1299,37 @@ async function lookupProjectScreenshotEntry(entry) {
   }
 }
 
+async function requestProjectScreenshotDmLookup(query = {}) {
+  const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value));
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: authHeaders(),
+      signal: controller.signal,
+    });
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
+    }
+    return { response, payload };
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("DM 查询超过 12 秒，已跳过本条");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function renderProjectScreenshotResults(rows = projectScreenshotRows) {
   const output = $("#projectScreenshotOutput");
   const copyButton = $("#copyProjectScreenshotShortNamesButton");
   if (!output || !copyButton) return;
+  const previousScrollTop = output.scrollTop;
   const copyText = projectScreenshotResolvedShortNames().join("\n");
   copyButton.disabled = !copyText;
   if (!rows.length) {
@@ -1099,14 +1344,15 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows) {
   const groupHtml = groups.map((group) => {
     const matched = group.rows.filter((row) => row.status === "ok" && row.shortName).length;
     const items = group.rows.map((row) => {
-      const title = row.shortName || row.candidateShortName || (row.status === "pending" ? "正在查询..." : "未查到简称");
+      const title = row.shortName
+        || (row.status === "pending" ? "正在查询..." : row.candidateShortName ? `候选：${row.candidateShortName}` : "未查到简称");
       const detail = row.status === "ok"
-        ? [row.securityId, row.issuerName].filter(Boolean).join(" · ")
+        ? [row.securityId, row.issuerName, row.correctionSource].filter(Boolean).join(" · ")
         : row.status === "pending"
         ? "正在用债券全称查询 DM"
         : `${row.error || "查询失败"}${row.candidateShortName ? " · 仅作候选参考" : ""}`;
       return `
-        <div class="project-screenshot-item${row.status === "ok" ? "" : " is-error"}">
+        <div class="project-screenshot-item${row.status === "error" ? " is-error" : row.status === "pending" ? " is-pending" : ""}">
           <strong>${escapeHtml(title)}</strong>
           <em>${escapeHtml(row.fullName)}</em>
           <span>${escapeHtml(detail)}</span>
@@ -1122,7 +1368,8 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows) {
   }).join("");
 
   output.hidden = false;
-  output.innerHTML = `${groupHtml}${copyText ? `<textarea class="project-screenshot-copy-box" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
+  output.innerHTML = `${groupHtml}${copyText ? `<textarea class="project-screenshot-copy-box" aria-label="已匹配的 DM 简称清单" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
+  output.scrollTop = previousScrollTop;
 }
 
 function projectScreenshotResolvedShortNames() {
@@ -1137,8 +1384,12 @@ async function copyProjectScreenshotShortNames() {
     showToast("暂无可复制的 DM 简称。");
     return;
   }
-  await navigator.clipboard.writeText(text);
-  showToast("已复制简称清单。");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("已复制简称清单。");
+  } catch {
+    showToast("浏览器未允许自动复制，请在下方清单中长按复制。");
+  }
 }
 
 function setProjectScreenshotBusy(isBusy, message = "") {
@@ -1151,6 +1402,7 @@ function setProjectScreenshotBusy(isBusy, message = "") {
   upload?.classList.toggle("busy", isBusy);
   dropzone?.classList.toggle("is-busy", isBusy);
   dropzone?.setAttribute("aria-disabled", isBusy ? "true" : "false");
+  $("#projectScreenshotTool")?.setAttribute("aria-busy", isBusy ? "true" : "false");
   if (copyButton) copyButton.disabled = isBusy || !projectScreenshotResolvedShortNames().length;
   if (message) setProjectScreenshotStatus(message);
 }

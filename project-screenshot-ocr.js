@@ -1,0 +1,402 @@
+export const PROJECT_SCREENSHOT_BRANCHES = ["广州分行", "武汉分行", "青岛分行", "兰州分行", "苏州分行", "太原分行", "西安分行"];
+
+const PROJECT_SCREENSHOT_BRANCH_PATTERNS = [
+  { branch: "广州分行", pattern: /[广廣厂][州卅]分行/g },
+  { branch: "武汉分行", pattern: /[武式]汉分行/g },
+  { branch: "青岛分行", pattern: /青[岛島鸟鳥]分行/g },
+  { branch: "兰州分行", pattern: /[兰蘭]州分行/g },
+  { branch: "苏州分行", pattern: /[苏蘇]州分行/g },
+  { branch: "太原分行", pattern: /[太大]原分行/g },
+  { branch: "西安分行", pattern: /西安分行/g },
+];
+
+const BOND_TYPE_ALIASES = [
+  { canonical: "超短期融资券", pattern: /超短(?:期)?融[资資咨][券卷劵]/gi },
+  { canonical: "短期融资券", pattern: /短期融[资資咨][券卷劵]/gi },
+  { canonical: "中期票据", pattern: /中期票[据劇根锯鋸]/gi },
+  { canonical: "定向债务融资工具", pattern: /定向[债債]务融[资資咨]工具/gi },
+  { canonical: "定向工具", pattern: /定向工具/gi },
+  { canonical: "公司债券", pattern: /公司[债債][券卷]/gi },
+  { canonical: "企业债券", pattern: /企[业業][债債][券卷]/gi },
+  { canonical: "资产支持票据", pattern: /[资資]产支持票[据劇根]/gi },
+  { canonical: "资产支持证券", pattern: /[资資]产支持[证證]券/gi },
+  { canonical: "资产支持专项计划", pattern: /[资資]产支持[专專]项[计計]划/gi },
+];
+
+const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|MTN|PPN|ABN|ABS)";
+const PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN = "(?:(?:(?:品种[一二三四五六七八九十A-Za-z0-9-]+|(?:优先(?:级|档)?|次级|劣后)[一二三四五六七八九十A-Za-z0-9-]*(?:级|档)?|[A-Z]))|(?:[()（）][^()（）]{1,24}[()（）])){0,4}";
+const PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN = `${PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN}(?:${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN})?`;
+const BOND_NAME_CHARACTERS = "\\u4e00-\\u9fffA-Za-z0-9()（）·";
+
+export function normalizeProjectScreenshotOcrText(text = "") {
+  return normalizeProjectScreenshotBondTokens(normalizeProjectScreenshotOcrSource(text).replace(/\s+/g, ""));
+}
+
+export function normalizeProjectScreenshotOcrSource(text = "") {
+  let normalized = String(text || "")
+    .normalize("NFKC")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[|｜│┃¦┆╎┊丨]/g, " ")
+    .replace(/[‐‑‒–—]/g, "-");
+
+  return normalizeProjectScreenshotBondTokens(normalized);
+}
+
+function normalizeProjectScreenshotBondTokens(value = "") {
+  let normalized = String(value || "")
+    .replace(/(^|[^A-Za-z])[5S][Cc][Pp](?=$|[^A-Za-z])/g, "$1SCP")
+    .replace(/(^|[^A-Za-z])M[7T][Nn](?=$|[^A-Za-z])/g, "$1MTN")
+    .replace(/(^|[^A-Za-z])P[Pp][Nn](?=$|[^A-Za-z])/g, "$1PPN")
+    .replace(/(^|[^A-Za-z])A[8B][Nn](?=$|[^A-Za-z])/g, "$1ABN")
+    .replace(/(^|[^A-Za-z])A[8B][5S](?=$|[^A-Za-z])/g, "$1ABS")
+    .replace(/分[衍何珩]/g, "分行")
+    .replace(/集困/g, "集团")
+    .replace(/公同/g, "公司")
+    .replace(/股分/g, "股份")
+    .replace(/2[OoQ]([0-9OoQZz])[6G](?=年|年度)/g, (_, middle) => `20${normalizeOcrDigit(middle)}6`)
+    .replace(/20[Zz]6(?=年|年度)/g, "2026");
+
+  for (const alias of BOND_TYPE_ALIASES) normalized = normalized.replace(alias.pattern, alias.canonical);
+  return normalized;
+}
+
+export function parseProjectScreenshotOcrText(text = "") {
+  const normalizedSource = normalizeProjectScreenshotOcrSource(text);
+  const lines = normalizedSource
+    .split(/\n+/)
+    .map((line) => normalizeProjectScreenshotOcrText(line))
+    .filter(Boolean);
+  if (!lines.length) return [];
+
+  const hasDetachedBranchColumn = lines.some((line, index) => (
+    findProjectScreenshotBranchMatches(line).length > 0
+    && !extractProjectScreenshotBondFullName(line)
+    && (findProjectScreenshotBranchMatches(lines[index - 1] || "").length > 0
+      || findProjectScreenshotBranchMatches(lines[index + 1] || "").length > 0)
+  ));
+
+  const entries = [];
+  const seen = new Set();
+  let carryBranch = "";
+  let carryAdditionalRows = false;
+  let carryLineIndex = -1;
+  const addEntry = (branch, fullName) => {
+    const cleaned = cleanProjectScreenshotBondFullName(fullName);
+    if (!branch || !cleaned) return;
+    const key = `${branch}|${normalizeProjectScreenshotOcrText(cleaned)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ branch, fullName: cleaned });
+  };
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const branchMatches = findProjectScreenshotBranchMatches(lines[lineIndex]);
+    if (!branchMatches.length && carryBranch && carryAdditionalRows && !hasDetachedBranchColumn) {
+      const carriedNames = lineIndex === carryLineIndex + 1
+        ? extractProjectScreenshotBondFullNames(lines[lineIndex])
+        : [];
+      let carried = false;
+      for (const fullName of carriedNames) {
+        addEntry(carryBranch, fullName);
+        carried = true;
+      }
+      if (carried) carryLineIndex = lineIndex;
+      else {
+        carryBranch = "";
+        carryAdditionalRows = false;
+        carryLineIndex = -1;
+      }
+    }
+    for (let branchIndex = 0; branchIndex < branchMatches.length; branchIndex += 1) {
+      const branchMatch = branchMatches[branchIndex];
+      carryBranch = branchMatch.branch;
+      const currentSegment = lines[lineIndex].slice(
+        branchMatch.index,
+        branchMatches[branchIndex + 1]?.index ?? lines[lineIndex].length,
+      );
+      const currentHasBond = Boolean(extractProjectScreenshotBondFullName(currentSegment));
+      carryAdditionalRows = currentHasBond;
+      carryLineIndex = currentHasBond ? lineIndex : -1;
+      const previousHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex - 1] || "").length > 0;
+      const nextHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex + 1] || "").length > 0;
+      const isBranchColumnRun = !currentHasBond && (previousHasBranch || nextHasBranch);
+      const previousLine = !isBranchColumnRun && !previousHasBranch ? lines[lineIndex - 1] : "";
+      const nextLine = !isBranchColumnRun && !nextHasBranch ? lines[lineIndex + 1] : "";
+      const secondNextHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex + 2] || "").length > 0;
+      const secondNextLine = nextLine && !secondNextHasBranch ? lines[lineIndex + 2] : "";
+      const windows = [
+        currentSegment,
+        [currentSegment, nextLine].filter(Boolean).join(""),
+        [previousLine, currentSegment].filter(Boolean).join(""),
+        [currentSegment, nextLine, secondNextLine].filter(Boolean).join(""),
+      ];
+      const candidateGroups = windows
+        .map(extractProjectScreenshotBondFullNames)
+        .filter((candidates) => candidates.length);
+      for (const candidate of candidateGroups[0] || []) addEntry(branchMatch.branch, candidate);
+    }
+  }
+
+  if (entries.length) return entries;
+  if (hasDetachedBranchColumn) return [];
+
+  const compact = normalizeProjectScreenshotOcrText(normalizedSource);
+  const matches = findProjectScreenshotBranchMatches(compact);
+  for (let index = 0; index < matches.length; index += 1) {
+    const current = matches[index];
+    const nextIndex = matches[index + 1]?.index ?? compact.length;
+    const segmentEnd = Math.min(nextIndex, current.index + 320);
+    const segment = compact.slice(current.index + current.length, segmentEnd);
+    for (const fullName of extractProjectScreenshotBondFullNames(segment)) addEntry(current.branch, fullName);
+  }
+  return entries;
+}
+
+export function mergeProjectScreenshotOcrPasses(passes = []) {
+  const clusters = [];
+  let order = 0;
+  for (const pass of passes) {
+    const confidence = Number(pass?.confidence);
+    for (const entry of parseProjectScreenshotOcrText(pass?.text || "")) {
+      const normalizedName = normalizeProjectScreenshotOcrText(entry.fullName);
+      let cluster = clusters.find((candidate) => candidate.branch === entry.branch
+        && projectScreenshotBondNamesMatch(candidate.normalizedName, normalizedName));
+      if (!cluster) {
+        cluster = { branch: entry.branch, normalizedName, candidates: [], labels: new Set(), order: order++ };
+        clusters.push(cluster);
+      }
+      cluster.labels.add(String(pass?.label || "OCR"));
+      cluster.candidates.push({
+        ...entry,
+        confidence: Number.isFinite(confidence) ? confidence : 0,
+        quality: projectScreenshotBondNameQuality(entry.fullName),
+      });
+    }
+  }
+
+  return clusters
+    .map((cluster) => {
+      const best = [...cluster.candidates].sort((left, right) => (
+        right.quality - left.quality
+        || right.confidence - left.confidence
+        || right.fullName.length - left.fullName.length
+      ))[0];
+      return {
+        branch: cluster.branch,
+        fullName: best.fullName,
+        ocrConfidence: Math.round(best.confidence || 0),
+        ocrVotes: cluster.labels.size,
+        _order: cluster.order,
+      };
+    })
+    .sort((left, right) => (
+      PROJECT_SCREENSHOT_BRANCHES.indexOf(left.branch) - PROJECT_SCREENSHOT_BRANCHES.indexOf(right.branch)
+      || left._order - right._order
+    ))
+    .map(({ _order, ...entry }) => entry);
+}
+
+export function selectReliableProjectScreenshotSuggestion(fullName = "", suggestions = []) {
+  const query = normalizeProjectScreenshotBondComparisonText(fullName);
+  if (!query) return null;
+  const ranked = (suggestions || [])
+    .filter((suggestion) => suggestion?.shortName || suggestion?.securityId)
+    .map((suggestion) => ({
+      ...suggestion,
+      ocrSimilarity: projectScreenshotTextSimilarity(query, normalizeProjectScreenshotBondComparisonText(suggestion?.fullName || "")),
+    }))
+    .filter((suggestion) => Number(suggestion.score) >= 90 && suggestion.ocrSimilarity >= 0.9)
+    .filter((suggestion) => projectScreenshotBondFamily(fullName) === projectScreenshotBondFamily(suggestion.fullName))
+    .filter((suggestion) => projectScreenshotIssueYear(fullName) === projectScreenshotIssueYear(suggestion.fullName))
+    .filter((suggestion) => projectScreenshotBondVariant(fullName) === projectScreenshotBondVariant(suggestion.fullName, suggestion.shortName))
+    .filter((suggestion) => {
+      const queryIssuer = projectScreenshotBondIssuer(fullName);
+      const candidateIssuer = projectScreenshotBondIssuer(suggestion.fullName);
+      return Boolean(queryIssuer && candidateIssuer && queryIssuer === candidateIssuer);
+    })
+    .sort((left, right) => right.ocrSimilarity - left.ocrSimilarity || Number(right.score) - Number(left.score));
+  const top = ranked[0];
+  if (!top) return null;
+  const second = ranked[1];
+  if (second && top.ocrSimilarity - second.ocrSimilarity < 0.025 && Number(top.score) - Number(second.score) < 5) return null;
+  return top;
+}
+
+export function extractProjectScreenshotBondFullName(segment = "") {
+  return extractProjectScreenshotBondFullNames(segment)[0] || "";
+}
+
+export function extractProjectScreenshotBondFullNames(segment = "") {
+  const text = normalizeProjectScreenshotOcrText(segment);
+  if (!text) return [];
+  const year = "20\\d{2}(?:年度|年)";
+  const officialPattern = new RegExp(`([${BOND_NAME_CHARACTERS}]{3,120}?${year}[${BOND_NAME_CHARACTERS}]{0,100}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN})`, "ig");
+  const fallbackPattern = new RegExp(`([${BOND_NAME_CHARACTERS}]{6,180}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN})`, "ig");
+  const candidates = projectScreenshotBondTextVariants(text)
+    .flatMap((variant) => [...variant.matchAll(officialPattern), ...variant.matchAll(fallbackPattern)])
+    .map((match) => cleanProjectScreenshotBondFullName(match[1]))
+    .filter(Boolean);
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const key = normalizeProjectScreenshotOcrText(candidate);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function cleanProjectScreenshotBondFullName(value = "") {
+  let text = normalizeProjectScreenshotOcrText(value)
+    .replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, "")
+    .replace(/^(?:序号|项目|分行|主承|牵头|联席|债券全称|债项名称)+/, "")
+    .replace(/[,:;，。；：].*$/, "");
+  for (const branch of PROJECT_SCREENSHOT_BRANCHES) {
+    if (text.startsWith(branch)) text = text.slice(branch.length);
+  }
+  const endPattern = new RegExp(`^(.+?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN})`, "i");
+  const endMatch = text.match(endPattern);
+  if (endMatch) text = endMatch[1];
+  return text.length >= 8 && projectScreenshotBondFamily(text) ? text : "";
+}
+
+export function findProjectScreenshotBranchMatches(compact = "") {
+  const text = normalizeProjectScreenshotOcrText(compact);
+  const matches = [];
+  for (const { branch, pattern } of PROJECT_SCREENSHOT_BRANCH_PATTERNS) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(text))) matches.push({ branch, index: match.index, length: match[0].length });
+  }
+  return matches
+    .sort((left, right) => left.index - right.index || right.length - left.length)
+    .filter((match, index, list) => !index || match.index !== list[index - 1].index || match.branch !== list[index - 1].branch);
+}
+
+function normalizeOcrDigit(value) {
+  if (/[OoQ]/.test(value)) return "0";
+  if (/[Zz]/.test(value)) return "2";
+  return value;
+}
+
+function projectScreenshotBondNameQuality(value = "") {
+  const text = normalizeProjectScreenshotOcrText(value);
+  let score = Math.min(4, text.length / 24);
+  if (projectScreenshotIssueYear(text)) score += 4;
+  if (projectScreenshotBondFamily(text)) score += 5;
+  if (/(?:第[一二三四五六七八九十0-9]+期|[A-Z]?[0-9]{2,3})/i.test(text)) score += 1;
+  if (/(?:分行|牵头|规模|截标|亿元|序号)/.test(text)) score -= 6;
+  return score;
+}
+
+function projectScreenshotBondNamesMatch(left = "", right = "") {
+  if (left === right) return true;
+  const leftYear = projectScreenshotIssueYear(left);
+  const rightYear = projectScreenshotIssueYear(right);
+  if (leftYear !== rightYear) return false;
+  if (projectScreenshotBondFamily(left) !== projectScreenshotBondFamily(right)) return false;
+  const leftIssuer = projectScreenshotBondIssuer(left);
+  const rightIssuer = projectScreenshotBondIssuer(right);
+  if (leftIssuer && rightIssuer && projectScreenshotTextSimilarity(leftIssuer, rightIssuer) < 0.92) return false;
+  const leftVariant = projectScreenshotBondVariant(left);
+  const rightVariant = projectScreenshotBondVariant(right);
+  if ((leftVariant || rightVariant) && leftVariant !== rightVariant) return false;
+  if (!leftYear && !rightYear) return false;
+  return projectScreenshotTextSimilarity(left, right) >= 0.84;
+}
+
+function projectScreenshotBondTextVariants(value = "") {
+  const text = normalizeProjectScreenshotOcrText(value);
+  const typePattern = new RegExp(`^(.*?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN})(?:[()（）])?(品种[一二三四五六七八九十A-Za-z0-9-]+|[AB])(?:[()（）])?/(?:[()（）])?(品种[一二三四五六七八九十A-Za-z0-9-]+|[AB])(?:[()（）])?(.*)$`, "i");
+  const match = text.match(typePattern);
+  if (!match) return [text];
+  const [, prefix, leftVariant, rightVariant, suffix] = match;
+  return [`${prefix}${leftVariant}${suffix}`, `${prefix}${rightVariant}${suffix}`];
+}
+
+function projectScreenshotIssueYear(value = "") {
+  return normalizeProjectScreenshotOcrText(value).match(/20\d{2}(?=年度|年)/)?.[0] || "";
+}
+
+function projectScreenshotBondIssuer(value = "") {
+  const text = normalizeProjectScreenshotOcrText(value);
+  const yearIndex = text.search(/20\d{2}(?=年度|年)/);
+  return yearIndex > 0 ? text.slice(0, yearIndex) : "";
+}
+
+function normalizeProjectScreenshotBondComparisonText(value = "") {
+  let text = normalizeProjectScreenshotOcrText(value).toUpperCase();
+  text = text
+    .replace(/第([一二三四五六七八九十百0-9]+)(期|号)/g, (_, ordinal, suffix) => `第${normalizeProjectScreenshotOrdinal(ordinal)}${suffix}`)
+    .replace(/品种([一二三四五六七八九十百AB0-9]+)/g, (_, ordinal) => `品种${normalizeProjectScreenshotOrdinal(ordinal)}`)
+    .replace(new RegExp(`(${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN})([AB])(?=[()（）]|$)`, "i"), (_, family, tranche) => `${family}品种${tranche === "A" ? "1" : "2"}`);
+  return text;
+}
+
+function projectScreenshotBondFamily(value = "") {
+  return normalizeProjectScreenshotOcrText(value).match(new RegExp(PROJECT_SCREENSHOT_BOND_TYPE_PATTERN, "i"))?.[0]?.toUpperCase() || "";
+}
+
+function projectScreenshotBondVariant(value = "", shortName = "") {
+  const text = normalizeProjectScreenshotOcrText(value).toUpperCase();
+  const issueValue = text.match(/第([一二三四五六七八九十百0-9]+)(?:期|号)/)?.[1] || "";
+  const issue = issueValue ? `ISSUE:${normalizeProjectScreenshotOrdinal(issueValue)}` : "";
+  const fullTranche = projectScreenshotTrancheToken(text);
+  const shortTranche = normalizeProjectScreenshotOcrText(shortName).toUpperCase().match(/(?:MTN|PPN|ABN|ABS|SCP|CP)\d{1,3}([AB])(?:\b|$)/)?.[1] || "";
+  const normalizedShortTranche = shortTranche === "A" ? "TRANCHE:1" : shortTranche === "B" ? "TRANCHE:2" : "";
+  const tranche = fullTranche && normalizedShortTranche && fullTranche !== normalizedShortTranche
+    ? "TRANCHE:CONFLICT"
+    : fullTranche || normalizedShortTranche;
+  return [issue, tranche].filter(Boolean).join("|");
+}
+
+function projectScreenshotTrancheToken(text = "") {
+  const variety = text.match(/品种([一二三四五六七八九十百AB0-9]+)/)?.[1] || "";
+  if (variety) return `TRANCHE:${normalizeProjectScreenshotOrdinal(variety)}`;
+  const familyTranche = text.match(new RegExp(`${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}([AB])(?=[()（）]|$)`, "i"))?.[1] || "";
+  if (familyTranche === "A") return "TRANCHE:1";
+  if (familyTranche === "B") return "TRANCHE:2";
+  const priority = text.match(/(优先(?:级|档)?[一二三四五六七八九十A-Z0-9-]*|次级[一二三四五六七八九十A-Z0-9-]*|劣后[一二三四五六七八九十A-Z0-9-]*)/)?.[1] || "";
+  return priority ? `CLASS:${priority}` : "";
+}
+
+function normalizeProjectScreenshotOrdinal(value = "") {
+  const text = String(value || "").toUpperCase();
+  if (text === "A") return "1";
+  if (text === "B") return "2";
+  if (/^\d+$/.test(text)) return String(Number(text));
+  const digits = { 零: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  if (text === "十") return "10";
+  if (text.includes("十")) {
+    const [left, right] = text.split("十");
+    const tens = left ? digits[left] : 1;
+    const ones = right ? digits[right] : 0;
+    if (Number.isFinite(tens) && Number.isFinite(ones)) return String(tens * 10 + ones);
+  }
+  if (Object.hasOwn(digits, text)) return String(digits[text]);
+  return text;
+}
+
+function projectScreenshotTextSimilarity(left = "", right = "") {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const maxLength = Math.max(left.length, right.length);
+  return Math.max(0, 1 - levenshteinDistance(left, right) / maxLength);
+}
+
+function levenshteinDistance(left = "", right = "") {
+  const a = [...String(left)];
+  const b = [...String(right)];
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    const current = [i + 1];
+    for (let j = 0; j < b.length; j += 1) {
+      current[j + 1] = Math.min(
+        current[j] + 1,
+        previous[j + 1] + 1,
+        previous[j] + (a[i] === b[j] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[b.length] || 0;
+}

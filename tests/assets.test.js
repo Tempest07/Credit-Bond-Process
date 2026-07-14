@@ -20,6 +20,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`date-picker\\.js\\?v=${VERSION}`));
+  assert.match(app, /project-screenshot-ocr\.js\?v=20260714-ocr-quality/);
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
@@ -67,6 +68,42 @@ test("keeps protocol transfer hover borders clear of the scroll viewport", async
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*3px 8px 3px 3px;[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s);
+  assert.match(styles, /\.protocol-transfer-item\s*\{[^}]*position:\s*relative;/s);
+  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*transform:\s*none;/s);
+});
+
+test("uses a reusable, layout-aware OCR worker for project screenshots", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(app, /tesseract\.js@5\.1\.1/);
+  assert.match(app, /Tesseract\.createWorker\("chi_sim\+eng"/);
+  assert.match(app, /tessedit_pageseg_mode/);
+  assert.match(app, /pageSegMode: "SINGLE_LINE"/);
+  assert.match(app, /projectScreenshotOtsuThreshold/);
+  assert.match(app, /eraseProjectScreenshotTableLines/);
+  assert.match(app, /canvas\.width = 1;\s*canvas\.height = 1;/s);
+  assert.match(app, /\? 14 : 24/);
+  assert.match(app, /\? 16 : 22/);
+  assert.match(app, /maxPixels:\s*4_500_000/);
+  assert.match(app, /maxPixels:\s*9_000_000/);
+  assert.match(app, /maxPixels:\s*1_600_000/);
+  assert.match(app, /maxPixels:\s*2_800_000/);
+  assert.match(app, /analyzeProjectScreenshotLayout/);
+  assert.match(app, /fitProjectScreenshotRowsToCanvas/);
+  assert.match(app, /fitProjectScreenshotHeightToCanvas/);
+  assert.match(app, /if \(rowBands\.length >= 2 && columns\)/);
+  assert.match(app, /passErrors\.push/);
+  assert.match(app, /controller\.abort\(\), 12_000/);
+  assert.match(app, /Math\.min\(widthScale, pixelScale, dimensionScale\)/);
+  assert.doesNotMatch(app, /rowPassMatches|rowCoverageReached|minimumRowMatches|structuredPassMatches/);
+  assert.match(html, /id="projectScreenshotStatus" role="status" aria-live="polite"/);
+  assert.match(html, /id="projectScreenshotOutput" aria-live="polite"/);
+  assert.match(styles, /\.project-screenshot-item\.is-pending/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-screenshot-copy-box\s*\{\s*font-size:\s*16px;/);
 });
 
 test("uses single-pane project navigation on compact screens", async () => {
