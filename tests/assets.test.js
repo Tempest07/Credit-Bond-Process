@@ -112,9 +112,13 @@ test("shows the compact DM policy-bank curve in the project command corner", asy
   assert.match(app, /POLICY_CURVE_KEY_TERMS = new Set\(\["0\.1Y", "0\.25Y", "0\.3Y", "0\.5Y", "0\.75Y", "1Y"\]\)/);
   assert.match(app, /node\?\.method === "derived-linear"/);
   assert.match(app, /loadPolicyCurve\(\{ refresh: true \}\)/);
-  assert.match(styles, /\.ledger-command-bottom\s*\{[^}]*grid-template-columns:/s);
+  assert.match(styles, /\.ledger-command-bottom\s*\{[^}]*grid-template-columns:[^}]*align-items:\s*start;/s);
+  assert.match(styles, /\.policy-curve-card\s*\{[^}]*grid-template-columns:\s*minmax\(142px, auto\)\s+minmax\(0, 1fr\)/s);
+  assert.match(styles, /\.policy-curve-points\s*\{[^}]*grid-template-columns:\s*repeat\(6,/s);
   assert.match(styles, /\.policy-curve-point\.is-key\s*\{/);
+  assert.match(styles, /@media \(max-width: 1380px\)[\s\S]+\.ledger-command-bottom\s*\{\s*grid-template-columns:\s*1fr;/);
   assert.match(styles, /@media \(max-width: 1050px\)[\s\S]+\.ledger-command-bottom\s*\{\s*grid-template-columns:\s*1fr;/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.policy-curve-points\s*\{[^}]*grid-template-columns:\s*repeat\(4,/);
 });
 
 test("ships the protocol transfer ledger xlsx template", async () => {
