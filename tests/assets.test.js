@@ -63,6 +63,12 @@ test("lets short project lists expand without internal scrolling", async () => {
   assert.match(styles, /\.project-list-panel\.has-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
 });
 
+test("keeps protocol transfer hover borders clear of the scroll viewport", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*3px 8px 3px 3px;[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s);
+});
+
 test("uses single-pane project navigation on compact screens", async () => {
   const [html, app, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
