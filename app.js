@@ -4751,6 +4751,30 @@ function renderProjectList() {
       openLedgerProject(button.dataset.projectId);
     });
   });
+  keepSelectedProjectCardClear(projectList);
+}
+
+function keepSelectedProjectCardClear(projectList) {
+  requestAnimationFrame(() => {
+    const active = projectList?.querySelector(".project-item.active");
+    if (!active || !projectList.isConnected || projectList.scrollHeight <= projectList.clientHeight) return;
+
+    const clearance = 12;
+    const activeTop = active.offsetTop;
+    const activeBottom = activeTop + active.offsetHeight;
+    const visibleTop = projectList.scrollTop;
+    const visibleBottom = visibleTop + projectList.clientHeight;
+    let nextTop = visibleTop;
+
+    if (activeBottom + clearance > visibleBottom) nextTop = activeBottom + clearance - projectList.clientHeight;
+    else if (activeTop - clearance < visibleTop) nextTop = activeTop - clearance;
+    if (nextTop === visibleTop) return;
+
+    projectList.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  });
 }
 
 function projectMatchesDateFilter(projectValue, date) {

@@ -55,7 +55,11 @@ test("lets short project lists expand without internal scrolling", async () => {
 
   assert.match(app, /SHORT_PROJECT_LIST_LIMIT = 3/);
   assert.match(app, /classList\.toggle\("is-short-list", isShortList\)/);
-  assert.match(styles, /\.project-list\.is-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+  assert.match(app, /function keepSelectedProjectCardClear[\s\S]+activeBottom \+ clearance > visibleBottom/);
+  assert.match(styles, /\.project-list\s*\{[^}]*padding:\s*0 4px 14px 0;[^}]*scroll-padding-block:\s*12px;/s);
+  assert.match(styles, /\.project-list\.is-short-list\s*\{[^}]*max-height:\s*none;[^}]*padding:\s*0;[^}]*overflow:\s*visible;/s);
+  assert.match(styles, /\.project-item\s*\{[^}]*scroll-margin-block:\s*12px;/s);
+  assert.match(styles, /\.project-list\.liquid-track::before\s*\{[^}]*box-sizing:\s*border-box;/s);
   assert.match(styles, /\.project-list-panel\.has-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
 });
 
