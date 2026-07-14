@@ -38,6 +38,15 @@ test("hides the project empty state once a project is selected", async () => {
   assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
 });
 
+test("keeps the desktop sidebar rail continuous and the empty detail state compact", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /\.app-shell\s*\{[^}]*background:\s*linear-gradient\(90deg,\s*#10172d 0 252px,\s*transparent 252px\)/s);
+  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.project-detail-panel:has\(> \.project-empty:not\(\[hidden\]\)\)\s*\{\s*min-height:\s*0;/);
+  assert.match(styles, /\.project-detail-panel > \.project-empty:not\(\[hidden\]\)\s*\{\s*min-height:\s*140px;/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.app-shell\s*\{[^}]*background:\s*transparent;/);
+});
+
 test("lets short project lists expand without internal scrolling", async () => {
   const [app, styles] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
