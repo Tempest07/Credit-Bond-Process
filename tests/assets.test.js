@@ -66,10 +66,13 @@ test("lets short project lists expand without internal scrolling", async () => {
 
 test("keeps protocol transfer hover borders clear of the scroll viewport", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  const liftedCardHover = styles.indexOf(".project-item:hover,");
+  const protocolHoverOverride = styles.lastIndexOf(".protocol-transfer-item:hover {");
 
   assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*3px 8px 3px 3px;[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s);
   assert.match(styles, /\.protocol-transfer-item\s*\{[^}]*position:\s*relative;/s);
-  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*transform:\s*none;/s);
+  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--accent\)[^}]*transform:\s*none;/s);
+  assert.ok(protocolHoverOverride > liftedCardHover, "protocol hover override must follow the generic lifted-card hover rule");
 });
 
 test("uses a reusable, layout-aware OCR worker for project screenshots", async () => {
