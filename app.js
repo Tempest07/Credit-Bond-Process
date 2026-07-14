@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260715-ocr-recovery";
+} from "./core.js?v=20260715-ocr-layout";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260715-ocr-recovery";
+} from "./lifecycle.js?v=20260715-ocr-layout";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260715-ocr-recovery";
+} from "./history-parser.js?v=20260715-ocr-layout";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260715-ocr-recovery";
+} from "./protocol-transfer.js?v=20260715-ocr-layout";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260715-ocr-recovery";
+} from "./reminders.js?v=20260715-ocr-layout";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,14 +77,16 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260715-ocr-recovery";
-import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-recovery";
+} from "./secondary-inventory.js?v=20260715-ocr-layout";
+import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-layout";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
+  collapseProjectScreenshotRowsWithVerifiedMatches,
   mergeProjectScreenshotOcrPasses,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260715-ocr-recovery";
+} from "./project-screenshot-ocr.js?v=20260715-ocr-layout";
+import { detectProjectScreenshotKeyColumns } from "./project-screenshot-layout.js?v=20260715-ocr-layout";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -704,10 +706,13 @@ async function processProjectScreenshotFile(file, input = null) {
       projectScreenshotRows[currentIndex] = finalizeProjectScreenshotLookupRow(current, resolved);
       renderProjectScreenshotResults(projectScreenshotRows);
     }
+    projectScreenshotRows = collapseProjectScreenshotRowsWithVerifiedMatches(projectScreenshotRows);
+    renderProjectScreenshotResults(projectScreenshotRows);
     const copiedCount = projectScreenshotResolvedShortNames().length;
+    const finalCount = projectScreenshotRows.length;
     setProjectScreenshotStatus(copiedCount
-      ? `完成：${copiedCount}/${entries.length} 条已匹配简称。`
-      : `完成：${entries.length} 条均未匹配到 DM 简称。`);
+      ? `完成：${copiedCount}/${finalCount} 条已匹配简称。`
+      : `完成：${finalCount} 条均未匹配到 DM 简称。`);
   } catch (error) {
     if (sessionId === projectScreenshotSessionId) {
       projectScreenshotRows = [createManualProjectScreenshotRow(sessionId)];
@@ -1291,70 +1296,6 @@ function detectProjectScreenshotRowBands(data, width, height, bounds = { x: 0, y
   return bands;
 }
 
-function detectProjectScreenshotKeyColumns(data, width, height, bounds = { x: 0, y: 0, width, height }) {
-  const startX = Math.max(0, bounds.x);
-  const endX = Math.min(width, bounds.x + bounds.width);
-  const startY = Math.max(0, bounds.y);
-  const endY = Math.min(height, bounds.y + bounds.height);
-  const regionWidth = Math.max(1, endX - startX);
-  const regionHeight = Math.max(1, endY - startY);
-  const sampleStep = Math.max(3, Math.floor(regionHeight / 220));
-  const sampleCount = Math.ceil(regionHeight / sampleStep);
-  const lineXs = [];
-  for (let x = startX; x < endX; x += 1) {
-    let strong = 0;
-    let light = 0;
-    for (let y = startY; y < endY; y += sampleStep) {
-      const offset = (y * width + x) * 4;
-      const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
-      if (gray < 170) strong += 1;
-      if (gray < 232) light += 1;
-    }
-    if (strong / sampleCount > 0.28 || light / sampleCount > 0.62) lineXs.push(x);
-  }
-  const rawLines = mergeProjectScreenshotLinePositions(lineXs);
-  const lines = normalizeProjectScreenshotTableLines(rawLines, startX, endX - 1);
-  const minBranchWidth = Math.max(30, regionWidth * 0.015);
-  const maxBranchWidth = Math.max(100, regionWidth * 0.08);
-  const minNameWidth = Math.max(120, regionWidth * 0.065);
-  const maxNameWidth = Math.max(360, regionWidth * 0.18);
-  let best = null;
-  for (let index = 0; index < lines.length - 2; index += 1) {
-    const left = lines[index];
-    const branchRight = lines[index + 1];
-    const nameRight = lines[index + 2];
-    const branchWidth = branchRight - left;
-    const nameWidth = nameRight - branchRight;
-    if (left > startX + regionWidth * 0.08) continue;
-    if (branchWidth < minBranchWidth || branchWidth > maxBranchWidth) continue;
-    if (nameWidth < minNameWidth || nameWidth > maxNameWidth) continue;
-    const score = Math.abs(left - startX) + Math.abs(branchWidth - regionWidth * 0.025) + Math.abs(nameWidth - regionWidth * 0.09);
-    if (!best || score < best.score) best = { left, branchRight, nameRight, score };
-  }
-  if (!best) return null;
-  return {
-    branch: projectScreenshotInsetColumn(best.left, best.branchRight, regionWidth),
-    name: projectScreenshotInsetColumn(best.branchRight, best.nameRight, regionWidth),
-  };
-}
-
-function normalizeProjectScreenshotTableLines(lines = [], start = 0, end = 0) {
-  const normalized = Array.from(new Set(lines))
-    .filter((line) => Number.isFinite(line))
-    .sort((left, right) => left - right);
-  const width = Math.max(1, end - start + 1);
-  if (!normalized.length || normalized[0] > start + Math.max(6, width * 0.004)) normalized.unshift(start);
-  if (normalized.at(-1) < end - Math.max(6, width * 0.004)) normalized.push(end);
-  return normalized;
-}
-
-function projectScreenshotInsetColumn(left, right, imageWidth) {
-  const inset = Math.max(2, Math.round(imageWidth * 0.0007));
-  const x = Math.max(0, left + inset);
-  const maxRight = Math.max(x + 1, right - inset);
-  return { x, width: maxRight - x };
-}
-
 function mergeProjectScreenshotLineYs(lineYs = []) {
   return mergeProjectScreenshotLinePositions(lineYs);
 }
@@ -1773,6 +1714,9 @@ async function handleProjectScreenshotCorrectionSubmit(event) {
   if (sessionId !== projectScreenshotSessionId || !current || current.revision !== revision) return;
   current.lookupController = null;
   projectScreenshotRows[currentIndex] = finalizeProjectScreenshotLookupRow(current, resolved);
+  if (projectScreenshotRows[currentIndex].dmVerified) {
+    projectScreenshotRows = collapseProjectScreenshotRowsWithVerifiedMatches(projectScreenshotRows);
+  }
   renderProjectScreenshotResults();
   setProjectScreenshotStatus(resolved.status === "ok" && resolved.dmVerified
     ? `已核验：${resolved.shortName}`

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  collapseProjectScreenshotRowsWithVerifiedMatches,
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
@@ -245,6 +246,131 @@ test("only tolerates issuer OCR drift within the same detected row", () => {
   ]).length, 2);
 });
 
+test("deduplicates only independently DM-verified rows with the same security", () => {
+  const wrong = "青岛西海岸新区海坟控股集团有限公司2026年度第二期短期融资券";
+  const correct = "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资券";
+  const rows = collapseProjectScreenshotRowsWithVerifiedMatches([
+    {
+      id: "wrong",
+      branch: "青岛分行",
+      status: "error",
+      dmVerified: false,
+      draftFullName: wrong,
+      candidateSecurityId: "102600001.IB",
+    },
+    {
+      id: "correct",
+      branch: "青岛分行",
+      status: "ok",
+      dmVerified: true,
+      draftFullName: correct,
+      verifiedFullName: correct,
+      verifiedSecurityId: "102600001.IB",
+    },
+    { id: "manual", branch: "青岛分行", status: "draft", dmVerified: false, isManual: true, draftFullName: wrong },
+  ]);
+  assert.deepEqual(rows.map((row) => row.id), ["wrong", "correct", "manual"]);
+
+  const bothVerified = collapseProjectScreenshotRowsWithVerifiedMatches([
+    { id: "one", branch: "青岛分行", status: "ok", dmVerified: true, verifiedFullName: wrong, verifiedSecurityId: "same-id" },
+    { id: "two", branch: "青岛分行", status: "ok", dmVerified: true, verifiedFullName: correct, verifiedSecurityId: "same-id" },
+  ]);
+  assert.deepEqual(bothVerified.map((row) => row.id), ["one"]);
+
+  const similarButDifferent = collapseProjectScreenshotRowsWithVerifiedMatches([
+    {
+      id: "green",
+      branch: "广州分行",
+      status: "ok",
+      dmVerified: true,
+      verifiedFullName: "某公司2026年度第一期绿色中期票据",
+      verifiedSecurityId: "green-id",
+    },
+    {
+      id: "tech",
+      branch: "广州分行",
+      status: "error",
+      dmVerified: false,
+      draftFullName: "某公司2026年度第一期科创中期票据",
+      candidateSecurityId: "tech-id",
+    },
+  ]);
+  assert.deepEqual(similarButDifferent.map((row) => row.id), ["green", "tech"]);
+});
+
+test("replays text captured from a real multi-pass Chinese Tesseract table run", () => {
+  const passes = [
+    {
+      label: "目标列稀疏识别",
+      sourceKey: "region:0:0",
+      confidence: 89,
+      text: [
+        "分行",
+        "债卷全称",
+        "广州产业投资控股集团有限公司2026年度第三期中期票据(品种A/",
+        "广州分行",
+        "B)",
+        "武汉分行",
+        "武汉金融控股(集团)有限公司2026年度第一期中期票据",
+        "青鸟分行",
+        "青岛西海岸新区海坟控股集团有限公司2026年度第二期短期融资",
+        "券",
+        "兰州分行",
+        "兰州城市发展投资有限公司2026年度第一期超短期融资券",
+        "苏州分行",
+        "苏州资产管理有限公司2026年度第一期资产文持票据(优先A)",
+        "太原分行",
+        "太原国有投资集团有限公司2026年度第二期定向债务融资工具",
+        "西安分行",
+        "西安产业投资集团有限公司2026年度第一期公司债券",
+        "广州分行",
+        "广州交通投资集团有限公司2026年度第四期短期融资券",
+      ].join("\n\n"),
+    },
+    {
+      label: "全表稀疏识别",
+      sourceKey: "region:1:0",
+      confidence: 92,
+      text: [
+        "分行", "债券全称", "期限", "规模", "状态",
+        "广州产业投资控股集团有限公司2026年度第三期中期票据(品种A/",
+        "广州分行", "3Y/5Y", "16亿", "未投标", "B)", "3Y",
+        "武汉分行", "武汉金融控股(集团)有限公司2026年度第一期中期票据", "10亿", "未投标",
+        "青岛分行", "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资", "270D", "10亿", "待投标", "券",
+        "兰州分行", "兰州城市发展投资有限公司2026年度第一期超短期融资券", "180D", "8亿", "待投标",
+        "苏州分行", "苏州资产管理有限公司2026年度第一期资产支持票据(优先A)", "2Y", "12亿", "未投标",
+        "太原分行", "太原国有投资集团有限公司2026年度第二期定向债务融资工具", "3Y", "6亿", "未投标",
+        "西安分行", "西安产业投资集团有限公司2026年度第一期公司债券", "5Y", "15亿", "待投标",
+        "广州分行", "广州交通投资集团有限公司2026年度第四期短期融资券", "1Y", "9亿", "未投标",
+      ].join("\n\n"),
+    },
+  ];
+  const correctQingdao = "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资券";
+  const rows = mergeProjectScreenshotOcrPasses(passes).map((entry, index) => ({
+    ...entry,
+    id: `ocr-${index}`,
+    status: entry.fullName === correctQingdao ? "ok" : "error",
+    dmVerified: entry.fullName === correctQingdao,
+    draftFullName: entry.fullName,
+    verifiedFullName: entry.fullName === correctQingdao ? entry.fullName : "",
+    verifiedSecurityId: entry.fullName === correctQingdao ? "102600001.IB" : "",
+    candidateSecurityId: entry.fullName.includes("海坟") ? "102600001.IB" : "",
+  }));
+  const finalRows = collapseProjectScreenshotRowsWithVerifiedMatches(rows);
+  assert.deepEqual(finalRows.map((row) => `${row.branch}|${row.fullName}`), [
+    "广州分行|广州产业投资控股集团有限公司2026年度第三期中期票据品种A",
+    "广州分行|广州产业投资控股集团有限公司2026年度第三期中期票据品种B",
+    "广州分行|广州交通投资集团有限公司2026年度第四期短期融资券",
+    "武汉分行|武汉金融控股(集团)有限公司2026年度第一期中期票据",
+    "青岛分行|青岛西海岸新区海坟控股集团有限公司2026年度第二期短期融资券",
+    `青岛分行|${correctQingdao}`,
+    "兰州分行|兰州城市发展投资有限公司2026年度第一期超短期融资券",
+    "苏州分行|苏州资产管理有限公司2026年度第一期资产支持票据(优先A)",
+    "太原分行|太原国有投资集团有限公司2026年度第二期定向债务融资工具",
+    "西安分行|西安产业投资集团有限公司2026年度第一期公司债券",
+  ]);
+});
+
 test("prefers the nearest completed bond name after a wrapped branch row", () => {
   assert.deepEqual(parseProjectScreenshotOcrText([
     "广州分行 广州地铁集团有限公司2026年度",
@@ -253,6 +379,76 @@ test("prefers the nearest completed bond name after a wrapped branch row", () =>
   ].join("\n")), [
     { branch: "广州分行", fullName: "广州地铁集团有限公司2026年度第六期超短期融资券" },
   ]);
+});
+
+test("does not steal the previous row and rebuilds a split A/B name around the branch cell", () => {
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "武汉分行",
+    "武汉金融控股集团有限公司2026年度第一期中期票据",
+    "青岛分行",
+    "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资",
+    "270D",
+    "10亿",
+    "待投标",
+    "券",
+    "兰州分行",
+    "兰州城市发展投资有限公司2026年度第一期超短期融资券",
+    "苏州分行",
+    "苏州资产管理有限公司2026年度第一期资产广持票据(优先A)",
+  ].join("\n")), [
+    { branch: "武汉分行", fullName: "武汉金融控股集团有限公司2026年度第一期中期票据" },
+    { branch: "青岛分行", fullName: "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资券" },
+    { branch: "兰州分行", fullName: "兰州城市发展投资有限公司2026年度第一期超短期融资券" },
+  ]);
+
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "广州产业投资控股集团有限公司2026年度第三期中期票据(品种A/",
+    "广州分行",
+    "3Y/5Y",
+    "16亿",
+    "未投标",
+    "B)",
+  ].join("\n")), [
+    { branch: "广州分行", fullName: "广州产业投资控股集团有限公司2026年度第三期中期票据品种A" },
+    { branch: "广州分行", fullName: "广州产业投资控股集团有限公司2026年度第三期中期票据品种B" },
+  ]);
+
+  const merged = mergeProjectScreenshotOcrPasses([
+    {
+      label: "wide-table",
+      confidence: 92,
+      text: "广州分行 广州产业投资控股集团有限公司2026年度第三期中期票据(品种A",
+    },
+    {
+      label: "branch-name-crop",
+      confidence: 89,
+      text: "广州分行 广州产业投资控股集团有限公司2026年度第三期中期票据品种A",
+    },
+  ]);
+  assert.equal(merged[0]?.fullName, "广州产业投资控股集团有限公司2026年度第三期中期票据品种A");
+});
+
+test("stops a wrapped-name window at a second project year and skips labeled metadata", () => {
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "广州分行",
+    "广州城市建设投资集团有限公司2026年度第一期短期融资",
+    "期限3Y",
+    "规模10亿",
+    "状态未投标",
+    "青岛城市发展集团有限公司2026年度第二期短期融资券",
+  ].join("\n")), []);
+
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "广州分行",
+    "广州城市建设投资集团有限公司",
+    "青岛城市发展集团有限公司2026年度第二期短期融资券",
+  ].join("\n")), []);
+
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "广州分行",
+    "广州城市建设投资集团",
+    "青岛城市发展集团有限公司2026年度第二期短期融资券",
+  ].join("\n")), []);
 });
 
 test("only selects a unique high-confidence DM correction candidate", () => {

@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260715-ocr-recovery";
+const VERSION = "20260715-ocr-layout";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -20,7 +20,8 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`date-picker\\.js\\?v=${VERSION}`));
-  assert.match(app, /project-screenshot-ocr\.js\?v=20260715-ocr-recovery/);
+  assert.match(app, /project-screenshot-ocr\.js\?v=20260715-ocr-layout/);
+  assert.match(app, /project-screenshot-layout\.js\?v=20260715-ocr-layout/);
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
@@ -69,9 +70,11 @@ test("keeps protocol transfer hover borders clear of the scroll viewport", async
   const liftedCardHover = styles.indexOf(".project-item:hover,");
   const protocolHoverOverride = styles.lastIndexOf(".protocol-transfer-item:hover {");
 
-  assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*7px 8px 7px 4px;[^}]*overflow:\s*auto;[^}]*scroll-padding-block:\s*7px;[^}]*scrollbar-gutter:\s*stable;/s);
+  assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*8px 8px 8px 5px;[^}]*overflow:\s*auto;[^}]*scroll-padding-block:\s*8px;[^}]*scrollbar-gutter:\s*stable;/s);
   assert.match(styles, /\.protocol-transfer-item\s*\{[^}]*position:\s*relative;/s);
-  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*outline:\s*1px solid var\(--accent\);[^}]*outline-offset:\s*-1px;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--accent\)[^}]*transform:\s*none;/s);
+  assert.match(styles, /\.protocol-transfer-item::after\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*1px;[^}]*border:\s*1px solid transparent;[^}]*pointer-events:\s*none;/s);
+  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*outline:\s*none;[^}]*transform:\s*none;/s);
+  assert.match(styles, /\.protocol-transfer-item:hover::after\s*\{\s*border-color:\s*var\(--accent\);\s*\}/s);
   assert.ok(protocolHoverOverride > liftedCardHover, "protocol hover override must follow the generic lifted-card hover rule");
 });
 

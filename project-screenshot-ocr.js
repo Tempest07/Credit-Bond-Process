@@ -76,6 +76,11 @@ export function parseProjectScreenshotOcrText(text = "") {
     && (findProjectScreenshotBranchMatches(lines[index - 1] || "").length > 0
       || findProjectScreenshotBranchMatches(lines[index + 1] || "").length > 0)
   ));
+  const hasStandaloneBranchLine = lines.some((line) => {
+    const normalizedLine = normalizeProjectScreenshotOcrText(line);
+    return findProjectScreenshotBranchMatches(normalizedLine)
+      .some((match) => match.index === 0 && match.length === normalizedLine.length);
+  });
 
   const entries = [];
   const seen = new Set();
@@ -120,17 +125,23 @@ export function parseProjectScreenshotOcrText(text = "") {
       carryAdditionalRows = currentHasBond;
       carryLineIndex = currentHasBond ? lineIndex : -1;
       const previousHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex - 1] || "").length > 0;
+      const previousPreviousHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex - 2] || "").length > 0;
       const nextHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex + 1] || "").length > 0;
       const isBranchColumnRun = !currentHasBond && (previousHasBranch || nextHasBranch);
-      const previousLine = !isBranchColumnRun && !previousHasBranch ? lines[lineIndex - 1] : "";
-      const nextLine = !isBranchColumnRun && !nextHasBranch ? lines[lineIndex + 1] : "";
-      const secondNextHasBranch = findProjectScreenshotBranchMatches(lines[lineIndex + 2] || "").length > 0;
-      const secondNextLine = nextLine && !secondNextHasBranch ? lines[lineIndex + 2] : "";
+      const previousLine = !isBranchColumnRun && !previousHasBranch && !previousPreviousHasBranch
+        ? lines[lineIndex - 1]
+        : "";
+      const currentTail = currentSegment.slice(branchMatch.length);
+      const forwardWindows = isBranchColumnRun || currentHasBond
+        ? [currentSegment]
+        : projectScreenshotForwardBondWindows(lines, lineIndex, currentSegment);
+      const backwardWindows = previousLine
+        ? projectScreenshotForwardBondWindows(lines, lineIndex, `${previousLine}${currentTail}`).reverse()
+        : [];
       const windows = [
-        currentSegment,
-        [currentSegment, nextLine].filter(Boolean).join(""),
+        ...forwardWindows,
+        ...backwardWindows,
         [previousLine, currentSegment].filter(Boolean).join(""),
-        [currentSegment, nextLine, secondNextLine].filter(Boolean).join(""),
       ];
       const candidateGroups = windows
         .map(extractProjectScreenshotBondFullNames)
@@ -140,7 +151,7 @@ export function parseProjectScreenshotOcrText(text = "") {
   }
 
   if (entries.length) return entries;
-  if (hasDetachedBranchColumn) return [];
+  if (hasDetachedBranchColumn || hasStandaloneBranchLine) return [];
 
   const compact = normalizeProjectScreenshotOcrText(normalizedSource);
   const matches = findProjectScreenshotBranchMatches(compact);
@@ -152,6 +163,38 @@ export function parseProjectScreenshotOcrText(text = "") {
     for (const fullName of extractProjectScreenshotBondFullNames(segment)) addEntry(current.branch, fullName);
   }
   return entries;
+}
+
+function projectScreenshotForwardBondWindows(lines = [], lineIndex = 0, seed = "") {
+  const windows = [seed];
+  let combined = seed;
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const next = lines[lineIndex + offset] || "";
+    if (!next || findProjectScreenshotBranchMatches(next).length) break;
+    if (isProjectScreenshotTableMetadataLine(next)) continue;
+    if (projectScreenshotIssueYear(combined) && projectScreenshotIssueYear(next)) break;
+    const combinedText = normalizeProjectScreenshotOcrText(combined);
+    const nextIssuer = projectScreenshotBondIssuer(next);
+    const nextIssuerIsLegalSuffix = /^(?:有限责任公司|股份有限公司|集团有限公司|有限公司)$/.test(nextIssuer);
+    if (
+      !projectScreenshotIssueYear(combined)
+      && nextIssuer
+      && (
+        /(?:有限责任公司|股份有限公司|集团有限公司|有限公司)$/.test(combinedText)
+        || (/(?:集团|公司|股份)$/.test(combinedText) && !nextIssuerIsLegalSuffix)
+      )
+    ) break;
+    combined += next;
+    windows.push(combined);
+  }
+  return windows;
+}
+
+function isProjectScreenshotTableMetadataLine(value = "") {
+  const text = normalizeProjectScreenshotOcrText(value).toUpperCase();
+  if (!text) return true;
+  if (/^(?:期限|规模|发行规模|状态|截标(?:时间)?|缴款(?:时间|日)?|主承|牵头|联席|备注|发行场所|评级)[：:]?/.test(text)) return true;
+  return /^(?:(?:\d+(?:\.\d+)?(?:Y|D|M|年|月|天))(?:\/(?:\d+(?:\.\d+)?(?:Y|D|M|年|月|天)))?|\d+(?:\.\d+)?(?:亿|亿元|万|万元)|(?:未投标|待投标|已投标|等待结果|中标|未中标|已缴款|待缴款)|(?:公募|私募|银行间|交易所)|(?:AAA|AA\+?|A\+?))$/i.test(text);
 }
 
 export function mergeProjectScreenshotOcrPasses(passes = []) {
@@ -226,6 +269,19 @@ export function selectReliableProjectScreenshotSuggestion(fullName = "", suggest
   const second = ranked[1];
   if (second && top.ocrSimilarity - second.ocrSimilarity < 0.025 && Number(top.score) - Number(second.score) < 5) return null;
   return top;
+}
+
+export function collapseProjectScreenshotRowsWithVerifiedMatches(rows = []) {
+  const verifiedSecurityIds = new Set();
+  return rows.filter((row) => {
+    if (row.status !== "ok" || !row.dmVerified) return true;
+    const securityId = row.verifiedSecurityId || row.securityId || "";
+    if (!securityId) return true;
+    const key = `${row.branch || ""}|${securityId}`;
+    if (verifiedSecurityIds.has(key)) return false;
+    verifiedSecurityIds.add(key);
+    return true;
+  });
 }
 
 export function extractProjectScreenshotBondFullName(segment = "") {
@@ -318,7 +374,13 @@ function isStructurallyValidProjectScreenshotBondName(value = "") {
   const text = normalizeProjectScreenshotOcrText(value);
   const family = projectScreenshotBondFamily(text);
   if (!family) return false;
-  if (projectScreenshotIssueYear(text)) return true;
+  const issueYears = text.match(/20\d{2}(?=年度|年)/g) || [];
+  if (issueYears.length > 1) return false;
+  if (issueYears.length === 1) {
+    const issuerLegalNames = projectScreenshotBondIssuer(text)
+      .match(/(?:有限责任公司|股份有限公司|集团有限公司|有限公司)/g) || [];
+    return issuerLegalNames.length <= 1;
+  }
   if (!/(?:资产支持票据|资产支持证券|资产支持专项计划|ABN|ABS)/i.test(family)) return false;
   return /(?:第[一二三四五六七八九十百0-9]+(?:期|号)|优先|次级|劣后|[A-Z][0-9]+级?)/i.test(text);
 }
@@ -330,6 +392,10 @@ function projectScreenshotBondNameQuality(value = "") {
   if (projectScreenshotBondFamily(text)) score += 5;
   if (/(?:第[一二三四五六七八九十0-9]+期|[A-Z]?[0-9]{2,3})/i.test(text)) score += 1;
   if (/(?:分行|牵头|规模|截标|亿元|序号)/.test(text)) score -= 6;
+  const openingParentheses = (text.match(/[(（]/g) || []).length;
+  const closingParentheses = (text.match(/[)）]/g) || []).length;
+  score -= Math.abs(openingParentheses - closingParentheses) * 2;
+  if (/[/／]$/.test(text)) score -= 2;
   return score;
 }
 
@@ -357,7 +423,15 @@ function projectScreenshotBondTextVariants(value = "") {
   const match = text.match(typePattern);
   if (!match) return [text];
   const [, prefix, leftVariant, rightVariant, suffix] = match;
-  return [`${prefix}${leftVariant}${suffix}`, `${prefix}${rightVariant}${suffix}`];
+  const usesVarietyLabel = leftVariant.startsWith("品种") || rightVariant.startsWith("品种");
+  const normalizeVariant = (variant) => (
+    usesVarietyLabel && !variant.startsWith("品种") ? `品种${variant}` : variant
+  );
+  const cleanedSuffix = suffix.replace(/^[)）]/, "");
+  return [
+    `${prefix}${normalizeVariant(leftVariant)}${cleanedSuffix}`,
+    `${prefix}${normalizeVariant(rightVariant)}${cleanedSuffix}`,
+  ];
 }
 
 function projectScreenshotIssueYear(value = "") {

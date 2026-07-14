@@ -1,0 +1,92 @@
+export function detectProjectScreenshotKeyColumns(
+  data,
+  width,
+  height,
+  bounds = { x: 0, y: 0, width, height },
+) {
+  const startX = Math.max(0, bounds.x);
+  const endX = Math.min(width, bounds.x + bounds.width);
+  const startY = Math.max(0, bounds.y);
+  const endY = Math.min(height, bounds.y + bounds.height);
+  const regionHeight = Math.max(1, endY - startY);
+  const sampleStep = Math.max(3, Math.floor(regionHeight / 220));
+  const sampleCount = Math.ceil(regionHeight / sampleStep);
+  const lineXs = [];
+  for (let x = startX; x < endX; x += 1) {
+    let strong = 0;
+    let light = 0;
+    for (let y = startY; y < endY; y += sampleStep) {
+      const offset = (y * width + x) * 4;
+      const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+      if (gray < 170) strong += 1;
+      if (gray < 232) light += 1;
+    }
+    if (strong / sampleCount > 0.28 || light / sampleCount > 0.62) lineXs.push(x);
+  }
+  const rawLines = mergeLinePositions(lineXs);
+  return selectProjectScreenshotKeyColumns(rawLines, startX, endX - 1);
+}
+
+export function selectProjectScreenshotKeyColumns(rawLines = [], start = 0, end = 0) {
+  const lines = normalizeProjectScreenshotTableLines(rawLines, start, end);
+  const regionWidth = Math.max(1, end - start + 1);
+  const minBranchWidth = Math.max(30, regionWidth * 0.02);
+  const maxBranchWidth = Math.max(120, regionWidth * 0.22);
+  const minNameWidth = Math.max(120, regionWidth * 0.08);
+  const maxNameWidth = Math.max(420, regionWidth * 0.6);
+  let best = null;
+
+  for (let index = 0; index < lines.length - 2; index += 1) {
+    const left = lines[index];
+    const branchRight = lines[index + 1];
+    const nameRight = lines[index + 2];
+    const branchWidth = branchRight - left;
+    const nameWidth = nameRight - branchRight;
+    if (left > start + regionWidth * 0.3) continue;
+    if (branchWidth < minBranchWidth || branchWidth > maxBranchWidth) continue;
+    if (nameWidth < minNameWidth || nameWidth > maxNameWidth) continue;
+    const score = Math.abs(left - start)
+      + Math.abs(branchWidth - regionWidth * 0.09)
+      + Math.abs(nameWidth - regionWidth * 0.34)
+      + (nameWidth < branchWidth * 1.8 ? regionWidth * 0.35 : 0);
+    if (!best || score < best.score) best = { left, branchRight, nameRight, score };
+  }
+
+  if (!best) return null;
+  return {
+    branch: insetProjectScreenshotColumn(best.left, best.branchRight, regionWidth),
+    name: insetProjectScreenshotColumn(best.branchRight, best.nameRight, regionWidth),
+  };
+}
+
+export function normalizeProjectScreenshotTableLines(lines = [], start = 0, end = 0) {
+  const normalized = Array.from(new Set(lines))
+    .filter((line) => Number.isFinite(line))
+    .sort((left, right) => left - right);
+  const width = Math.max(1, end - start + 1);
+  if (!normalized.length || normalized[0] > start + Math.max(6, width * 0.004)) normalized.unshift(start);
+  if (normalized.at(-1) < end - Math.max(6, width * 0.004)) normalized.push(end);
+  return normalized;
+}
+
+function insetProjectScreenshotColumn(left, right, imageWidth) {
+  const inset = Math.max(2, Math.round(imageWidth * 0.0007));
+  const x = Math.max(0, left + inset);
+  const maxRight = Math.max(x + 1, right - inset);
+  return { x, width: maxRight - x };
+}
+
+function mergeLinePositions(positions = []) {
+  const lines = [];
+  let group = [];
+  for (const position of positions) {
+    if (!group.length || position <= group.at(-1) + 1) {
+      group.push(position);
+    } else {
+      lines.push(Math.round(group.reduce((sum, value) => sum + value, 0) / group.length));
+      group = [position];
+    }
+  }
+  if (group.length) lines.push(Math.round(group.reduce((sum, value) => sum + value, 0) / group.length));
+  return lines;
+}
