@@ -299,18 +299,16 @@
                 <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button" aria-pressed="false">
                   <span>待投标</span><strong id="dashboardToBid">0</strong>
                 </button>
+                <button class="ledger-filter-chip" data-ledger-filter="awaitingResult" type="button" aria-pressed="false">
+                  <span>等待结果</span><strong id="dashboardAwaitingResult">0</strong>
+                </button>
+                <button class="ledger-filter-chip" data-ledger-filter="won" type="button" aria-pressed="false">
+                  <span>中标项目</span><strong id="dashboardWon">0</strong>
+                </button>
+                <button class="ledger-filter-chip" data-ledger-filter="notWon" type="button" aria-pressed="false">
+                  <span>未中标</span><strong id="dashboardNotWon">0</strong>
+                </button>
               </div>
-              <label class="ledger-filter-select">
-                <span>状态筛选</span>
-                <select id="ledgerFilterSelect">
-                  <option value="all">全部项目</option>
-                  <option value="toBid">待投标</option>
-                  <option value="awaitingResult">等待结果</option>
-                  <option value="won">中标项目</option>
-                  <option value="notWon">未中标</option>
-                </select>
-              </label>
-              <span class="ledger-filter-status" id="ledgerFilterLabel">当前：全部项目</span>
             </div>
             <aside class="policy-curve-card" id="policyCurveCard" data-curve-state="loading" aria-labelledby="policyCurveTitle" aria-live="polite" aria-busy="true">
               <div class="policy-curve-head">

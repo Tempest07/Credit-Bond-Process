@@ -218,7 +218,6 @@ const LEDGER_FILTER_LABELS = {
   dueToday: "今日待投标",
   paymentToday: "今日缴款",
 };
-const LEDGER_FILTER_SELECT_VALUES = new Set(["all", "toBid", "awaitingResult", "won", "notWon"]);
 const SHORT_PROJECT_LIST_LIMIT = 3;
 const LEDGER_MOBILE_BREAKPOINT = "(max-width: 760px)";
 const LEDGER_MOBILE_PANES = new Set(["list", "detail", "overview"]);
@@ -1655,9 +1654,6 @@ function bindLedger() {
     button.addEventListener("click", () => {
       setLedgerFilter(button.dataset.ledgerFilter);
     });
-  });
-  $("#ledgerFilterSelect").addEventListener("change", (event) => {
-    setLedgerFilter(event.target.value);
   });
   $("#addTrancheButton").addEventListener("click", () => {
     const draft = readProjectForm();
@@ -3330,6 +3326,9 @@ function renderDashboard() {
   const counts = dashboardCounts(state.projects || []);
   $("#dashboardAll").textContent = counts.all;
   $("#dashboardToBid").textContent = counts.toBid;
+  $("#dashboardAwaitingResult").textContent = counts.awaitingResult;
+  $("#dashboardWon").textContent = counts.won;
+  $("#dashboardNotWon").textContent = counts.notWon;
 }
 
 function renderUnifiedReminders() {
@@ -4699,13 +4698,6 @@ function syncLedgerFilterControls() {
     item.classList.toggle("active", active);
     item.setAttribute("aria-pressed", String(active));
   });
-  const select = $("#ledgerFilterSelect");
-  if (select) {
-    const selectValue = LEDGER_FILTER_SELECT_VALUES.has(ledgerFilter) ? ledgerFilter : "all";
-    if (select.value !== selectValue) select.value = selectValue;
-  }
-  const label = LEDGER_FILTER_LABELS[ledgerFilter] || LEDGER_FILTER_LABELS.all;
-  $("#ledgerFilterLabel").textContent = `当前：${label}`;
 }
 
 function renderProjectList() {

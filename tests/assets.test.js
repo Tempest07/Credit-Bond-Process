@@ -97,10 +97,19 @@ test("ships liquid selection motion with accessible fallback", async () => {
   ]);
 
   assert.match(html, /data-ledger-filter="all"[^>]+aria-pressed="true"/);
+  assert.match(html, /data-ledger-filter="awaitingResult"/);
+  assert.match(html, /data-ledger-filter="won"/);
+  assert.match(html, /data-ledger-filter="notWon"/);
+  assert.doesNotMatch(html, /ledgerFilterSelect|ledgerFilterLabel/);
+  assert.doesNotMatch(app, /LEDGER_FILTER_SELECT_VALUES|ledgerFilterSelect|ledgerFilterLabel/);
+  assert.match(app, /dashboardAwaitingResult/);
+  assert.match(app, /dashboardWon/);
+  assert.match(app, /dashboardNotWon/);
   assert.match(app, /function initializeLiquidMotion/);
   assert.match(app, /function syncLiquidTrack/);
   assert.match(app, /item\.setAttribute\("aria-pressed", String\(active\)\)/);
   assert.match(styles, /\.liquid-track::before/);
+  assert.match(styles, /\.ledger-filter-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(5,/s);
   assert.match(styles, /@keyframes liquidSelectorMorph/);
   assert.match(styles, /prefers-reduced-motion:\s*reduce/);
 });
