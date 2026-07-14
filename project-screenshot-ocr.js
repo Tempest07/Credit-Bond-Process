@@ -1,7 +1,7 @@
 export const PROJECT_SCREENSHOT_BRANCHES = ["广州分行", "武汉分行", "青岛分行", "兰州分行", "苏州分行", "太原分行", "西安分行"];
 
 const PROJECT_SCREENSHOT_BRANCH_PATTERNS = [
-  { branch: "广州分行", pattern: /[广廣厂][州卅]分行/g },
+  { branch: "广州分行", pattern: /[广廣厂][州卅洲]分行/g },
   { branch: "武汉分行", pattern: /[武式]汉分行/g },
   { branch: "青岛分行", pattern: /青[岛島鸟鳥]分行/g },
   { branch: "兰州分行", pattern: /[兰蘭]州分行/g },
@@ -13,20 +13,21 @@ const PROJECT_SCREENSHOT_BRANCH_PATTERNS = [
 const BOND_TYPE_ALIASES = [
   { canonical: "超短期融资券", pattern: /超短(?:期)?融[资資咨][券卷劵]/gi },
   { canonical: "短期融资券", pattern: /短期融[资資咨][券卷劵]/gi },
-  { canonical: "中期票据", pattern: /中期票[据劇根锯鋸]/gi },
+  { canonical: "中期票据", pattern: /中期票[据劇根锯鋸居]/gi },
   { canonical: "定向债务融资工具", pattern: /定向[债債]务融[资資咨]工具/gi },
   { canonical: "定向工具", pattern: /定向工具/gi },
-  { canonical: "公司债券", pattern: /公司[债債][券卷]/gi },
-  { canonical: "企业债券", pattern: /企[业業][债債][券卷]/gi },
+  { canonical: "公司债券", pattern: /公司[债債][券卷劵]/gi },
+  { canonical: "企业债券", pattern: /企[业業][债債][券卷劵]/gi },
   { canonical: "资产支持票据", pattern: /[资資]产支持票[据劇根]/gi },
   { canonical: "资产支持证券", pattern: /[资資]产支持[证證]券/gi },
   { canonical: "资产支持专项计划", pattern: /[资資]产支持[专專]项[计計]划/gi },
 ];
 
-const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|MTN|PPN|ABN|ABS)";
-const PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN = "(?:(?:(?:品种[一二三四五六七八九十A-Za-z0-9-]+|(?:优先(?:级|档)?|次级|劣后)[一二三四五六七八九十A-Za-z0-9-]*(?:级|档)?|[A-Z]))|(?:[()（）][^()（）]{1,24}[()（）])){0,4}";
+const PROJECT_SCREENSHOT_BOND_TYPE_PATTERN = "(?:超短期融资券|短期融资券|中期票据|定向债务融资工具|定向工具|公司债券|企业债券|资产支持票据|资产支持证券|资产支持专项计划|SCP|CP|MTN|PPN|ABN|ABS)";
+const PROJECT_SCREENSHOT_TRANCHE_PATTERN = "(?:品种[一二三四五六七八九十A-Za-z0-9-]+|(?:优先(?:级|档)?|次级|劣后)[一二三四五六七八九十A-Za-z0-9-]*(?:级|档)?|[A-Z])";
+const PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN = `(?:(?:[()（）]?${PROJECT_SCREENSHOT_TRANCHE_PATTERN}[()（）]?)|(?:[()（）][^()（）]{1,24}[()（）])){0,4}`;
 const PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN = `${PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN}(?:${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_DECORATION_PATTERN})?`;
-const BOND_NAME_CHARACTERS = "\\u4e00-\\u9fffA-Za-z0-9()（）·";
+const BOND_NAME_CHARACTERS = "\\u4e00-\\u9fffA-Za-z0-9()（）·-";
 
 export function normalizeProjectScreenshotOcrText(text = "") {
   return normalizeProjectScreenshotBondTokens(normalizeProjectScreenshotOcrSource(text).replace(/\s+/g, ""));
@@ -53,8 +54,9 @@ function normalizeProjectScreenshotBondTokens(value = "") {
     .replace(/集困/g, "集团")
     .replace(/公同/g, "公司")
     .replace(/股分/g, "股份")
-    .replace(/2[OoQ]([0-9OoQZz])[6G](?=年|年度)/g, (_, middle) => `20${normalizeOcrDigit(middle)}6`)
-    .replace(/20[Zz]6(?=年|年度)/g, "2026");
+    .replace(/([2Zz])([0OoQ])([0-9OoQZzGg])([0-9OoQZzGg])(?=年|年度)/g, (...match) => (
+      match.slice(1, 5).map(normalizeOcrDigit).join("")
+    ));
 
   for (const alias of BOND_TYPE_ALIASES) normalized = normalized.replace(alias.pattern, alias.canonical);
   return normalized;
@@ -93,7 +95,7 @@ export function parseProjectScreenshotOcrText(text = "") {
     const branchMatches = findProjectScreenshotBranchMatches(lines[lineIndex]);
     if (!branchMatches.length && carryBranch && carryAdditionalRows && !hasDetachedBranchColumn) {
       const carriedNames = lineIndex === carryLineIndex + 1
-        ? extractProjectScreenshotBondFullNames(lines[lineIndex])
+        ? extractProjectScreenshotWrappedBondNames(lines, lineIndex)
         : [];
       let carried = false;
       for (const fullName of carriedNames) {
@@ -157,15 +159,19 @@ export function mergeProjectScreenshotOcrPasses(passes = []) {
   let order = 0;
   for (const pass of passes) {
     const confidence = Number(pass?.confidence);
+    const sourceKey = String(pass?.sourceKey || "");
     for (const entry of parseProjectScreenshotOcrText(pass?.text || "")) {
       const normalizedName = normalizeProjectScreenshotOcrText(entry.fullName);
       let cluster = clusters.find((candidate) => candidate.branch === entry.branch
-        && projectScreenshotBondNamesMatch(candidate.normalizedName, normalizedName));
+        && projectScreenshotBondNamesMatch(candidate.normalizedName, normalizedName, {
+          sameSourceRow: Boolean(sourceKey && candidate.sourceKeys.has(sourceKey)),
+        }));
       if (!cluster) {
-        cluster = { branch: entry.branch, normalizedName, candidates: [], labels: new Set(), order: order++ };
+        cluster = { branch: entry.branch, normalizedName, candidates: [], labels: new Set(), sourceKeys: new Set(), order: order++ };
         clusters.push(cluster);
       }
       cluster.labels.add(String(pass?.label || "OCR"));
+      if (sourceKey) cluster.sourceKeys.add(sourceKey);
       cluster.candidates.push({
         ...entry,
         confidence: Number.isFinite(confidence) ? confidence : 0,
@@ -231,11 +237,12 @@ export function extractProjectScreenshotBondFullNames(segment = "") {
   if (!text) return [];
   const year = "20\\d{2}(?:年度|年)";
   const officialPattern = new RegExp(`([${BOND_NAME_CHARACTERS}]{3,120}?${year}[${BOND_NAME_CHARACTERS}]{0,100}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN})`, "ig");
-  const fallbackPattern = new RegExp(`([${BOND_NAME_CHARACTERS}]{6,180}?${PROJECT_SCREENSHOT_BOND_TYPE_PATTERN}${PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN})`, "ig");
+  const fallbackPattern = new RegExp(`([${BOND_NAME_CHARACTERS}]{6,180}?(?:资产支持票据|资产支持证券|资产支持专项计划|ABN|ABS)${PROJECT_SCREENSHOT_BOND_SUFFIX_PATTERN})`, "ig");
   const candidates = projectScreenshotBondTextVariants(text)
     .flatMap((variant) => [...variant.matchAll(officialPattern), ...variant.matchAll(fallbackPattern)])
     .map((match) => cleanProjectScreenshotBondFullName(match[1]))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(isStructurallyValidProjectScreenshotBondName);
   const seen = new Set();
   return candidates.filter((candidate) => {
     const key = normalizeProjectScreenshotOcrText(candidate);
@@ -250,6 +257,8 @@ export function cleanProjectScreenshotBondFullName(value = "") {
     .replace(/^[^\u4e00-\u9fffA-Za-z0-9]+/, "")
     .replace(/^(?:序号|项目|分行|主承|牵头|联席|债券全称|债项名称)+/, "")
     .replace(/[,:;，。；：].*$/, "");
+  const ocrBranchPrefix = findProjectScreenshotBranchMatches(text).find((match) => match.index === 0);
+  if (ocrBranchPrefix) text = text.slice(ocrBranchPrefix.length);
   for (const branch of PROJECT_SCREENSHOT_BRANCHES) {
     if (text.startsWith(branch)) text = text.slice(branch.length);
   }
@@ -275,7 +284,43 @@ export function findProjectScreenshotBranchMatches(compact = "") {
 function normalizeOcrDigit(value) {
   if (/[OoQ]/.test(value)) return "0";
   if (/[Zz]/.test(value)) return "2";
+  if (/[Gg]/.test(value)) return "6";
   return value;
+}
+
+function extractProjectScreenshotWrappedBondNames(lines = [], lineIndex = 0) {
+  const current = lines[lineIndex] || "";
+  if (!current || !projectScreenshotCanContinueWrappedBond(current)) return [];
+  const windows = [current];
+  let combined = current;
+  for (let offset = 1; offset <= 2; offset += 1) {
+    const next = lines[lineIndex + offset] || "";
+    if (!next || findProjectScreenshotBranchMatches(next).length || !projectScreenshotCanContinueWrappedBond(next, combined)) break;
+    combined += next;
+    windows.push(combined);
+  }
+  for (const candidate of windows) {
+    const names = extractProjectScreenshotBondFullNames(candidate);
+    if (names.length) return names;
+  }
+  return [];
+}
+
+function projectScreenshotCanContinueWrappedBond(line = "", prefix = "") {
+  const text = normalizeProjectScreenshotOcrText(line);
+  if (!text) return false;
+  if (/(?:项目表|项目说明|序号|截标|询价|规模|主承|牵头|联席|备注|状态|发行日|缴款日)/.test(text)) return false;
+  if (!prefix) return Boolean(projectScreenshotIssueYear(text) || projectScreenshotBondFamily(text) || /(?:公司|集团|股份|有限|专项计划|第[一二三四五六七八九十0-9]+号)/.test(text));
+  return Boolean(projectScreenshotBondFamily(text) || /(?:品种|优先|次级|劣后|第[一二三四五六七八九十0-9]+(?:期|号))/.test(text));
+}
+
+function isStructurallyValidProjectScreenshotBondName(value = "") {
+  const text = normalizeProjectScreenshotOcrText(value);
+  const family = projectScreenshotBondFamily(text);
+  if (!family) return false;
+  if (projectScreenshotIssueYear(text)) return true;
+  if (!/(?:资产支持票据|资产支持证券|资产支持专项计划|ABN|ABS)/i.test(family)) return false;
+  return /(?:第[一二三四五六七八九十百0-9]+(?:期|号)|优先|次级|劣后|[A-Z][0-9]+级?)/i.test(text);
 }
 
 function projectScreenshotBondNameQuality(value = "") {
@@ -288,7 +333,7 @@ function projectScreenshotBondNameQuality(value = "") {
   return score;
 }
 
-function projectScreenshotBondNamesMatch(left = "", right = "") {
+function projectScreenshotBondNamesMatch(left = "", right = "", { sameSourceRow = false } = {}) {
   if (left === right) return true;
   const leftYear = projectScreenshotIssueYear(left);
   const rightYear = projectScreenshotIssueYear(right);
@@ -296,7 +341,9 @@ function projectScreenshotBondNamesMatch(left = "", right = "") {
   if (projectScreenshotBondFamily(left) !== projectScreenshotBondFamily(right)) return false;
   const leftIssuer = projectScreenshotBondIssuer(left);
   const rightIssuer = projectScreenshotBondIssuer(right);
-  if (leftIssuer && rightIssuer && projectScreenshotTextSimilarity(leftIssuer, rightIssuer) < 0.92) return false;
+  if (leftIssuer && rightIssuer && leftIssuer !== rightIssuer) {
+    if (!sameSourceRow || projectScreenshotTextSimilarity(leftIssuer, rightIssuer) < 0.92) return false;
+  }
   const leftVariant = projectScreenshotBondVariant(left);
   const rightVariant = projectScreenshotBondVariant(right);
   if ((leftVariant || rightVariant) && leftVariant !== rightVariant) return false;

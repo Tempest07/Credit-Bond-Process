@@ -33,6 +33,29 @@ test("normalizes table rules and common Chinese OCR substitutions", () => {
       [{ branch: "广州分行", fullName: "广州地铁集团有限公司2026年度第六期超短期融资券" }],
     );
   }
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("广洲分行 某公司2O25年度第三期中期票居"),
+    [{ branch: "广州分行", fullName: "某公司2025年度第三期中期票据" }],
+  );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("广州分行 某公司2O2G年度第一期公司债劵"),
+    [{ branch: "广州分行", fullName: "某公司2026年度第一期公司债券" }],
+  );
+});
+
+test("rejects ordinary no-year descriptions while retaining structured no-year ABS names", () => {
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("广州分行 本周计划发行中期票据 项目共5单"),
+    [],
+  );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("广州分行 本周计划发行CP 项目共5单"),
+    [],
+  );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("青岛分行 中信证券-中电投租赁1期资产支持专项计划优先A1级资产支持证券"),
+    [{ branch: "青岛分行", fullName: "中信证券-中电投租赁1期资产支持专项计划优先A1级资产支持证券" }],
+  );
 });
 
 test("preserves tranche, repeated-parenthesis, and ABS priority suffixes", () => {
@@ -191,6 +214,35 @@ test("segments repeated branches and carries merged branch cells forward", () =>
   ].join("\n")), [
     { branch: "广州分行", fullName: first },
   ]);
+
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    `广州分行 ${first}`,
+    "广州产业投资控股集团有限公司2026年度第三期",
+    "中期票据",
+  ].join("\n")), [
+    { branch: "广州分行", fullName: first },
+    { branch: "广州分行", fullName: "广州产业投资控股集团有限公司2026年度第三期中期票据" },
+  ]);
+});
+
+test("retains a tranche when OCR drops the closing parenthesis", () => {
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("广州分行 某公司2026年度第三期中期票据(品种二"),
+    [{ branch: "广州分行", fullName: "某公司2026年度第三期中期票据(品种二" }],
+  );
+});
+
+test("only tolerates issuer OCR drift within the same detected row", () => {
+  const first = "某县城市建设投资集团有限公司2026年度第一期中期票据";
+  const second = "某市城市建设投资集团有限公司2026年度第一期中期票据";
+  assert.equal(mergeProjectScreenshotOcrPasses([
+    { label: "row-soft", sourceKey: "row:7", confidence: 88, text: `广州分行 ${first}` },
+    { label: "row-binary", sourceKey: "row:7", confidence: 93, text: `广州分行 ${second}` },
+  ]).length, 1);
+  assert.equal(mergeProjectScreenshotOcrPasses([
+    { label: "row-7", sourceKey: "row:7", confidence: 88, text: `广州分行 ${first}` },
+    { label: "row-8", sourceKey: "row:8", confidence: 93, text: `广州分行 ${second}` },
+  ]).length, 2);
 });
 
 test("prefers the nearest completed bond name after a wrapped branch row", () => {

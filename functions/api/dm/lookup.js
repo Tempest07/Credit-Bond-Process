@@ -105,6 +105,7 @@ export async function onRequestGet(context) {
       normalized: normalizedWithIssueGroup,
       issueGroup,
       diagnostic: {
+        dmMatched,
         rating: ratingDiagnostic(
           normalized,
           dmRatingDiscovery,
@@ -242,6 +243,7 @@ function dmNoResultPayload({ shortName, securityId, fullName, basic, primary }) 
     issueGroup: null,
     suggestions,
     diagnostic: {
+      dmMatched: false,
       noResult: {
         basicRows: (basic?.rows || []).length,
         matchedPrimaryRows: (primary?.rows || []).length,

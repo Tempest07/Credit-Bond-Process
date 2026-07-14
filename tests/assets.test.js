@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260714-mobile-ledger";
+const VERSION = "20260715-ocr-recovery";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -20,7 +20,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`date-picker\\.js\\?v=${VERSION}`));
-  assert.match(app, /project-screenshot-ocr\.js\?v=20260714-ocr-quality/);
+  assert.match(app, /project-screenshot-ocr\.js\?v=20260715-ocr-recovery/);
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
@@ -69,9 +69,9 @@ test("keeps protocol transfer hover borders clear of the scroll viewport", async
   const liftedCardHover = styles.indexOf(".project-item:hover,");
   const protocolHoverOverride = styles.lastIndexOf(".protocol-transfer-item:hover {");
 
-  assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*3px 8px 3px 3px;[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s);
+  assert.match(styles, /\.protocol-transfer-list\s*\{[^}]*padding:\s*7px 8px 7px 4px;[^}]*overflow:\s*auto;[^}]*scroll-padding-block:\s*7px;[^}]*scrollbar-gutter:\s*stable;/s);
   assert.match(styles, /\.protocol-transfer-item\s*\{[^}]*position:\s*relative;/s);
-  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--accent\)[^}]*transform:\s*none;/s);
+  assert.match(styles, /\.protocol-transfer-item:hover\s*\{[^}]*z-index:\s*1;[^}]*outline:\s*1px solid var\(--accent\);[^}]*outline-offset:\s*-1px;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--accent\)[^}]*transform:\s*none;/s);
   assert.ok(protocolHoverOverride > liftedCardHover, "protocol hover override must follow the generic lifted-card hover rule");
 });
 
@@ -89,24 +89,36 @@ test("uses a reusable, layout-aware OCR worker for project screenshots", async (
   assert.match(app, /projectScreenshotOtsuThreshold/);
   assert.match(app, /eraseProjectScreenshotTableLines/);
   assert.match(app, /canvas\.width = 1;\s*canvas\.height = 1;/s);
-  assert.match(app, /\? 14 : 24/);
-  assert.match(app, /\? 16 : 22/);
+  assert.match(app, /\? 24 : 32/);
+  assert.match(app, /\? 10 : 14/);
   assert.match(app, /maxPixels:\s*4_500_000/);
   assert.match(app, /maxPixels:\s*9_000_000/);
   assert.match(app, /maxPixels:\s*1_600_000/);
   assert.match(app, /maxPixels:\s*2_800_000/);
   assert.match(app, /analyzeProjectScreenshotLayout/);
-  assert.match(app, /fitProjectScreenshotRowsToCanvas/);
-  assert.match(app, /fitProjectScreenshotHeightToCanvas/);
+  assert.match(app, /detectProjectScreenshotContentBounds/);
+  assert.match(app, /splitProjectScreenshotRegionVertically/);
+  assert.match(app, /projectScreenshotUniformScale/);
+  assert.match(app, /sourceKey:\s*`row:\$\{rowIndex\}`/);
+  assert.doesNotMatch(app, /targetHeight:\s*Math\.max\((?:96|108),/);
+  assert.doesNotMatch(app, /fitProjectScreenshot(?:Rows|Height|Columns)ToCanvas/);
   assert.match(app, /if \(rowBands\.length >= 2 && columns\)/);
   assert.match(app, /passErrors\.push/);
-  assert.match(app, /controller\.abort\(\), 12_000/);
-  assert.match(app, /Math\.min\(widthScale, pixelScale, dimensionScale\)/);
+  assert.match(app, /controller\.abort\(\);\s*}, 12_000/);
+  assert.match(app, /canvasPixels <= maxPixels/);
   assert.doesNotMatch(app, /rowPassMatches|rowCoverageReached|minimumRowMatches|structuredPassMatches/);
   assert.match(html, /id="projectScreenshotStatus" role="status" aria-live="polite"/);
-  assert.match(html, /id="projectScreenshotOutput" aria-live="polite"/);
+  assert.match(html, /id="projectScreenshotOutput" hidden/);
+  assert.doesNotMatch(html, /id="projectScreenshotOutput" aria-live=/);
+  assert.match(app, /data-project-screenshot-row-status/);
+  assert.match(app, /handleProjectScreenshotCorrectionSubmit/);
+  assert.match(app, /createManualProjectScreenshotRow/);
+  assert.match(app, /data-project-screenshot-branch-select/);
+  assert.match(app, /current\.revision !== revision/);
+  assert.match(app, /row\.dmVerified = false/);
+  assert.match(app, /row\.status === "ok" && row\.dmVerified && row\.verifiedFullName && row\.verifiedShortName/);
   assert.match(styles, /\.project-screenshot-item\.is-pending/);
-  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-screenshot-copy-box\s*\{\s*font-size:\s*16px;/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-screenshot-correction input, \.project-screenshot-correction select\s*\{[^}]*min-height:\s*44px;[^}]*font-size:\s*16px;/);
 });
 
 test("uses single-pane project navigation on compact screens", async () => {

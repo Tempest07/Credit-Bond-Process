@@ -299,6 +299,7 @@ test("DM lookup prefers callable tenor from basic bond fields over final issue t
     assert.equal(response.status, 200, await response.clone().text());
     const payload = await response.json();
     assert.equal(payload.ok, true);
+    assert.equal(payload.diagnostic.dmMatched, true);
     assert.equal(payload.normalized.durationText, "3+2Y");
     assert.equal(payload.normalized.durationSource, "bond_matu");
     assert.equal(payload.normalized.specialItem, "调整票面利率选择权、投资者回售选择权");
@@ -1670,6 +1671,8 @@ test("DM lookup marks a queried cancelled tranche from D1 issue group", async ()
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.diagnostic.dmMatched, false);
     assert.equal(payload.issueGroup.source, "cloud-db");
     assert.equal(payload.issueGroup.tranches.length, 2);
     assert.equal(payload.issueGroup.tranches[0].shortName, "26ACME01");

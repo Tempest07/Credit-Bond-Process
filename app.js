@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260714-mobile-ledger";
+} from "./core.js?v=20260715-ocr-recovery";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260714-mobile-ledger";
+} from "./lifecycle.js?v=20260715-ocr-recovery";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260714-mobile-ledger";
+} from "./history-parser.js?v=20260715-ocr-recovery";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260714-mobile-ledger";
+} from "./protocol-transfer.js?v=20260715-ocr-recovery";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260714-mobile-ledger";
+} from "./reminders.js?v=20260715-ocr-recovery";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,13 +77,14 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260714-mobile-ledger";
-import { initializeDatePickers } from "./date-picker.js?v=20260714-mobile-ledger";
+} from "./secondary-inventory.js?v=20260715-ocr-recovery";
+import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-recovery";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
+  cleanProjectScreenshotBondFullName,
   mergeProjectScreenshotOcrPasses,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260714-ocr-quality";
+} from "./project-screenshot-ocr.js?v=20260715-ocr-recovery";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -99,7 +100,6 @@ const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
-const PROJECT_SCREENSHOT_LEFT_CROP_RATIO = 0.45;
 const PROJECT_SCREENSHOT_MIN_OCR_WIDTH = 2600;
 const PROJECT_SCREENSHOT_ROW_GAP = 18;
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
@@ -191,6 +191,11 @@ let policyCurveController = null;
 let projectScreenshotRows = [];
 let projectScreenshotBusy = false;
 let projectScreenshotDragDepth = 0;
+let projectScreenshotSessionId = 0;
+let projectScreenshotRowSequence = 0;
+let projectScreenshotWorker = null;
+let projectScreenshotWorkerPromise = null;
+let projectScreenshotOcrProgressContext = null;
 let liquidMotionFrame = null;
 let liquidMotionObserver = null;
 let liquidResizeObserver = null;
@@ -562,8 +567,14 @@ function bindProjectScreenshotTool() {
   const input = $("#projectScreenshotInput");
   const dropzone = $("#projectScreenshotDropzone");
   const dropTarget = $("#projectScreenshotTool") || dropzone;
+  const output = $("#projectScreenshotOutput");
   input?.addEventListener("change", handleProjectScreenshotUpload);
   $("#copyProjectScreenshotShortNamesButton")?.addEventListener("click", copyProjectScreenshotShortNames);
+  output?.addEventListener("submit", handleProjectScreenshotCorrectionSubmit);
+  output?.addEventListener("input", handleProjectScreenshotCorrectionInput);
+  output?.addEventListener("change", handleProjectScreenshotBranchChange);
+  output?.addEventListener("click", handleProjectScreenshotCorrectionClick);
+  window.addEventListener("pagehide", releaseProjectScreenshotWorker, { once: true });
   if (!dropzone) return;
   dropzone.addEventListener("click", () => {
     if (!projectScreenshotBusy) input?.click();
@@ -648,6 +659,7 @@ async function processProjectScreenshotFile(file, input = null) {
     return;
   }
 
+  const sessionId = ++projectScreenshotSessionId;
   projectScreenshotRows = [];
   renderProjectScreenshotResults(projectScreenshotRows);
   setProjectScreenshotBusy(true, "正在 OCR 图片...");
@@ -655,17 +667,41 @@ async function processProjectScreenshotFile(file, input = null) {
     await ensureTesseractReady();
     const entries = await recognizeProjectScreenshotEntries(file);
     if (!entries.length) {
-      setProjectScreenshotStatus("未识别到七家目标分行的债券名称。");
-      showToast("未识别到目标分行项目，请换一张更清晰的截图。");
+      projectScreenshotRows = [createManualProjectScreenshotRow(sessionId)];
+      renderProjectScreenshotResults(projectScreenshotRows);
+      setProjectScreenshotStatus("未识别到项目，可在下方补录并单条查询。");
+      showToast("没有可靠识别结果，已打开补录框。" );
       return;
     }
 
-    projectScreenshotRows = entries.map((entry) => ({ ...entry, status: "pending" }));
+    projectScreenshotRows = entries.map((entry, index) => ({
+      ...entry,
+      id: `ocr-${sessionId}-${index}`,
+      sessionId,
+      revision: 0,
+      originalBranch: entry.branch,
+      ocrFullName: entry.fullName,
+      draftFullName: entry.fullName,
+      verifiedFullName: "",
+      status: "pending",
+      isEditing: false,
+    }));
     renderProjectScreenshotResults(projectScreenshotRows);
     for (let index = 0; index < entries.length; index += 1) {
       setProjectScreenshotStatus(`已识别 ${entries.length} 条，正在查 DM ${index + 1}/${entries.length}...`);
-      const resolved = await lookupProjectScreenshotEntry(entries[index]);
-      projectScreenshotRows[index] = resolved;
+      const requested = projectScreenshotRows[index];
+      const requestedRevision = requested.revision;
+      const lookupController = new AbortController();
+      requested.lookupController = lookupController;
+      const resolved = await lookupProjectScreenshotEntry(
+        { ...requested, lookupController: null, fullName: requested.draftFullName },
+        { signal: lookupController.signal },
+      );
+      const currentIndex = projectScreenshotRows.findIndex((row) => row.id === requested.id);
+      const current = projectScreenshotRows[currentIndex];
+      if (sessionId !== projectScreenshotSessionId || !current || current.revision !== requestedRevision) continue;
+      current.lookupController = null;
+      projectScreenshotRows[currentIndex] = finalizeProjectScreenshotLookupRow(current, resolved);
       renderProjectScreenshotResults(projectScreenshotRows);
     }
     const copiedCount = projectScreenshotResolvedShortNames().length;
@@ -673,10 +709,12 @@ async function processProjectScreenshotFile(file, input = null) {
       ? `完成：${copiedCount}/${entries.length} 条已匹配简称。`
       : `完成：${entries.length} 条均未匹配到 DM 简称。`);
   } catch (error) {
-    projectScreenshotRows = [];
-    renderProjectScreenshotResults(projectScreenshotRows);
-    setProjectScreenshotStatus(error.message || "截图识别失败。");
-    showToast(error.message || "截图识别失败。");
+    if (sessionId === projectScreenshotSessionId) {
+      projectScreenshotRows = [createManualProjectScreenshotRow(sessionId)];
+      renderProjectScreenshotResults(projectScreenshotRows);
+      setProjectScreenshotStatus(`${error.message || "截图识别失败"}，可在下方补录。`);
+      showToast("OCR 未完成，已保留手工补录入口。" );
+    }
   } finally {
     setProjectScreenshotBusy(false);
     setProjectScreenshotDragging(false);
@@ -705,19 +743,15 @@ function isProjectScreenshotImageFile(file) {
 
 async function recognizeProjectScreenshotEntries(file) {
   const image = await loadProjectScreenshotImage(file);
-  let worker = null;
   try {
     const targets = createProjectScreenshotOcrTargets(image);
     const passes = [];
     const passErrors = [];
     let successfulPasses = 0;
-    if (window.Tesseract?.createWorker) {
-      worker = await window.Tesseract.createWorker("chi_sim+eng", window.Tesseract.OEM?.LSTM_ONLY, {
-        logger: (message) => updateProjectScreenshotOcrProgress(message),
-      });
-    }
+    const worker = await getProjectScreenshotWorker();
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index];
+      projectScreenshotOcrProgressContext = { label: target.label, index, total: targets.length };
       setProjectScreenshotStatus(`正在 OCR ${target.label} ${index + 1}/${targets.length}...`);
       let canvas = null;
       try {
@@ -736,13 +770,14 @@ async function recognizeProjectScreenshotEntries(file) {
         const result = worker
           ? await worker.recognize(canvas)
           : await window.Tesseract.recognize(canvas, "chi_sim+eng", {
-            logger: (message) => updateProjectScreenshotOcrProgress(message, target.label),
+            logger: (message) => updateProjectScreenshotOcrProgress(message, target.label, index, targets.length),
             tessedit_pageseg_mode: pageSegMode,
             preserve_interword_spaces: "1",
             user_defined_dpi: "300",
           });
         const pass = {
           label: target.label,
+          sourceKey: target.sourceKey || "",
           text: result?.data?.text || "",
           confidence: result?.data?.confidence,
         };
@@ -760,11 +795,39 @@ async function recognizeProjectScreenshotEntries(file) {
     if (!successfulPasses && passErrors.length) throw new Error(`OCR 识别失败：${passErrors[0]}`);
     return mergeProjectScreenshotOcrPasses(passes);
   } finally {
-    try {
-      if (worker?.terminate) await worker.terminate();
-    } finally {
-      if (typeof image.close === "function") image.close();
-    }
+    projectScreenshotOcrProgressContext = null;
+    if (typeof image.close === "function") image.close();
+  }
+}
+
+async function getProjectScreenshotWorker() {
+  if (!window.Tesseract?.createWorker) return null;
+  if (projectScreenshotWorker) return projectScreenshotWorker;
+  if (!projectScreenshotWorkerPromise) {
+    projectScreenshotWorkerPromise = window.Tesseract.createWorker("chi_sim+eng", window.Tesseract.OEM?.LSTM_ONLY, {
+      logger: (message) => {
+        const context = projectScreenshotOcrProgressContext || {};
+        updateProjectScreenshotOcrProgress(message, context.label, context.index, context.total);
+      },
+    }).then((worker) => {
+      projectScreenshotWorker = worker;
+      return worker;
+    }).catch((error) => {
+      projectScreenshotWorkerPromise = null;
+      throw error;
+    });
+  }
+  return projectScreenshotWorkerPromise;
+}
+
+function releaseProjectScreenshotWorker() {
+  const worker = projectScreenshotWorker;
+  projectScreenshotWorker = null;
+  projectScreenshotWorkerPromise = null;
+  try {
+    worker?.terminate?.();
+  } catch {
+    // Page teardown must not block navigation.
   }
 }
 
@@ -786,13 +849,14 @@ async function loadProjectScreenshotImage(file) {
 }
 
 function createProjectScreenshotOcrTargets(image) {
-  const { rowBands, columns } = analyzeProjectScreenshotLayout(image);
+  const { rowBands, columns, contentBounds } = analyzeProjectScreenshotLayout(image);
   const targets = [];
   const rowTargets = rowBands.length >= 2 && columns
     ? createProjectScreenshotCellRowTargets(image, rowBands, columns)
     : [];
   targets.push(...rowTargets);
   const rowChunks = chunkProjectScreenshotRowBands(rowBands);
+  const primaryRegion = projectScreenshotPrimaryOcrRegion(image, columns, contentBounds);
   if (rowBands.length >= 2 && columns) {
     rowChunks.forEach((chunk, index) => targets.push({
       label: `分行债券列 ${index + 1}/${rowChunks.length}`,
@@ -804,32 +868,129 @@ function createProjectScreenshotOcrTargets(image) {
     rowChunks.forEach((chunk, index) => targets.push({
       label: `表格行 ${index + 1}/${rowChunks.length}`,
       pageSegMode: "SINGLE_BLOCK",
-      createCanvas: () => createProjectScreenshotRowCanvas(image, chunk),
+      createCanvas: () => createProjectScreenshotRowCanvas(image, chunk, primaryRegion),
     }));
   }
-  targets.push({
-    label: "左侧区域",
-    pageSegMode: "SPARSE_TEXT",
-    createCanvas: () => createProjectScreenshotLeftCropCanvas(image),
-  });
+  targets.push(...createProjectScreenshotFallbackTargets(image, { columns, contentBounds, primaryRegion }));
   return targets;
 }
 
 function chunkProjectScreenshotRowBands(rowBands = []) {
-  const chunkSize = window.matchMedia?.("(max-width: 760px)")?.matches ? 16 : 22;
+  const chunkSize = window.matchMedia?.("(max-width: 760px)")?.matches ? 10 : 14;
   const chunks = [];
   for (let index = 0; index < rowBands.length; index += chunkSize) chunks.push(rowBands.slice(index, index + chunkSize));
   return chunks;
 }
 
 function createProjectScreenshotCellRowTargets(image, rowBands = [], columns) {
-  const maxRows = window.matchMedia?.("(max-width: 760px)")?.matches ? 14 : 24;
-  return rowBands.slice(0, maxRows).map((band, index) => ({
-    label: `表格第 ${index + 1} 行`,
+  const maxRows = window.matchMedia?.("(max-width: 760px)")?.matches ? 24 : 32;
+  const selectedRows = rowBands.length <= maxRows
+    ? rowBands.map((band, rowIndex) => ({ band, rowIndex }))
+    : Array.from({ length: maxRows }, (_, index) => {
+        const rowIndex = Math.round(index * (rowBands.length - 1) / (maxRows - 1));
+        return { band: rowBands[rowIndex], rowIndex };
+      });
+  return selectedRows.map(({ band, rowIndex }) => ({
+    label: `表格第 ${rowIndex + 1} 行`,
+    sourceKey: `row:${rowIndex}`,
     pageSegMode: "SINGLE_LINE",
     kind: "row",
     createCanvas: () => createProjectScreenshotCellRowCanvas(image, band, columns),
   }));
+}
+
+function projectScreenshotPrimaryOcrRegion(image, columns, contentBounds) {
+  const bounds = contentBounds || { x: 0, y: 0, width: image.width, height: image.height };
+  if (!columns) {
+    return {
+      x: bounds.x,
+      y: bounds.y,
+      width: Math.max(1, Math.min(bounds.width, Math.round(bounds.width * 0.7))),
+      height: bounds.height,
+    };
+  }
+  const margin = Math.max(8, Math.round(image.width * 0.006));
+  const left = Math.max(bounds.x, Math.min(columns.branch.x, columns.name.x) - margin);
+  const right = Math.min(
+    bounds.x + bounds.width,
+    Math.max(columns.branch.x + columns.branch.width, columns.name.x + columns.name.width) + margin,
+  );
+  return { x: left, y: bounds.y, width: Math.max(1, right - left), height: bounds.height };
+}
+
+function createProjectScreenshotFallbackTargets(image, { columns, contentBounds, primaryRegion }) {
+  const bounds = contentBounds || { x: 0, y: 0, width: image.width, height: image.height };
+  const regions = [];
+  const addRegion = (region) => {
+    const normalized = {
+      x: Math.max(0, Math.round(region.x)),
+      y: Math.max(0, Math.round(region.y)),
+      width: Math.max(1, Math.min(image.width - Math.max(0, Math.round(region.x)), Math.round(region.width))),
+      height: Math.max(1, Math.min(image.height - Math.max(0, Math.round(region.y)), Math.round(region.height))),
+    };
+    const duplicate = regions.some((existing) => (
+      Math.abs(existing.x - normalized.x) < 8
+      && Math.abs(existing.width - normalized.width) < 12
+      && Math.abs(existing.y - normalized.y) < 8
+      && Math.abs(existing.height - normalized.height) < 12
+    ));
+    if (!duplicate) regions.push(normalized);
+  };
+
+  addRegion(primaryRegion);
+  if (!columns) {
+    addRegion({
+      x: bounds.x + Math.round(bounds.width * 0.1),
+      y: bounds.y,
+      width: Math.round(bounds.width * 0.72),
+      height: bounds.height,
+    });
+  }
+  if (!columns || primaryRegion.width < bounds.width * 0.78) addRegion(bounds);
+
+  const targets = [];
+  regions.forEach((region, regionIndex) => {
+    const compact = window.matchMedia?.("(max-width: 760px)")?.matches;
+    const maxSlices = regionIndex === 0 ? (compact ? 8 : 10) : 2;
+    const slices = splitProjectScreenshotRegionVertically(region, maxSlices);
+    slices.forEach((slice, sliceIndex) => targets.push({
+      label: `内容区 ${regionIndex + 1}.${sliceIndex + 1}/${slices.length}`,
+      sourceKey: `region:${regionIndex}:${sliceIndex}`,
+      pageSegMode: "SPARSE_TEXT",
+      createCanvas: () => createProjectScreenshotRegionCanvas(image, slice),
+    }));
+  });
+  return targets;
+}
+
+function splitProjectScreenshotRegionVertically(region, maxSlices = 8) {
+  const padding = 16;
+  const { maxPixels, maxWidth, maxHeight } = projectScreenshotCanvasLimits();
+  const scale = Math.min(
+    projectScreenshotDesiredScale(region.width),
+    Math.max(0.01, (maxWidth - padding * 2) / region.width),
+  );
+  const targetWidth = region.width * scale + padding * 2;
+  const maxTargetHeight = Math.max(
+    180,
+    Math.min(maxHeight - padding * 2, maxPixels / Math.max(1, targetWidth) - padding * 2),
+  );
+  const naturalSourceHeight = Math.max(160, Math.floor(maxTargetHeight / Math.max(Number.EPSILON, scale)));
+  if (region.height <= naturalSourceHeight) return [region];
+
+  const sliceLimit = Math.max(1, Math.floor(maxSlices));
+  const minimumCappedHeight = Math.ceil(region.height / Math.max(1, sliceLimit * 0.9 + 0.1));
+  const maxSourceHeight = Math.max(naturalSourceHeight, minimumCappedHeight);
+  const overlap = Math.min(Math.round(maxSourceHeight * 0.1), Math.max(60, Math.round(region.height * 0.02)));
+  const stride = Math.max(1, maxSourceHeight - overlap);
+  const slices = [];
+  for (let y = region.y; y < region.y + region.height; y += stride) {
+    const remaining = region.y + region.height - y;
+    const height = Math.min(maxSourceHeight, remaining);
+    slices.push({ x: region.x, y, width: region.width, height });
+    if (height >= remaining) break;
+  }
+  return slices;
 }
 
 function createProjectScreenshotCellRowCanvas(image, band, columns) {
@@ -837,60 +998,66 @@ function createProjectScreenshotCellRowCanvas(image, band, columns) {
   const y = Math.max(0, band.y + 2);
   const height = Math.max(1, band.height - 4);
   if (height < 20) return null;
-  const scale = projectScreenshotScaleForWidth(combinedWidth, height);
-  const gap = Math.max(18, Math.round(10 * scale));
-  const padding = Math.max(16, Math.round(8 * scale));
-  let branchWidth = Math.round(columns.branch.width * scale);
-  let nameWidth = Math.round(columns.name.width * scale);
-  ({ branchWidth, nameWidth } = fitProjectScreenshotColumnsToCanvas(branchWidth, nameWidth, padding * 2 + gap));
-  let targetHeight = Math.max(108, Math.round(height * scale));
+  const gap = 18;
+  const padding = 16;
+  const scale = projectScreenshotUniformScale(combinedWidth, height, padding * 2 + gap, padding * 2);
+  const branchWidth = Math.max(1, Math.round(columns.branch.width * scale));
+  const nameWidth = Math.max(1, Math.round(columns.name.width * scale));
+  const targetHeight = Math.max(1, Math.round(height * scale));
   const canvas = document.createElement("canvas");
   canvas.width = padding * 2 + branchWidth + gap + nameWidth;
-  targetHeight = fitProjectScreenshotHeightToCanvas(targetHeight, canvas.width, padding * 2);
+  canvas.height = Math.max(108, targetHeight + padding * 2);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  const targetY = Math.round((canvas.height - targetHeight) / 2);
+  context.drawImage(image, columns.branch.x, y, columns.branch.width, height, padding, targetY, branchWidth, targetHeight);
+  context.drawImage(image, columns.name.x, y, columns.name.width, height, padding + branchWidth + gap, targetY, nameWidth, targetHeight);
+  enhanceProjectScreenshotCanvas(canvas, "soft");
+  return canvas;
+}
+
+function createProjectScreenshotRegionCanvas(image, region) {
+  const padding = 16;
+  const scale = projectScreenshotUniformScale(region.width, region.height, padding * 2, padding * 2);
+  const canvas = document.createElement("canvas");
+  const targetWidth = Math.max(1, Math.round(region.width * scale));
+  const targetHeight = Math.max(1, Math.round(region.height * scale));
+  canvas.width = targetWidth + padding * 2;
   canvas.height = targetHeight + padding * 2;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = "#fff";
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-  context.drawImage(image, columns.branch.x, y, columns.branch.width, height, padding, padding, branchWidth, targetHeight);
-  context.drawImage(image, columns.name.x, y, columns.name.width, height, padding + branchWidth + gap, padding, nameWidth, targetHeight);
+  context.drawImage(image, region.x, region.y, region.width, region.height, padding, padding, targetWidth, targetHeight);
   enhanceProjectScreenshotCanvas(canvas, "soft");
   return canvas;
 }
 
-function createProjectScreenshotLeftCropCanvas(image) {
-  const cropWidth = projectScreenshotCropWidth(image);
-  const scale = projectScreenshotScaleForWidth(cropWidth, image.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(cropWidth * scale);
-  canvas.height = Math.round(image.height * scale);
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(image, 0, 0, cropWidth, image.height, 0, 0, canvas.width, canvas.height);
-  enhanceProjectScreenshotCanvas(canvas, "soft");
-  return canvas;
-}
-
-function createProjectScreenshotRowCanvas(image, rowBands = []) {
-  const cropWidth = projectScreenshotCropWidth(image);
+function createProjectScreenshotRowCanvas(image, rowBands = [], region) {
+  const cropX = Math.max(0, region?.x || 0);
+  const cropWidth = Math.max(1, Math.min(image.width - cropX, region?.width || image.width));
   const sourceHeight = rowBands.reduce((sum, band) => sum + Math.max(1, band.height - 4), 0);
-  const scale = projectScreenshotScaleForWidth(cropWidth, sourceHeight);
-  let scaledRows = rowBands
+  const scale = projectScreenshotUniformScale(
+    cropWidth,
+    sourceHeight,
+    0,
+    PROJECT_SCREENSHOT_ROW_GAP * (rowBands.length + 1),
+  );
+  const scaledRows = rowBands
     .map((band) => ({
       y: Math.max(0, band.y + 2),
       height: Math.max(1, band.height - 4),
-      targetHeight: Math.max(96, Math.round(Math.max(1, band.height - 4) * scale)),
+      targetHeight: Math.max(1, Math.round(Math.max(1, band.height - 4) * scale)),
     }))
     .filter((band) => band.height >= 20);
   if (!scaledRows.length) return null;
 
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(cropWidth * scale);
-  scaledRows = fitProjectScreenshotRowsToCanvas(scaledRows, canvas.width, PROJECT_SCREENSHOT_ROW_GAP);
+  canvas.width = Math.max(1, Math.round(cropWidth * scale));
   canvas.height = scaledRows.reduce((sum, band) => sum + band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP, PROJECT_SCREENSHOT_ROW_GAP);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = "#fff";
@@ -899,7 +1066,7 @@ function createProjectScreenshotRowCanvas(image, rowBands = []) {
   context.imageSmoothingQuality = "high";
   let targetY = PROJECT_SCREENSHOT_ROW_GAP;
   for (const band of scaledRows) {
-    context.drawImage(image, 0, band.y, cropWidth, band.height, 0, targetY, canvas.width, band.targetHeight);
+    context.drawImage(image, cropX, band.y, cropWidth, band.height, 0, targetY, canvas.width, band.targetHeight);
     targetY += band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP;
   }
   enhanceProjectScreenshotCanvas(canvas, "binary");
@@ -909,24 +1076,27 @@ function createProjectScreenshotRowCanvas(image, rowBands = []) {
 function createProjectScreenshotColumnCanvas(image, rowBands = [], columns) {
   const combinedWidth = columns.branch.width + columns.name.width;
   const sourceHeight = rowBands.reduce((sum, band) => sum + Math.max(1, band.height - 4), 0);
-  const scale = projectScreenshotScaleForWidth(combinedWidth, sourceHeight);
-  const gap = Math.max(18, Math.round(10 * scale));
-  const padding = Math.max(16, Math.round(8 * scale));
-  let branchWidth = Math.round(columns.branch.width * scale);
-  let nameWidth = Math.round(columns.name.width * scale);
-  ({ branchWidth, nameWidth } = fitProjectScreenshotColumnsToCanvas(branchWidth, nameWidth, padding * 2 + gap));
-  let scaledRows = rowBands
+  const gap = 18;
+  const padding = 16;
+  const scale = projectScreenshotUniformScale(
+    combinedWidth,
+    sourceHeight,
+    padding * 2 + gap,
+    PROJECT_SCREENSHOT_ROW_GAP * (rowBands.length + 1),
+  );
+  const branchWidth = Math.max(1, Math.round(columns.branch.width * scale));
+  const nameWidth = Math.max(1, Math.round(columns.name.width * scale));
+  const scaledRows = rowBands
     .map((band) => ({
       y: Math.max(0, band.y + 2),
       height: Math.max(1, band.height - 4),
-      targetHeight: Math.max(108, Math.round(Math.max(1, band.height - 4) * scale)),
+      targetHeight: Math.max(1, Math.round(Math.max(1, band.height - 4) * scale)),
     }))
     .filter((band) => band.height >= 20);
   if (!scaledRows.length) return null;
 
   const canvas = document.createElement("canvas");
   canvas.width = padding * 2 + branchWidth + gap + nameWidth;
-  scaledRows = fitProjectScreenshotRowsToCanvas(scaledRows, canvas.width, PROJECT_SCREENSHOT_ROW_GAP);
   canvas.height = scaledRows.reduce((sum, band) => sum + band.targetHeight + PROJECT_SCREENSHOT_ROW_GAP, PROJECT_SCREENSHOT_ROW_GAP);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = "#fff";
@@ -963,46 +1133,25 @@ function createProjectScreenshotColumnCanvas(image, rowBands = [], columns) {
   return canvas;
 }
 
-function projectScreenshotCropWidth(image) {
-  return Math.min(image.width, Math.max(720, Math.round(image.width * PROJECT_SCREENSHOT_LEFT_CROP_RATIO)));
-}
-
-function projectScreenshotScaleForWidth(width, height = 0) {
+function projectScreenshotDesiredScale(width) {
   if (!Number.isFinite(width) || width <= 0) return 2;
-  const widthScale = Math.min(4, Math.max(1.8, PROJECT_SCREENSHOT_MIN_OCR_WIDTH / width));
-  if (!Number.isFinite(height) || height <= 0) return widthScale;
+  return Math.min(4, Math.max(1.8, PROJECT_SCREENSHOT_MIN_OCR_WIDTH / width));
+}
+
+function projectScreenshotUniformScale(width, height, overheadWidth = 0, overheadHeight = 0) {
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) return 1;
   const { maxPixels, maxWidth, maxHeight } = projectScreenshotCanvasLimits();
-  const pixelScale = Math.sqrt(maxPixels / Math.max(1, width * height));
-  const dimensionScale = Math.min(maxWidth / width, maxHeight / height);
-  return Math.max(0.01, Math.min(widthScale, pixelScale, dimensionScale));
-}
-
-function fitProjectScreenshotColumnsToCanvas(branchWidth, nameWidth, overheadWidth = 0) {
-  const { maxWidth } = projectScreenshotCanvasLimits();
-  const available = Math.max(2, maxWidth - overheadWidth);
-  const total = Math.max(1, branchWidth + nameWidth);
-  if (total <= available) return { branchWidth, nameWidth };
-  const ratio = available / total;
-  return {
-    branchWidth: Math.max(1, Math.floor(branchWidth * ratio)),
-    nameWidth: Math.max(1, Math.floor(nameWidth * ratio)),
-  };
-}
-
-function fitProjectScreenshotHeightToCanvas(targetHeight, canvasWidth, overheadHeight = 0) {
-  const { maxPixels, maxHeight } = projectScreenshotCanvasLimits();
-  const allowedHeight = Math.max(1, Math.min(maxHeight, Math.floor(maxPixels / Math.max(1, canvasWidth))));
-  return Math.max(1, Math.min(targetHeight, allowedHeight - overheadHeight));
-}
-
-function fitProjectScreenshotRowsToCanvas(rows = [], canvasWidth, gap) {
-  const { maxPixels, maxHeight } = projectScreenshotCanvasLimits();
-  const allowedHeight = Math.max(1, Math.min(maxHeight, Math.floor(maxPixels / Math.max(1, canvasWidth))));
-  const gapHeight = gap * (rows.length + 1);
-  const contentHeight = rows.reduce((sum, row) => sum + row.targetHeight, 0);
-  if (contentHeight + gapHeight <= allowedHeight) return rows;
-  const ratio = Math.max(0.01, (allowedHeight - gapHeight) / Math.max(1, contentHeight));
-  return rows.map((row) => ({ ...row, targetHeight: Math.max(1, Math.floor(row.targetHeight * ratio)) }));
+  let scale = Math.min(
+    projectScreenshotDesiredScale(width),
+    Math.max(Number.EPSILON, (maxWidth - overheadWidth) / width),
+    Math.max(Number.EPSILON, (maxHeight - overheadHeight) / height),
+  );
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const canvasPixels = (width * scale + overheadWidth) * (height * scale + overheadHeight);
+    if (canvasPixels <= maxPixels) break;
+    scale *= Math.sqrt(maxPixels / canvasPixels) * 0.995;
+  }
+  return Math.max(Number.EPSILON, scale);
 }
 
 function projectScreenshotCanvasLimits() {
@@ -1029,12 +1178,13 @@ function analyzeProjectScreenshotLayout(image) {
     const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
     const scaleX = image.width / canvas.width;
     const scaleY = image.height / canvas.height;
-    const rowBands = detectProjectScreenshotRowBands(data, canvas.width, canvas.height)
+    const analysisBounds = detectProjectScreenshotContentBounds(data, canvas.width, canvas.height);
+    const rowBands = detectProjectScreenshotRowBands(data, canvas.width, canvas.height, analysisBounds)
       .map((band) => ({
         y: Math.max(0, Math.round(band.y * scaleY)),
         height: Math.max(1, Math.round(band.height * scaleY)),
       }));
-    const analysisColumns = detectProjectScreenshotKeyColumns(data, canvas.width, canvas.height);
+    const analysisColumns = detectProjectScreenshotKeyColumns(data, canvas.width, canvas.height, analysisBounds);
     const columns = analysisColumns ? {
       branch: {
         x: Math.max(0, Math.round(analysisColumns.branch.x * scaleX)),
@@ -1045,11 +1195,54 @@ function analyzeProjectScreenshotLayout(image) {
         width: Math.max(1, Math.round(analysisColumns.name.width * scaleX)),
       },
     } : null;
-    return { rowBands, columns };
+    const contentBounds = {
+      x: Math.max(0, Math.round(analysisBounds.x * scaleX)),
+      y: Math.max(0, Math.round(analysisBounds.y * scaleY)),
+      width: Math.max(1, Math.round(analysisBounds.width * scaleX)),
+      height: Math.max(1, Math.round(analysisBounds.height * scaleY)),
+    };
+    return { rowBands, columns, contentBounds };
   } finally {
     canvas.width = 1;
     canvas.height = 1;
   }
+}
+
+function detectProjectScreenshotContentBounds(data, width, height) {
+  const columnInk = new Uint32Array(width);
+  const rowInk = new Uint32Array(height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
+      if (gray >= 238) continue;
+      columnInk[x] += 1;
+      rowInk[y] += 1;
+    }
+  }
+  const minimumColumnInk = Math.max(2, Math.round(height * 0.002));
+  const minimumRowInk = Math.max(2, Math.round(width * 0.002));
+  let left = 0;
+  let right = width - 1;
+  let top = 0;
+  let bottom = height - 1;
+  while (left < right && columnInk[left] < minimumColumnInk) left += 1;
+  while (right > left && columnInk[right] < minimumColumnInk) right -= 1;
+  while (top < bottom && rowInk[top] < minimumRowInk) top += 1;
+  while (bottom > top && rowInk[bottom] < minimumRowInk) bottom -= 1;
+  if (right - left < width * 0.12 || bottom - top < height * 0.08) {
+    return { x: 0, y: 0, width, height };
+  }
+  const marginX = Math.max(4, Math.round(width * 0.012));
+  const marginY = Math.max(4, Math.round(height * 0.008));
+  const x = Math.max(0, left - marginX);
+  const y = Math.max(0, top - marginY);
+  return {
+    x,
+    y,
+    width: Math.min(width, right + marginX + 1) - x,
+    height: Math.min(height, bottom + marginY + 1) - y,
+  };
 }
 
 function projectScreenshotAnalysisLimits() {
@@ -1059,14 +1252,20 @@ function projectScreenshotAnalysisLimits() {
     : { maxPixels: 2_800_000, maxWidth: 1_800, maxHeight: 2_600 };
 }
 
-function detectProjectScreenshotRowBands(data, width, height) {
-  const sampleStep = Math.max(3, Math.floor(width / 420));
-  const sampleCount = Math.ceil(width / sampleStep);
+function detectProjectScreenshotRowBands(data, width, height, bounds = { x: 0, y: 0, width, height }) {
+  const startX = Math.max(0, bounds.x);
+  const endX = Math.min(width, bounds.x + bounds.width);
+  const startY = Math.max(0, bounds.y);
+  const endY = Math.min(height, bounds.y + bounds.height);
+  const regionWidth = Math.max(1, endX - startX);
+  const regionHeight = Math.max(1, endY - startY);
+  const sampleStep = Math.max(3, Math.floor(regionWidth / 420));
+  const sampleCount = Math.ceil(regionWidth / sampleStep);
   const lineYs = [];
-  for (let y = 0; y < height; y += 1) {
+  for (let y = startY; y < endY; y += 1) {
     let strong = 0;
     let light = 0;
-    for (let x = 0; x < width; x += sampleStep) {
+    for (let x = startX; x < endX; x += sampleStep) {
       const offset = (y * width + x) * 4;
       const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
       if (gray < 155) strong += 1;
@@ -1076,11 +1275,11 @@ function detectProjectScreenshotRowBands(data, width, height) {
   }
   const lines = mergeProjectScreenshotLineYs(lineYs);
   if (lines.length >= 2) {
-    if (lines[0] > height * 0.03) lines.unshift(0);
-    if (lines.at(-1) < height * 0.97) lines.push(height - 1);
+    if (lines[0] > startY + regionHeight * 0.03) lines.unshift(startY);
+    if (lines.at(-1) < endY - regionHeight * 0.03) lines.push(endY - 1);
   }
   const bands = [];
-  const minRowHeight = Math.max(10, Math.min(24, Math.round(height * 0.008)));
+  const minRowHeight = Math.max(10, Math.min(24, Math.round(regionHeight * 0.008)));
   for (let index = 0; index < lines.length - 1; index += 1) {
     const top = lines[index];
     const bottom = lines[index + 1];
@@ -1092,14 +1291,20 @@ function detectProjectScreenshotRowBands(data, width, height) {
   return bands;
 }
 
-function detectProjectScreenshotKeyColumns(data, width, height) {
-  const sampleStep = Math.max(3, Math.floor(height / 220));
-  const sampleCount = Math.ceil(height / sampleStep);
+function detectProjectScreenshotKeyColumns(data, width, height, bounds = { x: 0, y: 0, width, height }) {
+  const startX = Math.max(0, bounds.x);
+  const endX = Math.min(width, bounds.x + bounds.width);
+  const startY = Math.max(0, bounds.y);
+  const endY = Math.min(height, bounds.y + bounds.height);
+  const regionWidth = Math.max(1, endX - startX);
+  const regionHeight = Math.max(1, endY - startY);
+  const sampleStep = Math.max(3, Math.floor(regionHeight / 220));
+  const sampleCount = Math.ceil(regionHeight / sampleStep);
   const lineXs = [];
-  for (let x = 0; x < width; x += 1) {
+  for (let x = startX; x < endX; x += 1) {
     let strong = 0;
     let light = 0;
-    for (let y = 0; y < height; y += sampleStep) {
+    for (let y = startY; y < endY; y += sampleStep) {
       const offset = (y * width + x) * 4;
       const gray = data[offset] * 0.299 + data[offset + 1] * 0.587 + data[offset + 2] * 0.114;
       if (gray < 170) strong += 1;
@@ -1108,11 +1313,11 @@ function detectProjectScreenshotKeyColumns(data, width, height) {
     if (strong / sampleCount > 0.28 || light / sampleCount > 0.62) lineXs.push(x);
   }
   const rawLines = mergeProjectScreenshotLinePositions(lineXs);
-  const lines = normalizeProjectScreenshotTableLines(rawLines, width);
-  const minBranchWidth = Math.max(30, width * 0.015);
-  const maxBranchWidth = Math.max(100, width * 0.08);
-  const minNameWidth = Math.max(120, width * 0.065);
-  const maxNameWidth = Math.max(360, width * 0.18);
+  const lines = normalizeProjectScreenshotTableLines(rawLines, startX, endX - 1);
+  const minBranchWidth = Math.max(30, regionWidth * 0.015);
+  const maxBranchWidth = Math.max(100, regionWidth * 0.08);
+  const minNameWidth = Math.max(120, regionWidth * 0.065);
+  const maxNameWidth = Math.max(360, regionWidth * 0.18);
   let best = null;
   for (let index = 0; index < lines.length - 2; index += 1) {
     const left = lines[index];
@@ -1120,25 +1325,26 @@ function detectProjectScreenshotKeyColumns(data, width, height) {
     const nameRight = lines[index + 2];
     const branchWidth = branchRight - left;
     const nameWidth = nameRight - branchRight;
-    if (left > width * 0.08) continue;
+    if (left > startX + regionWidth * 0.08) continue;
     if (branchWidth < minBranchWidth || branchWidth > maxBranchWidth) continue;
     if (nameWidth < minNameWidth || nameWidth > maxNameWidth) continue;
-    const score = Math.abs(left) + Math.abs(branchWidth - width * 0.025) + Math.abs(nameWidth - width * 0.09);
+    const score = Math.abs(left - startX) + Math.abs(branchWidth - regionWidth * 0.025) + Math.abs(nameWidth - regionWidth * 0.09);
     if (!best || score < best.score) best = { left, branchRight, nameRight, score };
   }
   if (!best) return null;
   return {
-    branch: projectScreenshotInsetColumn(best.left, best.branchRight, width),
-    name: projectScreenshotInsetColumn(best.branchRight, best.nameRight, width),
+    branch: projectScreenshotInsetColumn(best.left, best.branchRight, regionWidth),
+    name: projectScreenshotInsetColumn(best.branchRight, best.nameRight, regionWidth),
   };
 }
 
-function normalizeProjectScreenshotTableLines(lines = [], width = 0) {
+function normalizeProjectScreenshotTableLines(lines = [], start = 0, end = 0) {
   const normalized = Array.from(new Set(lines))
     .filter((line) => Number.isFinite(line))
     .sort((left, right) => left - right);
-  if (!normalized.length || normalized[0] > Math.max(6, width * 0.004)) normalized.unshift(0);
-  if (normalized.at(-1) < width - Math.max(6, width * 0.004)) normalized.push(width - 1);
+  const width = Math.max(1, end - start + 1);
+  if (!normalized.length || normalized[0] > start + Math.max(6, width * 0.004)) normalized.unshift(start);
+  if (normalized.at(-1) < end - Math.max(6, width * 0.004)) normalized.push(end);
   return normalized;
 }
 
@@ -1248,9 +1454,9 @@ function eraseProjectScreenshotTableLines(canvas, coverageThreshold) {
   for (const x of columns) context.fillRect(Math.max(0, x - 1), 0, 3, canvas.height);
 }
 
-async function lookupProjectScreenshotEntry(entry) {
+async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
   try {
-    const { response, payload } = await requestProjectScreenshotDmLookup({ fullName: entry.fullName });
+    const { response, payload } = await requestProjectScreenshotDmLookup({ fullName: entry.fullName }, { signal });
     if (!response.ok || !payload.ok) {
       const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
       const suggestion = suggestions[0] || null;
@@ -1261,16 +1467,17 @@ async function lookupProjectScreenshotEntry(entry) {
         const exactQuery = reliableSuggestion.securityId
           ? { securityId: reliableSuggestion.securityId }
           : { shortName: reliableSuggestion.shortName };
-        const exact = await requestProjectScreenshotDmLookup(exactQuery);
+        const exact = await requestProjectScreenshotDmLookup(exactQuery, { signal });
         const exactNormalized = exact.payload?.normalized || {};
-        if (exact.response.ok && exact.payload?.ok && exactNormalized.shortName) {
+        if (exact.response.ok && exact.payload?.ok && exact.payload?.diagnostic?.dmMatched === true && exactNormalized.shortName) {
           return {
             ...entry,
             status: "ok",
+            dmVerified: true,
             shortName: exactNormalized.shortName,
             securityId: exactNormalized.securityId || reliableSuggestion.securityId || "",
             issuerName: exactNormalized.issuerName || reliableSuggestion.issuerName || "",
-            correctedFullName: reliableSuggestion.fullName || "",
+            correctedFullName: exactNormalized.fullName || reliableSuggestion.fullName || "",
             correctionSource: "DM 高置信全称校正",
             error: "",
           };
@@ -1279,30 +1486,71 @@ async function lookupProjectScreenshotEntry(entry) {
       return {
         ...entry,
         status: "error",
+        dmVerified: false,
         shortName: "",
         candidateShortName: suggestion?.shortName || "",
-        securityId: suggestion?.securityId || "",
+        securityId: "",
+        candidateSecurityId: suggestion?.securityId || "",
         error: payload?.noResult ? "DM 无结果" : payload?.error || `HTTP ${response.status}`,
       };
     }
     const normalized = payload.normalized || {};
+    const dmMatched = payload?.diagnostic?.dmMatched === true;
     return {
       ...entry,
-      status: normalized.shortName ? "ok" : "error",
-      shortName: normalized.shortName || "",
+      status: dmMatched && normalized.shortName ? "ok" : "error",
+      dmVerified: Boolean(dmMatched && normalized.shortName),
+      shortName: dmMatched ? normalized.shortName || "" : "",
       securityId: normalized.securityId || "",
       issuerName: normalized.issuerName || "",
-      error: normalized.shortName ? "" : "DM 未返回简称",
+      correctedFullName: dmMatched ? normalized.fullName || "" : "",
+      error: dmMatched && normalized.shortName ? "" : dmMatched ? "DM 未返回简称" : "DM 未匹配到该债券",
     };
   } catch (error) {
-    return { ...entry, status: "error", shortName: "", error: error.message || "DM 查询失败" };
+    return { ...entry, status: "error", dmVerified: false, shortName: "", error: error.message || "DM 查询失败" };
   }
 }
 
-async function requestProjectScreenshotDmLookup(query = {}) {
+function finalizeProjectScreenshotLookupRow(current, resolved) {
+  const verified = resolved.status === "ok" && resolved.dmVerified && resolved.shortName;
+  const verifiedFullName = verified
+    ? resolved.correctedFullName || current.draftFullName
+    : current.verifiedFullName || "";
+  const previousVerifiedShortName = current.verifiedShortName || (current.dmVerified ? current.shortName : "");
+  const previousVerifiedSecurityId = current.verifiedSecurityId || (current.dmVerified ? current.securityId : "");
+  const previousVerifiedIssuerName = current.verifiedIssuerName || (current.dmVerified ? current.issuerName : "");
+  return {
+    ...current,
+    ...resolved,
+    id: current.id,
+    sessionId: current.sessionId,
+    revision: current.revision,
+    ocrFullName: current.ocrFullName,
+    draftFullName: verified ? verifiedFullName : current.draftFullName,
+    fullName: verified ? verifiedFullName : current.draftFullName,
+    verifiedFullName,
+    verifiedShortName: verified ? resolved.shortName : previousVerifiedShortName,
+    verifiedSecurityId: verified ? resolved.securityId || "" : previousVerifiedSecurityId,
+    verifiedIssuerName: verified ? resolved.issuerName || "" : previousVerifiedIssuerName,
+    isEditing: verified ? false : current.isEditing,
+    editSnapshot: verified ? null : current.editSnapshot,
+    correctionDismissed: verified ? false : current.correctionDismissed,
+    dmVerified: Boolean(verified),
+    candidateShortName: verified ? "" : resolved.candidateShortName || "",
+  };
+}
+
+async function requestProjectScreenshotDmLookup(query = {}, { signal } = {}) {
   const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value));
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 12_000);
   try {
     const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
       cache: "no-store",
@@ -1318,11 +1566,227 @@ async function requestProjectScreenshotDmLookup(query = {}) {
     }
     return { response, payload };
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error("DM 查询超过 12 秒，已跳过本条");
+    if (error?.name === "AbortError" && timedOut) throw new Error("DM 查询超过 12 秒，已跳过本条");
+    if (error?.name === "AbortError") throw new Error("本条旧查询已取消");
     throw error;
   } finally {
     window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+function handleProjectScreenshotCorrectionInput(event) {
+  const input = event.target.closest("[data-project-screenshot-correction-input]");
+  if (!input) return;
+  const row = projectScreenshotRows.find((item) => item.id === input.dataset.projectScreenshotRowId);
+  if (!row) return;
+  const nextValue = input.value;
+  if (nextValue === row.draftFullName) return;
+  if (!row.editSnapshot) row.editSnapshot = projectScreenshotRowSnapshot(row);
+  cancelProjectScreenshotRowLookup(row);
+  row.draftFullName = nextValue;
+  row.fullName = nextValue;
+  row.revision += 1;
+  row.status = "draft";
+  row.dmVerified = false;
+  row.isEditing = true;
+  row.error = "已修改，待重查";
+  row.correctionDismissed = false;
+  const card = input.closest(".project-screenshot-item");
+  card?.classList.remove("is-error", "is-pending");
+  card?.classList.add("is-draft");
+  const status = card?.querySelector("[data-project-screenshot-row-status]");
+  if (status) status.textContent = row.error;
+  const submit = card?.querySelector(".project-screenshot-correction button[type=\"submit\"]");
+  if (submit) submit.disabled = false;
+  syncProjectScreenshotCopyControls();
+  setProjectScreenshotStatus("本条已修改，可直接重查。" );
+}
+
+function handleProjectScreenshotBranchChange(event) {
+  const select = event.target.closest("[data-project-screenshot-branch-select]");
+  if (!select || !PROJECT_SCREENSHOT_BRANCHES.includes(select.value)) return;
+  const row = projectScreenshotRows.find((item) => item.id === select.dataset.projectScreenshotRowId);
+  if (!row || row.branch === select.value) return;
+  if (!row.editSnapshot) row.editSnapshot = projectScreenshotRowSnapshot(row);
+  row.branch = select.value;
+  if (row.dmVerified) {
+    row.editSnapshot = null;
+    row.isEditing = false;
+  } else {
+    row.isEditing = true;
+  }
+  renderProjectScreenshotResults();
+  requestAnimationFrame(() => keepProjectScreenshotRowVisible(row.id, row.dmVerified ? "card" : "select"));
+}
+
+function projectScreenshotRowSnapshot(row) {
+  return {
+    branch: row.branch,
+    draftFullName: row.draftFullName,
+    fullName: row.fullName,
+    status: row.status,
+    dmVerified: row.dmVerified,
+    shortName: row.shortName || "",
+    securityId: row.securityId || "",
+    issuerName: row.issuerName || "",
+    error: row.error || "",
+    correctionDismissed: Boolean(row.correctionDismissed),
+  };
+}
+
+function cancelProjectScreenshotRowLookup(row) {
+  try {
+    row?.lookupController?.abort();
+  } catch {
+    // A stale lookup is already isolated by session and revision.
+  }
+  if (row) row.lookupController = null;
+}
+
+function createManualProjectScreenshotRow(sessionId = projectScreenshotSessionId) {
+  projectScreenshotRowSequence += 1;
+  return {
+    id: `manual-${sessionId}-${projectScreenshotRowSequence}`,
+    sessionId,
+    revision: 0,
+    branch: PROJECT_SCREENSHOT_BRANCHES[0],
+    originalBranch: PROJECT_SCREENSHOT_BRANCHES[0],
+    fullName: "",
+    ocrFullName: "",
+    draftFullName: "",
+    verifiedFullName: "",
+    status: "draft",
+    dmVerified: false,
+    isEditing: true,
+    isManual: true,
+    error: "填写债券全称后重查",
+  };
+}
+
+function handleProjectScreenshotCorrectionClick(event) {
+  const button = event.target.closest("[data-project-screenshot-action]");
+  if (!button) return;
+  const action = button.dataset.projectScreenshotAction;
+  if (action === "add") {
+    if (!projectScreenshotSessionId) projectScreenshotSessionId += 1;
+    const rowToAdd = createManualProjectScreenshotRow();
+    projectScreenshotRows.push(rowToAdd);
+    renderProjectScreenshotResults();
+    requestAnimationFrame(() => keepProjectScreenshotRowVisible(rowToAdd.id, "input"));
+    return;
+  }
+  const row = projectScreenshotRows.find((item) => item.id === button.dataset.projectScreenshotRowId);
+  if (!row) return;
+  if (action === "edit") {
+    row.editSnapshot = projectScreenshotRowSnapshot(row);
+    row.correctionDismissed = false;
+    row.isEditing = true;
+    renderProjectScreenshotResults();
+    requestAnimationFrame(() => {
+      const input = $("#projectScreenshotOutput")?.querySelector(`[data-project-screenshot-row-id="${CSS.escape(row.id)}"][data-project-screenshot-correction-input]`);
+      input?.focus({ preventScroll: true });
+      input?.setSelectionRange?.(input.value.length, input.value.length);
+    });
+    return;
+  }
+  if (action === "cancel") {
+    cancelProjectScreenshotRowLookup(row);
+    if (row.isManual && !row.verifiedFullName) {
+      projectScreenshotRows = projectScreenshotRows.filter((item) => item.id !== row.id);
+      renderProjectScreenshotResults();
+      setProjectScreenshotStatus("已移除补录行。" );
+      return;
+    }
+    row.revision += 1;
+    const snapshot = row.editSnapshot || {
+      branch: row.originalBranch || row.branch,
+      draftFullName: row.verifiedFullName || row.ocrFullName,
+      fullName: row.verifiedFullName || row.ocrFullName,
+      status: row.verifiedFullName && row.verifiedShortName ? "ok" : "error",
+      dmVerified: Boolean(row.verifiedFullName && row.verifiedShortName),
+      shortName: row.verifiedShortName || "",
+      securityId: row.verifiedSecurityId || "",
+      issuerName: row.verifiedIssuerName || "",
+      error: row.verifiedFullName ? "" : "DM 无结果",
+      correctionDismissed: true,
+    };
+    Object.assign(row, snapshot);
+    row.editSnapshot = null;
+    row.isEditing = false;
+    row.correctionDismissed = row.status !== "ok";
+    renderProjectScreenshotResults();
+    return;
+  }
+}
+
+function keepProjectScreenshotRowVisible(rowId, control = "input") {
+  const output = $("#projectScreenshotOutput");
+  const card = Array.from(output?.querySelectorAll(".project-screenshot-item") || [])
+    .find((item) => item.dataset.projectScreenshotRowId === rowId);
+  if (!card) return;
+  card.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (control === "card") return;
+  const selector = control === "select"
+    ? "[data-project-screenshot-branch-select]"
+    : "[data-project-screenshot-correction-input]";
+  card.querySelector(selector)?.focus({ preventScroll: true });
+}
+
+async function handleProjectScreenshotCorrectionSubmit(event) {
+  const form = event.target.closest("[data-project-screenshot-correction-form]");
+  if (!form) return;
+  event.preventDefault();
+  const rowId = form.dataset.projectScreenshotRowId;
+  const rowIndex = projectScreenshotRows.findIndex((item) => item.id === rowId);
+  if (rowIndex < 0) return;
+  const row = projectScreenshotRows[rowIndex];
+  if (!row.editSnapshot) row.editSnapshot = projectScreenshotRowSnapshot(row);
+  const draft = cleanProjectScreenshotBondFullName(row.draftFullName);
+  if (!draft) {
+    row.error = "请填写完整债券全称";
+    renderProjectScreenshotResults();
+    return;
+  }
+
+  row.draftFullName = draft;
+  row.fullName = draft;
+  row.revision += 1;
+  const revision = row.revision;
+  const sessionId = row.sessionId;
+  row.status = "pending";
+  row.dmVerified = false;
+  row.isEditing = true;
+  row.correctionDismissed = false;
+  row.error = "";
+  cancelProjectScreenshotRowLookup(row);
+  const lookupController = new AbortController();
+  row.lookupController = lookupController;
+  renderProjectScreenshotResults();
+  setProjectScreenshotStatus(`正在重查：${draft}`);
+  const resolved = await lookupProjectScreenshotEntry(
+    { ...row, lookupController: null, fullName: draft },
+    { signal: lookupController.signal },
+  );
+  const currentIndex = projectScreenshotRows.findIndex((item) => item.id === rowId);
+  const current = projectScreenshotRows[currentIndex];
+  if (sessionId !== projectScreenshotSessionId || !current || current.revision !== revision) return;
+  current.lookupController = null;
+  projectScreenshotRows[currentIndex] = finalizeProjectScreenshotLookupRow(current, resolved);
+  renderProjectScreenshotResults();
+  setProjectScreenshotStatus(resolved.status === "ok" && resolved.dmVerified
+    ? `已核验：${resolved.shortName}`
+    : `本条仍未匹配：${resolved.error || "DM 无结果"}`);
+}
+
+function syncProjectScreenshotCopyControls() {
+  const copyButton = $("#copyProjectScreenshotShortNamesButton");
+  const output = $("#projectScreenshotOutput");
+  const copyText = projectScreenshotResolvedShortNames().join("\n");
+  if (copyButton) copyButton.disabled = !copyText;
+  const copyBox = output?.querySelector(".project-screenshot-copy-box");
+  if (copyBox && copyText) copyBox.value = copyText;
+  else if (copyBox) copyBox.remove();
 }
 
 function renderProjectScreenshotResults(rows = projectScreenshotRows) {
@@ -1330,6 +1794,13 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows) {
   const copyButton = $("#copyProjectScreenshotShortNamesButton");
   if (!output || !copyButton) return;
   const previousScrollTop = output.scrollTop;
+  const activeCorrection = document.activeElement?.matches?.("[data-project-screenshot-correction-input]")
+    ? {
+        rowId: document.activeElement.dataset.projectScreenshotRowId,
+        start: document.activeElement.selectionStart,
+        end: document.activeElement.selectionEnd,
+      }
+    : null;
   const copyText = projectScreenshotResolvedShortNames().join("\n");
   copyButton.disabled = !copyText;
   if (!rows.length) {
@@ -1342,20 +1813,54 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows) {
     .map((branch) => ({ branch, rows: rows.filter((row) => row.branch === branch) }))
     .filter((group) => group.rows.length);
   const groupHtml = groups.map((group) => {
-    const matched = group.rows.filter((row) => row.status === "ok" && row.shortName).length;
+    const matched = group.rows.filter((row) => row.status === "ok" && row.dmVerified && row.verifiedShortName).length;
     const items = group.rows.map((row) => {
-      const title = row.shortName
-        || (row.status === "pending" ? "正在查询..." : row.candidateShortName ? `候选：${row.candidateShortName}` : "未查到简称");
-      const detail = row.status === "ok"
-        ? [row.securityId, row.issuerName, row.correctionSource].filter(Boolean).join(" · ")
+      const title = row.status === "ok" && row.dmVerified && row.shortName
+        ? row.shortName
         : row.status === "pending"
-        ? "正在用债券全称查询 DM"
-        : `${row.error || "查询失败"}${row.candidateShortName ? " · 仅作候选参考" : ""}`;
+          ? "正在查询..."
+          : row.candidateShortName
+            ? `未验证候选：${row.candidateShortName}`
+            : "未查到简称";
+      const detail = row.status === "ok"
+        ? [row.securityId, "DM 已核验"].filter(Boolean).join(" · ")
+        : row.status === "pending"
+        ? "正在查询 DM"
+        : row.error || "查询失败";
+      const showCorrection = row.isEditing
+        || row.status === "draft"
+        || (row.status === "error" && !row.correctionDismissed);
+      const branchOptions = PROJECT_SCREENSHOT_BRANCHES
+        .map((branch) => `<option value="${escapeAttribute(branch)}"${branch === row.branch ? " selected" : ""}>${escapeHtml(branch)}</option>`)
+        .join("");
+      const correctionForm = showCorrection ? `
+        <form class="project-screenshot-correction" data-project-screenshot-correction-form data-project-screenshot-row-id="${escapeAttribute(row.id)}">
+          <select aria-label="所属分行" data-project-screenshot-branch-select data-project-screenshot-row-id="${escapeAttribute(row.id)}">
+            ${branchOptions}
+          </select>
+          <input
+            type="text"
+            value="${escapeAttribute(row.draftFullName || row.fullName)}"
+            aria-label="校正债券全称"
+            autocomplete="off"
+            data-project-screenshot-correction-input
+            data-project-screenshot-row-id="${escapeAttribute(row.id)}"
+          >
+          <div class="project-screenshot-correction-actions">
+            <button type="submit"${row.status === "pending" ? " disabled" : ""}>重查本条</button>
+            ${row.verifiedFullName || row.ocrFullName || row.isManual || row.editSnapshot ? `<button type="button" data-project-screenshot-action="cancel" data-project-screenshot-row-id="${escapeAttribute(row.id)}">${row.isManual && !row.verifiedFullName ? "移除" : "取消"}</button>` : ""}
+          </div>
+        </form>
+      ` : "";
       return `
-        <div class="project-screenshot-item${row.status === "error" ? " is-error" : row.status === "pending" ? " is-pending" : ""}">
-          <strong>${escapeHtml(title)}</strong>
-          <em>${escapeHtml(row.fullName)}</em>
-          <span>${escapeHtml(detail)}</span>
+        <div class="project-screenshot-item${row.status === "error" ? " is-error" : row.status === "pending" ? " is-pending" : row.status === "draft" ? " is-draft" : ""}" data-project-screenshot-row-id="${escapeAttribute(row.id)}">
+          <div class="project-screenshot-item-head">
+            <strong>${escapeHtml(title)}</strong>
+            ${row.status !== "pending" && !showCorrection ? `<button type="button" data-project-screenshot-action="edit" data-project-screenshot-row-id="${escapeAttribute(row.id)}">${row.status === "ok" ? "校正" : "修改"}</button>` : ""}
+          </div>
+          <em>${escapeHtml(row.draftFullName || row.fullName)}</em>
+          <span role="status" aria-live="polite" data-project-screenshot-row-status>${escapeHtml(detail)}</span>
+          ${correctionForm}
         </div>
       `;
     }).join("");
@@ -1368,14 +1873,24 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows) {
   }).join("");
 
   output.hidden = false;
-  output.innerHTML = `${groupHtml}${copyText ? `<textarea class="project-screenshot-copy-box" aria-label="已匹配的 DM 简称清单" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
+  output.innerHTML = `${groupHtml}<button class="project-screenshot-add-button" type="button" data-project-screenshot-action="add">补录一条</button>${copyText ? `<textarea class="project-screenshot-copy-box" aria-label="已匹配的 DM 简称清单" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
   output.scrollTop = previousScrollTop;
+  if (activeCorrection?.rowId) {
+    requestAnimationFrame(() => {
+      const replacement = Array.from(output.querySelectorAll("[data-project-screenshot-correction-input]"))
+        .find((input) => input.dataset.projectScreenshotRowId === activeCorrection.rowId);
+      if (!replacement) return;
+      replacement.focus({ preventScroll: true });
+      replacement.setSelectionRange?.(activeCorrection.start, activeCorrection.end);
+      output.scrollTop = previousScrollTop;
+    });
+  }
 }
 
 function projectScreenshotResolvedShortNames() {
   return projectScreenshotRows
-    .filter((row) => row.status === "ok" && row.shortName)
-    .map((row) => row.shortName);
+    .filter((row) => row.status === "ok" && row.dmVerified && row.verifiedFullName && row.verifiedShortName)
+    .map((row) => row.verifiedShortName);
 }
 
 async function copyProjectScreenshotShortNames() {
@@ -1416,11 +1931,21 @@ function setProjectScreenshotStatus(message) {
   if (status) status.textContent = message || "";
 }
 
-function updateProjectScreenshotOcrProgress(message = {}) {
+function updateProjectScreenshotOcrProgress(message = {}, label = "", passIndex = 0, passTotal = 0) {
   const status = String(message.status || "").replace(/_/g, " ");
   const progress = Number(message.progress);
-  const percent = Number.isFinite(progress) ? ` ${Math.round(progress * 100)}%` : "";
-  setProjectScreenshotStatus(status ? `OCR ${status}${percent}` : "正在 OCR 图片...");
+  const total = Number(passTotal);
+  const index = Number(passIndex);
+  const overallProgress = Number.isFinite(progress) && Number.isFinite(total) && total > 0
+    ? Math.min(1, (Math.max(0, index) + Math.max(0, Math.min(1, progress))) / total)
+    : null;
+  const percent = Number.isFinite(overallProgress)
+    ? ` ${Math.round(overallProgress * 100)}%`
+    : Number.isFinite(progress)
+      ? ` ${Math.round(progress * 100)}%`
+      : "";
+  const prefix = label ? `${label} · ` : "";
+  setProjectScreenshotStatus(status ? `${prefix}${status}${percent}` : "正在 OCR 图片...");
 }
 
 function bindPlaceholderSelection() {
