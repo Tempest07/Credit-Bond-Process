@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260713-date-picker";
+import { parseUnderwriterNames } from "./core.js?v=20260714-mobile-ledger";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

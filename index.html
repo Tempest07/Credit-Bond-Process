@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260713-date-picker">
+  <link rel="stylesheet" href="./styles.css?v=20260714-mobile-ledger">
 </head>
 <body>
   <div class="app-shell">
@@ -258,7 +258,15 @@
         </section>
       </section>
 
-      <section class="view active" data-view="ledger">
+      <section class="view active" data-view="ledger" data-mobile-pane="list">
+        <nav class="ledger-mobile-nav" id="ledgerMobileNav" aria-label="项目中心移动端视图">
+          <button class="ledger-mobile-tab active" type="button" data-ledger-mobile-pane="list" aria-pressed="true">
+            <span aria-hidden="true">▤</span><strong>项目</strong>
+          </button>
+          <button class="ledger-mobile-tab" type="button" data-ledger-mobile-pane="overview" aria-pressed="false">
+            <span aria-hidden="true">◇</span><strong>概览</strong>
+          </button>
+        </nav>
         <section class="ledger-command-panel" aria-labelledby="ledgerCommandTitle">
           <div class="ledger-command-heading">
             <div class="ledger-command-copy">
@@ -365,6 +373,10 @@
           </section>
 
           <section class="panel project-detail-panel">
+            <div class="ledger-mobile-detail-head">
+              <button class="ledger-mobile-back" id="mobileProjectBackButton" type="button" aria-label="返回项目列表">← 项目列表</button>
+              <strong id="mobileProjectDetailTitle" tabindex="-1">项目详情</strong>
+            </div>
             <div id="projectEmpty" class="empty project-empty">从左侧选择项目，或点击“新增项目”从项目简表开始。</div>
             <form id="projectForm" hidden>
               <input id="projectId" type="hidden">
@@ -449,7 +461,7 @@
 
               <section class="result-entry-panel" id="resultEntryPanel" role="dialog" aria-modal="true" aria-labelledby="resultEntryTitle" hidden>
                 <button class="result-entry-backdrop" type="button" data-close-result aria-label="关闭结果录入"></button>
-                <div class="result-entry-dialog">
+                <div class="result-entry-dialog" id="resultEntryDialog" tabindex="-1">
                   <div class="section-heading">
                     <div><span class="step">RESULT</span><h3 id="resultEntryTitle">发行结果广告录入与分析</h3></div>
                     <div class="result-actions">
@@ -873,6 +885,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260713-date-picker"></script>
+  <script type="module" src="./app.js?v=20260714-mobile-ledger"></script>
 </body>
 </html>

@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260713-date-picker";
+} from "./core.js?v=20260714-mobile-ledger";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260713-date-picker";
+} from "./lifecycle.js?v=20260714-mobile-ledger";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260713-date-picker";
+} from "./history-parser.js?v=20260714-mobile-ledger";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260713-date-picker";
+} from "./protocol-transfer.js?v=20260714-mobile-ledger";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260713-date-picker";
+} from "./reminders.js?v=20260714-mobile-ledger";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,8 +77,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260713-date-picker";
-import { initializeDatePickers } from "./date-picker.js?v=20260713-date-picker";
+} from "./secondary-inventory.js?v=20260714-mobile-ledger";
+import { initializeDatePickers } from "./date-picker.js?v=20260714-mobile-ledger";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -175,6 +175,8 @@ let currentGatewayUser = null;
 let pendingHistoryImport = null;
 let batchItems = [];
 let selectedProjectId = "";
+let ledgerMobilePane = "list";
+let ledgerMobileListScrollY = null;
 let selectedProtocolTransferId = "";
 let protocolTransferEditMode = false;
 let ledgerFilter = "all";
@@ -200,6 +202,7 @@ let liquidMotionObserver = null;
 let liquidResizeObserver = null;
 
 const LIQUID_TRACK_CONFIGS = [
+  { container: "#ledgerMobileNav", active: ".ledger-mobile-tab[aria-pressed=\"true\"]" },
   { container: ".ledger-filter-tabs", active: ".ledger-filter-chip.active" },
   { container: ".reminder-filter-tabs", active: ".reminder-filter.active" },
   { container: ".project-list", active: ".project-item.active" },
@@ -217,6 +220,8 @@ const LEDGER_FILTER_LABELS = {
 };
 const LEDGER_FILTER_SELECT_VALUES = new Set(["all", "toBid", "awaitingResult", "won", "notWon"]);
 const SHORT_PROJECT_LIST_LIMIT = 3;
+const LEDGER_MOBILE_BREAKPOINT = "(max-width: 760px)";
+const LEDGER_MOBILE_PANES = new Set(["list", "detail", "overview"]);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const $ = (selector) => document.querySelector(selector);
@@ -262,7 +267,13 @@ async function initialize() {
 
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => switchView(button.dataset.viewTarget, { updateHash: true }));
+    button.addEventListener("click", () => {
+      if (button.dataset.viewTarget === "ledger" && isCompactLedger()) {
+        navigateLedgerMobilePane("list", { replace: true });
+        return;
+      }
+      switchView(button.dataset.viewTarget, { updateHash: true });
+    });
   });
 }
 
@@ -350,12 +361,25 @@ function bindReminders() {
 
 function bindRouteHashNavigation() {
   window.addEventListener("hashchange", applyRouteFromHash);
+  window.matchMedia(LEDGER_MOBILE_BREAKPOINT).addEventListener?.("change", () => {
+    syncLedgerMobilePane();
+    scheduleLiquidMotionSync();
+  });
 }
 
 function applyRouteFromHash() {
   const route = parseRouteFromHash();
-  if (!route?.view) return;
+  if (!route?.view) {
+    if (isCompactLedger()) {
+      ledgerMobilePane = "list";
+      switchView("ledger", { updateHash: false });
+      renderProjectWorkspace();
+      restoreLedgerMobileViewport();
+    }
+    return;
+  }
   if (!$(`.view[data-view="${route.view}"]`)) return;
+  if (route.view === "ledger") ledgerMobilePane = ledgerMobilePaneFromRoute(route);
   applyRouteSelection(route);
   switchView(route.view, { updateHash: false });
   applyRouteFocus(route);
@@ -373,7 +397,117 @@ function parseRouteFromHash() {
     step: params.get("step") || "",
     trancheId: params.get("trancheId") || "",
     kind: params.get("kind") || "",
+    pane: params.get("pane") || "",
   };
+}
+
+function isCompactLedger() {
+  return window.matchMedia(LEDGER_MOBILE_BREAKPOINT).matches;
+}
+
+function ledgerMobilePaneFromRoute(route = {}) {
+  if (route.target === "mail") return "overview";
+  if (LEDGER_MOBILE_PANES.has(route.pane)) return route.pane;
+  return route.target ? "detail" : "list";
+}
+
+function navigateLedgerMobilePane(pane, options = {}) {
+  const { projectId = "", kind = "", step = "", replace = false, focusSelected = false } = options;
+  if (projectId) selectedProjectId = projectId;
+  const normalizedPane = LEDGER_MOBILE_PANES.has(pane) ? pane : "list";
+  ledgerMobilePane = normalizedPane === "detail" && !selectedProjectId ? "list" : normalizedPane;
+
+  const params = new URLSearchParams();
+  params.set("pane", ledgerMobilePane);
+  if (ledgerMobilePane === "detail" && selectedProjectId) params.set("target", selectedProjectId);
+  if (kind) params.set("kind", kind);
+  if (step) params.set("step", step);
+  const nextHash = `#ledger?${params.toString()}`;
+  if (window.location.hash !== nextHash) {
+    history[replace ? "replaceState" : "pushState"](null, "", nextHash);
+  }
+  applyRouteFromHash();
+
+  if (focusSelected && ledgerMobilePane === "list") {
+    requestAnimationFrame(() => {
+      $$('[data-project-id]').find((button) => button.dataset.projectId === selectedProjectId)?.focus({ preventScroll: true });
+    });
+  }
+}
+
+function openLedgerProject(projectId, options = {}) {
+  const { kind = "", step = "", replace = false, scrollOnDesktop = false } = options;
+  if (!projectId) return;
+  selectedProjectId = projectId;
+  if (isCompactLedger()) {
+    if (ledgerMobilePane === "list" && $('.view[data-view="ledger"]')?.classList.contains("active")) {
+      ledgerMobileListScrollY = window.scrollY;
+    }
+    navigateLedgerMobilePane("detail", { projectId, kind, step, replace });
+    return;
+  }
+  switchView("ledger");
+  renderProjectWorkspace();
+  if (kind === "project-result" || step === "result") openResultEntryPanel(false);
+  if (scrollOnDesktop) $("#projectForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeLedgerProjectDetail() {
+  navigateLedgerMobilePane("list", { replace: true, focusSelected: true });
+}
+
+function restoreLedgerMobileViewport() {
+  if (!isCompactLedger()) return;
+  requestAnimationFrame(() => {
+    const ledgerView = $('.view[data-view="ledger"]');
+    if (!ledgerView?.classList.contains("active")) return;
+    if (ledgerMobilePane === "list") {
+      if (Number.isFinite(ledgerMobileListScrollY)) {
+        window.scrollTo({ top: ledgerMobileListScrollY, behavior: "auto" });
+      } else {
+        ledgerView.querySelector(".project-list-panel")?.scrollIntoView({ behavior: "auto", block: "start" });
+      }
+      return;
+    }
+    ledgerView.scrollIntoView({ behavior: "auto", block: "start" });
+  });
+}
+
+function setLedgerMobileSectionVisibility(element, visible, compact) {
+  if (!element) return;
+  if (!compact) {
+    element.inert = false;
+    element.removeAttribute("aria-hidden");
+    return;
+  }
+  element.inert = !visible;
+  element.setAttribute("aria-hidden", String(!visible));
+}
+
+function syncLedgerMobilePane() {
+  const ledgerView = $('.view[data-view="ledger"]');
+  if (!ledgerView) return;
+  const compact = isCompactLedger();
+  const pane = LEDGER_MOBILE_PANES.has(ledgerMobilePane) ? ledgerMobilePane : "list";
+  ledgerMobilePane = pane;
+  ledgerView.dataset.mobilePane = pane;
+
+  $$("[data-ledger-mobile-pane]").forEach((button) => {
+    const active = button.dataset.ledgerMobilePane === "overview"
+      ? pane === "overview"
+      : pane === "list" || pane === "detail";
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  setLedgerMobileSectionVisibility(ledgerView.querySelector(":scope > .ledger-command-panel"), pane === "overview", compact);
+  setLedgerMobileSectionVisibility(ledgerView.querySelector(":scope > .ledger-todo-zone"), pane === "overview", compact);
+  setLedgerMobileSectionVisibility(ledgerView.querySelector(".project-list-panel"), pane === "list", compact);
+  setLedgerMobileSectionVisibility(ledgerView.querySelector(".project-detail-panel"), pane === "detail", compact);
+
+  const selected = (state.projects || []).find((item) => item.id === selectedProjectId);
+  const detailTitle = $("#mobileProjectDetailTitle");
+  if (detailTitle) detailTitle.textContent = selected?.shortName || "项目详情";
 }
 
 function applyRouteSelection(route = {}) {
@@ -389,6 +523,22 @@ function applyRouteSelection(route = {}) {
 function applyRouteFocus(route = {}) {
   if (route.view === "ledger") {
     renderProjectWorkspace();
+    if (isCompactLedger()) {
+      const ledgerView = $('.view[data-view="ledger"]');
+      if (ledgerMobilePane === "detail") {
+        const opensResultEntry = route.step === "result" || route.kind === "project-result";
+        if (opensResultEntry) openResultEntryPanel(false);
+        requestAnimationFrame(() => {
+          ledgerView?.scrollIntoView({ behavior: "auto", block: "start" });
+          $(opensResultEntry ? "#resultEntryDialog" : "#mobileProjectDetailTitle")?.focus({ preventScroll: true });
+        });
+      } else if (ledgerMobilePane === "list") {
+        restoreLedgerMobileViewport();
+      } else {
+        requestAnimationFrame(() => ledgerView?.scrollIntoView({ behavior: "auto", block: "start" }));
+      }
+      return;
+    }
     if (route.target === "mail") {
       $("#mailPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } else if (route.target) {
@@ -409,6 +559,7 @@ function switchView(viewName, options = {}) {
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   if (button) $("#pageTitle").textContent = button.textContent;
   if (viewName === "reminders") renderUnifiedReminders();
+  if (viewName === "ledger") syncLedgerMobilePane();
   if (options.updateHash && window.location.hash !== `#${viewName}`) {
     history.replaceState(null, "", `#${viewName}`);
   }
@@ -1215,10 +1366,8 @@ function saveCurrentProject() {
   const generated = { ...generateOpinion(project, issuer), opinion: $("#opinionOutput").value };
   const result = upsertParsedProjectToLedger(project, issuer, generated);
   if (!result) return;
-  selectedProjectId = result.record.id;
   persistState();
-  renderProjectWorkspace();
-  switchView("ledger");
+  openLedgerProject(result.record.id);
   showToast(result.isUpdate ? "已更新现有项目台账。" : "已保存至项目台账。");
 }
 
@@ -1474,6 +1623,18 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
 }
 
 function bindLedger() {
+  $$("[data-ledger-mobile-pane]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextPane = button.dataset.ledgerMobilePane;
+      if (nextPane === "list" && ledgerMobilePane === "list") return;
+      if (nextPane === "list" && ledgerMobilePane === "detail") {
+        closeLedgerProjectDetail();
+        return;
+      }
+      navigateLedgerMobilePane(nextPane);
+    });
+  });
+  $("#mobileProjectBackButton")?.addEventListener("click", closeLedgerProjectDetail);
   $("#projectSearch").addEventListener("input", renderProjectList);
   $("#projectStatusFilter").addEventListener("change", renderProjectList);
   $("#projectDateFilter").addEventListener("change", renderProjectList);
@@ -1616,9 +1777,7 @@ function bindLedger() {
     const openButton = event.target.closest("[data-open-payment-project]");
     if (completeButton) completePaymentTodo(completeButton.dataset.completePayment);
     if (openButton) {
-      selectedProjectId = openButton.dataset.openPaymentProject;
-      renderProjectWorkspace();
-      $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
+      openLedgerProject(openButton.dataset.openPaymentProject, { scrollOnDesktop: true });
     }
   });
   $("#cutoffTodoList").addEventListener("click", (event) => {
@@ -1626,9 +1785,7 @@ function bindLedger() {
     const delayButton = event.target.closest("[data-delay-cutoff]");
     if (delayButton) delayProjectCutoffFromTodo(delayButton.dataset.delayCutoff, Number(delayButton.dataset.delayMinutes));
     if (openButton) {
-      selectedProjectId = openButton.dataset.openCutoffProject;
-      renderProjectWorkspace();
-      $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
+      openLedgerProject(openButton.dataset.openCutoffProject, { scrollOnDesktop: true });
     }
   });
   $("#deleteProjectButton").addEventListener("click", () => {
@@ -1637,7 +1794,8 @@ function bindLedger() {
     state = removeProject(state, selectedProjectId);
     selectedProjectId = "";
     persistState();
-    renderProjectWorkspace();
+    if (isCompactLedger()) navigateLedgerMobilePane("list", { replace: true });
+    else renderProjectWorkspace();
     showToast("项目已删除。");
   });
 }
@@ -3119,6 +3277,12 @@ function renderProjectWorkspace() {
   renderProjectList();
   if (selected) fillProjectForm(selected);
   else clearProjectForm();
+  const route = parseRouteFromHash();
+  if (selected && route?.view === "ledger" && route.target === selected.id
+    && (route.step === "result" || route.kind === "project-result")) {
+    openResultEntryPanel(false);
+  }
+  syncLedgerMobilePane();
 }
 
 function refreshDerivedProjectStatuses() {
@@ -3340,9 +3504,12 @@ function handleUnifiedReminderClick(event) {
   const sourceId = target.dataset.reminderTarget;
   const kind = target.dataset.reminderKind;
   if (source === "mail") {
-    switchView("ledger");
-    renderProjectWorkspace();
-    $("#mailPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (isCompactLedger()) navigateLedgerMobilePane("overview");
+    else {
+      switchView("ledger");
+      renderProjectWorkspace();
+      $("#mailPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     callMailer("preview");
     return;
   }
@@ -3355,11 +3522,7 @@ function handleUnifiedReminderClick(event) {
     return;
   }
   if (source === "project") {
-    selectedProjectId = sourceId;
-    switchView("ledger");
-    renderProjectWorkspace();
-    if (kind === "project-result") openResultEntryPanel(false);
-    $("#projectForm").scrollIntoView({ behavior: "smooth", block: "start" });
+    openLedgerProject(sourceId, { kind, scrollOnDesktop: true });
   }
 }
 
@@ -4593,8 +4756,7 @@ function renderProjectList() {
 
   $$("[data-project-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      selectedProjectId = button.dataset.projectId;
-      renderProjectWorkspace();
+      openLedgerProject(button.dataset.projectId);
     });
   });
 }
@@ -5199,12 +5361,14 @@ function openResultEntryPanel(shouldFocus = true) {
   $("#resultEntryPanel").hidden = false;
   document.body.classList.add("modal-open");
   setResultEntryFieldsVisible(true);
-  if (shouldFocus) $("#projectResultAdvertisement").focus();
+  if (isCompactLedger()) requestAnimationFrame(() => $("#resultEntryDialog")?.focus({ preventScroll: true }));
+  else if (shouldFocus) $("#projectResultAdvertisement").focus();
 }
 
 function closeResultEntryPanel() {
   $("#resultEntryPanel").hidden = true;
   document.body.classList.remove("modal-open");
+  if (isCompactLedger()) $("#openResultButton")?.focus({ preventScroll: true });
 }
 
 function setResultEntryFieldsVisible(visible) {
@@ -5725,10 +5889,8 @@ function saveBatchProjects() {
     return;
   }
 
-  selectedProjectId = firstRecordId;
   persistState();
-  renderProjectWorkspace();
-  switchView("ledger");
+  openLedgerProject(firstRecordId);
   const parts = [];
   if (createdCount) parts.push(`新增 ${createdCount} 笔`);
   if (updatedCount) parts.push(`更新 ${updatedCount} 笔`);
@@ -7146,7 +7308,10 @@ async function loadCloudState() {
       title: isLocalApiMode() ? "本地 D1 连接成功" : "D1 连接成功",
       detail: `已载入 ${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目。`,
     });
-    window.setTimeout(() => setCloudGate(false, { state: "success" }), 850);
+    window.setTimeout(() => {
+      setCloudGate(false, { state: "success" });
+      restoreLedgerMobileViewport();
+    }, 850);
     if (shouldMigrateFtpCurve || shouldMigrateIssuerBranch) await saveCloudState();
   } catch {
     cloudAvailable = false;

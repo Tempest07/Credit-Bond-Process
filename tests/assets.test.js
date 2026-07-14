@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260713-date-picker";
+const VERSION = "20260714-mobile-ledger";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -48,6 +48,36 @@ test("lets short project lists expand without internal scrolling", async () => {
   assert.match(app, /classList\.toggle\("is-short-list", isShortList\)/);
   assert.match(styles, /\.project-list\.is-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
   assert.match(styles, /\.project-list-panel\.has-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+});
+
+test("uses single-pane project navigation on compact screens", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /data-view="ledger" data-mobile-pane="list"/);
+  assert.match(html, /id="ledgerMobileNav"[\s\S]+data-ledger-mobile-pane="list"[\s\S]+data-ledger-mobile-pane="overview"/);
+  assert.match(html, /id="mobileProjectBackButton"/);
+  assert.match(html, /id="resultEntryDialog" tabindex="-1"/);
+  assert.match(app, /LEDGER_MOBILE_PANES = new Set\(\["list", "detail", "overview"\]\)/);
+  assert.match(app, /pane: params\.get\("pane"\)/);
+  assert.match(app, /history\[replace \? "replaceState" : "pushState"\]/);
+  assert.match(app, /function openLedgerProject/);
+  assert.match(app, /function restoreLedgerMobileViewport/);
+  assert.match(app, /querySelector\("\.project-list-panel"\)\?\.scrollIntoView/);
+  assert.match(app, /element\.inert = !visible/);
+  assert.match(app, /if \(isCompactLedger\(\)\) requestAnimationFrame\(\(\) => \$\("#resultEntryDialog"\)\?\.focus/);
+  assert.match(app, /route\.target === selected\.id[\s\S]+route\.kind === "project-result"/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.ledger-mobile-nav\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(styles, /data-mobile-pane="list"[\s\S]+\.project-detail-panel/);
+  assert.match(styles, /data-mobile-pane="detail"[\s\S]+\.project-list-panel/);
+  assert.match(styles, /data-mobile-pane="overview"[^\n]+\.ledger-grid\s*\{\s*display:\s*none;/);
+  assert.match(styles, /\.ledger-mobile-back\s*\{[^}]*min-height:\s*44px;/s);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*place-items:\s*end stretch;/s);
+  assert.match(styles, /\.result-entry-dialog\s*\{[^}]*max-height:\s*calc\(100dvh/);
+  assert.match(styles, /\.view\.active\s*\{[^}]*animation:\s*workspaceSurfaceIn \.28s ease backwards;/);
 });
 
 test("ships liquid selection motion with accessible fallback", async () => {
