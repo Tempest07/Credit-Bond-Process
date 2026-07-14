@@ -405,8 +405,8 @@ label[data-recognition-source="cloud"]::after {
 .ledger-command-heading { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 12px; }
 .ledger-command-copy { min-width: 0; }
 .ledger-command-copy h2 { margin: 0; color: var(--ledger-ink); font-size: 23px; letter-spacing: -.035em; }
-.ledger-command-bottom { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(520px, 640px); gap: 12px; align-items: start; }
-.ledger-filter-bar { position: relative; z-index: 1; display: block; margin: 0; padding: 7px; border: 1px solid rgba(218,224,235,.9); border-radius: 15px; background: rgba(242,245,251,.82); box-shadow: inset 0 1px 2px rgba(15,23,42,.035), 0 1px 0 #fff; backdrop-filter: blur(12px); }
+.ledger-command-bottom { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(520px, 640px); gap: 12px; align-items: stretch; }
+.ledger-filter-bar { position: relative; z-index: 1; display: grid; align-items: center; margin: 0; padding: 7px; border: 1px solid rgba(218,224,235,.9); border-radius: 15px; background: rgba(242,245,251,.82); box-shadow: inset 0 1px 2px rgba(15,23,42,.035), 0 1px 0 #fff; backdrop-filter: blur(12px); }
 .policy-curve-card { display: grid; grid-template-columns: minmax(142px, auto) minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 12px; row-gap: 3px; align-items: center; min-width: 0; padding: 10px 12px; border: 1px solid rgba(57,184,187,.22); border-radius: 15px; background: radial-gradient(circle at 100% 0, rgba(56,201,197,.11), transparent 40%), rgba(250,255,255,.88); box-shadow: inset 0 1px 0 #fff, 0 6px 18px rgba(15,23,42,.035); }
 .policy-curve-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .policy-curve-head > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
