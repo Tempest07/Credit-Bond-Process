@@ -16,14 +16,23 @@ const YIELD_CURVE_PATH = "/dm-quant-func-service/api/v1/bond/yield-curve/data";
 const CHINABOND_CURVE_SOURCE = "18";
 const CURVE_TYPE_YTM = "1";
 const CURVE_LOOKBACK_DAYS = 7;
+const MAX_CURVE_TERMS_PER_REQUEST = 5;
 const CURVES = {
   cdb: {
     id: "cdb",
     name: "中债国开债收益率曲线",
     nodes: [
-      { termYears: 0.25, tenor: "3M" },
-      { termYears: 0.5, tenor: "6M" },
-      { termYears: 0.75, tenor: "9M" },
+      { termYears: 0.1, tenor: "0.1Y" },
+      { termYears: 0.2, tenor: "0.2Y", allowInterpolation: true },
+      { termYears: 0.25, tenor: "0.25Y" },
+      { termYears: 0.3, tenor: "0.3Y", allowInterpolation: true },
+      { termYears: 0.4, tenor: "0.4Y", allowInterpolation: true },
+      { termYears: 0.5, tenor: "0.5Y" },
+      { termYears: 0.6, tenor: "0.6Y", allowInterpolation: true },
+      { termYears: 0.7, tenor: "0.7Y", allowInterpolation: true },
+      { termYears: 0.75, tenor: "0.75Y" },
+      { termYears: 0.8, tenor: "0.8Y", allowInterpolation: true },
+      { termYears: 0.9, tenor: "0.9Y", allowInterpolation: true },
       { termYears: 1, tenor: "1Y" },
     ],
   },
@@ -48,16 +57,17 @@ export async function onRequestGet(context) {
   const startDate = offsetIsoDate(requestedAsOf, -CURVE_LOOKBACK_DAYS);
   try {
     const dm = context.data?.dmClient || makeDmClient(context.env, context.request);
-    const raw = await dm.post(YIELD_CURVE_PATH, {
+    const nodeBatches = chunkItems(curve.nodes, MAX_CURVE_TERMS_PER_REQUEST);
+    const rawBatches = await Promise.all(nodeBatches.map((nodes) => dm.post(YIELD_CURVE_PATH, {
       dataSource: CHINABOND_CURVE_SOURCE,
       curveName: curve.name,
-      curveTermList: curve.nodes.map((node) => formatCurveTerm(node.termYears)),
+      curveTermList: nodes.map((node) => formatCurveTerm(node.termYears)),
       curveType: CURVE_TYPE_YTM,
       startDate,
       endDate: requestedAsOf,
       fieldNames: ["dataSource", "curveChName", "curveTerm", "curveType", "valuationDate", "yield"],
-    });
-    const snapshot = latestCurveSnapshot(rowsFromDm(raw), curve, requestedAsOf);
+    })));
+    const snapshot = latestCurveSnapshot(rawBatches.flatMap(rowsFromDm), curve, requestedAsOf);
     const retrievedAt = new Date().toISOString();
     if (!snapshot) {
       return json({
@@ -85,6 +95,7 @@ export async function onRequestGet(context) {
       retrievedAt,
       nodes: snapshot.nodes,
       missingTerms: snapshot.missingTerms,
+      derivedTerms: snapshot.derivedTerms,
       partial: snapshot.missingTerms.length > 0,
       stale: Number.isFinite(ageDays) && ageDays > 4,
     });
@@ -123,17 +134,37 @@ function latestCurveSnapshot(rows, curve, requestedAsOf) {
   }
   const nodes = curve.nodes.map((definition) => {
     const row = rowsByTerm.get(curveTermKey(definition.termYears));
+    const derivedYield = !row && definition.allowInterpolation
+      ? interpolateCurveYield(rowsByTerm, definition.termYears)
+      : null;
     return {
       termYears: definition.termYears,
       tenor: definition.tenor,
-      yieldPct: row ? row.yieldPct : null,
+      yieldPct: row ? row.yieldPct : derivedYield?.yieldPct ?? null,
       valuationDate: actualValuationDate,
+      method: row ? "dm-returned" : derivedYield ? "derived-linear" : "missing",
+      anchors: derivedYield?.anchors || [],
     };
   });
   return {
     actualValuationDate,
     nodes,
     missingTerms: nodes.filter((node) => !Number.isFinite(node.yieldPct)).map((node) => node.tenor),
+    derivedTerms: nodes.filter((node) => node.method === "derived-linear").map((node) => node.tenor),
+  };
+}
+
+function interpolateCurveYield(rowsByTerm, termYears) {
+  const rows = [...rowsByTerm.values()].sort((left, right) => left.termYears - right.termYears);
+  const lower = [...rows].reverse().find((row) => row.termYears < termYears);
+  const upper = rows.find((row) => row.termYears > termYears);
+  if (!lower || !upper) return null;
+  const span = upper.termYears - lower.termYears;
+  if (!Number.isFinite(span) || span <= 0) return null;
+  const weight = (termYears - lower.termYears) / span;
+  return {
+    yieldPct: round(lower.yieldPct + ((upper.yieldPct - lower.yieldPct) * weight), 4),
+    anchors: [lower.termYears, upper.termYears],
   };
 }
 
@@ -197,8 +228,15 @@ function formatCurveTerm(value) {
   return curveTermKey(value);
 }
 
+function chunkItems(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
 export const __test__ = {
   curve: CURVES.cdb,
+  interpolateCurveYield,
   latestCurveSnapshot,
   normalizeCurveRow,
   normalizeIsoDate,

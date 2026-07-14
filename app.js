@@ -83,7 +83,8 @@ import { initializeDatePickers } from "./date-picker.js?v=20260713-date-picker";
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
-const POLICY_CURVE_TERMS = ["3M", "6M", "9M", "1Y"];
+const POLICY_CURVE_TERMS = ["0.1Y", "0.2Y", "0.25Y", "0.3Y", "0.4Y", "0.5Y", "0.6Y", "0.7Y", "0.75Y", "0.8Y", "0.9Y", "1Y"];
+const POLICY_CURVE_KEY_TERMS = new Set(["0.1Y", "0.25Y", "0.3Y", "0.5Y", "0.75Y", "1Y"]);
 const API_URL = "./api/state";
 const DM_VALUATION_URL = "./api/dm/valuation";
 const DM_POLICY_CURVE_URL = "./api/dm/curve?curve=cdb";
@@ -3465,18 +3466,22 @@ function renderPolicyCurve(payload) {
   card.dataset.curveState = payload.stale ? "stale" : "ready";
   card.setAttribute("aria-busy", "false");
   points.innerHTML = POLICY_CURVE_TERMS.map((tenor) => {
-    const rawValue = nodes.get(tenor)?.yieldPct;
+    const node = nodes.get(tenor);
+    const rawValue = node?.yieldPct;
     const value = rawValue === null || rawValue === undefined || rawValue === "" ? Number.NaN : Number(rawValue);
     const available = Number.isFinite(value);
+    const derived = available && node?.method === "derived-linear";
+    const keyTerm = POLICY_CURVE_KEY_TERMS.has(tenor);
     return `
-      <span class="policy-curve-point ${available ? "" : "is-missing"}" data-curve-term="${tenor}">
-        <span>${tenor}</span><strong>${available ? `${value.toFixed(3)}%` : "—"}</strong>
+      <span class="policy-curve-point ${available ? "" : "is-missing"} ${derived ? "is-derived" : ""} ${keyTerm ? "is-key" : ""}" data-curve-term="${tenor}">
+        <span>${tenor}</span><strong>${available ? `${derived ? "≈" : ""}${value.toFixed(3)}%` : "—"}</strong>
       </span>
     `;
   }).join("");
   const labels = [
     payload.actualValuationDate ? `估值日 ${formatPolicyCurveDate(payload.actualValuationDate)}` : "",
     payload.retrievedAt ? `查询 ${formatPolicyCurveQueryTime(payload.retrievedAt)}` : "",
+    payload.derivedTerms?.length ? "含线性插值" : "",
     payload.partial ? "部分档位" : "",
     payload.stale ? "旧数据" : "",
   ].filter(Boolean);

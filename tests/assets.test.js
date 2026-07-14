@@ -76,9 +76,14 @@ test("shows the compact DM policy-bank curve in the project command corner", asy
   assert.match(html, /class="ledger-command-bottom"[\s\S]+id="policyCurveCard"/);
   assert.match(html, /id="policyCurvePoints"/);
   assert.match(html, /id="policyCurveUpdatedAt"/);
+  assert.match(html, /0\.1–1年国开债曲线/);
   assert.match(app, /DM_POLICY_CURVE_URL/);
+  assert.match(app, /\["0\.1Y", "0\.2Y", "0\.25Y", "0\.3Y"[^\]]+"1Y"\]/);
+  assert.match(app, /POLICY_CURVE_KEY_TERMS = new Set\(\["0\.1Y", "0\.25Y", "0\.3Y", "0\.5Y", "0\.75Y", "1Y"\]\)/);
+  assert.match(app, /node\?\.method === "derived-linear"/);
   assert.match(app, /loadPolicyCurve\(\{ refresh: true \}\)/);
   assert.match(styles, /\.ledger-command-bottom\s*\{[^}]*grid-template-columns:/s);
+  assert.match(styles, /\.policy-curve-point\.is-key\s*\{/);
   assert.match(styles, /@media \(max-width: 1050px\)[\s\S]+\.ledger-command-bottom\s*\{\s*grid-template-columns:\s*1fr;/);
 });
 
