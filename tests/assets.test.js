@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260715-ocr-tiles";
+const VERSION = "20260715-ocr-adaptive";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -112,6 +112,8 @@ test("uses a reusable, layout-aware OCR worker for project screenshots", async (
   assert.match(app, /selectProjectScreenshotOrientationProbe/);
   assert.match(app, /limitProjectScreenshotOcrTargets/);
   assert.match(app, /projectScreenshotWorkerGeneration/);
+  assert.match(app, /projectScreenshotOcrPassBudget = compact \? 72 : 120/);
+  assert.match(app, /const cropSize = Math\.max\(1, Math\.min\(image\.width, image\.height\)\)/);
   assert.match(app, /source-y:/);
   assert.match(app, /sourceKey:\s*`source-y:\$\{Math\.round\(band\.y \+ band\.height \/ 2\)\}/);
   assert.doesNotMatch(app, /targetHeight:\s*Math\.max\((?:96|108),/);

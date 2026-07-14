@@ -135,3 +135,23 @@ export function projectScreenshotResizeDimensions(
     scale,
   };
 }
+
+export function projectScreenshotResizeRetainsReadableWidth(
+  sourceWidth,
+  resizedWidth,
+  minimumReadableWidth = 900,
+) {
+  const source = Number(sourceWidth);
+  const resized = Number(resizedWidth);
+  const minimum = Number(minimumReadableWidth);
+  if (![source, resized, minimum].every(Number.isFinite) || source <= 0 || resized <= 0 || minimum <= 0) return false;
+  return resized >= Math.min(minimum, source * 0.75);
+}
+
+export function projectScreenshotCompositeBackground(transparentRatio, visibleMedian) {
+  const transparency = Number(transparentRatio);
+  const median = Number(visibleMedian);
+  if (!Number.isFinite(transparency) || !Number.isFinite(median)) return "#fff";
+  if (transparency >= 0.02) return median >= 160 ? "#111827" : "#fff";
+  return median < 128 ? "#111827" : "#fff";
+}

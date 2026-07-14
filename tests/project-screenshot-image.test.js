@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   inspectProjectScreenshotImageHeader,
+  projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
+  projectScreenshotResizeRetainsReadableWidth,
 } from "../project-screenshot-image.js";
 
 test("reads PNG dimensions before allocating a full bitmap", () => {
@@ -95,4 +97,18 @@ test("keeps ordinary screenshots at their source dimensions", () => {
     height: 1655,
     scale: 1,
   });
+});
+
+test("refuses to silently crush a readable long screenshot below OCR width", () => {
+  assert.equal(projectScreenshotResizeRetainsReadableWidth(1200, 640), false);
+  assert.equal(projectScreenshotResizeRetainsReadableWidth(1200, 1000), true);
+  assert.equal(projectScreenshotResizeRetainsReadableWidth(720, 640), true);
+  assert.equal(projectScreenshotResizeRetainsReadableWidth(720, 12), false);
+});
+
+test("composites transparent light and dark text onto opposite backgrounds", () => {
+  assert.equal(projectScreenshotCompositeBackground(0.8, 230), "#111827");
+  assert.equal(projectScreenshotCompositeBackground(0.8, 30), "#fff");
+  assert.equal(projectScreenshotCompositeBackground(0, 30), "#111827");
+  assert.equal(projectScreenshotCompositeBackground(0, 230), "#fff");
 });

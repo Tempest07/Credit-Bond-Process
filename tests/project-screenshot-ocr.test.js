@@ -122,6 +122,49 @@ test("recognizes financial and capital bond families", () => {
   );
 });
 
+test("keeps convertible and exchangeable bonds separate from ordinary corporate bonds", () => {
+  const issuer = "苏州高新集团有限公司";
+  const ordinary = `${issuer}2026年面向专业投资者公开发行公司债券(第一期)`;
+  const convertible = `${issuer}2026年面向专业投资者公开发行可转换公司债券(第一期)`;
+  const exchangeable = `${issuer}2026年面向专业投资者公开发行可交换公司债券(第一期)`;
+  assert.deepEqual(
+    parseProjectScreenshotOcrText(`苏州分行 ${issuer}2026年第一期可转债`),
+    [{ branch: "苏州分行", fullName: `${issuer}2026年第一期可转换公司债券` }],
+  );
+  assert.equal(mergeProjectScreenshotOcrPasses([
+    { label: "ordinary", confidence: 95, text: `苏州分行 ${ordinary}` },
+    { label: "convertible", confidence: 95, text: `苏州分行 ${convertible}` },
+    { label: "exchangeable", confidence: 95, text: `苏州分行 ${exchangeable}` },
+  ]).length, 3);
+  for (const special of [convertible, exchangeable]) {
+    assert.equal(selectReliableProjectScreenshotSuggestion(special, [{
+      score: 99,
+      shortName: "26苏高01",
+      securityId: "123456.SH",
+      fullName: ordinary,
+    }]), null);
+  }
+});
+
+test("keeps credit-enhanced bonds separate from otherwise ordinary bonds", () => {
+  const ordinary = "某公司2026年面向专业投资者公开发行公司债券(第一期)";
+  const enhanced = "某公司2026年面向专业投资者公开发行有增信公司债券(第一期)";
+  assert.equal(mergeProjectScreenshotOcrPasses([
+    { label: "ordinary", confidence: 95, text: `广州分行 ${ordinary}` },
+    { label: "enhanced", confidence: 95, text: `广州分行 ${enhanced}` },
+  ]).length, 2);
+  assert.equal(selectReliableProjectScreenshotSuggestion(enhanced, [{
+    score: 99,
+    shortName: "26测试01",
+    securityId: "123456.SH",
+    fullName: ordinary,
+  }]), null);
+  assert.equal(selectReliableProjectScreenshotSuggestion(
+    "某公司2026年面向专业投资者公开发行信用增进公司债券(第一期)",
+    [{ score: 99, shortName: "26测试01", securityId: "123456.SH", fullName: ordinary }],
+  ), null);
+});
+
 test("rejects ordinary no-year descriptions while retaining structured no-year ABS names", () => {
   assert.deepEqual(
     parseProjectScreenshotOcrText("广州分行 本周计划发行中期票据 项目共5单"),
@@ -177,6 +220,24 @@ test("refuses to guess row relationships when OCR returns whole columns separate
   assert.deepEqual(parseProjectScreenshotOcrText(detachedColumns), []);
 });
 
+test("rejects a candidate whose parsed issuer still contains a branch office", () => {
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("广州分行 上海分行投资集团有限公司2026年度第一期中期票据"),
+    [],
+  );
+});
+
+test("refuses alternating name and branch text without physical row evidence", () => {
+  const first = "广州地铁集团有限公司2026年度第六期超短期融资券";
+  const second = "九州通医药集团股份有限公司2026年度第一期中期票据";
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    first,
+    "广州分行",
+    second,
+    "武汉分行",
+  ].join("\n")), []);
+});
+
 test("does not turn real non-target branches into target branches by fuzzy city matching", () => {
   for (const branch of ["广安分行", "宿州分行", "徐州分行", "延安分行", "太仓分行"]) {
     assert.deepEqual(
@@ -205,6 +266,42 @@ test("uses cross-pass consensus without merging distinct tranches", () => {
     "某公司2026年度第一期中期票据品种一",
     "某公司2026年度第一期中期票据品种二",
   ]);
+});
+
+test("counts OCR votes by independent target rather than render variant", () => {
+  const fullName = "广州地铁集团有限公司2026年度第六期超短期融资券";
+  const merged = mergeProjectScreenshotOcrPasses([
+    {
+      label: "row raw",
+      voteKey: "target:row:1",
+      sourceKey: "row:1",
+      confidence: 88,
+      text: `广州分行 ${fullName}`,
+    },
+    {
+      label: "row binary",
+      voteKey: "target:row:1",
+      sourceKey: "row:1",
+      confidence: 94,
+      text: `广州分行 ${fullName}`,
+    },
+    {
+      label: "column",
+      voteKey: "target:column:1",
+      sourceKey: "column:1",
+      confidence: 90,
+      text: `广州分行 ${fullName}`,
+    },
+  ]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.ocrVotes, 2);
+
+  const legacy = mergeProjectScreenshotOcrPasses([
+    { label: "same", confidence: 88, text: `广州分行 ${fullName}` },
+    { label: "same", confidence: 94, text: `广州分行 ${fullName}` },
+    { label: "other", confidence: 90, text: `广州分行 ${fullName}` },
+  ]);
+  assert.equal(legacy[0]?.ocrVotes, 2);
 });
 
 test("never merges or auto-corrects bonds with different structural features", () => {
@@ -436,14 +533,38 @@ test("keeps compact adjacent physical rows independent", () => {
   assert.equal(merged.length, 2);
 });
 
-test("drops a short OCR artifact prefixed to an otherwise complete bond name", () => {
-  const correct = "广州产业投资控股集团有限公司2026年度第三期中期票据品种A";
-  const merged = mergeProjectScreenshotOcrPasses([
-    { label: "column", confidence: 80, text: `广州分行 人4一${correct}` },
-    { label: "row", confidence: 94, text: `广州分行 ${correct}` },
+test("drops a short OCR prefix only within the same physical row", () => {
+  const correct = "某公司2026年度第三期中期票据品种A";
+  const noisy = `人4一${correct}`;
+  const sameRow = mergeProjectScreenshotOcrPasses([
+    { label: "soft", sourceKey: "row:7", confidence: 80, text: `广州分行 ${noisy}` },
+    { label: "binary", sourceKey: "row:7", confidence: 94, text: `广州分行 ${correct}` },
   ]);
-  assert.equal(merged.length, 1);
-  assert.equal(merged[0]?.fullName, correct);
+  assert.equal(sameRow.length, 1);
+  assert.equal(sameRow[0]?.fullName, correct);
+
+  const differentRows = mergeProjectScreenshotOcrPasses([
+    { label: "row-7", sourceKey: "row:7", confidence: 80, text: `广州分行 ${noisy}` },
+    { label: "row-8", sourceKey: "row:8", confidence: 94, text: `广州分行 ${correct}` },
+  ]);
+  assert.equal(differentRows.length, 2);
+});
+
+test("does not merge a layout-only issuer prefix across physical rows", () => {
+  const correct = "广州产业投资控股集团有限公司2026年度第三期中期票据品种A";
+  const truncated = "州产业投资控股集团有限公司2026年度第三期中期票据品种A";
+  const merged = mergeProjectScreenshotOcrPasses([
+    { label: "row", sourceKey: "source-y:152:88", confidence: 94, text: `广州分行 ${truncated}` },
+    { label: "layout", sourceKey: "region:1:0:layout", confidence: 90, text: `广州分行 ${correct}` },
+  ]);
+  assert.equal(merged.length, 2);
+
+  const ambiguous = mergeProjectScreenshotOcrPasses([
+    { label: "row-1", sourceKey: "source-y:152:88", confidence: 94, text: `广州分行 ${truncated}` },
+    { label: "row-2", sourceKey: "source-y:252:88", confidence: 94, text: `广州分行 广东${correct}` },
+    { label: "layout", sourceKey: "region:1:0:layout", confidence: 90, text: `广州分行 ${correct}` },
+  ]);
+  assert.equal(ambiguous.length, 3);
 });
 
 test("a physical row bridge collapses an earlier exact-name cluster", () => {
@@ -768,4 +889,97 @@ test("treats official variety labels and Chinese issue numbers as structural equ
     }]);
     assert.equal(selected?.fullName, candidate);
   }
+});
+
+test("rejoins a wrapped bond family split around a standalone branch cell", () => {
+  const parsed = parseProjectScreenshotOcrText([
+    "武汉分行 武汉金融控股(集团)有限公司2026年度第一期中期票据",
+    "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资",
+    "青岛分行",
+    "券",
+    "兰州分行 兰州城市发展投资有限公司2026年度第一期超短期融资券",
+  ].join("\n"));
+  assert.deepEqual(parsed.find((entry) => entry.branch === "青岛分行"), {
+    branch: "青岛分行",
+    fullName: "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资券",
+  });
+});
+
+test("uses a clean candidate when phone compression distorts an issuer on the same row", () => {
+  const merged = mergeProjectScreenshotOcrPasses([
+    {
+      label: "compressed crop",
+      voteKey: "crop:1",
+      sourceKey: "source-y:240:88",
+      confidence: 84,
+      text: "苏州分行 苏州学营理有限公司2026生第一期资产支持票据(优先A)",
+    },
+    {
+      label: "row crop",
+      voteKey: "row:1",
+      sourceKey: "source-y:240:88",
+      confidence: 93,
+      text: "苏州分行 苏州资产管理有限公司2026年度第一期资产支持票据(优先A)",
+    },
+  ]);
+  assert.deepEqual(merged, [{
+    branch: "苏州分行",
+    fullName: "苏州资产管理有限公司2026年度第一期资产支持票据(优先A)",
+    ocrConfidence: 93,
+    ocrVotes: 2,
+  }]);
+});
+
+test("normalizes common mobile OCR drift in places, years, and issue ordinals", () => {
+  assert.deepEqual(parseProjectScreenshotOcrText(
+    "青岛分行 青鸟西海岸新区海洋控股集团有限公司2026生第二期短期融资券",
+  ), [{
+    branch: "青岛分行",
+    fullName: "青岛西海岸新区海洋控股集团有限公司2026年第二期短期融资券",
+  }]);
+  assert.deepEqual(parseProjectScreenshotOcrText(
+    "太原分行 太原国有投资集团有限公司2026年度第多二期定向债务融资工具",
+  ), [{
+    branch: "太原分行",
+    fullName: "太原国有投资集团有限公司2026年度第二期定向债务融资工具",
+  }]);
+  assert.deepEqual(parseProjectScreenshotOcrText(
+    "太原分行 太原国有投资集团有限公司2026年度多二期定向债务融资工具",
+  ), [{
+    branch: "太原分行",
+    fullName: "太原国有投资集团有限公司2026年度第二期定向债务融资工具",
+  }]);
+});
+
+test("recovers the missing B side when phone OCR retains an A slash marker", () => {
+  assert.deepEqual(parseProjectScreenshotOcrText(
+    "广州分行 广州产业投资控股集团有限公司2026年度第三期中期票据(品种A/",
+  ), [
+    {
+      branch: "广州分行",
+      fullName: "广州产业投资控股集团有限公司2026年度第三期中期票据品种A",
+    },
+    {
+      branch: "广州分行",
+      fullName: "广州产业投资控股集团有限公司2026年度第三期中期票据品种B",
+    },
+  ]);
+});
+
+test("preserves a low-confidence layout B until DM can verify its tranche", () => {
+  const base = "武汉金融控股(集团)有限公司2026年度第一期中期票据";
+  const passes = [
+    { label: "row-soft", voteKey: "row-soft", sourceKey: "source-y:241:88", confidence: 92, text: `武汉分行 ${base}` },
+    { label: "row-binary", voteKey: "row-binary", sourceKey: "source-y:241:88", confidence: 91, text: `武汉分行 ${base}` },
+    { label: "column", voteKey: "column", sourceKey: "source-y:241:88", confidence: 90, text: `武汉分行 ${base}` },
+    { label: "layout", voteKey: "layout", sourceKey: "rows:0:layout", confidence: 74, text: `武汉分行 ${base}B` },
+  ];
+  const retained = mergeProjectScreenshotOcrPasses(passes);
+  assert.equal(retained.length, 2);
+  assert.ok(retained.some((entry) => entry.fullName === `${base}B`));
+
+  const legitimate = mergeProjectScreenshotOcrPasses([
+    { label: "layout", sourceKey: "rows:0:layout", confidence: 93, text: `武汉分行 ${base}B` },
+  ]);
+  assert.equal(legitimate[0]?.fullName, `${base}B`);
 });
