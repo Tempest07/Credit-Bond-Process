@@ -44,19 +44,10 @@ const MARKET_DATA_FIELDS = [
   "cbReliability",
   "cbYtm",
   "cbYte",
-  "cbYield",
-  "cbYieldToMaturity",
-  "cbYieldToExercise",
   "csReliability",
   "csYtm",
   "csYte",
-  "csYield",
-  "csYieldToMaturity",
-  "csYieldToExercise",
   "spiderYield",
-  "shchYtm",
-  "shchYte",
-  "shchYield",
 ];
 
 export async function onRequestGet(context) {

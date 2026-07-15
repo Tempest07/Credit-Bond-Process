@@ -508,6 +508,21 @@ test("DM valuation assistant prefers society code when loading issuer comparable
       }));
     } else if (url.includes("/bond/market-data/date")) {
       assert.deepEqual(request.securityIdList, ["256800002.SH"]);
+      assert.deepEqual(request.fieldNames, [
+        "securityId",
+        "secShortName",
+        "issuerName",
+        "remainingTenor",
+        "dataSource",
+        "valuationDate",
+        "cbReliability",
+        "cbYtm",
+        "cbYte",
+        "csReliability",
+        "csYtm",
+        "csYte",
+        "spiderYield",
+      ]);
       data = [{
         security_id: "256800002.SH",
         sec_short_name: "26锡城02",
