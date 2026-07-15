@@ -105,6 +105,81 @@ test("normalizes table rules and common Chinese OCR substitutions", () => {
     parseProjectScreenshotOcrText("青岛分行 某公司2O2B年度第B期永读中期票据"),
     [{ branch: "青岛分行", fullName: "某公司2028年度第8期永续中期票据" }],
   );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("北京分行 某公司2026年面风专业投资者公8开发行中小微企业文持公司债券"),
+    [{ branch: "北京分行", fullName: "某公司2026年面向专业投资者公开发行中小微企业支持公司债券" }],
+  );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("武汉分行 某公司2026年度第四期超短其融资券SCP"),
+    [{ branch: "武汉分行", fullName: "某公司2026年度第四期超短期融资券" }],
+  );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("臣汉分和 中国钨洲坝集团有限公司2026年度第四期超短期融资券"),
+    [{ branch: "武汉分行", fullName: "中国葛洲坝集团有限公司2026年度第四期超短期融资券" }],
+  );
+  assert.deepEqual(
+    parseProjectScreenshotOcrText("南京分行 扬州市城建国有资产控股〈集团〉有限责任公司2026年面问专业投资者公开发行公司债券〈第二期〉"),
+    [{ branch: "南京分行", fullName: "扬州市城建国有资产控股(集团)有限责任公司2026年面向专业投资者公开发行公司债券(第二期)" }],
+  );
+});
+
+test("parses every branch and bond family from the July 15 project table", () => {
+  const expected = [
+    ["宁波分行", "宁波市鄞城集团有限责任公司2026年度第一期中期票据"],
+    ["南京分行", "江苏徐工工程机械租赁有限公司2026年度第八期中期票据"],
+    ["南京分行", "江苏龙城国有控股集团有限公司2026年面向专业投资者非公开发行公司债券(第一期)"],
+    ["南京分行", "扬州市城建国有资产控股(集团)有限责任公司2026年面向专业投资者公开发行公司债券(第二期)"],
+    ["南京分行", "中国核工业华兴建设有限公司2026年度第三期短期融资券"],
+    ["武汉分行", "中国葛洲坝集团有限公司2026年度第四期超短期融资券"],
+    ["重庆分行", "重庆两江新区开发投资集团有限公司2026年度第二期中期票据"],
+    ["南京分行", "南京江宁交通建设集团有限公司2026年度第四期定向债务融资工具"],
+    ["南京分行", "江苏省铁路集团有限公司2026年度第五期超短期融资券"],
+    ["广州分行", "广东南海控股集团有限公司2026年度第二期中期票据"],
+    ["上海分行", "中国建筑第八工程局有限公司2026年度第十五期超短期融资券"],
+    ["深圳分行", "格林美股份有限公司2026年度第二期科技创新债券"],
+    ["南京分行", "镇江产业发展控股集团有限公司2026年度第七期中期票据"],
+    ["郑州分行", "河南水利投资集团有限公司2026年度第四期中期票据"],
+    ["广州分行", "中山城市建设集团有限公司2026年面向专业投资者公开发行公司债券(第二期)"],
+    ["广州分行", "中交广州航道局有限公司2026年度第五期超短期融资券"],
+    ["北京分行", "华能天成融资租赁有限公司2026年面向专业投资者公开发行绿色公司债券(第一期)"],
+    ["北京分行", "北京中关村科技创业金融服务集团有限公司2026年面向专业投资者公开发行中小微企业支持公司债券(第一期)"],
+    ["上海分行", "上海国际集团投资有限公司2026年度第一期科技创新债券"],
+    ["厦门分行", "厦门资产管理有限公司2026年度第二期中期票据"],
+    ["济南分行", "烟台打捞局2026年度第一期中期票据"],
+  ].map(([branch, fullName]) => ({ branch, fullName }));
+  const sourceRows = expected.map(({ branch, fullName }, index) => {
+    const sourceName = index === 0
+      ? fullName.replace("2026年度", "中期票据2026年度")
+      : fullName;
+    return `${branch} ${sourceName}`;
+  });
+
+  assert.deepEqual(parseProjectScreenshotOcrText(sourceRows.join("\n")), expected);
+});
+
+test("keeps technology-innovation and SME-support bonds separate from ordinary corporate bonds", () => {
+  const ordinary = "某公司2026年面向专业投资者公开发行公司债券(第一期)";
+  const technology = "某公司2026年面向专业投资者公开发行科技创新债券(第一期)";
+  const smeSupport = "某公司2026年面向专业投资者公开发行中小微企业支持公司债券(第一期)";
+  const merged = mergeProjectScreenshotOcrPasses([ordinary, technology, smeSupport].map((fullName) => ({
+    label: fullName,
+    confidence: 95,
+    text: `深圳分行 ${fullName}`,
+  })));
+
+  assert.equal(merged.length, 3);
+  assert.equal(selectReliableProjectScreenshotSuggestion(technology, [{
+    score: 99,
+    shortName: "26测试01",
+    securityId: "123456.SH",
+    fullName: ordinary,
+  }]), null);
+  assert.equal(selectReliableProjectScreenshotSuggestion(smeSupport, [{
+    score: 99,
+    shortName: "26测试01",
+    securityId: "123456.SH",
+    fullName: ordinary,
+  }]), null);
 });
 
 test("recognizes financial and capital bond families", () => {
@@ -239,7 +314,7 @@ test("refuses alternating name and branch text without physical row evidence", (
 });
 
 test("does not turn real non-target branches into target branches by fuzzy city matching", () => {
-  for (const branch of ["广安分行", "宿州分行", "徐州分行", "延安分行", "太仓分行"]) {
+  for (const branch of ["广安分行", "宿州分行", "徐州分行", "延安分行", "太仓分行", "南乐分行"]) {
     assert.deepEqual(
       parseProjectScreenshotOcrText(`${branch} 某公司2026年度第一期中期票据`),
       [],
@@ -302,6 +377,58 @@ test("counts OCR votes by independent target rather than render variant", () => 
     { label: "other", confidence: 90, text: `广州分行 ${fullName}` },
   ]);
   assert.equal(legacy[0]?.ocrVotes, 2);
+});
+
+test("uses the stronger explicit branch when weaker OCR carries the previous branch into the same row", () => {
+  const fullName = "华能天成融资租赁有限公司2026年面向专业投资者公开发行绿色公司债券(第一期)";
+  const merged = mergeProjectScreenshotOcrPasses([
+    { label: "carry", voteKey: "column", sourceKey: "source-y:1977:113", confidence: 79, text: `广州分行 ${fullName}` },
+    { label: "row", voteKey: "row", sourceKey: "source-y:1977:113", confidence: 90, text: `北京分行 ${fullName}` },
+    { label: "region", voteKey: "region", sourceKey: "source-y:1977:113", confidence: 88, text: `北京分行 ${fullName}` },
+  ]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.branch, "北京分行");
+});
+
+test("treats Chinese bond families and their market abbreviations as the same OCR family", () => {
+  const correct = "中国建筑第八工程局有限公司2026年度第十五期超短期融资券";
+  const noisy = "中国建筑第八工程局有限公司2026年度第二五期SCP";
+  const merged = mergeProjectScreenshotOcrPasses([
+    { label: "clean", sourceKey: "source-y:1281:116", confidence: 81, text: `上海分行 ${correct}` },
+    { label: "noise", sourceKey: "source-y:1281:116", confidence: 87, text: `上海分行 ${noisy}` },
+  ]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.fullName, correct);
+
+  const tranches = mergeProjectScreenshotOcrPasses([
+    { label: "a", sourceKey: "source-y:200:100", confidence: 95, text: "广州分行 某公司2026年度第三期中期票据A" },
+    { label: "b", sourceKey: "source-y:200:100", confidence: 95, text: "广州分行 某公司2026年度第三期MTNB" },
+  ]);
+  assert.equal(tranches.length, 2);
+});
+
+test("never merges explicit different issues or distinct high-confidence issuers in one physical row", () => {
+  const issues = mergeProjectScreenshotOcrPasses([
+    { label: "issue-1", sourceKey: "source-y:400:100", confidence: 95, text: "广州分行 某公司2026年度第一期中期票据" },
+    { label: "issue-2", sourceKey: "source-y:400:100", confidence: 95, text: "广州分行 某公司2026年度第二期中期票据" },
+  ]);
+  assert.equal(issues.length, 2);
+
+  const issuers = mergeProjectScreenshotOcrPasses([
+    { label: "issuer-1", sourceKey: "source-y:500:100", confidence: 94, text: "广州分行 广州城市建设投资集团有限公司2026年度第一期中期票据" },
+    { label: "issuer-2", sourceKey: "source-y:500:100", confidence: 93, text: "广州分行 广州城市开发投资集团有限公司2026年度第一期中期票据" },
+  ]);
+  assert.equal(issuers.length, 2);
+});
+
+test("prefers a complete issue suffix over a truncated candidate from the same physical row", () => {
+  const base = "华能天成融资租赁有限公司2026年面向专业投资者公开发行绿色公司债券";
+  const merged = mergeProjectScreenshotOcrPasses([
+    { label: "complete", voteKey: "row", sourceKey: "source-y:1977:113", confidence: 86, text: `北京分行 ${base}(第一期)` },
+    { label: "truncated", voteKey: "full", sourceKey: "source-y:1977:113", confidence: 90, text: `北京分行 ${base}` },
+  ]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.fullName, `${base}(第一期)`);
 });
 
 test("never merges or auto-corrects bonds with different structural features", () => {
@@ -499,11 +626,11 @@ test("retains a tranche when OCR drops the closing parenthesis", () => {
   );
 });
 
-test("only tolerates issuer OCR drift within the same detected row", () => {
+test("only tolerates low-confidence issuer OCR drift within the same detected row", () => {
   const first = "某县城市建设投资集团有限公司2026年度第一期中期票据";
   const second = "某市城市建设投资集团有限公司2026年度第一期中期票据";
   assert.equal(mergeProjectScreenshotOcrPasses([
-    { label: "row-soft", sourceKey: "row:7", confidence: 88, text: `广州分行 ${first}` },
+    { label: "row-soft", sourceKey: "row:7", confidence: 78, text: `广州分行 ${first}` },
     { label: "row-binary", sourceKey: "row:7", confidence: 93, text: `广州分行 ${second}` },
   ]).length, 1);
   assert.equal(mergeProjectScreenshotOcrPasses([
@@ -903,6 +1030,25 @@ test("rejoins a wrapped bond family split around a standalone branch cell", () =
     branch: "青岛分行",
     fullName: "青岛西海岸新区海洋控股集团有限公司2026年度第二期短期融资券",
   });
+});
+
+test("rejoins a wrapped long name when the centered branch cell shares its continuation line", () => {
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "北京中关村科技创业金融服务集团有限公司2026年面",
+    "北京分行 同专业投资者公开发行中小微企业文持公司债券(第",
+    "一期)",
+  ].join("\n")), [{
+    branch: "北京分行",
+    fullName: "北京中关村科技创业金融服务集团有限公司2026年面向专业投资者公开发行中小微企业支持公司债券(第一期)",
+  }]);
+  assert.deepEqual(parseProjectScreenshotOcrText([
+    "南乐江宁交通建设集团有限公司2026年度第四期定同",
+    "南乐分行",
+    "债务融资工具",
+  ].join("\n")), [{
+    branch: "南京分行",
+    fullName: "南京江宁交通建设集团有限公司2026年度第四期定向债务融资工具",
+  }]);
 });
 
 test("uses a clean candidate when phone compression distorts an issuer on the same row", () => {

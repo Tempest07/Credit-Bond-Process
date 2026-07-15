@@ -15,7 +15,7 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260715-ocr-adaptive";
+} from "./core.js?v=20260715-ocr-national";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -33,13 +33,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260715-ocr-adaptive";
+} from "./lifecycle.js?v=20260715-ocr-national";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260715-ocr-adaptive";
+} from "./history-parser.js?v=20260715-ocr-national";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +52,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260715-ocr-adaptive";
+} from "./protocol-transfer.js?v=20260715-ocr-national";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260715-ocr-adaptive";
+} from "./reminders.js?v=20260715-ocr-national";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,8 +77,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260715-ocr-adaptive";
-import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-adaptive";
+} from "./secondary-inventory.js?v=20260715-ocr-national";
+import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-national";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -87,18 +87,18 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260715-ocr-adaptive";
+} from "./project-screenshot-ocr.js?v=20260715-ocr-national";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260715-ocr-adaptive";
+} from "./project-screenshot-layout.js?v=20260715-ocr-national";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260715-ocr-adaptive";
+} from "./project-screenshot-image.js?v=20260715-ocr-national";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -1251,7 +1251,9 @@ function createProjectScreenshotCellRowTargets(image, rowBands = [], columns) {
   return selectedRows.map(({ band, rowIndex }) => ({
     label: `表格第 ${rowIndex + 1} 行`,
     sourceKey: `source-y:${Math.round(band.y + band.height / 2)}:${Math.round(band.height)}`,
-    pageSegMode: "SINGLE_LINE",
+    pageSegMode: band.height / Math.max(1, columns.name.width) >= 0.14
+      ? "SINGLE_BLOCK"
+      : "SINGLE_LINE",
     kind: "row",
     createCanvas: () => createProjectScreenshotCellRowCanvas(image, band, columns),
   }));

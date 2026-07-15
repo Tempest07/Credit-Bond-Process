@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260715-ocr-adaptive";
+const VERSION = "20260715-ocr-national";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, reminders] = await Promise.all([
@@ -89,7 +89,8 @@ test("uses a reusable, layout-aware OCR worker for project screenshots", async (
   assert.match(app, /tesseract\.js@5\.1\.1/);
   assert.match(app, /Tesseract\.createWorker\("chi_sim\+eng"/);
   assert.match(app, /tessedit_pageseg_mode/);
-  assert.match(app, /pageSegMode: "SINGLE_LINE"/);
+  assert.match(app, /pageSegMode: band\.height \/ Math\.max\(1, columns\.name\.width\)/);
+  assert.match(app, /\? "SINGLE_BLOCK"\s*:\s*"SINGLE_LINE"/s);
   assert.match(app, /projectScreenshotOtsuThreshold/);
   assert.match(app, /eraseProjectScreenshotTableLines/);
   assert.match(app, /canvas\.width = 1;\s*canvas\.height = 1;/s);
