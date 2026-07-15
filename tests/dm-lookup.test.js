@@ -1704,7 +1704,7 @@ test("DM lookup marks a queried cancelled tranche from D1 issue group", async ()
   }
 });
 
-test("DM lookup falls back to a cloud issue group by specific short-name family", async () => {
+test("DM lookup uses prior short-name family only to identify the cloud issuer", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
   globalThis.fetch = async (url) => {
@@ -1720,7 +1720,13 @@ test("DM lookup falls back to a cloud issue group by specific short-name family"
         async first() {
           return {
             data: JSON.stringify({
-              issuers: [],
+              issuers: [{
+                legalName: "广州越秀集团股份有限公司",
+                linkedBranch: "广州分行",
+                subjectRating: "AAA",
+                ratingAgency: "中诚信国际",
+                hiddenRating: "AAA-",
+              }],
               projects: [{
                 id: "project-yuexiu",
                 shortName: "26广越07/08",
@@ -1755,12 +1761,72 @@ test("DM lookup falls back to a cloud issue group by specific short-name family"
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.ok, true);
+    assert.equal(payload.noDmBondResult, true);
     assert.equal(payload.diagnostic.dmMatched, false);
-    assert.equal(payload.issueGroup.source, "cloud-db");
-    assert.equal(payload.issueGroup.issuerName, "广州越秀集团股份有限公司");
-    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26广越07", "26广越08"]);
-    assert.ok(!payload.issueGroup.tranches.some((item) => /黑龙江/.test(item.shortName)));
-    assert.equal(payload.issueGroup.confidence, 93);
+    assert.equal(payload.issueGroup, null);
+    assert.equal(payload.normalized.shortName, "26广越09");
+    assert.equal(payload.normalized.issuerName, "广州越秀集团股份有限公司");
+    assert.equal(payload.normalized.subjectRating, "AAA");
+    assert.equal(payload.normalized.ratingAgency, "中诚信国际");
+    assert.equal(payload.normalized.impliedRating, "AAA-");
+    assert.equal(payload.normalized.fieldSource.issuerName, "issuer-db");
+    assert.deepEqual(payload.normalized.ratingSource, {
+      subjectRating: "issuer-db",
+      ratingAgency: "issuer-db",
+      impliedRating: "issuer-db",
+    });
+    assert.equal(payload.diagnostic.issuerIdentity.issuerName, "广州越秀集团股份有限公司");
+    assert.equal(payload.diagnostic.issuerIdentity.matchType, "same-short-name-family");
+    assert.equal(payload.diagnostic.issuerIdentity.confidence, 90);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM no-result lookup never borrows ratings from an unrelated historical project", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    const data = url.includes("/bond/primary/data") ? { list: [] } : [];
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                shortName: "26溧阳城投MTN001",
+                issuerName: "溧阳市城市建设发展集团有限公司",
+                subjectRating: "AA+",
+                ratingAgency: "中诚信国际",
+                hiddenRating: "AA",
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%B9%BF%E8%B6%8A09", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, false);
+    assert.equal(payload.noResult, true);
+    assert.equal(payload.normalized, null);
+    assert.equal(payload.issueGroup, null);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -3214,10 +3214,14 @@ async function runProjectDmLookup(queryOverride = "") {
     }
     applyDmLookupToCurrentProject(payload);
     const sourceLabel = dmPayloadSourceLabel(payload);
-    $("#projectDmStatus").textContent = `已读取 ${sourceLabel}`;
-    $("#projectDmStatus").className = "pill accent";
+    $("#projectDmStatus").textContent = payload.noDmBondResult
+      ? "DM 无本期数据 · 已读主体库"
+      : `已读取 ${sourceLabel}`;
+    $("#projectDmStatus").className = payload.noDmBondResult ? "pill warning" : "pill accent";
     pushProjectDmHistoryFromCurrent();
-    showToast(`已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
+    showToast(payload.noDmBondResult
+      ? "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
+      : `已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
   } catch (error) {
     renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });
     $("#projectDmStatus").textContent = "DM 查询失败";
@@ -3358,7 +3362,7 @@ function projectPatchFromDmLookup(payload) {
 
   assignProjectDmValueWithSource(patch, sourceMap, "shortName", normalized.shortName);
   assignProjectDmValueWithSource(patch, sourceMap, "fullName", dmProjectFullNameForProject(normalized.fullName, patch, issueGroup));
-  assignProjectDmValueWithSource(patch, sourceMap, "issuerName", normalized.issuerName);
+  assignProjectDmValueWithSource(patch, sourceMap, "issuerName", normalized.issuerName, normalizedProjectFieldSource(normalized, "issuerName"));
   assignProjectDmValueWithSource(patch, sourceMap, "societyCode", normalized.societyCode);
   assignProjectDmValueWithSource(patch, sourceMap, "durationText", normalizeDmTenor(normalized.durationText));
   assignProjectDmValueWithSource(patch, sourceMap, "issueScale", normalized.issueScaleYi);
@@ -3475,9 +3479,9 @@ function projectSourceFromDmIssueGroup(issueGroup) {
 }
 
 function normalizedProjectFieldSource(normalized, key) {
-  const source = normalized?.ratingSource?.[key] || "";
+  const source = normalized?.fieldSource?.[key] || normalized?.ratingSource?.[key] || "";
   if (source === "wind-analytics") return "wind";
-  return source === "issuer-db" || source === "local-issuer-db" ? "cloud" : "dm";
+  return ["issuer-db", "local-issuer-db", "cloud-db", "cloud-project-index"].includes(source) ? "cloud" : "dm";
 }
 
 function dmProjectFullNameForProject(fullName, patch, issueGroup) {
@@ -3675,6 +3679,24 @@ function renderProjectDmAssist(payload) {
 
   const issueGroup = payload.issueGroup || payload.normalized?.issueGroup || null;
   const normalized = payload.normalized || {};
+  if (payload.noDmBondResult) {
+    const filled = [
+      normalized.subjectRating ? `主体评级 ${normalized.subjectRating}` : "",
+      normalized.ratingAgency ? `评级机构 ${normalized.ratingAgency}` : "",
+      normalized.impliedRating ? `隐含评级 ${normalized.impliedRating}` : "",
+    ].filter(Boolean);
+    output.innerHTML = `
+      <div class="project-dm-assist-head">
+        <strong>DM 未返回本期债券</strong>
+        <span>${escapeHtml([
+          normalized.issuerName ? `已识别发行人 ${normalized.issuerName}` : "已识别云端主体资料",
+          filled.length ? `云端主体库补充：${filled.join("、")}` : "主体资料来自云端数据库",
+          "本期债券要素未沿用历史项目，请继续填写",
+        ].join(" · "))}</span>
+      </div>
+    `;
+    return;
+  }
   const abs = Boolean(normalized.isAbs || normalized.absInfo || /^(ABS|ABN)$/i.test(String(issueGroup?.instrumentType || "")));
   const facts = [
     abs ? (normalized.instrumentType || normalized.absInfo?.type || "ABS") : "",
@@ -3782,8 +3804,15 @@ function renderProjectDmReallocationReason(tranche) {
 
 function dmPayloadSourceLabel(payload) {
   const fields = Object.values(payload?.normalized?.ratingSource || {});
+  const fieldSources = Object.values(payload?.normalized?.fieldSource || {});
   const hasWind = fields.includes("wind-analytics");
-  const hasCloud = fields.some((source) => source === "issuer-db" || source === "local-issuer-db");
+  const hasCloud = [...fields, ...fieldSources].some((source) => [
+    "issuer-db",
+    "local-issuer-db",
+    "cloud-db",
+    "cloud-project-index",
+  ].includes(source));
+  if (payload?.noDmBondResult && hasCloud) return "云端主体库";
   if (hasWind && hasCloud) return "DM+Wind+云端数据库";
   if (hasWind) return "DM+Wind";
   if (hasCloud) return "DM+云端数据库";

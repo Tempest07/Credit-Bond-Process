@@ -91,21 +91,34 @@ export async function onRequestGet(context) {
         };
     const windEnrichedNormalized = applyWindImpliedRating(dmEnrichedNormalized, windImpliedRating, windEnabled);
     const d1State = await readD1AppState(context.env.DB, auth.user.id);
-    const issuerRatingFallback = lookupIssuerRatingFallback(d1State, windEnrichedNormalized);
-    const enrichedNormalized = applyIssuerRatingFallback(windEnrichedNormalized, issuerRatingFallback);
-    const issueGroup = lookupIssueGroup(d1State, enrichedNormalized, { shortName, securityId, fullName }, primary, basic);
-    if (!dmMatched && !issuerRatingFallback && !issueGroup) {
+    const issuerIdentityFallback = dmMatched
+      ? null
+      : lookupIssuerIdentityFallback(d1State, windEnrichedNormalized, { shortName, securityId, fullName });
+    const issuerEnrichedNormalized = applyIssuerIdentityFallback(windEnrichedNormalized, issuerIdentityFallback);
+    const issuerRatingFallback = lookupIssuerRatingFallback(d1State, issuerEnrichedNormalized);
+    const enrichedNormalized = applyIssuerRatingFallback(issuerEnrichedNormalized, issuerRatingFallback);
+    const issueGroup = lookupIssueGroup(
+      d1State,
+      dmMatched ? enrichedNormalized : windEnrichedNormalized,
+      { shortName, securityId, fullName },
+      dmMatched ? primary : null,
+      dmMatched ? basic : null,
+    );
+    if (!dmMatched && !issuerIdentityFallback && !issuerRatingFallback && !issueGroup) {
       return json(dmNoResultPayload({ shortName, securityId, fullName, basic, primary }));
     }
+    const noDmBondResult = !dmMatched && !issueGroup && Boolean(issuerIdentityFallback || issuerRatingFallback);
     const normalizedWithIssueGroup = issueGroup ? { ...enrichedNormalized, issueGroup } : enrichedNormalized;
 
     return json({
       ok: true,
+      noDmBondResult,
       query: { shortName, securityId, fullName, startDate: primary.window.startDate, endDate: primary.window.endDate },
       normalized: normalizedWithIssueGroup,
       issueGroup,
       diagnostic: {
         dmMatched,
+        issuerIdentity: issuerIdentityDiagnostic(issuerIdentityFallback),
         rating: ratingDiagnostic(
           normalized,
           dmRatingDiscovery,
@@ -1025,11 +1038,71 @@ async function readD1AppState(db, userId = "admin") {
 function lookupIssuerRatingFallback(data, normalized) {
   if (!data) return null;
   if (normalized?.subjectRating && normalized?.ratingAgency && normalized?.impliedRating) return null;
-  const projects = Array.isArray(data?.projects) ? data.projects : [];
-  const project = matchProjectForRating(normalized, projects);
-  if (project) return project;
   const issuers = Array.isArray(data?.issuers) ? data.issuers : [];
-  return matchIssuerForRating(normalized, issuers);
+  const issuer = matchIssuerForRating(normalized, issuers);
+  if (issuer) return issuer;
+  const projects = Array.isArray(data?.projects) ? data.projects : [];
+  return matchProjectForRating(normalized, projects);
+}
+
+function lookupIssuerIdentityFallback(data, normalized, query) {
+  if (!data || normalized?.issuerName) return null;
+  const queryNames = uniqueStrings([
+    query?.shortName,
+    query?.fullName,
+    normalized?.shortName,
+    normalized?.fullName,
+  ]).flatMap((value) => splitCombinedShortNames(value));
+  const normalizedNames = uniqueStrings(queryNames.map(normalizeLookupName));
+  const families = uniqueStrings(queryNames.map(issueShortNameFamily));
+  const seriesKeys = uniqueStrings(queryNames.map(issueShortNameSeriesKey));
+  const candidates = [];
+
+  for (const project of Array.isArray(data?.projects) ? data.projects : []) {
+    const legalName = String(project?.issuerName || "").trim();
+    if (!legalName) continue;
+    let bestMatch = null;
+    for (const entry of projectIssueEntries(project)) {
+      const entryName = normalizeLookupName(entry.shortName);
+      let score = 0;
+      let matchType = "";
+      if (entryName && normalizedNames.includes(entryName)) {
+        score = 140;
+        matchType = "exact-short-name";
+      } else {
+        const seriesKey = issueShortNameSeriesKey(entry.shortName);
+        if (seriesKey && seriesKeys.includes(seriesKey)) {
+          score = 110;
+          matchType = "same-series";
+        } else if (specificShortNameFamilyMatches(issueShortNameFamily(entry.shortName), families)) {
+          score = 90;
+          matchType = "same-short-name-family";
+        }
+      }
+      if (score > (bestMatch?.score || 0)) {
+        bestMatch = { score, matchType, matchedBy: entry.shortName || project.shortName || "" };
+      }
+    }
+    if (bestMatch) candidates.push({ project, legalName, ...bestMatch });
+  }
+
+  candidates.sort((left, right) => right.score - left.score);
+  const best = candidates[0];
+  if (!best || best.score < 90) return null;
+  const tiedIssuerNames = uniqueStrings(
+    candidates
+      .filter((candidate) => candidate.score === best.score)
+      .map((candidate) => normalizeIssuerMatchText(candidate.legalName)),
+  );
+  if (tiedIssuerNames.length !== 1) return null;
+  return {
+    legalName: best.legalName,
+    matchedBy: best.matchedBy,
+    matchedTarget: query?.shortName || query?.fullName || normalized?.shortName || "",
+    matchedRecordType: best.matchType,
+    confidence: best.score,
+    source: "cloud-project-index",
+  };
 }
 
 function matchProjectForRating(normalized, projects) {
@@ -1058,7 +1131,7 @@ function matchProjectForRating(normalized, projects) {
     if (score > (best?.score || 0)) best = { project, ratingFields, score };
   }
 
-  if (!best?.project) return null;
+  if (!best?.project || best.score < 80) return null;
   return {
     subjectRating: best.ratingFields.subjectRating || "",
     ratingAgency: best.ratingFields.ratingAgency || "",
@@ -1195,7 +1268,16 @@ function issuerCoreMatchText(value = "") {
 function applyIssuerRatingFallback(normalized, issuer) {
   if (!issuer) return normalized;
   const next = { ...normalized };
+  const fieldSource = { ...(next.fieldSource || {}) };
   const ratingSource = { ...(next.ratingSource || {}) };
+  if (
+    issuer.matchedRecordType === "issuer"
+    && issuer.legalName
+    && (!next.issuerName || fieldSource.issuerName === "cloud-project-index")
+  ) {
+    next.issuerName = String(issuer.legalName).trim();
+    fieldSource.issuerName = "issuer-db";
+  }
   if (!next.subjectRating && issuer.subjectRating) {
     next.subjectRating = String(issuer.subjectRating).trim().toUpperCase();
     ratingSource.subjectRating = "issuer-db";
@@ -1208,8 +1290,21 @@ function applyIssuerRatingFallback(normalized, issuer) {
     next.impliedRating = String(issuer.hiddenRating).trim().toUpperCase();
     ratingSource.impliedRating = "issuer-db";
   }
+  if (Object.keys(fieldSource).length) next.fieldSource = fieldSource;
   if (Object.keys(ratingSource).length) next.ratingSource = ratingSource;
   return next;
+}
+
+function applyIssuerIdentityFallback(normalized, issuerIdentity) {
+  if (!issuerIdentity?.legalName || normalized?.issuerName) return normalized;
+  return {
+    ...normalized,
+    issuerName: String(issuerIdentity.legalName).trim(),
+    fieldSource: {
+      ...(normalized?.fieldSource || {}),
+      issuerName: issuerIdentity.source || "cloud-project-index",
+    },
+  };
 }
 
 function lookupIssueGroup(data, normalized, query, primary, basic) {
@@ -1248,9 +1343,6 @@ function projectIssueGroupScore(project, entries, targets) {
     if (entrySecurityId && targets.securityIds.some((target) => securityIdMatches(entrySecurityId, target))) score = Math.max(score, 160);
     const entryName = normalizeLookupName(entry.shortName);
     if (entryName && targets.names.some((target) => normalizeLookupName(target) === entryName)) score = Math.max(score, 140);
-    const entryFamily = issueShortNameFamily(entry.shortName);
-    if (entryFamily && targets.families.includes(entryFamily) && issuerScore >= 80) score = Math.max(score, 95);
-    if (!targets.issuerTargets.length && specificShortNameFamilyMatches(entryFamily, targets.families)) score = Math.max(score, 93);
     const entrySeriesKey = issueShortNameSeriesKey(entry.shortName);
     if (entrySeriesKey && targets.seriesKeys.includes(entrySeriesKey) && issuerScore >= 80) score = Math.max(score, 95);
   }
@@ -1845,6 +1937,19 @@ function issueGroupDiagnostic(issueGroup) {
       status: tranche.status,
       source: tranche.source,
     })),
+  };
+}
+
+function issuerIdentityDiagnostic(issuerIdentity) {
+  if (!issuerIdentity) return { found: false };
+  return {
+    found: true,
+    source: issuerIdentity.source,
+    issuerName: issuerIdentity.legalName,
+    matchedBy: issuerIdentity.matchedBy,
+    matchedTarget: issuerIdentity.matchedTarget,
+    matchType: issuerIdentity.matchedRecordType,
+    confidence: issuerIdentity.confidence,
   };
 }
 
