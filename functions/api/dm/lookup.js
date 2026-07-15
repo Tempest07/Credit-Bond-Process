@@ -1250,11 +1250,20 @@ function projectIssueGroupScore(project, entries, targets) {
     if (entryName && targets.names.some((target) => normalizeLookupName(target) === entryName)) score = Math.max(score, 140);
     const entryFamily = issueShortNameFamily(entry.shortName);
     if (entryFamily && targets.families.includes(entryFamily) && issuerScore >= 80) score = Math.max(score, 95);
+    if (!targets.issuerTargets.length && specificShortNameFamilyMatches(entryFamily, targets.families)) score = Math.max(score, 93);
     const entrySeriesKey = issueShortNameSeriesKey(entry.shortName);
     if (entrySeriesKey && targets.seriesKeys.includes(entrySeriesKey) && issuerScore >= 80) score = Math.max(score, 95);
   }
   if (issuerScore >= 90 && targets.names.some((name) => projectFullText(project).includes(normalizeLookupName(name)))) score = Math.max(score, 92);
   return score;
+}
+
+function specificShortNameFamilyMatches(entryFamily, targetFamilies = []) {
+  const family = normalizeLookupName(entryFamily);
+  if (!family || !targetFamilies.map(normalizeLookupName).includes(family)) return false;
+  const body = family.replace(/^\d{2}/, "");
+  if (body.length < 2) return false;
+  return /[\u4e00-\u9fff]/.test(body) || /[A-Z]{2,}/i.test(body);
 }
 
 function issueGroupFromProject(project, entries, targets, score) {

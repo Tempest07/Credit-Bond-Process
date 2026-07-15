@@ -1704,6 +1704,68 @@ test("DM lookup marks a queried cancelled tranche from D1 issue group", async ()
   }
 });
 
+test("DM lookup falls back to a cloud issue group by specific short-name family", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    const data = url.includes("/bond/primary/data") ? { list: [] } : [];
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                id: "project-yuexiu",
+                shortName: "26广越07/08",
+                shortNames: ["26广越07", "26广越08"],
+                issuerName: "广州越秀集团股份有限公司",
+                venue: "银行间",
+                leadUnderwriter: "中信证券",
+                tranches: [
+                  { shortName: "26广越07", durationText: "10Y", issueScale: 9, inquiryLow: 1.2, inquiryHigh: 2.2 },
+                  { shortName: "26广越08", durationText: "10Y", issueScale: 9, inquiryLow: 1.7, inquiryHigh: 2.7 },
+                ],
+              }, {
+                id: "project-unrelated",
+                shortName: "26黑龙江09",
+                issuerName: "黑龙江省人民政府",
+                tranches: [{ shortName: "26黑龙江09", durationText: "5Y", issueScale: 8.8203 }],
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%B9%BF%E8%B6%8A09", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.diagnostic.dmMatched, false);
+    assert.equal(payload.issueGroup.source, "cloud-db");
+    assert.equal(payload.issueGroup.issuerName, "广州越秀集团股份有限公司");
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26广越07", "26广越08"]);
+    assert.ok(!payload.issueGroup.tranches.some((item) => /黑龙江/.test(item.shortName)));
+    assert.equal(payload.issueGroup.confidence, 93);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup points A/B reallocated tranches to the final issued MTN tranche", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
