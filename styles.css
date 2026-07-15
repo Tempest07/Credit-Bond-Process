@@ -615,11 +615,15 @@ label[data-recognition-source="wind"]::after {
 .cutoff-todo-actions .text-button { padding: 4px 2px; font-size: 10px; }
 .payment-todo-item.today { border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); background: var(--warning-soft); }
 .payment-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); background: #fff2f4; }
+.payment-todo-content { display: grid; gap: 6px; min-width: 0; }
 .payment-todo-main { display: grid; gap: 2px; min-width: 0; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; }
 .payment-todo-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 1.45; }
 .payment-todo-main span, .payment-todo-empty { color: #7f899d; font-size: 9px; }
 .cutoff-todo-item .payment-todo-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-todo-number { justify-self: start; padding: 4px 7px; border: 1px solid rgba(14,165,183,.22); border-radius: 7px; color: #087f8d; background: rgba(233,251,253,.88); font-size: 11px; font-weight: 850; letter-spacing: .015em; }
+.payment-todo-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .payment-todo-item .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
+.payment-todo-item .prepayment-button.recorded { border-color: rgba(14,165,183,.32); color: #087f8d; background: var(--secondary-soft); }
 .payment-todo-empty { grid-column: 1 / -1; display: grid; place-items: center; min-height: 63px; padding: 12px; border: 1px dashed rgba(208,216,231,.9); border-radius: 11px; background: rgba(248,250,253,.72); text-align: center; }
 .ledger-grid { display: grid; grid-template-columns: clamp(320px, 27vw, 430px) minmax(760px, 1fr); gap: 16px; align-items: start; }
 .project-list-panel, .project-detail-panel { min-height: 640px; padding: 17px; border-color: rgba(216,222,235,.95); border-radius: 20px; background: rgba(255,255,255,.95); box-shadow: 0 18px 46px rgba(15,23,42,.065), inset 0 1px 0 #fff; }
@@ -733,6 +737,26 @@ label[data-recognition-source="wind"]::after {
 .result-modal-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(180px, .6fr); gap: 12px; }
 .result-modal-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .result-modal-grid input { min-height: 38px; padding: 8px 10px; font-size: 12px; }
+.prepayment-entry-panel { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 20px; }
+.prepayment-entry-panel[hidden] { display: none; }
+.prepayment-entry-backdrop { position: absolute; inset: 0; border: 0; background: rgba(15,23,42,.46); backdrop-filter: blur(7px); }
+.prepayment-entry-dialog { position: relative; z-index: 1; display: grid; gap: 16px; width: min(430px, 96vw); padding: 22px; border: 1px solid rgba(14,165,183,.22); border-radius: 20px; background: radial-gradient(circle at 100% 0, rgba(14,165,183,.1), transparent 42%), #fff; box-shadow: 0 28px 80px rgba(15,23,42,.24); }
+.prepayment-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.prepayment-entry-head > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.prepayment-entry-head h2 { margin: 0; color: var(--text); font-size: 17px; letter-spacing: -.025em; }
+.prepayment-close { display: grid; flex: 0 0 auto; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 11px; color: #68738a; background: rgba(255,255,255,.82); font-size: 22px; line-height: 1; }
+.prepayment-entry-subject { overflow: hidden; color: #263149; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.prepayment-entry-label { color: #5f6b82; font-size: 12px; font-weight: 850; }
+.prepayment-number-input { display: grid; grid-template-columns: auto minmax(74px, 1fr); align-items: stretch; overflow: hidden; border: 1px solid rgba(14,165,183,.34); border-radius: 13px; background: #fbfeff; box-shadow: 0 0 0 4px rgba(14,165,183,.055); }
+.prepayment-number-input > span { display: flex; align-items: center; min-height: 52px; padding: 0 0 0 15px; color: #33425e; font-family: "Cascadia Mono", Consolas, monospace; font-size: 16px; font-weight: 800; letter-spacing: .025em; }
+.prepayment-number-input input { min-width: 74px; min-height: 52px; padding: 0 15px 0 0; border: 0; outline: 0; color: #087f8d; background: transparent; font-family: "Cascadia Mono", Consolas, monospace; font-size: 18px; font-weight: 900; letter-spacing: .08em; }
+.prepayment-number-input input::placeholder { color: #a3aebf; }
+.prepayment-number-input:focus-within { border-color: var(--secondary); box-shadow: 0 0 0 4px rgba(14,165,183,.12); }
+.prepayment-number-preview { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 13px; border: 1px solid rgba(218,224,235,.92); border-radius: 11px; background: #f7f9fc; }
+.prepayment-number-preview span { color: #748096; font-size: 11px; font-weight: 800; }
+.prepayment-number-preview strong { color: #17243d; font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; letter-spacing: .025em; overflow-wrap: anywhere; }
+.prepayment-entry-actions { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px; }
+.prepayment-entry-actions .button { min-height: 44px; }
 .project-footer-actions { justify-content: flex-start; }
 .result-summary { min-height: 100px; padding: 12px; resize: vertical; background: var(--panel-soft); font-size: 11px; line-height: 1.8; }
 .result-summary-output { margin-top: 8px; background: #fff; }
@@ -1137,6 +1161,12 @@ label[data-recognition-source="wind"]::after {
   .result-entry-dialog .result-actions { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: stretch; width: 100%; }
   .result-entry-dialog .result-actions .button { min-height: 46px; padding: 0 12px; }
   .result-entry-dialog .result-summary { min-height: min(42dvh, 320px); resize: none; }
+  .prepayment-entry-panel { place-items: end stretch; padding: max(12px, env(safe-area-inset-top)) 0 0; }
+  .prepayment-entry-dialog { width: 100%; max-width: none; padding: 18px 16px max(20px, env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; }
+  .prepayment-entry-head h2 { font-size: 18px; }
+  .prepayment-number-input > span { min-height: 56px; font-size: 16px; }
+  .prepayment-number-input input { min-height: 56px; font-size: 18px; }
+  .payment-todo-actions .button { min-height: 40px; }
   .main,
   .topbar,
   .view,

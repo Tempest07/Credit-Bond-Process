@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260715-ocr-national">
+  <link rel="stylesheet" href="./styles.css?v=20260715-prepayment-number">
 </head>
 <body>
   <div class="app-shell">
@@ -881,8 +881,29 @@
     </main>
   </div>
 
+  <section class="prepayment-entry-panel" id="prepaymentEntryPanel" role="dialog" aria-modal="true" aria-labelledby="prepaymentEntryTitle" hidden>
+    <button class="prepayment-entry-backdrop" type="button" data-close-prepayment aria-label="关闭预缴款编号录入"></button>
+    <form class="prepayment-entry-dialog" id="prepaymentEntryForm">
+      <header class="prepayment-entry-head">
+        <div><span class="step">PAY</span><h2 id="prepaymentEntryTitle">录入预缴款编号</h2></div>
+        <button class="prepayment-close" type="button" data-close-prepayment aria-label="关闭">×</button>
+      </header>
+      <strong class="prepayment-entry-subject" id="prepaymentEntrySubject"></strong>
+      <label class="prepayment-entry-label" for="prepaymentSuffixInput">编号末三位</label>
+      <div class="prepayment-number-input">
+        <span id="prepaymentNumberPrefix"></span>
+        <input id="prepaymentSuffixInput" type="text" inputmode="numeric" pattern="[0-9]{3}" maxlength="3" autocomplete="off" enterkeyhint="done" placeholder="003" aria-describedby="prepaymentNumberPreview">
+      </div>
+      <div class="prepayment-number-preview"><span>完整编号</span><strong id="prepaymentNumberPreview"></strong></div>
+      <footer class="prepayment-entry-actions">
+        <button class="button subtle" type="button" data-close-prepayment>取消</button>
+        <button class="button primary" type="submit">保存编号</button>
+      </footer>
+    </form>
+  </section>
+
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260715-ocr-national"></script>
+  <script type="module" src="./app.js?v=20260715-prepayment-number"></script>
 </body>
 </html>

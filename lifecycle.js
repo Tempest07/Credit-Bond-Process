@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260714-mobile-ledger";
+import { parseUnderwriterNames } from "./core.js?v=20260715-prepayment-number";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -186,6 +186,14 @@ export function trancheNeedsPayment(tranche, referenceDate = new Date()) {
   return isWinningTranche(tranche)
     && Boolean(tranche.paymentDate)
     && !tranche.paymentCompleted;
+}
+
+export function buildPrepaymentNumber(suffix, referenceDate = new Date()) {
+  const digits = String(suffix ?? "").trim();
+  if (!/^\d{3}$/.test(digits)) return "";
+  const date = referenceDateKey(referenceDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+  return `W${date.replace(/-/g, "")}00${digits}`;
 }
 
 export function dashboardCounts(projects = [], now = new Date()) {
@@ -547,6 +555,7 @@ function normalizeTranche(input = {}) {
   const resultStatus = inputResultStatus === "待出结果" && positiveNumber(winningAmountWan)
     ? "中标"
     : inputResultStatus;
+  const prepaymentNumber = normalizePrepaymentNumber(input.prepaymentNumber);
   return {
     id: input.id || crypto.randomUUID(),
     shortName: String(input.shortName || "").trim(),
@@ -576,10 +585,17 @@ function normalizeTranche(input = {}) {
     fullMarketMultiple: numberOrNull(input.fullMarketMultiple),
     marginalMultiple: numberOrNull(input.marginalMultiple),
     paymentDate: String(input.paymentDate || "").trim(),
+    prepaymentNumber,
+    prepaymentRecordedAt: prepaymentNumber ? String(input.prepaymentRecordedAt || "").trim() : "",
     startDate: String(input.startDate || "").trim(),
     allocationNote: String(input.allocationNote || "").trim(),
     paymentCompleted: Boolean(input.paymentCompleted),
   };
+}
+
+function normalizePrepaymentNumber(value = "") {
+  const normalized = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+  return /^W\d{13}$/.test(normalized) ? normalized : "";
 }
 
 function normalizeBidLevels(input = {}) {

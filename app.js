@@ -15,13 +15,14 @@ import {
   parseProjectBrief,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260715-ocr-national";
+} from "./core.js?v=20260715-prepayment-number";
 import {
   FTP_TENORS,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
   buildBidPositionText,
+  buildPrepaymentNumber,
   calculateFtpForDuration,
   createProjectRecord,
   dashboardCounts,
@@ -33,13 +34,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260715-ocr-national";
+} from "./lifecycle.js?v=20260715-prepayment-number";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260715-ocr-national";
+} from "./history-parser.js?v=20260715-prepayment-number";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -52,12 +53,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260715-ocr-national";
+} from "./protocol-transfer.js?v=20260715-prepayment-number";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260715-ocr-national";
+} from "./reminders.js?v=20260715-prepayment-number";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -77,8 +78,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260715-ocr-national";
-import { initializeDatePickers } from "./date-picker.js?v=20260715-ocr-national";
+} from "./secondary-inventory.js?v=20260715-prepayment-number";
+import { initializeDatePickers } from "./date-picker.js?v=20260715-prepayment-number";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -87,18 +88,18 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260715-ocr-national";
+} from "./project-screenshot-ocr.js?v=20260715-prepayment-number";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260715-ocr-national";
+} from "./project-screenshot-layout.js?v=20260715-prepayment-number";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260715-ocr-national";
+} from "./project-screenshot-image.js?v=20260715-prepayment-number";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -199,6 +200,7 @@ let projectAutoSaveTimer = null;
 let projectRecognitionMarks = {};
 let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
+let activePrepaymentTarget = null;
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
 let dmLastPayload = null;
@@ -3047,8 +3049,18 @@ function bindLedger() {
   $("#resultEntryPanel").addEventListener("click", (event) => {
     if (event.target.closest("[data-close-result]")) closeResultEntryPanel();
   });
+  $("#prepaymentEntryForm").addEventListener("submit", savePrepaymentEntry);
+  $("#prepaymentEntryPanel").addEventListener("click", (event) => {
+    if (event.target.closest("[data-close-prepayment]")) closePrepaymentEntry();
+  });
+  $("#prepaymentSuffixInput").addEventListener("input", (event) => {
+    event.target.value = event.target.value.replace(/\D/g, "").slice(0, 3);
+    renderPrepaymentNumberPreview();
+  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !$("#resultEntryPanel").hidden) closeResultEntryPanel();
+    if (event.key !== "Escape") return;
+    if (!$("#prepaymentEntryPanel").hidden) closePrepaymentEntry();
+    else if (!$("#resultEntryPanel").hidden) closeResultEntryPanel();
   });
   $("#copyBidPositionButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#projectBidPosition").value);
@@ -3122,8 +3134,10 @@ function bindLedger() {
   });
   $("#paymentTodoList").addEventListener("click", (event) => {
     const completeButton = event.target.closest("[data-complete-payment]");
+    const prepaymentButton = event.target.closest("[data-prepayment-payment]");
     const openButton = event.target.closest("[data-open-payment-project]");
     if (completeButton) completePaymentTodo(completeButton.dataset.completePayment);
+    if (prepaymentButton) openPrepaymentEntry(prepaymentButton.dataset.prepaymentPayment, prepaymentButton);
     if (openButton) {
       openLedgerProject(openButton.dataset.openPaymentProject, { scrollOnDesktop: true });
     }
@@ -6013,13 +6027,21 @@ function renderPaymentTodo() {
         const timing = tranche.paymentDate < today ? "overdue" : tranche.paymentDate === today ? "today" : "upcoming";
         const timingLabel = timing === "overdue" ? "已逾期" : timing === "today" ? "今日缴款" : tranche.paymentDate;
         const addBondNote = tranche.paymentDate === today && isAbsOrAbnProject(projectValue, tranche) ? " · 需加券" : "";
+        const paymentKey = `${projectValue.id}:${tranche.id}`;
+        const prepaymentNumber = tranche.prepaymentNumber || "";
         return `
-          <article class="payment-todo-item ${timing}">
-            <button class="payment-todo-main" type="button" data-open-payment-project="${escapeAttribute(projectValue.id)}">
-              <strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong>
-              <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}${escapeHtml(addBondNote)}</span>
-            </button>
-            <button class="button subtle" type="button" data-complete-payment="${escapeAttribute(`${projectValue.id}:${tranche.id}`)}">缴款</button>
+          <article class="payment-todo-item ${timing} ${prepaymentNumber ? "has-prepayment" : ""}">
+            <div class="payment-todo-content">
+              <button class="payment-todo-main" type="button" data-open-payment-project="${escapeAttribute(projectValue.id)}">
+                <strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong>
+                <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}${escapeHtml(addBondNote)}</span>
+              </button>
+              ${prepaymentNumber ? `<span class="payment-todo-number">预缴款 · ${escapeHtml(prepaymentNumber)}</span>` : ""}
+            </div>
+            <div class="payment-todo-actions">
+              <button class="button prepayment-button ${prepaymentNumber ? "recorded" : "subtle"}" type="button" data-prepayment-payment="${escapeAttribute(paymentKey)}" aria-label="${prepaymentNumber ? "修改" : "录入"}${escapeAttribute(tranche.shortName || projectValue.shortName)}预缴款编号">预缴款</button>
+              <button class="button subtle" type="button" data-complete-payment="${escapeAttribute(paymentKey)}">缴款</button>
+            </div>
           </article>
         `;
       }).join("")
@@ -6028,6 +6050,74 @@ function renderPaymentTodo() {
 
 function isAbsOrAbnProject(projectValue, tranche = {}) {
   return isAbsProject(projectValue) || /(?:ABS|ABN|资产支持)/i.test(`${projectValue.shortName} ${tranche.shortName} ${projectValue.sourceText}`);
+}
+
+function openPrepaymentEntry(value, trigger) {
+  const [projectId, trancheId] = String(value || "").split(":");
+  const projectValue = (state.projects || []).find((item) => item.id === projectId);
+  const tranche = projectValue?.tranches?.find((item) => item.id === trancheId);
+  if (!projectValue || !tranche) return;
+  const existingNumber = tranche.prepaymentNumber || "";
+  const numberDate = existingNumber
+    ? `${existingNumber.slice(1, 5)}-${existingNumber.slice(5, 7)}-${existingNumber.slice(7, 9)}`
+    : localDate(new Date());
+  activePrepaymentTarget = { projectId, trancheId, numberDate, trigger };
+  $("#prepaymentEntrySubject").textContent = tranche.shortName || projectValue.shortName;
+  $("#prepaymentSuffixInput").value = existingNumber.slice(-3);
+  $("#prepaymentEntryPanel").hidden = false;
+  renderPrepaymentNumberPreview();
+  syncModalOpenState();
+  requestAnimationFrame(() => {
+    $("#prepaymentSuffixInput").focus({ preventScroll: true });
+    $("#prepaymentSuffixInput").select();
+  });
+}
+
+function renderPrepaymentNumberPreview() {
+  const suffix = $("#prepaymentSuffixInput").value;
+  const number = activePrepaymentTarget && suffix.length === 3
+    ? buildPrepaymentNumber(suffix.padEnd(3, "·"), activePrepaymentTarget.numberDate)
+    : "";
+  const prefix = activePrepaymentTarget
+    ? buildPrepaymentNumber("000", activePrepaymentTarget.numberDate).slice(0, -3)
+    : "";
+  $("#prepaymentNumberPrefix").textContent = prefix;
+  $("#prepaymentNumberPreview").textContent = number || `${prefix}${suffix.padEnd(3, "·")}`;
+}
+
+function savePrepaymentEntry(event) {
+  event.preventDefault();
+  if (!activePrepaymentTarget) return;
+  const suffix = $("#prepaymentSuffixInput").value.trim();
+  const prepaymentNumber = buildPrepaymentNumber(suffix, activePrepaymentTarget.numberDate);
+  if (!prepaymentNumber) {
+    showToast("请输入预缴款编号的最后三位数字。");
+    $("#prepaymentSuffixInput").focus({ preventScroll: true });
+    return;
+  }
+  const { projectId, trancheId } = activePrepaymentTarget;
+  const projectValue = (state.projects || []).find((item) => item.id === projectId);
+  if (!projectValue) return;
+  const next = normalizeProjectRecord({
+    ...projectValue,
+    tranches: projectValue.tranches.map((tranche) => tranche.id === trancheId
+      ? { ...tranche, prepaymentNumber, prepaymentRecordedAt: new Date().toISOString() }
+      : tranche),
+  });
+  next.status = deriveProjectStatus(next);
+  closePrepaymentEntry({ restoreFocus: false });
+  state = upsertProject(state, next);
+  persistState();
+  renderProjectWorkspace();
+  showToast(`${next.shortName} 已保存预缴款编号 ${prepaymentNumber}。`);
+}
+
+function closePrepaymentEntry({ restoreFocus = true } = {}) {
+  const trigger = activePrepaymentTarget?.trigger;
+  $("#prepaymentEntryPanel").hidden = true;
+  activePrepaymentTarget = null;
+  syncModalOpenState();
+  if (restoreFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
 }
 
 function completePaymentTodo(value) {
@@ -6328,6 +6418,8 @@ function renderTranches(tranches) {
           <label>边际倍数<input data-tranche-field="marginalMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.marginalMultiple ?? "")}"></label>
           <label>起息日期<input data-tranche-field="startDate" type="date" value="${escapeAttribute(tranche.startDate)}"></label>
           <label>缴款日期<input data-tranche-field="paymentDate" type="date" value="${escapeAttribute(tranche.paymentDate)}"></label>
+          <label>预缴款编号<input data-tranche-field="prepaymentNumber" value="${escapeAttribute(tranche.prepaymentNumber)}" placeholder="从缴款待办录入" readonly></label>
+          <input data-tranche-field="prepaymentRecordedAt" type="hidden" value="${escapeAttribute(tranche.prepaymentRecordedAt)}">
           <label class="span-3">回拨 / 结果备注<input data-tranche-field="allocationNote" value="${escapeAttribute(tranche.allocationNote)}"></label>
           <label class="checkbox-label compact-checkbox"><input data-tranche-field="paymentCompleted" type="checkbox" ${tranche.paymentCompleted ? "checked" : ""}>已完成缴款</label>
         </div>
@@ -6737,7 +6829,7 @@ function updateProjectActionButtons(status) {
 
 function openResultEntryPanel(shouldFocus = true) {
   $("#resultEntryPanel").hidden = false;
-  document.body.classList.add("modal-open");
+  syncModalOpenState();
   setResultEntryFieldsVisible(true);
   if (isCompactLedger()) requestAnimationFrame(() => $("#resultEntryDialog")?.focus({ preventScroll: true }));
   else if (shouldFocus) $("#projectResultAdvertisement").focus();
@@ -6745,8 +6837,15 @@ function openResultEntryPanel(shouldFocus = true) {
 
 function closeResultEntryPanel() {
   $("#resultEntryPanel").hidden = true;
-  document.body.classList.remove("modal-open");
+  syncModalOpenState();
   if (isCompactLedger()) $("#openResultButton")?.focus({ preventScroll: true });
+}
+
+function syncModalOpenState() {
+  document.body.classList.toggle(
+    "modal-open",
+    !$("#resultEntryPanel").hidden || !$("#prepaymentEntryPanel").hidden,
+  );
 }
 
 function setResultEntryFieldsVisible(visible) {

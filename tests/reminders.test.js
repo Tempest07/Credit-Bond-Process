@@ -37,7 +37,7 @@ test("keeps tomorrow and morning payment reminders in daily policy", () => {
         shortName: "26今日SCP001",
         status: "待缴款",
         resultConfirmed: true,
-        tranches: [{ id: "t1", shortName: "26今日SCP001", resultStatus: "中标", paymentDate: "2026-07-08" }],
+        tranches: [{ id: "t1", shortName: "26今日SCP001", resultStatus: "中标", paymentDate: "2026-07-08", prepaymentNumber: "W2026070800003" }],
       },
       {
         id: "tomorrow",

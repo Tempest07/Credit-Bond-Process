@@ -2,13 +2,14 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260715-ocr-national";
+const VERSION = "20260715-prepayment-number";
 
 test("versions all first-party browser modules together", async () => {
-  const [html, app, historyParser, reminders] = await Promise.all([
+  const [html, app, historyParser, lifecycle, reminders] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../history-parser.js", import.meta.url), "utf8"),
+    readFile(new URL("../lifecycle.js", import.meta.url), "utf8"),
     readFile(new URL("../reminders.js", import.meta.url), "utf8"),
   ]);
 
@@ -24,8 +25,27 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`project-screenshot-layout\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-image\\.js\\?v=${VERSION}`));
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
+  assert.match(lifecycle, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+});
+
+test("ships tranche prepayment entry with a mobile-safe three-digit input", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="prepaymentEntryPanel"[^>]*role="dialog"[^>]*aria-modal="true"/);
+  assert.match(html, /id="prepaymentSuffixInput"[^>]*inputmode="numeric"[^>]*pattern="\[0-9\]\{3\}"[^>]*maxlength="3"/);
+  assert.match(app, /data-prepayment-payment/);
+  assert.match(app, /data-tranche-field="prepaymentNumber"[^>]*readonly/);
+  assert.match(app, /data-tranche-field="prepaymentRecordedAt"[^>]*type="hidden"/);
+  assert.match(app, /buildPrepaymentNumber\(suffix, activePrepaymentTarget\.numberDate\)/);
+  assert.match(app, /prepaymentNumber:\s*new Date|prepaymentRecordedAt:\s*new Date/);
+  assert.match(styles, /\.prepayment-number-input input\s*\{[^}]*font-size:\s*18px;/s);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.prepayment-entry-panel\s*\{[^}]*place-items:\s*end stretch;/s);
 });
 
 test("revalidates non-fingerprinted application assets", async () => {

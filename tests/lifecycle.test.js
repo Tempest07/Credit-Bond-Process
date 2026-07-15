@@ -6,6 +6,7 @@ import {
   applyIssuanceAdvertisement,
   buildAwardResultText,
   buildBidPositionText,
+  buildPrepaymentNumber,
   calculateFtpForDuration,
   createProjectRecord,
   dashboardCounts,
@@ -367,6 +368,29 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
     buildBidPositionText(dualWithDmTenor),
     "【投标】26工投K4，5年期，2.25%投2亿，不超5年期的20%\n【投标】26工投K5，10年期，2.75%投2亿，不超10年期的20%",
   );
+});
+
+test("builds and preserves tranche prepayment numbers without completing payment", () => {
+  assert.equal(buildPrepaymentNumber("003", "2026-07-15"), "W2026071500003");
+  assert.equal(buildPrepaymentNumber("03", "2026-07-15"), "");
+  assert.equal(buildPrepaymentNumber("A03", "2026-07-15"), "");
+
+  const project = normalizeProjectRecord({
+    shortName: "26测试MTN001",
+    resultConfirmed: true,
+    tranches: [{
+      shortName: "26测试MTN001",
+      resultStatus: "中标",
+      paymentDate: "2026-07-16",
+      prepaymentNumber: "w2026071500003",
+      prepaymentRecordedAt: "2026-07-15T09:30:00.000Z",
+    }],
+  });
+
+  assert.equal(project.tranches[0].prepaymentNumber, "W2026071500003");
+  assert.equal(project.tranches[0].prepaymentRecordedAt, "2026-07-15T09:30:00.000Z");
+  assert.equal(trancheNeedsPayment(project.tranches[0]), true);
+  assert.equal(deriveProjectStatus(project, new Date("2026-07-15T10:00:00+08:00")), "待缴款");
 });
 
 test("parses issuance advertisements and infers payment month", () => {
