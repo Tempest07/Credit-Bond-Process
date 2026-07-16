@@ -1291,6 +1291,99 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
   }
 });
 
+test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "245901.SH",
+        sec_short_name: "26广越09",
+        sec_full_name: "广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券（第五期）（品种一）",
+        issuer_name: "广州越秀集团股份有限公司",
+        bond_matu: "2Y",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = { list: [{
+        security_id: "245901.SH",
+        sec_short_name: "26广越09",
+        issuer_full_name: "广州越秀集团股份有限公司",
+        bond_issue_tenor: "2Y",
+        plan_issue_amount: 75000,
+        subscribe_rate: "1.200000 ~ 2.200000",
+        subscribe_date: "2026-07-16",
+      }, {
+        security_id: "245902.SH",
+        sec_short_name: "26广越10",
+        issuer_full_name: "广州越秀集团股份有限公司",
+        bond_issue_tenor: "10Y",
+        plan_issue_amount: 75000,
+        subscribe_rate: "1.900000 ~ 2.900000",
+        subscribe_date: "2026-07-16",
+      }] };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "广州越秀集团股份有限公司" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                id: "project-yuexiu-prior",
+                shortName: "26广越07/08",
+                shortNames: ["26广越07", "26广越08"],
+                issuerName: "广州越秀集团股份有限公司",
+                tranches: [{
+                  shortName: "26广越07",
+                  durationText: "10Y",
+                  issueScale: 9,
+                  inquiryLow: 1.2,
+                  inquiryHigh: 2.2,
+                }, {
+                  shortName: "26广越08",
+                  durationText: "10Y",
+                  issueScale: 9,
+                  inquiryLow: 1.7,
+                  inquiryHigh: 2.7,
+                }],
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%B9%BF%E8%B6%8A09", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.diagnostic.dmMatched, true);
+    assert.equal(payload.issueGroup.source, "dm");
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26广越09", "26广越10"]);
+    assert.ok(payload.issueGroup.tranches.every((item) => item.source === "dm"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup expands a base MTN short name and discovers equal A/B tranches", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

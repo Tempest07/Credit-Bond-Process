@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260715-prepayment-number";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-current-issue-group";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
