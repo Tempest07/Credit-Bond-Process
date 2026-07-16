@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260716-desktop-cutoff-layout";
+import { parseUnderwriterNames } from "./core.js?v=20260716-dm-v25-ratings";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

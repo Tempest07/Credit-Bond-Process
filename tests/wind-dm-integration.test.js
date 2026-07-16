@@ -89,7 +89,7 @@ test("Wind replaces the DM implied rating when WIND_API_KEY is configured", asyn
     assert.deepEqual(payload.diagnostic.rating.filledFromWind, ["impliedRating"]);
     assert.equal(payload.diagnostic.rating.windImpliedRating.status, "ok");
     assert.equal(payload.raw.windImpliedRating.rating, "AA");
-    assert.equal(calls.length, 5);
+    assert.equal(calls.length, 9);
   } finally {
     globalThis.fetch = originalFetch;
   }

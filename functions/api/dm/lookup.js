@@ -6,6 +6,10 @@ const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const PRIMARY_PATH = "/dm-quant-func-service/api/v1/bond/primary/data";
 const COMPANY_INFO_PATH = "/dm-quant-func-service/api/v1/company/basic-info/info";
 const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
+const COMPANY_RATING_PATH = "/dm-quant-func-service/api/v1/company/rating/data";
+const BOND_RATING_PATH = "/dm-quant-func-service/api/v1/bond/rating/data";
+const IMPLIED_RATING_PATH = "/dm-quant-func-service/api/v1/bond/analysis/implied-rating";
+const DEFAULT_RATE_PATH = "/dm-quant-func-service/api/v1/bond/default-rate/data";
 
 const SBOX = [
   0xd6, 0x90, 0xe9, 0xfe, 0xcc, 0xe1, 0x3d, 0xb7, 0x16, 0xb6, 0x14, 0xc2, 0x28, 0xfb, 0x2c, 0x05,
@@ -70,9 +74,12 @@ export async function onRequestGet(context) {
     const company = issuerName ? await lookupCompanyInfo(dm, issuerName) : null;
     const normalized = normalizeDmLookup({ shortName, securityId, fullName, basic, primary, company });
     const windEnabled = windImpliedRatingEnabled(context.env);
-    const dmRatingDiscovery = await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }, {
-      includeImplied: !windEnabled,
-    });
+    const dmRatingDiscovery = dmMatched
+      ? await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }, {
+          includeImplied: true,
+          asOfDate: endDate || localDate(new Date()),
+        })
+      : { values: {}, matches: {}, sources: [], errors: [] };
     const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
     const windImpliedRating = dmMatched
       ? await lookupWindImpliedRating(context.env, {
@@ -97,12 +104,15 @@ export async function onRequestGet(context) {
     const issuerEnrichedNormalized = applyIssuerIdentityFallback(windEnrichedNormalized, issuerIdentityFallback);
     const issuerRatingFallback = lookupIssuerRatingFallback(d1State, issuerEnrichedNormalized);
     const enrichedNormalized = applyIssuerRatingFallback(issuerEnrichedNormalized, issuerRatingFallback);
-    const issueGroup = lookupIssueGroup(
-      d1State,
-      dmMatched ? enrichedNormalized : windEnrichedNormalized,
-      { shortName, securityId, fullName },
-      dmMatched ? primary : null,
-      dmMatched ? basic : null,
+    const issueGroup = applyNormalizedBondRatingToIssueGroup(
+      lookupIssueGroup(
+        d1State,
+        dmMatched ? enrichedNormalized : windEnrichedNormalized,
+        { shortName, securityId, fullName },
+        dmMatched ? primary : null,
+        dmMatched ? basic : null,
+      ),
+      enrichedNormalized,
     );
     if (!dmMatched && !issuerIdentityFallback && !issuerRatingFallback && !issueGroup) {
       return json(dmNoResultPayload({ shortName, securityId, fullName, basic, primary }));
@@ -839,14 +849,17 @@ function formatTenorNumber(value) {
   return Number(value).toFixed(4).replace(/\.?0+$/, "");
 }
 
-async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }, { includeImplied = true } = {}) {
+async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }, { includeImplied = true, asOfDate = "" } = {}) {
   const sources = [
     { name: "basicInfo", raw: basic.raw, rows: basic.rows || [] },
     { name: "primaryData", raw: primary.raw, rows: primary.rows || [] },
     { name: "companyInfo", raw: company?.raw || null, rows: company?.rows || [] },
   ];
   const errors = [];
-  const initial = extractRatingsFromDmSources(sources, { includeImplied });
+  const dedicated = await lookupDedicatedDmRatingSources(dm, normalized, { includeImplied, asOfDate });
+  sources.push(...dedicated.sources);
+  errors.push(...dedicated.errors);
+  const initial = mergeRatingDiscoveries(dedicated, extractRatingsFromDmSources(sources, { includeImplied }));
   if (ratingsComplete({ ...normalized, ...initial.values }, { includeImplied })) return { ...initial, sources, errors };
 
   const issuerName = normalized?.issuerName || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
@@ -862,7 +875,7 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
       const raw = await dm.post(OUTSTANDING_BONDS_PATH, payload);
       const source = { name: sourceName, raw, rows: rowsFromDm(raw) };
       sources.push(source);
-      const discovered = extractRatingsFromDmSources(sources, { includeImplied });
+      const discovered = mergeRatingDiscoveries(dedicated, extractRatingsFromDmSources(sources, { includeImplied }));
       if (ratingsComplete({ ...normalized, ...discovered.values }, { includeImplied })) {
         return { ...discovered, sources, errors };
       }
@@ -875,7 +888,205 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
     }
   }
 
-  return { ...extractRatingsFromDmSources(sources, { includeImplied }), sources, errors };
+  return { ...mergeRatingDiscoveries(dedicated, extractRatingsFromDmSources(sources, { includeImplied })), sources, errors };
+}
+
+async function lookupDedicatedDmRatingSources(dm, normalized, { includeImplied = true, asOfDate = "" } = {}) {
+  const issuerPayload = normalized?.societyCode
+    ? { societyCodeList: [normalized.societyCode] }
+    : normalized?.issuerName
+      ? { comChiNameList: [normalized.issuerName] }
+      : null;
+  const bondPayload = normalized?.securityId
+    ? { securityIdList: [normalized.securityId] }
+    : normalized?.shortName
+      ? { secShortNameList: [normalized.shortName] }
+      : null;
+  const dateWindow = dmDailyRatingWindow(asOfDate);
+  const requests = [
+    ...(issuerPayload ? [{ name: "companyRating", path: COMPANY_RATING_PATH, payload: issuerPayload }] : []),
+    ...(bondPayload ? [{ name: "bondRating", path: BOND_RATING_PATH, payload: bondPayload }] : []),
+    ...(bondPayload && includeImplied ? [{ name: "bondImpliedRating", path: IMPLIED_RATING_PATH, payload: { ...bondPayload, ...dateWindow } }] : []),
+    ...(bondPayload ? [{ name: "bondDefaultRate", path: DEFAULT_RATE_PATH, payload: { ...bondPayload, ...dateWindow } }] : []),
+  ];
+  const results = await Promise.all(requests.map(async (request) => {
+    try {
+      const raw = await dm.post(request.path, request.payload);
+      return {
+        source: { name: request.name, path: request.path, raw, rows: rowsFromDm(raw) },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        source: null,
+        error: {
+          source: request.name,
+          path: request.path,
+          payloadKeys: Object.keys(request.payload),
+          error: dmDedicatedRatingError(error),
+        },
+      };
+    }
+  }));
+  const sources = results.map((result) => result.source).filter(Boolean);
+  const errors = results.map((result) => result.error).filter(Boolean);
+  const values = {};
+  const matches = {};
+  const sourceByName = Object.fromEntries(sources.map((source) => [source.name, source]));
+
+  const companyRow = latestDmRatingRow(sourceByName.companyRating?.rows, asOfDate, (row) => (
+    dmCompanyRatingRowMatches(row, normalized)
+    && Boolean(externalDmRating(row, { requireInstitution: true }))
+  ));
+  const companyRating = externalDmRating(companyRow, { requireInstitution: true });
+  if (companyRating) {
+    values.subjectRating = companyRating.rating;
+    values.ratingAgency = companyRating.institution;
+    values.subjectRatingAsOf = companyRating.date;
+    values.subjectRatingOutlook = companyRating.outlook;
+    matches.subjectRating = dedicatedRatingMatch("companyRating", COMPANY_RATING_PATH, "rating", companyRating.rating, companyRating.date);
+    matches.ratingAgency = dedicatedRatingMatch("companyRating", COMPANY_RATING_PATH, "rating_institution_short_name", companyRating.institution, companyRating.date);
+  }
+
+  const bondRow = latestDmRatingRow(sourceByName.bondRating?.rows, asOfDate, (row) => (
+    dmBondRatingRowMatches(row, normalized)
+    && Boolean(externalDmRating(row, { requireInstitution: true }))
+  ));
+  const bondRating = externalDmRating(bondRow, { requireInstitution: true });
+  if (bondRating) {
+    values.bondRating = bondRating.rating;
+    values.bondRatingAgency = bondRating.institution;
+    values.bondRatingAsOf = bondRating.date;
+    values.bondRatingOutlook = bondRating.outlook;
+    matches.bondRating = dedicatedRatingMatch("bondRating", BOND_RATING_PATH, "rating", bondRating.rating, bondRating.date);
+    matches.bondRatingAgency = dedicatedRatingMatch("bondRating", BOND_RATING_PATH, "rating_institution_short_name", bondRating.institution, bondRating.date);
+  }
+
+  const impliedRow = latestDmRatingRow(sourceByName.bondImpliedRating?.rows, asOfDate, (row) => (
+    dmBondRatingRowMatches(row, normalized)
+    && Boolean(dmImpliedRatingValues(row).rating)
+  ));
+  const implied = dmImpliedRatingValues(impliedRow);
+  if (implied.rating) {
+    values.cbImpliedRating = implied.cbRating;
+    values.csImpliedRating = implied.csRating;
+    values.impliedRating = implied.rating;
+    values.impliedRatingBasis = implied.basis;
+    values.impliedRatingAsOf = implied.date;
+    matches.impliedRating = dedicatedRatingMatch("bondImpliedRating", IMPLIED_RATING_PATH, implied.field, implied.rating, implied.date);
+  }
+
+  const defaultRow = latestDmRatingRow(sourceByName.bondDefaultRate?.rows, asOfDate, (row) => (
+    dmBondRatingRowMatches(row, normalized)
+    && dmRowHasDefaultRate(row)
+  ));
+  if (defaultRow) {
+    const date = dmRatingDate(defaultRow);
+    values.defaultRateAsOf = date;
+    values.cbRemainingTenorYear = numberFromRow(defaultRow, ["cb_remaining_tenor_year", "cbRemainingTenorYear"]);
+    values.cbImpliedDefaultRate = numberFromRow(defaultRow, ["cb_implied_default_rate", "cbImpliedDefaultRate"]);
+    values.cbOneYearImpliedDefaultRate = numberFromRow(defaultRow, ["cb_one_year_implied_default_rate", "cbOneYearImpliedDefaultRate"]);
+    values.csOneYearImpliedDefaultRate = numberFromRow(defaultRow, ["cs_one_year_implied_default_rate", "csOneYearImpliedDefaultRate"]);
+    values.yyDefaultRate = numberFromRow(defaultRow, ["yy_default_rate", "yyDefaultRate"]);
+    matches.defaultRateAsOf = dedicatedRatingMatch("bondDefaultRate", DEFAULT_RATE_PATH, "rating_date", date, date);
+  }
+
+  return { values, matches, authoritativeFields: Object.keys(values), sources, errors };
+}
+
+function mergeRatingDiscoveries(primary, secondary) {
+  return {
+    values: { ...(secondary?.values || {}), ...(primary?.values || {}) },
+    matches: { ...(secondary?.matches || {}), ...(primary?.matches || {}) },
+    authoritativeFields: uniqueStrings([...(secondary?.authoritativeFields || []), ...(primary?.authoritativeFields || [])]),
+  };
+}
+
+function dedicatedRatingMatch(source, apiPath, path, value, date) {
+  return { source, apiPath, path, value, date, authoritative: true };
+}
+
+function dmDailyRatingWindow(asOfDate = "") {
+  const endDate = /^\d{4}-\d{2}-\d{2}$/.test(asOfDate) ? asOfDate : localDate(new Date());
+  const parsed = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return {};
+  parsed.setUTCDate(parsed.getUTCDate() - 29);
+  return { startDate: parsed.toISOString().slice(0, 10), endDate };
+}
+
+function latestDmRatingRow(rows = [], asOfDate = "", predicate = () => true) {
+  const cutoff = /^\d{4}-\d{2}-\d{2}$/.test(asOfDate) ? asOfDate : "";
+  return (rows || [])
+    .map((row, index) => ({ row, index, date: dmRatingDate(row) }))
+    .filter(({ row, date }) => predicate(row) && (!cutoff || !date || date <= cutoff))
+    .sort((left, right) => right.date.localeCompare(left.date) || left.index - right.index)[0]?.row || null;
+}
+
+function dmRatingDate(row = {}) {
+  return pickFirstDateString(row, ["rating_date", "ratingDate"]);
+}
+
+function dmCompanyRatingRowMatches(row, normalized) {
+  const societyCode = String(normalized?.societyCode || "").trim().toUpperCase();
+  if (societyCode) {
+    return String(pickFirstString(row, ["society_code", "societyCode"])).trim().toUpperCase() === societyCode;
+  }
+  const issuerName = normalizeIssuerMatchText(normalized?.issuerName || "");
+  const rowName = normalizeIssuerMatchText(pickFirstString(row, ["com_chi_name", "comChiName"]));
+  return Boolean(issuerName && rowName && issuerMatchScore(rowName, issuerName) >= 90);
+}
+
+function dmBondRatingRowMatches(row, normalized) {
+  if (normalized?.securityId) return rowMatchesSecurityId(row, normalized.securityId);
+  return Boolean(normalized?.shortName && rowMatchesShortName(row, normalized.shortName));
+}
+
+function dmDedicatedRatingError(error) {
+  const message = String(error?.message || "");
+  const http = message.match(/DM HTTP\s+(\d+)/i);
+  if (http) return `DM HTTP ${http[1]}`;
+  const api = message.match(/DM API\s+([^:\s]+)/i);
+  if (api) return `DM API ${api[1]}`;
+  return "DM rating API request failed";
+}
+
+function externalDmRating(row, { requireInstitution = false } = {}) {
+  if (!row) return null;
+  const ratingText = pickFirstString(row, ["rating"]);
+  const rating = parseRatingWithAgency(ratingText).rating;
+  const institution = pickFirstString(row, ["rating_institution_short_name", "ratingInstitutionShortName"]);
+  const dataSource = pickFirstString(row, ["data_source", "dataSource"]);
+  if (!rating || requireInstitution && !institution) return null;
+  if (/(?:^|[^A-Z])PCA(?:[^A-Z]|$)|YY|评分|score/i.test(`${dataSource} ${institution}`)) return null;
+  return {
+    rating,
+    institution,
+    date: dmRatingDate(row),
+    outlook: pickFirstString(row, ["rating_outlook", "ratingOutlook"]),
+  };
+}
+
+function dmImpliedRatingValues(row = {}) {
+  const cbRating = parseRatingWithAgency(pickFirstString(row, ["cb_implied_rating", "cbImpliedRating"])).rating;
+  const csRating = parseRatingWithAgency(pickFirstString(row, ["cs_implied_rating", "csImpliedRating"])).rating;
+  return {
+    cbRating,
+    csRating,
+    rating: cbRating || csRating,
+    basis: cbRating ? "中债" : csRating ? "中证" : "",
+    field: cbRating ? "cb_implied_rating" : csRating ? "cs_implied_rating" : "",
+    date: dmRatingDate(row),
+  };
+}
+
+function dmRowHasDefaultRate(row = {}) {
+  return [
+    "cb_remaining_tenor_year", "cbRemainingTenorYear",
+    "cb_implied_default_rate", "cbImpliedDefaultRate",
+    "cb_one_year_implied_default_rate", "cbOneYearImpliedDefaultRate",
+    "cs_one_year_implied_default_rate", "csOneYearImpliedDefaultRate",
+    "yy_default_rate", "yyDefaultRate",
+  ].some((key) => Number.isFinite(numberFromRow(row, [key])));
 }
 
 function extractRatingsFromDmSources(sources, { includeImplied = true } = {}) {
@@ -983,9 +1194,11 @@ function applyDmRatingDiscovery(normalized, discovery) {
   const next = { ...normalized };
   const ratingSource = { ...(next.ratingSource || {}) };
   for (const [field, value] of Object.entries(values)) {
-    if (!next[field] && value) {
+    const authoritative = (discovery?.authoritativeFields || []).includes(field)
+      || Boolean(discovery?.matches?.[field]?.authoritative);
+    if (value !== null && value !== undefined && value !== "" && (authoritative || !next[field])) {
       next[field] = value;
-      ratingSource[field] = "dm-discovery";
+      ratingSource[field] = authoritative ? "dm-rating-api" : "dm-discovery";
     }
   }
   if (Object.keys(ratingSource).length) next.ratingSource = ratingSource;
@@ -1319,6 +1532,21 @@ function lookupIssueGroup(data, normalized, query, primary, basic) {
     : dbGroup;
   const annotatedGroup = annotateIssueGroupReallocationTargets(group);
   return shouldExposeIssueGroup(annotatedGroup, query, normalized) ? annotatedGroup : null;
+}
+
+function applyNormalizedBondRatingToIssueGroup(group, normalized) {
+  if (!group?.tranches?.length || !normalized?.bondRating) return group;
+  const target = { shortName: normalized.shortName || "", securityId: normalized.securityId || "" };
+  return {
+    ...group,
+    tranches: group.tranches.map((tranche) => issueTranchesMatch(tranche, target)
+      ? {
+          ...tranche,
+          debtRating: normalized.bondRating,
+          debtRatingAgency: normalized.bondRatingAgency || tranche.debtRatingAgency || "",
+        }
+      : tranche),
+  };
 }
 
 function buildIssueGroupFromProjects(normalized, query, projects) {
@@ -1968,16 +2196,19 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
   const fields = ["subjectRating", "ratingAgency", "impliedRating"];
   const dmFields = windEnabled ? ["subjectRating", "ratingAgency"] : fields;
   const filledFromDm = dmFields.filter((field) => Boolean(original?.[field]));
+  const filledFromDmRatingApi = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-rating-api");
   const filledFromDmDiscovery = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-discovery");
   const filledFromWind = fields.filter((field) => enriched?.ratingSource?.[field] === "wind-analytics");
   const filledFromIssuerDb = fields.filter((field) => enriched?.ratingSource?.[field] === "issuer-db");
   return {
     filledFromDm,
+    filledFromDmRatingApi,
     filledFromDmDiscovery,
     filledFromWind,
     filledFromIssuerDb,
     missing: fields.filter((field) => !enriched?.[field]),
     dmDiscoverySources: (dmDiscovery?.sources || []).map((source) => source.name),
+    dmRatingApiSources: (dmDiscovery?.sources || []).filter((source) => source.path).map((source) => source.name),
     dmDiscoveryMatches: dmDiscovery?.matches || {},
     dmDiscoveryErrors: dmDiscovery?.errors || [],
     windImpliedRating: {
@@ -2001,6 +2232,8 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
       ? "Wind 未返回可用中债隐含评级，已使用明确标注的主体库历史隐含评级回退。"
       : windEnabled
       ? "Wind 未返回可用中债隐含评级，且没有可用的主体库回退；未使用 DM 隐含评级替代。"
+      : filledFromDmRatingApi.length
+      ? "Dedicated DM V2.5 rating APIs returned the current rating fields before compatibility fallbacks were used."
       : filledFromDmDiscovery.length
       ? "Rating fields were not present in the initially selected DM row, but were found by scanning additional DM results before D1 fallback."
       : filledFromIssuerDb.length

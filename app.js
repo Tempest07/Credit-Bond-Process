@@ -16,7 +16,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260716-desktop-cutoff-layout";
+} from "./core.js?v=20260716-dm-v25-ratings";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -35,13 +35,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260716-desktop-cutoff-layout";
+} from "./lifecycle.js?v=20260716-dm-v25-ratings";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260716-desktop-cutoff-layout";
+} from "./history-parser.js?v=20260716-dm-v25-ratings";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -54,12 +54,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260716-desktop-cutoff-layout";
+} from "./protocol-transfer.js?v=20260716-dm-v25-ratings";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260716-desktop-cutoff-layout";
+} from "./reminders.js?v=20260716-dm-v25-ratings";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -79,8 +79,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260716-desktop-cutoff-layout";
-import { initializeDatePickers } from "./date-picker.js?v=20260716-desktop-cutoff-layout";
+} from "./secondary-inventory.js?v=20260716-dm-v25-ratings";
+import { initializeDatePickers } from "./date-picker.js?v=20260716-dm-v25-ratings";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -89,18 +89,18 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260716-desktop-cutoff-layout";
+} from "./project-screenshot-ocr.js?v=20260716-dm-v25-ratings";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260716-desktop-cutoff-layout";
+} from "./project-screenshot-layout.js?v=20260716-dm-v25-ratings";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260716-desktop-cutoff-layout";
+} from "./project-screenshot-image.js?v=20260716-dm-v25-ratings";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -7830,7 +7830,13 @@ function projectDmShortNames(projectRecord) {
   ].filter(Boolean);
 }
 
-const DM_RATING_SOURCE_FIELDS = new Set(["subjectRating", "ratingAgency", "impliedRating"]);
+const DM_RATING_SOURCE_FIELDS = new Set([
+  "subjectRating", "ratingAgency", "subjectRatingAsOf", "subjectRatingOutlook",
+  "bondRating", "bondRatingAgency", "bondRatingAsOf", "bondRatingOutlook",
+  "impliedRating", "impliedRatingBasis", "impliedRatingAsOf", "cbImpliedRating", "csImpliedRating",
+  "defaultRateAsOf", "cbRemainingTenorYear", "cbImpliedDefaultRate",
+  "cbOneYearImpliedDefaultRate", "csOneYearImpliedDefaultRate", "yyDefaultRate",
+]);
 
 function dmNormalizedSourceBadge(normalized, key, isMissing) {
   if (isMissing || !DM_RATING_SOURCE_FIELDS.has(key)) return null;
@@ -7864,7 +7870,23 @@ function renderDmNormalized(payload) {
     ["sponsorStatus", "我行主承身份"],
     ["subjectRating", "主体评级"],
     ["ratingAgency", "评级机构"],
+    ["subjectRatingAsOf", "主体评级日期"],
+    ["subjectRatingOutlook", "主体评级展望"],
+    ["bondRating", "债项评级"],
+    ["bondRatingAgency", "债项评级机构"],
+    ["bondRatingAsOf", "债项评级日期"],
+    ["bondRatingOutlook", "债项评级展望"],
     ["impliedRating", "市场隐含评级"],
+    ["impliedRatingBasis", "隐含评级口径"],
+    ["impliedRatingAsOf", "隐含评级日期"],
+    ["cbImpliedRating", "中债隐含评级"],
+    ["csImpliedRating", "中证隐含评级"],
+    ["defaultRateAsOf", "隐含违约率日期"],
+    ["cbRemainingTenorYear", "中债待偿期（年）"],
+    ["cbImpliedDefaultRate", "中债剩余期限隐含违约率（%）"],
+    ["cbOneYearImpliedDefaultRate", "中债一年期隐含违约率（%）"],
+    ["csOneYearImpliedDefaultRate", "中证一年期隐含违约率（%）"],
+    ["yyDefaultRate", "YY隐含违约率（%）"],
     ["subscribeDate", "簿记日期"],
     ["subscribeTime", "簿记时间"],
     ["paymentDate", "缴款日"],

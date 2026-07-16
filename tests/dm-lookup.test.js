@@ -82,7 +82,7 @@ test("DM lookup normalizes mocked bond, primary and rating fields", async () => 
     assert.equal(payload.normalized.ratingAgency, "中诚信国际");
     assert.equal(payload.normalized.impliedRating, "AA+");
     assert.ok(payload.fieldCandidates.some((item) => item.key === "implied_rating"));
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 7);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -148,7 +148,7 @@ test("DM lookup resolves a primary record by full bond name", async () => {
     assert.equal(payload.normalized.fullName, fullName);
     assert.equal(payload.normalized.issuerName, "广州地铁集团有限公司");
     assert.equal(payload.normalized.issueScaleYi, 21);
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 6);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1000,6 +1000,137 @@ test("DM valuation curve interpolation does not extrapolate beyond returned stan
   ], "curveResidual", 0.05, 3);
   assert.equal(residuals.excludedCount, 1);
   assert.deepEqual(residuals.items.map((item) => item.curveResidual), [0.08, 0.09]);
+});
+
+test("DM lookup uses V2.5 dedicated rating APIs before compatibility fallbacks", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(url);
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "102681555.IB",
+        sec_short_name: "26RATE001",
+        sec_full_name: "Rating Issuer 2026 MTN001",
+        issuer_name: "Rating Issuer Co Ltd",
+        society_code: "91330000123456789X",
+        subject_rating: "AA",
+        rating_agency: "Stale Agency",
+        implied_rating: "A+",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = { list: [{
+        security_id: "102681555.IB",
+        sec_short_name: "26RATE001",
+        issuer_full_name: "Rating Issuer Co Ltd",
+        bond_issue_tenor: "5Y",
+        plan_issue_amount: 50000,
+        subscribe_date: "2026-07-14",
+      }, {
+        security_id: "102681556.IB",
+        sec_short_name: "26RATE001B",
+        issuer_full_name: "Rating Issuer Co Ltd",
+        bond_issue_tenor: "10Y",
+        plan_issue_amount: 30000,
+        subscribe_date: "2026-07-14",
+      }] };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "Rating Issuer Co Ltd", society_code: "91330000123456789X" }];
+    } else if (url.includes("/company/rating/data")) {
+      assert.deepEqual(request, { societyCodeList: ["91330000123456789X"] });
+      data = [
+        { society_code: "91330000123456789X", rating_date: "2026-07-14", rating: "AA+", rating_institution_short_name: "YY", data_source: "YY score" },
+        { society_code: "999999999999999999", rating_date: "2026-07-14", rating: "BBB", rating_institution_short_name: "Wrong Agency", data_source: "external rating" },
+        { society_code: "91330000123456789X", rating_date: "2026-07-14", rating: "AAA", rating_outlook: "Stable", rating_institution_short_name: "External Agency", data_source: "external rating" },
+        { society_code: "91330000123456789X", rating_date: "2026-07-17", rating: "AA+", rating_institution_short_name: "Future Agency", data_source: "external rating" },
+      ];
+    } else if (url.includes("/bond/rating/data")) {
+      assert.deepEqual(request, { securityIdList: ["102681555.IB"] });
+      data = [
+        { security_id: "999999999.IB", rating_date: "2026-07-14", rating: "BBB", rating_institution_short_name: "Wrong Bond Agency" },
+        { security_id: "102681555.IB", rating_date: "2026-07-14", rating: "AAA", rating_outlook: "Stable", rating_institution_short_name: "Bond Agency" },
+        { security_id: "102681555.IB", rating_date: "2026-07-17", rating: "AA", rating_institution_short_name: "Future Bond Agency" },
+      ];
+    } else if (url.includes("/bond/analysis/implied-rating")) {
+      assert.deepEqual(request, {
+        securityIdList: ["102681555.IB"],
+        startDate: "2026-06-15",
+        endDate: "2026-07-14",
+      });
+      data = [
+        { security_id: "999999999.IB", rating_date: "2026-07-13", cb_implied_rating: "BBB", cs_implied_rating: "BBB" },
+        { security_id: "102681555.IB", rating_date: "2026-07-13", cb_implied_rating: "AA+", cs_implied_rating: "AA" },
+        { security_id: "102681555.IB", rating_date: "2026-07-15", cb_implied_rating: "AAA", cs_implied_rating: "AAA" },
+      ];
+    } else if (url.includes("/bond/default-rate/data")) {
+      assert.deepEqual(request, {
+        securityIdList: ["102681555.IB"],
+        startDate: "2026-06-15",
+        endDate: "2026-07-14",
+      });
+      data = [
+        { security_id: "999999999.IB", rating_date: "2026-07-13", cb_implied_default_rate: 8.88 },
+        {
+          security_id: "102681555.IB",
+          rating_date: "2026-07-13",
+          cb_remaining_tenor_year: 4.91,
+          cb_implied_default_rate: 0.12,
+          cb_one_year_implied_default_rate: 0.03,
+          cs_one_year_implied_default_rate: 0.04,
+          yy_default_rate: 0.05,
+        },
+        { security_id: "102681555.IB", rating_date: "2026-07-15", cb_implied_default_rate: 9.99 },
+      ];
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26RATE001&endDate=2026-07-14", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.subjectRating, "AAA");
+    assert.equal(payload.normalized.ratingAgency, "External Agency");
+    assert.equal(payload.normalized.subjectRatingAsOf, "2026-07-14");
+    assert.equal(payload.normalized.subjectRatingOutlook, "Stable");
+    assert.equal(payload.normalized.bondRating, "AAA");
+    assert.equal(payload.normalized.bondRatingAgency, "Bond Agency");
+    assert.equal(payload.normalized.bondRatingAsOf, "2026-07-14");
+    assert.equal(payload.normalized.impliedRating, "AA+");
+    assert.equal(payload.normalized.impliedRatingBasis, "中债");
+    assert.equal(payload.normalized.impliedRatingAsOf, "2026-07-13");
+    assert.equal(payload.normalized.cbImpliedRating, "AA+");
+    assert.equal(payload.normalized.csImpliedRating, "AA");
+    assert.equal(payload.normalized.defaultRateAsOf, "2026-07-13");
+    assert.equal(payload.normalized.cbRemainingTenorYear, 4.91);
+    assert.equal(payload.normalized.cbImpliedDefaultRate, 0.12);
+    assert.equal(payload.normalized.cbOneYearImpliedDefaultRate, 0.03);
+    assert.equal(payload.normalized.csOneYearImpliedDefaultRate, 0.04);
+    assert.equal(payload.normalized.yyDefaultRate, 0.05);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26RATE001", "26RATE001B"]);
+    assert.equal(payload.issueGroup.tranches[0].debtRating, "AAA");
+    assert.equal(payload.issueGroup.tranches[0].debtRatingAgency, "Bond Agency");
+    assert.equal(payload.issueGroup.tranches[1].debtRating, "");
+    assert.equal(payload.normalized.ratingSource.subjectRating, "dm-rating-api");
+    assert.equal(payload.normalized.ratingSource.ratingAgency, "dm-rating-api");
+    assert.equal(payload.normalized.ratingSource.impliedRating, "dm-rating-api");
+    assert.deepEqual(payload.diagnostic.rating.filledFromDmRatingApi, ["subjectRating", "ratingAgency", "impliedRating"]);
+    assert.deepEqual(payload.diagnostic.rating.dmRatingApiSources, ["companyRating", "bondRating", "bondImpliedRating", "bondDefaultRate"]);
+    assert.ok(!calls.some((url) => url.includes("/bond/basic-info/outstanding-bonds")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("DM lookup searches additional DM issuer data before falling back to D1", async () => {
@@ -2134,7 +2265,7 @@ test("DM lookup matches primary cross-market aliases before normalization", asyn
     assert.equal(payload.raw.primaryData.list.length, 2);
     assert.ok(payload.fieldCandidates.some((item) => item.key === "subscribe_rate" && item.value === "1.800000 ~ 2.100000"));
     assert.ok(!payload.fieldCandidates.some((item) => item.value === "9.000000 ~ 9.100000"));
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 8);
   } finally {
     globalThis.fetch = originalFetch;
   }
