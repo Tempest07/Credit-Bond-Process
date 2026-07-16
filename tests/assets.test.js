@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260716-dm-v25-ratings";
+const VERSION = "20260716-dm-rating-primary";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, lifecycle, reminders] = await Promise.all([
@@ -75,6 +75,16 @@ test("spreads cutoff todo details across desktop rows only", async () => {
 
   assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main\s*\{[^}]*grid-template-columns:\s*minmax\(150px, 1fr\) minmax\(200px, \.9fr\);[^}]*column-gap:\s*clamp\(24px, 5vw, 72px\);/s);
   assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main span\s*\{[^}]*border-left:\s*1px solid/s);
+});
+
+test("maps DM V2.5 ratings into the new-project fields", async () => {
+  const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
+
+  assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "subjectRating", normalized\.subjectRating, normalizedProjectFieldSource\(normalized, "subjectRating"\)\)/);
+  assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "ratingAgency", normalized\.ratingAgency, normalizedProjectFieldSource\(normalized, "ratingAgency"\)\)/);
+  assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "hiddenRating", normalized\.impliedRating, normalizedProjectFieldSource\(normalized, "impliedRating"\)\)/);
+  assert.match(app, /patch\.hiddenRatingSource = normalized\.ratingSource\?\.impliedRating \|\| "dm"/);
+  assert.match(app, /patch\.hiddenRatingAsOf = normalized\.impliedRatingAsOf/);
 });
 
 test("lets short project lists expand without internal scrolling", async () => {

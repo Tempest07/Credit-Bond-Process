@@ -81,13 +81,17 @@ export async function onRequestGet(context) {
         })
       : { values: {}, matches: {}, sources: [], errors: [] };
     const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
-    const windImpliedRating = dmMatched
+    const windImpliedRating = dmMatched && windEnabled && !dmEnrichedNormalized.impliedRating
       ? await lookupWindImpliedRating(context.env, {
           securityId: dmEnrichedNormalized.securityId || securityId,
           shortName: dmEnrichedNormalized.shortName || shortName,
         })
       : {
-          status: "skipped_no_dm_match",
+          status: !dmMatched
+            ? "skipped_no_dm_match"
+            : !windEnabled
+              ? "disabled"
+              : "skipped_dm_available",
           source: "wind-analytics",
           target: securityId || shortName || fullName,
           rating: "",
@@ -1206,14 +1210,9 @@ function applyDmRatingDiscovery(normalized, discovery) {
 }
 
 function applyWindImpliedRating(normalized, windResult, enabled) {
-  if (!enabled) return normalized;
-  const next = {
-    ...normalized,
-    impliedRating: "",
-    impliedRatingAsOf: "",
-  };
+  if (!enabled || normalized?.impliedRating) return normalized;
+  const next = { ...normalized };
   const ratingSource = { ...(next.ratingSource || {}) };
-  delete ratingSource.impliedRating;
   if (windResult?.status === "ok" && windResult.rating) {
     next.impliedRating = String(windResult.rating).trim().toUpperCase();
     next.impliedRatingAsOf = String(windResult.asOf || "").trim();
@@ -2194,8 +2193,7 @@ function issuerIdentityDiagnostic(issuerIdentity) {
 
 function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallback, enriched, hasDb, windEnabled) {
   const fields = ["subjectRating", "ratingAgency", "impliedRating"];
-  const dmFields = windEnabled ? ["subjectRating", "ratingAgency"] : fields;
-  const filledFromDm = dmFields.filter((field) => Boolean(original?.[field]));
+  const filledFromDm = fields.filter((field) => Boolean(original?.[field]));
   const filledFromDmRatingApi = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-rating-api");
   const filledFromDmDiscovery = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-discovery");
   const filledFromWind = fields.filter((field) => enriched?.ratingSource?.[field] === "wind-analytics");
@@ -2226,12 +2224,10 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
     matchedIssuer: issuerFallback?.legalName || "",
     matchedBy: issuerFallback?.matchedBy || "",
     matchedTarget: issuerFallback?.matchedTarget || "",
-    note: filledFromWind.length
-      ? "中债隐含评级由 Wind 返回；DM 仅继续提供债券档案、主体评级和评级机构。"
-      : windEnabled && filledFromIssuerDb.includes("impliedRating")
-      ? "Wind 未返回可用中债隐含评级，已使用明确标注的主体库历史隐含评级回退。"
-      : windEnabled
-      ? "Wind 未返回可用中债隐含评级，且没有可用的主体库回退；未使用 DM 隐含评级替代。"
+    note: filledFromDmRatingApi.includes("impliedRating")
+      ? "DM V2.5 专用评级接口已为新增项目返回主体评级、评级机构和隐含评级；Wind 不覆盖 DM。"
+      : filledFromWind.length
+      ? "DM 未返回隐含评级，已仅将 Wind 用作备用来源。"
       : filledFromDmRatingApi.length
       ? "Dedicated DM V2.5 rating APIs returned the current rating fields before compatibility fallbacks were used."
       : filledFromDmDiscovery.length

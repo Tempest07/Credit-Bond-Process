@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260716-dm-v25-ratings";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260716-dm-v25-ratings";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260716-dm-rating-primary";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260716-dm-rating-primary";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

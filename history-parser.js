@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-dm-v25-ratings";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-dm-rating-primary";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
