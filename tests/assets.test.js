@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260716-result-evidence-status";
+const VERSION = "20260716-desktop-cutoff-layout";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, lifecycle, reminders] = await Promise.all([
@@ -68,6 +68,13 @@ test("keeps the desktop sidebar rail continuous and the empty detail state compa
   assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.project-detail-panel:has\(> \.project-empty:not\(\[hidden\]\)\)\s*\{\s*min-height:\s*0;/);
   assert.match(styles, /\.project-detail-panel > \.project-empty:not\(\[hidden\]\)\s*\{\s*min-height:\s*140px;/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.app-shell\s*\{[^}]*background:\s*transparent;/);
+});
+
+test("spreads cutoff todo details across desktop rows only", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main\s*\{[^}]*grid-template-columns:\s*minmax\(150px, 1fr\) minmax\(200px, \.9fr\);[^}]*column-gap:\s*clamp\(24px, 5vw, 72px\);/s);
+  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main span\s*\{[^}]*border-left:\s*1px solid/s);
 });
 
 test("lets short project lists expand without internal scrolling", async () => {

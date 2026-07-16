@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260716-result-evidence-status";
+import { parseUnderwriterNames } from "./core.js?v=20260716-desktop-cutoff-layout";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

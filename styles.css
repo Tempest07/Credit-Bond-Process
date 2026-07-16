@@ -665,6 +665,10 @@ label[data-recognition-source="wind"]::after {
 .project-empty { display: grid; place-items: center; min-height: 180px; padding: 28px; border: 1px dashed rgba(205,214,230,.92); border-radius: 15px; color: #7f899d; background: radial-gradient(circle at 50% 34%, rgba(91,108,255,.06), transparent 28%), linear-gradient(180deg, #fbfcfe, #f8f9fc); text-align: center; }
 .project-empty[hidden] { display: none; }
 @media (min-width: 761px) {
+  .cutoff-todo-item { column-gap: 18px; padding-inline: 14px; }
+  .cutoff-todo-item .payment-todo-main { grid-template-columns: minmax(150px, 1fr) minmax(200px, .9fr); align-items: center; column-gap: clamp(24px, 5vw, 72px); }
+  .cutoff-todo-item .payment-todo-main strong { font-size: 11px; }
+  .cutoff-todo-item .payment-todo-main span { justify-self: start; min-width: 0; padding: 5px 0 5px 16px; border-left: 1px solid rgba(196,205,224,.82); }
   .project-detail-panel:has(> .project-empty:not([hidden])) { min-height: 0; }
   .project-detail-panel > .project-empty:not([hidden]) { min-height: 140px; }
 }
