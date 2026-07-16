@@ -12,6 +12,7 @@ import {
   mergeImportedIssuers,
   normalizeIssuer,
   parseProjectBrief,
+  replaceProjectWithDmLookup,
   splitProjectBriefs,
 } from "../core.js";
 
@@ -33,6 +34,47 @@ test("preserves common issuer fields in issuer records", () => {
   assert.equal(normalized.subjectRating, "AA+");
   assert.equal(normalized.ratingAgency, "联合资信");
   assert.equal(normalized.hiddenRating, "AA(2)");
+});
+
+test("fresh DM lookup drops stale varieties and preserves pricing only by exact short name", () => {
+  const current = {
+    ...parseProjectBrief(""),
+    shortName: "26广越07/08/09/10",
+    shortNames: ["26广越07", "26广越08", "26广越09", "26广越10"],
+    durationText: "10Y/10Y/2Y/10Y",
+    durationParts: ["10Y", "10Y", "2Y", "10Y"],
+    inquiryRanges: [
+      { low: 1.2, high: 2.2 },
+      { low: 1.7, high: 2.7 },
+      { low: 1.2, high: 2.2 },
+      { low: 1.9, high: 2.9 },
+    ],
+    tranchePricing: [
+      { shortName: "26广越07", marketValuation: 2.1, guidancePrice: 2.2 },
+      { shortName: "26广越08", marketValuation: 2.3, guidancePrice: 2.4 },
+      { shortName: "26广越09", marketValuation: 1.7, guidancePrice: 1.8 },
+      { shortName: "26广越10", marketValuation: 2.5, guidancePrice: 2.6 },
+    ],
+  };
+  const next = replaceProjectWithDmLookup(current, {
+    shortName: "26广越09/10",
+    shortNames: ["26广越09", "26广越10"],
+    durationText: "2Y/10Y",
+    durationParts: ["2Y", "10Y"],
+    issueScale: 15,
+    inquiryRanges: [{ low: 1.2, high: 2.2 }, { low: 1.9, high: 2.9 }],
+    warnings: [],
+  });
+
+  assert.deepEqual(next.shortNames, ["26广越09", "26广越10"]);
+  assert.deepEqual(next.durationParts, ["2Y", "10Y"]);
+  assert.deepEqual(next.inquiryRanges, [{ low: 1.2, high: 2.2 }, { low: 1.9, high: 2.9 }]);
+  assert.deepEqual(next.tranchePricing, [
+    { shortName: "26广越09", durationText: "2Y", marketValuation: 1.7, guidancePrice: 1.8 },
+    { shortName: "26广越10", durationText: "10Y", marketValuation: 2.5, guidancePrice: 2.6 },
+  ]);
+  assert.deepEqual(next.valuations, [1.7, 2.5]);
+  assert.deepEqual(next.guidancePrices, [1.8, 2.6]);
 });
 
 test("migrates legacy issuer branch fields into linked branch", () => {

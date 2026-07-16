@@ -13,9 +13,10 @@ import {
   normalizeBondFullNameForProject,
   normalizeIssuer,
   parseProjectBrief,
+  replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260716-current-issue-group";
+} from "./core.js?v=20260716-fresh-dm-project";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -34,13 +35,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260716-current-issue-group";
+} from "./lifecycle.js?v=20260716-fresh-dm-project";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260716-current-issue-group";
+} from "./history-parser.js?v=20260716-fresh-dm-project";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -53,12 +54,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260716-current-issue-group";
+} from "./protocol-transfer.js?v=20260716-fresh-dm-project";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260716-current-issue-group";
+} from "./reminders.js?v=20260716-fresh-dm-project";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -78,8 +79,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260716-current-issue-group";
-import { initializeDatePickers } from "./date-picker.js?v=20260716-current-issue-group";
+} from "./secondary-inventory.js?v=20260716-fresh-dm-project";
+import { initializeDatePickers } from "./date-picker.js?v=20260716-fresh-dm-project";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -88,18 +89,18 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260716-current-issue-group";
+} from "./project-screenshot-ocr.js?v=20260716-fresh-dm-project";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260716-current-issue-group";
+} from "./project-screenshot-layout.js?v=20260716-fresh-dm-project";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260716-current-issue-group";
+} from "./project-screenshot-image.js?v=20260716-fresh-dm-project";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -3246,13 +3247,7 @@ function setProjectDmLookupBusy(isBusy) {
 function applyDmLookupToCurrentProject(payload) {
   const patch = projectPatchFromDmLookup(payload);
   const { sourceMap: _sourceMap, ...projectPatch } = patch;
-  const warnings = [...(project.warnings || []), ...(patch.warnings || [])];
-  project = {
-    ...project,
-    ...projectPatch,
-    warnings,
-  };
-  updateProjectPricingFromInputs(false);
+  project = replaceProjectWithDmLookup(project, projectPatch);
   const matched = findIssuerForProject(project)
     || findIssuer(patch.issuerName || "", state.issuers)
     || null;

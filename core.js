@@ -178,6 +178,81 @@ export function parseProjectBrief(rawText) {
   return result;
 }
 
+export function replaceProjectWithDmLookup(currentProject = {}, dmPatch = {}) {
+  const priorPricing = dmPricingByIssueName(currentProject);
+  const next = {
+    ...parseProjectBrief(""),
+    ...dmPatch,
+    warnings: [...(dmPatch.warnings || [])],
+  };
+  const issueNames = [...new Set(
+    (Array.isArray(dmPatch.shortNames) && dmPatch.shortNames.length
+      ? dmPatch.shortNames
+      : [dmPatch.shortName])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean),
+  )];
+  next.shortNames = issueNames;
+  if (!Array.isArray(next.durationParts) || !next.durationParts.length) {
+    next.durationParts = durationParts(next.durationText);
+  }
+  next.inquiryRanges = Array.isArray(dmPatch.inquiryRanges)
+    ? dmPatch.inquiryRanges.map((range) => ({
+        low: numberOrNull(range?.low),
+        high: numberOrNull(range?.high),
+      }))
+    : Number.isFinite(numberOrNull(dmPatch.inquiryLow)) || Number.isFinite(numberOrNull(dmPatch.inquiryHigh))
+      ? [{ low: numberOrNull(dmPatch.inquiryLow), high: numberOrNull(dmPatch.inquiryHigh) }]
+      : [];
+  next.inquiryLow = next.inquiryRanges[0]?.low ?? null;
+  next.inquiryHigh = next.inquiryRanges[0]?.high ?? null;
+  next.inquiryLow2 = next.inquiryRanges[1]?.low ?? null;
+  next.inquiryHigh2 = next.inquiryRanges[1]?.high ?? null;
+
+  next.tranchePricing = issueNames.map((shortName, index) => {
+    const preserved = priorPricing.get(normalizeDmIssueName(shortName)) || {};
+    return {
+      shortName,
+      durationText: next.durationParts?.[index] || "",
+      marketValuation: numberOrNull(preserved.marketValuation),
+      guidancePrice: numberOrNull(preserved.guidancePrice),
+    };
+  });
+  next.valuations = next.tranchePricing.map((row) => row.marketValuation);
+  next.valuation = next.valuations[0] ?? null;
+  next.guidancePrices = next.tranchePricing.map((row) => row.guidancePrice);
+  next.guidancePrice = next.guidancePrices[0] ?? null;
+  next.sourceCommonFields = {
+    branch: next.branch || "",
+    subjectRating: next.subjectRating || "",
+    ratingAgency: next.ratingAgency || "",
+    hiddenRating: next.hiddenRating || "",
+  };
+  return next;
+}
+
+function dmPricingByIssueName(project = {}) {
+  const names = Array.isArray(project.shortNames) ? project.shortNames : [];
+  const rows = Array.isArray(project.tranchePricing) ? project.tranchePricing : [];
+  const valuations = Array.isArray(project.valuations) ? project.valuations : [];
+  const guidancePrices = Array.isArray(project.guidancePrices) ? project.guidancePrices : [];
+  const count = Math.max(names.length, rows.length, valuations.length, guidancePrices.length, project.shortName ? 1 : 0);
+  const result = new Map();
+  for (let index = 0; index < count; index += 1) {
+    const shortName = String(names[index] || rows[index]?.shortName || (count === 1 ? project.shortName : "") || "").trim();
+    if (!shortName) continue;
+    result.set(normalizeDmIssueName(shortName), {
+      marketValuation: rows[index]?.marketValuation ?? valuations[index] ?? (index === 0 ? project.valuation : null),
+      guidancePrice: rows[index]?.guidancePrice ?? guidancePrices[index] ?? (index === 0 ? project.guidancePrice : null),
+    });
+  }
+  return result;
+}
+
+function normalizeDmIssueName(value = "") {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
+}
+
 export function splitProjectBriefs(rawText) {
   const lines = normalizeText(rawText).split("\n");
   const blocks = [];
