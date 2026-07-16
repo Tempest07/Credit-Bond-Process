@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-fresh-dm-project";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-dm-authoritative-group";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

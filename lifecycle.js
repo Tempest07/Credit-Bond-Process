@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260716-fresh-dm-project";
+import { parseUnderwriterNames } from "./core.js?v=20260716-dm-authoritative-group";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

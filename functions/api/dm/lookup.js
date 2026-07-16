@@ -1314,7 +1314,9 @@ function lookupIssueGroup(data, normalized, query, primary, basic) {
     const projects = Array.isArray(data?.projects) ? data.projects : [];
     dbGroup = buildIssueGroupFromProjects(normalized, query, projects);
   }
-  const group = mergeIssueGroups(dbGroup, dmGroup) || dbGroup || dmGroup;
+  const group = dmGroup
+    ? mergeIssueGroups(dmGroup, dbGroup, { includeUnmatchedSecondary: false }) || dmGroup
+    : dbGroup;
   const annotatedGroup = annotateIssueGroupReallocationTargets(group);
   return shouldExposeIssueGroup(annotatedGroup, query, normalized) ? annotatedGroup : null;
 }
@@ -1696,7 +1698,7 @@ function issueLetterSortValue(letter = "") {
   return code >= 65 && code <= 90 ? code - 64 : 99;
 }
 
-function mergeIssueGroups(primaryGroup, secondaryGroup) {
+function mergeIssueGroups(primaryGroup, secondaryGroup, { includeUnmatchedSecondary = true } = {}) {
   if (!primaryGroup || !secondaryGroup) return null;
   const mergedTranches = [...primaryGroup.tranches];
   for (const secondary of secondaryGroup.tranches || []) {
@@ -1722,7 +1724,7 @@ function mergeIssueGroups(primaryGroup, secondaryGroup) {
         isDmMatched: Boolean(mergedTranches[index].isDmMatched || secondary.isDmMatched),
         source: mergedTranches[index].source === secondary.source ? mergedTranches[index].source : "mixed",
       };
-    } else {
+    } else if (includeUnmatchedSecondary) {
       mergedTranches.push(secondary);
     }
   }

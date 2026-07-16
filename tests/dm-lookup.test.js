@@ -1384,6 +1384,92 @@ test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async
   }
 });
 
+test("DM current tranches remain authoritative when a cloud project contains stale tranches", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url) => {
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "245901.SH",
+        sec_short_name: "26ACME09",
+        sec_full_name: "ACME 2026 corporate bond issue 5 tranche 1",
+        issuer_name: "ACME Group Co Ltd",
+        bond_matu: "2Y",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = { list: [{
+        security_id: "245901.SH",
+        sec_short_name: "26ACME09",
+        issuer_full_name: "ACME Group Co Ltd",
+        bond_issue_tenor: "2Y",
+        plan_issue_amount: 75000,
+        subscribe_rate: "1.200000 ~ 2.200000",
+        subscribe_date: "2026-07-16",
+      }, {
+        security_id: "245902.SH",
+        sec_short_name: "26ACME10",
+        issuer_full_name: "ACME Group Co Ltd",
+        bond_issue_tenor: "10Y",
+        plan_issue_amount: 75000,
+        subscribe_rate: "1.900000 ~ 2.900000",
+        subscribe_date: "2026-07-16",
+      }] };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "ACME Group Co Ltd" }];
+    } else {
+      data = { list: [] };
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [],
+              projects: [{
+                id: "polluted-current-project",
+                shortName: "26ACME07/08/09/10",
+                shortNames: ["26ACME07", "26ACME08", "26ACME09", "26ACME10"],
+                issuerName: "ACME Group Co Ltd",
+                tranches: [
+                  { shortName: "26ACME07", durationText: "10Y", issueScale: 9, inquiryLow: 1.2, inquiryHigh: 2.2 },
+                  { shortName: "26ACME08", durationText: "10Y", issueScale: 9, inquiryLow: 1.7, inquiryHigh: 2.7 },
+                  { shortName: "26ACME09", durationText: "2Y", issueScale: 7.5, inquiryLow: 1.2, inquiryHigh: 2.2, couponRate: 1.88 },
+                  { shortName: "26ACME10", durationText: "10Y", issueScale: 7.5, inquiryLow: 1.9, inquiryHigh: 2.9 },
+                ],
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26ACME09", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.diagnostic.dmMatched, true);
+    assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26ACME09", "26ACME10"]);
+    assert.equal(payload.issueGroup.tranches.some((item) => ["26ACME07", "26ACME08"].includes(item.shortName)), false);
+    assert.equal(payload.issueGroup.tranches[0].couponRate, 1.88);
+    assert.equal(payload.issueGroup.tranches[0].source, "mixed");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup expands a base MTN short name and discovers equal A/B tranches", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

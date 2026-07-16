@@ -16,7 +16,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260716-fresh-dm-project";
+} from "./core.js?v=20260716-dm-authoritative-group";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -35,13 +35,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260716-fresh-dm-project";
+} from "./lifecycle.js?v=20260716-dm-authoritative-group";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260716-fresh-dm-project";
+} from "./history-parser.js?v=20260716-dm-authoritative-group";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -54,12 +54,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260716-fresh-dm-project";
+} from "./protocol-transfer.js?v=20260716-dm-authoritative-group";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260716-fresh-dm-project";
+} from "./reminders.js?v=20260716-dm-authoritative-group";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
@@ -79,8 +79,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260716-fresh-dm-project";
-import { initializeDatePickers } from "./date-picker.js?v=20260716-fresh-dm-project";
+} from "./secondary-inventory.js?v=20260716-dm-authoritative-group";
+import { initializeDatePickers } from "./date-picker.js?v=20260716-dm-authoritative-group";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -89,18 +89,18 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260716-fresh-dm-project";
+} from "./project-screenshot-ocr.js?v=20260716-dm-authoritative-group";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260716-fresh-dm-project";
+} from "./project-screenshot-layout.js?v=20260716-dm-authoritative-group";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260716-fresh-dm-project";
+} from "./project-screenshot-image.js?v=20260716-dm-authoritative-group";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
