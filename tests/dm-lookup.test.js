@@ -1379,6 +1379,7 @@ test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async
     assert.equal(payload.issueGroup.source, "dm");
     assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26广越09", "26广越10"]);
     assert.ok(payload.issueGroup.tranches.every((item) => item.source === "dm"));
+    assert.ok(payload.issueGroup.tranches.every((item) => item.status === "unknown"));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1407,7 +1408,7 @@ test("DM current tranches remain authoritative when a cloud project contains sta
         subscribe_rate: "1.200000 ~ 2.200000",
         subscribe_date: "2026-07-16",
       }, {
-        security_id: "245902.SH",
+        security_id: "",
         sec_short_name: "26ACME10",
         issuer_full_name: "ACME Group Co Ltd",
         bond_issue_tenor: "10Y",
@@ -1440,8 +1441,8 @@ test("DM current tranches remain authoritative when a cloud project contains sta
                 tranches: [
                   { shortName: "26ACME07", durationText: "10Y", issueScale: 9, inquiryLow: 1.2, inquiryHigh: 2.2 },
                   { shortName: "26ACME08", durationText: "10Y", issueScale: 9, inquiryLow: 1.7, inquiryHigh: 2.7 },
-                  { shortName: "26ACME09", durationText: "2Y", issueScale: 7.5, inquiryLow: 1.2, inquiryHigh: 2.2, couponRate: 1.88 },
-                  { shortName: "26ACME10", durationText: "10Y", issueScale: 7.5, inquiryLow: 1.9, inquiryHigh: 2.9 },
+                  { shortName: "26ACME09", durationText: "2Y", issueScale: 7.5, inquiryLow: 1.2, inquiryHigh: 2.2 },
+                  { shortName: "26ACME10", securityCode: "245902.SH", durationText: "10Y", issueScale: 7.5, inquiryLow: 1.9, inquiryHigh: 2.9 },
                 ],
               }],
             }),
@@ -1463,8 +1464,8 @@ test("DM current tranches remain authoritative when a cloud project contains sta
     assert.equal(payload.diagnostic.dmMatched, true);
     assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26ACME09", "26ACME10"]);
     assert.equal(payload.issueGroup.tranches.some((item) => ["26ACME07", "26ACME08"].includes(item.shortName)), false);
-    assert.equal(payload.issueGroup.tranches[0].couponRate, 1.88);
-    assert.equal(payload.issueGroup.tranches[0].source, "mixed");
+    assert.equal(payload.issueGroup.tranches[1].securityId, "245902.SH");
+    assert.ok(payload.issueGroup.tranches.every((item) => item.status === "unknown"));
   } finally {
     globalThis.fetch = originalFetch;
   }

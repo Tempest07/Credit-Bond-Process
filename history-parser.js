@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-dm-authoritative-group";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260716-result-evidence-status";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

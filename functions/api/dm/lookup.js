@@ -1621,16 +1621,26 @@ function issueGroupTargets(normalized, query) {
 function projectIssueEntries(project) {
   const entries = [];
   for (const tranche of project?.tranches || []) {
+    const issueScale = numberOrNull(tranche?.issueScale);
+    const explicitActualScale = numberOrNull(tranche?.actualScale);
+    const couponRate = numberOrNull(tranche?.winningRate ?? tranche?.couponRate);
+    const winningAmountWan = numberOrNull(tranche?.winningAmountWan);
+    const hasResultEvidence = Boolean(
+      project?.resultConfirmed
+      || Number.isFinite(explicitActualScale)
+      || Number.isFinite(couponRate)
+      || Number.isFinite(winningAmountWan) && winningAmountWan > 0,
+    );
     entries.push({
       shortName: tranche?.shortName || "",
       securityId: tranche?.securityId || tranche?.security_id || tranche?.securityCode || tranche?.bondCode || tranche?.code || "",
       durationText: tranche?.durationText || "",
-      planScale: numberOrNull(tranche?.planScale),
-      actualScale: numberOrNull(tranche?.issueScale),
+      planScale: numberOrNull(tranche?.planScale) ?? issueScale,
+      actualScale: explicitActualScale ?? (hasResultEvidence ? issueScale : null),
       inquiryLow: numberOrNull(tranche?.inquiryLow),
       inquiryHigh: numberOrNull(tranche?.inquiryHigh),
-      couponRate: numberOrNull(tranche?.winningRate ?? tranche?.couponRate),
-      winningAmountWan: numberOrNull(tranche?.winningAmountWan),
+      couponRate,
+      winningAmountWan,
     });
   }
   const knownNames = new Set(entries.map((entry) => normalizeLookupName(entry.shortName)).filter(Boolean));
@@ -1795,8 +1805,7 @@ function inferIssueTrancheStatus(entry, { groupHasIssued, projectResultConfirmed
 
 function entryHasIssuedFields(entry) {
   return Boolean(
-    normalizeSecurityId(entry?.securityId)
-    || Number.isFinite(numberOrNull(entry?.actualScale))
+    Number.isFinite(numberOrNull(entry?.actualScale))
     || Number.isFinite(numberOrNull(entry?.couponRate))
     || Number.isFinite(numberOrNull(entry?.winningAmountWan)) && numberOrNull(entry?.winningAmountWan) > 0,
   );
