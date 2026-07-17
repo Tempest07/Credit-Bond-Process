@@ -11,6 +11,7 @@ const SECURITY_CODE_PATTERN = /\b(\d{6,9})(?:\.(IB|SH|SZ))?\b/i;
 const SHORT_NAME_PATTERN = /\b(\d{2}[\u4e00-\u9fa5A-Za-z0-9]+?(?:SCP|CP|MTN|PPN|PRN|ABN|ABS)?[A-Za-z]?\d{0,3}(?:\/\d{2}[\u4e00-\u9fa5A-Za-z0-9]+?(?:SCP|CP|MTN|PPN|PRN|ABN|ABS)?[A-Za-z]?\d{0,3})?)\b/i;
 const SECONDARY_TRADE_STAGES = new Set(["negotiated", "front_office_done", "ledgered", "sent"]);
 const SECONDARY_TRADE_CATEGORIES = new Set(["protocol", "non_protocol", "primary_award"]);
+const SECONDARY_INSTRUMENT_SCOPES = new Set(["public", "ppn", "exchange_private"]);
 
 export function normalizeSecondaryInventoryPositions(input = []) {
   return Array.isArray(input) ? input.map(normalizeInventoryPosition).filter(isUsableSecondaryRecord) : [];
@@ -97,6 +98,11 @@ export function normalizeSecondaryTrade(input = {}) {
     settlementDate,
     counterparty: String(input.counterparty || "").trim(),
     intermediary: String(input.intermediary || "").trim(),
+    remainingTerm: String(input.remainingTerm || "").trim(),
+    contactNote: String(input.contactNote || "").trim(),
+    market: normalizeSecondaryMarket(input.market, input.code),
+    instrumentScope: normalizeSecondaryInstrumentScope(input.instrumentScope, input.sourceText, input.code, input.shortName),
+    parseWarnings: Array.isArray(input.parseWarnings) ? input.parseWarnings.map((item) => String(item || "").trim()).filter(Boolean) : [],
     sourceType: String(input.sourceType || "manual").trim(),
     sourceProjectId: String(input.sourceProjectId || "").trim(),
     sourceTrancheId: String(input.sourceTrancheId || "").trim(),
@@ -188,10 +194,47 @@ export function parseSecondaryOrderText(text = "", options = {}) {
 }
 
 export function parseSecondaryTradeText(text = "", options = {}) {
-  return String(text || "")
-    .split(/\r?\n/)
-    .map((line) => parseSecondaryTradeLine(line, options))
-    .filter(Boolean);
+  return parseSecondaryTradeIntake(text, options).trades;
+}
+
+export function parseSecondaryTradeIntake(text = "", options = {}) {
+  const trades = [];
+  const protocolCandidates = [];
+  const diagnostics = [];
+  String(text || "").split(/\r?\n/).forEach((rawLine, index) => {
+    const line = normalizeLine(rawLine);
+    if (!line) return;
+    const trade = parseSecondaryTradeLine(rawLine, options);
+    if (!trade) {
+      diagnostics.push({
+        lineNumber: index + 1,
+        original: String(rawLine || "").trim(),
+        status: "rejected",
+        message: secondaryTradeLineIssue(line),
+      });
+      return;
+    }
+    if (trade.instrumentScope === "exchange_private") {
+      protocolCandidates.push(trade);
+      diagnostics.push({
+        lineNumber: index + 1,
+        original: trade.sourceText,
+        status: "protocol",
+        message: "交易所私募已分流到协议转让",
+      });
+      return;
+    }
+    trades.push(trade);
+    if (trade.parseWarnings.length) {
+      diagnostics.push({
+        lineNumber: index + 1,
+        original: trade.sourceText,
+        status: "warning",
+        message: trade.parseWarnings.join("；"),
+      });
+    }
+  });
+  return { trades, protocolCandidates, diagnostics };
 }
 
 export function upsertInventoryPositions(state, positions = []) {
@@ -238,6 +281,14 @@ export function markSecondaryOrderStatus(order, status, filledWan = null) {
     filledWan: numberOrNull(filledWan) ?? order.filledWan,
     updatedAt: new Date().toISOString(),
   });
+}
+
+export function removeSecondaryTrade(state = {}, id = "") {
+  return {
+    ...state,
+    secondaryTrades: normalizeSecondaryTrades(state.secondaryTrades || []).filter((trade) => trade.id !== id),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export function markSecondaryTradeFrontOffice(trade, input = {}) {
@@ -360,6 +411,23 @@ export function pendingCodeTrades(state = {}) {
   return normalizeSecondaryTrades(state.secondaryTrades || [])
     .filter((trade) => !trade.code || trade.codeStatus === "pending")
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function pendingSecondaryTrades(state = {}) {
+  return normalizeSecondaryTrades(state.secondaryTrades || [])
+    .filter((trade) =>
+      !trade.frontOfficeDone
+      && trade.tradeStage === "negotiated"
+      && trade.tradeCategory === "non_protocol"
+      && trade.sourceType !== "primary_award"
+      && trade.instrumentScope !== "exchange_private"
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function isValidSecondaryNetPrice(value) {
+  const number = Number(String(value ?? "").trim());
+  return Number.isFinite(number) && number >= 50 && number <= 150;
 }
 
 export function secondaryTradesForLedger(state = {}, date = localDate(new Date())) {
@@ -557,24 +625,44 @@ function parseSecondaryTradeLine(rawLine, options = {}) {
   const isBuy = new RegExp(`(?:出给|to)\\s*${escapeRegExp(bankName)}`, "i").test(line)
     || /(?:买入|收)/.test(line) && line.includes(bankName);
   const side = isBuy && !isSell ? "buy" : "sell";
+  const sideDetected = isSell || isBuy;
   const tradeDateInfo = extractTradeDateAndSpeed(line, {
-    referenceDate: options.referenceDate || new Date(),
+    referenceDate: parseDate(options.negotiationDate) || options.referenceDate || new Date(),
     defaultSpeed: options.defaultSettlementSpeed ?? 1,
   });
+  const instrumentScope = classifySecondaryInstrument(line, code, shortName);
+  const price = extractPrice(line);
+  const yieldRate = extractYieldRate(line);
+  const counterparty = extractCounterparty(line, bankName, side);
+  const intermediary = line.match(/【([^】]+)】/)?.[1]?.trim() || "";
   return normalizeSecondaryTrade({
     side,
     account: extractAccount(line) || options.account || DEFAULT_ACCOUNT,
     code,
     shortName,
     quantityWan,
-    price: extractPrice(line),
-    yieldRate: extractYieldRate(line),
+    price,
+    yieldRate,
     negotiationDate: normalizeDate(options.negotiationDate) || localDate(new Date()),
     tradeDate: tradeDateInfo.tradeDate || localDate(new Date()),
     settlementSpeed: tradeDateInfo.speed,
     settlementDate: inferSettlementDate(tradeDateInfo.tradeDate || localDate(new Date()), tradeDateInfo.speed),
-    counterparty: extractCounterparty(line, bankName, side),
-    intermediary: line.match(/【([^】]+)】/)?.[1]?.trim() || "",
+    counterparty,
+    intermediary,
+    remainingTerm: extractRemainingTerm(line),
+    contactNote: extractContactNote(rawLine),
+    instrumentScope,
+    market: normalizeSecondaryMarket("", code),
+    parseWarnings: secondaryTradeWarnings({
+      code,
+      shortName,
+      price,
+      yieldRate,
+      counterparty,
+      intermediary,
+      instrumentScope,
+      sideDetected,
+    }),
     sourceType: "manual",
     sourceText: rawLine,
   });
@@ -609,6 +697,59 @@ function baseInventoryRow(input = {}, snapshotQuantityWan = 0) {
     needsSnapshot: false,
     warning: "",
   };
+}
+
+function secondaryTradeLineIssue(line = "") {
+  const code = extractSecurityCode(line);
+  const shortName = extractShortName(line, code);
+  if (!code && !shortName) return "未识别债券代码或简称";
+  if (!Number.isFinite(extractAmountWan(line))) return "未识别面值（万元）";
+  return "未识别为有效交易记录";
+}
+
+function secondaryTradeWarnings(input = {}) {
+  const warnings = [];
+  if (!input.code) warnings.push("债券代码待补");
+  if (!input.shortName) warnings.push("债券简称待补");
+  if (!Number.isFinite(input.yieldRate) && !input.price) warnings.push("收益率待复核");
+  if (!input.counterparty) warnings.push("交易对手待复核");
+  if (!input.intermediary) warnings.push("中介待复核");
+  if (!input.sideDetected) warnings.push("买卖方向待复核");
+  if (input.code && !/\.(?:IB|SH|SZ)$/i.test(input.code)) warnings.push("市场后缀待复核");
+  if (
+    input.instrumentScope === "public"
+    && /^(?:28\d{4}|254\d{3})\.SH$/i.test(input.code)
+  ) warnings.push("疑似交易所私募，请确认是否转协议转让");
+  return warnings;
+}
+
+function extractRemainingTerm(line = "") {
+  return line.match(/(?:^|[\s】])(\d+(?:\.\d+)?\s*[DY](?:\s*\+\s*\d+(?:\.\d+)?\s*[DY])?(?:\([^)]*\))?)(?=\s|$)/i)?.[1]?.replace(/\s+/g, "") || "";
+}
+
+function extractContactNote(rawLine = "") {
+  const text = String(rawLine || "").replace(/\u00a0|\u3000/g, " ").trim();
+  const match = text.match(/(?:联系|对话发给|对话发|发给)\s*([^，,；;]+?)(?=\s+\d{2,3}(?:\.\d+)?\s*$|$)/);
+  return match?.[1]?.trim() || "";
+}
+
+function classifySecondaryInstrument(line = "", code = "", shortName = "") {
+  const text = `${line} ${shortName}`;
+  if (/PPN/i.test(text)) return "ppn";
+  const exchange = /\.(?:SH|SZ)\b/i.test(code) || /交易所|上交所|深交所/.test(text);
+  const explicitPrivate = /私募债|非公开|协议转让/.test(text);
+  return exchange && explicitPrivate ? "exchange_private" : "public";
+}
+
+function normalizeSecondaryInstrumentScope(value = "", sourceText = "", code = "", shortName = "") {
+  if (SECONDARY_INSTRUMENT_SCOPES.has(value)) return value;
+  return classifySecondaryInstrument(normalizeLine(sourceText), normalizeSecurityCode(code), shortName);
+}
+
+function normalizeSecondaryMarket(value = "", code = "") {
+  const market = String(value || "").trim().toUpperCase();
+  if (["IB", "SH", "SZ"].includes(market)) return market;
+  return normalizeSecurityCode(code).match(/\.(IB|SH|SZ)$/i)?.[1]?.toUpperCase() || "";
 }
 
 function parseCodeMappingText(text = "") {
@@ -722,15 +863,15 @@ function isShortNameToken(value = "") {
   const text = String(value || "").trim();
   if (!text || SECURITY_CODE_PATTERN.test(text)) return false;
   if (/^(?:ofr|offer|bid|净价|全价|价格|估值|收益|收益率)/i.test(text)) return false;
-  if (/^\d+(?:\.\d+)?(?:亿|万|w|kw|k|千万|手)?$/i.test(text)) return false;
+  if (/^\d+(?:\.\d+)?(?:亿|万|w|kw|k|e|千万|手)?$/i.test(text)) return false;
   return /^\d{2}[\u4e00-\u9fa5A-Za-z0-9()（）/.-]+$/.test(text);
 }
 
 function extractAmountWan(line = "") {
   const patterns = [
-    /(?:^|\s)(?:面额|余额|库存|持仓|数量|规模|挂卖|挂买|卖出|买入|卖|买|收)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|千万|手)?(?=\s|$)/i,
-    /%\s*投\s*(\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|千万|手)(?=\s|$)/i,
-    /(\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|千万|手)(?=\s|$)/i,
+    /(?:^|\s)(?:面额|余额|库存|持仓|数量|规模|挂卖|挂买|卖出|买入|卖|买|收)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|e|千万|手)?(?=\s|$)/i,
+    /%\s*投\s*(\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|e|千万|手)(?=\s|$)/i,
+    /(\d+(?:\.\d+)?)\s*(亿|万|w|kw|k|e|千万|手)(?=\s|$)/i,
   ];
   for (const pattern of patterns) {
     const match = line.match(pattern);
@@ -746,7 +887,7 @@ function amountToWan(value, unit = "") {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   const normalized = String(unit || "").toLowerCase();
-  if (normalized === "亿") return number * 10000;
+  if (["亿", "e"].includes(normalized)) return number * 10000;
   if (["kw", "k", "千万"].includes(normalized)) return number * 1000;
   if (["w", "万"].includes(normalized)) return number;
   if (normalized === "手") return number / 10;
@@ -756,9 +897,13 @@ function amountToWan(value, unit = "") {
 function extractPrice(line = "") {
   const valuation = line.match(/估值\s*[-+]?\s*\d*(?:\.\d+)?/i)?.[0]?.replace(/\s+/g, "");
   if (valuation) return valuation;
+  const postfixedNet = line.match(/(?:^|\s)(\d{2,3}(?:\.\d+)?)\s*(?:净价|全价)(?=\s|$)/i)?.[1];
+  if (postfixedNet && Number(postfixedNet) >= 50) return postfixedNet;
   const labeledNet = line.match(/(?:净价|全价|价格|price)\s*[:：]?\s*(\d{2,3}(?:\.\d+)?(?:\/\d{2,3}(?:\.\d+)?)?)/i)?.[1];
   if (labeledNet && Number(labeledNet.split("/").at(-1)) >= 50) return labeledNet.includes("/") ? labeledNet.split("/").at(-1) : labeledNet;
-  const matches = [...line.matchAll(/(?:净价|全价|价格|price)?\s*[:：]?\s*(\d{2,3}(?:\.\d+)?(?:\/\d{2,3}(?:\.\d+)?)?)(?=\s|$)/gi)];
+  const yieldPricePair = line.match(/(?:^|\s)\d+(?:\.\d+)?\s*\/\s*(\d{2,3}(?:\.\d+)?)(?=\s|$)/)?.[1];
+  if (yieldPricePair && Number(yieldPricePair) >= 50) return yieldPricePair;
+  const matches = [...line.matchAll(/(?:^|\s)(?:净价|全价|价格|price)?\s*[:：]?\s*(\d{2,3}(?:\.\d+)?(?:\/\d{2,3}(?:\.\d+)?)?)(?=\s|$)/gi)];
   for (const match of matches) {
     const net = match[1];
     if (Number(net.split("/").at(-1)) >= 50) return net.includes("/") ? net.split("/").at(-1) : net;
@@ -776,6 +921,16 @@ function extractYieldRate(line = "") {
   const explicit = line.match(/(?:收益率|收益|YTM|ytm)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*%?/i)?.[1];
   if (explicit) {
     const value = Number(explicit);
+    if (Number.isFinite(value) && value > 0 && value < 20) return value;
+  }
+  const exercise = line.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(?:行权|到期)(?=\s|$)/)?.[1];
+  if (exercise) {
+    const value = Number(exercise);
+    if (Number.isFinite(value) && value > 0 && value < 20) return value;
+  }
+  const yieldPricePair = line.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*\/\s*\d{2,3}(?:\.\d+)?(?=\s|$)/)?.[1];
+  if (yieldPricePair) {
+    const value = Number(yieldPricePair);
     if (Number.isFinite(value) && value > 0 && value < 20) return value;
   }
   for (const match of line.matchAll(/(?:^|\s)(\d+(?:\.\d+)?)\s*%?(?=\s|$)/g)) {
@@ -808,20 +963,57 @@ function extractTradeDateAndSpeed(line = "", options = {}) {
   const explicitSameDay = /(?:\+0|T\+0|当天|今日|立即)(?:交割|点交易|交易)?/i.test(line);
   const explicitNextDay = /(?:\+1|T\+1|明天|次日|下一工作日)(?:交割|点交易|交易)?/i.test(line);
   const fallbackSpeed = explicitSameDay ? 0 : explicitNextDay ? 1 : defaultSpeed;
-  const year = new Date(referenceDate).getFullYear();
-  const match = line.match(/(\d{1,2})[./](\d{1,2})(?:\s*\+?\s*([01]))?/);
-  if (match) {
-    const tradeDate = `${year}-${String(match[1]).padStart(2, "0")}-${String(match[2]).padStart(2, "0")}`;
-    return { tradeDate, speed: Number(match[3] ?? fallbackSpeed) };
-  }
   const iso = line.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
   if (iso) {
-    return {
-      tradeDate: `${iso[1]}-${String(iso[2]).padStart(2, "0")}-${String(iso[3]).padStart(2, "0")}`,
-      speed: fallbackSpeed,
-    };
+    const tradeDate = validTradeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    if (tradeDate) return { tradeDate, speed: fallbackSpeed };
+  }
+  const speedMatch = line.match(/(?:^|[^\d.])(\d{1,2})[./](\d{1,2})\s*\+\s*([01])(?:\s*(?:交易所|现券交易))?/i);
+  if (speedMatch) {
+    const tradeDate = inferMonthDayTradeDate(speedMatch[1], speedMatch[2], referenceDate);
+    if (tradeDate) return { tradeDate, speed: Number(speedMatch[3]) };
+  }
+  const chineseSpeedMatch = line.match(/(?:^|\D)(\d{1,2})月(\d{1,2})日?\s*\+\s*([01])(?:\s*(?:交易所|现券交易))?/i);
+  if (chineseSpeedMatch) {
+    const tradeDate = inferMonthDayTradeDate(chineseSpeedMatch[1], chineseSpeedMatch[2], referenceDate);
+    if (tradeDate) return { tradeDate, speed: Number(chineseSpeedMatch[3]) };
+  }
+  const exchangeMatch = line.match(/(?:^|[^\d.])(\d{1,2})[./](\d{1,2})\s*(?:交易所|现券交易)/i);
+  if (exchangeMatch) {
+    const tradeDate = inferMonthDayTradeDate(exchangeMatch[1], exchangeMatch[2], referenceDate);
+    if (tradeDate) return { tradeDate, speed: fallbackSpeed };
+  }
+  const chineseExchangeMatch = line.match(/(?:^|\D)(\d{1,2})月(\d{1,2})日?\s*(?:交易所|现券交易)/i);
+  if (chineseExchangeMatch) {
+    const tradeDate = inferMonthDayTradeDate(chineseExchangeMatch[1], chineseExchangeMatch[2], referenceDate);
+    if (tradeDate) return { tradeDate, speed: fallbackSpeed };
   }
   return { tradeDate: localDate(new Date(referenceDate)), speed: fallbackSpeed };
+}
+
+function inferMonthDayTradeDate(monthValue, dayValue, referenceDate = new Date()) {
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  const reference = new Date(referenceDate);
+  if (!Number.isFinite(reference.getTime())) return "";
+  let year = reference.getFullYear();
+  let tradeDate = validTradeDate(year, month, day);
+  if (!tradeDate) return "";
+  const candidate = parseDate(tradeDate);
+  const distanceDays = Math.round((candidate.getTime() - reference.getTime()) / 86400000);
+  if (distanceDays < -180) year += 1;
+  else if (distanceDays > 180) year -= 1;
+  return validTradeDate(year, month, day);
+}
+
+function validTradeDate(year, month, day) {
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+  ) return "";
+  return localDate(date);
 }
 
 function normalizeSettlementSpeed(value) {

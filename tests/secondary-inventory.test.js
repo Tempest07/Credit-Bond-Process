@@ -6,14 +6,17 @@ import {
   buildPrimaryAwardTrades,
   buildSecondaryOfferListText,
   calculateShadowInventory,
+  isValidSecondaryNetPrice,
   markSecondaryTradeFrontOffice,
   normalizeSecondaryInventoryPositions,
   normalizeSecondaryOrders,
   parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
+  parseSecondaryTradeIntake,
   parseSecondaryTradeText,
   pendingCodeTrades,
+  pendingSecondaryTrades,
   secondaryDashboardCounts,
   secondaryTradesForLedger,
   upsertInventoryPositions,
@@ -241,6 +244,89 @@ test("parses Trade-Phraser style trade elements into pending secondary trades", 
   assert.equal(row.snapshotQuantityWan, 6000);
   assert.equal(row.soldWan, 5000);
   assert.equal(row.availableWan, 1000);
+});
+
+test("turns pasted public and PPN trade elements into pending trades", () => {
+  const input = `【广州】4.90Y  524835.SZ  26越产02  1.97  3000  07.20交易所  兴业银行 出给 华创证券 联系联储证券 熊丹丹 99.346
+【国利】 1) 4.78Y(休1)    245129.SH    26南控01    1.83  4000   07.20交易所 兴业银行 出给 中泰证券资管
+【北京】259D    26广州产投SCP006    012681665.IB  1.52  5000 7.20+0 兴业银行 出给 国泰海通，对话发给兴业银行俞维谦
+【上海】2.80Y  26测试PPN001  032680001.IB  2.05  2000  07.20+0 兴业银行 出给 某理财`;
+  const result = parseSecondaryTradeIntake(input, {
+    referenceDate: new Date("2026-07-17T09:00:00+08:00"),
+    negotiationDate: "2026-07-17",
+  });
+
+  assert.equal(result.trades.length, 4);
+  assert.equal(result.protocolCandidates.length, 0);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.code), ["524835.SZ", "245129.SH", "012681665.IB"]);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.quantityWan), [3000, 4000, 5000]);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.tradeDate), ["2026-07-20", "2026-07-20", "2026-07-20"]);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.settlementSpeed), [1, 1, 0]);
+  assert.equal(result.trades[0].remainingTerm, "4.90Y");
+  assert.equal(result.trades[0].price, "99.346");
+  assert.equal(result.trades[0].contactNote, "联储证券 熊丹丹");
+  assert.equal(result.trades[2].contactNote, "兴业银行俞维谦");
+  assert.equal(result.trades[3].instrumentScope, "ppn");
+});
+
+test("routes explicitly marked exchange private trades away from secondary intake", () => {
+  const input = `【深圳】 4.42Y(休1)  280607.SH  25汉投03  私募债  2.0  3000  07.20交易所  兴业银行 出给 南方基金
+【上海】 3.00Y  032680001.IB  26测试PPN001  2.05  2000  07.20+0  兴业银行 出给 某理财`;
+  const result = parseSecondaryTradeIntake(input, {
+    referenceDate: new Date("2026-07-17T09:00:00+08:00"),
+  });
+
+  assert.equal(result.protocolCandidates.length, 1);
+  assert.equal(result.protocolCandidates[0].instrumentScope, "exchange_private");
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.trades[0].instrumentScope, "ppn");
+  assert.equal(result.diagnostics[0].status, "protocol");
+});
+
+test("supports frequent variants found in the 2026 trade record", () => {
+  const input = `【国利】 4.57Y+2Y 012681999.IB 26测试MTN001 2.185行权 1E 7月20日+0 兴业银行 出给 测试证券 100净价
+【上海】 9.05Y+1Y(休1) 254999.SH 26测试01 2.45/101.677 3kw 7月20日交易所 兴业银行 出给 测试基金`;
+  const result = parseSecondaryTradeIntake(input, {
+    negotiationDate: "2026-07-17",
+  });
+
+  assert.equal(result.trades.length, 2);
+  assert.deepEqual(result.trades.map((trade) => trade.remainingTerm), ["4.57Y+2Y", "9.05Y+1Y(休1)"]);
+  assert.deepEqual(result.trades.map((trade) => trade.quantityWan), [10000, 3000]);
+  assert.deepEqual(result.trades.map((trade) => trade.tradeDate), ["2026-07-20", "2026-07-20"]);
+  assert.deepEqual(result.trades.map((trade) => trade.settlementSpeed), [0, 1]);
+  assert.equal(result.trades[0].yieldRate, 2.185);
+  assert.equal(result.trades[0].price, "100");
+  assert.equal(result.trades[1].yieldRate, 2.45);
+  assert.equal(result.trades[1].price, "101.677");
+  assert.match(result.trades[1].parseWarnings.join("；"), /疑似交易所私募/);
+});
+
+test("keeps PPN in secondary intake even when the text also says private bond", () => {
+  const result = parseSecondaryTradeIntake(
+    "【北京】 2.80Y 032680999.IB 26测试PPN002 私募债 2.10 1000w 7.20+0 兴业银行 出给 测试资管",
+    { negotiationDate: "2026-07-17" },
+  );
+
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.protocolCandidates.length, 0);
+  assert.equal(result.trades[0].instrumentScope, "ppn");
+});
+
+test("lists only unconfirmed public and PPN trades as pending", () => {
+  const parsed = parseSecondaryTradeText(
+    "【广州】4.90Y 524835.SZ 26越产02 1.97 3000 07.20交易所 兴业银行 出给 华创证券",
+    { referenceDate: new Date("2026-07-17T09:00:00+08:00") },
+  );
+  let state = { secondaryTrades: parsed };
+  assert.equal(pendingSecondaryTrades(state).length, 1);
+  state = {
+    ...state,
+    secondaryTrades: [markSecondaryTradeFrontOffice(parsed[0], { frontOfficePrice: "99.346" })],
+  };
+  assert.equal(pendingSecondaryTrades(state).length, 0);
+  assert.equal(isValidSecondaryNetPrice("99.346"), true);
+  assert.equal(isValidSecondaryNetPrice("1.97"), false);
 });
 
 test("warns when active offers exceed inventory after confirmed sells", () => {

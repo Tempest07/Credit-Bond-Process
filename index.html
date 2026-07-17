@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f7f9">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260617-dynamic-inquiry-ranges">
+  <link rel="stylesheet" href="./styles.css?v=20260717-secondary-intake">
 </head>
 <body>
   <div class="app-shell">
@@ -385,72 +385,45 @@
       <section class="view" data-view="secondary-trading">
         <div class="secondary-workspace">
           <div class="secondary-workspace-nav" role="tablist" aria-label="二级交易">
-            <button class="secondary-workspace-tab active" type="button" data-secondary-workspace-tab="inventory">影子库存</button>
+            <button class="secondary-workspace-tab active" type="button" data-secondary-workspace-tab="intake">二级交易录入</button>
             <button class="secondary-workspace-tab" type="button" data-secondary-workspace-tab="ledger">当日成交台账</button>
             <button class="secondary-workspace-tab" type="button" data-secondary-workspace-tab="protocol">协议转让</button>
           </div>
 
-          <div class="secondary-workspace-panel active" data-secondary-workspace-panel="inventory">
-            <div class="secondary-grid">
-          <section class="panel secondary-input-panel">
-            <div class="panel-head">
-              <div><span class="step">OTC</span><h2>二级影子库存</h2></div>
-              <span class="pill" id="secondaryInventoryModePill">外网影子账</span>
-            </div>
-            <div class="secondary-summary-grid">
-              <article><span>影子库存</span><strong id="secondaryPositionCount">0</strong></article>
-              <article><span>有效挂卖</span><strong id="secondaryOfferCount">0</strong></article>
-              <article><span>卖空预警</span><strong id="secondaryWarningCount">0</strong></article>
-              <article><span>待补代码</span><strong id="secondaryPendingCodeCount">0</strong></article>
-            </div>
-            <textarea id="secondaryInput" class="secondary-input" rows="10" spellcheck="false" placeholder="粘贴余额台账、每日挂单 list、二级成交流水，或代码补全表。"></textarea>
-            <div class="batch-actions secondary-actions">
-              <label>快照日期<input id="secondarySnapshotDate" type="date"></label>
-              <button class="button primary" id="secondaryImportSnapshotButton" type="button">导入库存快照</button>
-              <button class="button subtle" id="secondaryUploadSnapshotButton" type="button">上传余额台账 Excel</button>
-              <input id="secondarySnapshotFileInput" type="file" accept=".xlsx" hidden>
-              <button class="button subtle" id="secondaryParseOrdersButton" type="button">解析为挂单</button>
-              <button class="button subtle" id="secondaryExportOffersButton" type="button">导出OFR列表</button>
-              <button class="button subtle" id="secondaryParseTradesButton" type="button">录入待成交</button>
-              <button class="button subtle" id="secondarySyncPrimaryButton" type="button">同步一级中标入库</button>
-              <button class="button subtle" id="secondaryApplyCodesButton" type="button">补全代码</button>
-            </div>
-            <div class="warning-box secondary-note">
-              真实库存以你从内网导出的余额台账为准。本页只维护“快照 + 外网录入流水”的影子可卖库存；未交割卖出会继续扣减可卖，防止重复卖出。
-            </div>
-          </section>
+          <div class="secondary-workspace-panel active" data-secondary-workspace-panel="intake">
+            <div class="secondary-intake-grid">
+              <section class="panel secondary-input-panel">
+                <div class="panel-head">
+                  <div><span class="step">TRADE</span><h2>二级交易录入</h2></div>
+                  <span class="pill">公募 / PPN</span>
+                </div>
+                <div class="secondary-summary-grid secondary-intake-summary">
+                  <article><span>待成交</span><strong id="secondaryPendingTradeCount">0</strong></article>
+                  <article><span>已成交</span><strong id="secondaryCompletedTradeCount">0</strong></article>
+                  <article><span>协议转让记录</span><strong id="secondaryProtocolCount">0</strong></article>
+                </div>
+                <div class="secondary-intake-toolbar">
+                  <label>谈判日<input id="secondaryNegotiationDate" type="date"></label>
+                  <span>一行一笔；可一次粘贴多笔交易。</span>
+                </div>
+                <textarea id="secondaryInput" class="secondary-input" rows="10" spellcheck="false" placeholder="【广州】4.90Y 524835.SZ 26越产02 1.97 3000 07.20交易所 兴业银行 出给 华创证券 联系联储证券 熊丹丹 99.346&#10;【北京】259D 26广州产投SCP006 012681665.IB 1.52 5000 7.20+0 兴业银行 出给 国泰海通"></textarea>
+                <div class="batch-actions secondary-actions">
+                  <button class="button primary" id="secondaryParseTradesButton" type="button">转换为待成交</button>
+                  <button class="button subtle" id="secondaryClearInputButton" type="button">清空</button>
+                </div>
+                <div class="secondary-intake-result" id="secondaryIntakeResult" hidden></div>
+                <div class="warning-box secondary-note">
+                  当前仅接收公募债及 PPN。交易所私募请在原文中保留“私募债 / 非公开 / 协议转让”标记，系统会自动转入协议转让页；仅凭 .SH / .SZ 代码不会擅自判断公私募。
+                </div>
+              </section>
 
-          <section class="panel secondary-panel">
-            <div class="panel-head">
-              <div><span class="step">ORDER</span><h2>有效挂单</h2></div>
-              <span class="pill">成交以交易要素录入为准</span>
-            </div>
-            <div class="secondary-list" id="secondaryOrderList"></div>
-          </section>
-
-          <section class="panel secondary-panel">
-            <div class="panel-head">
-              <div><span class="step">STOCK</span><h2>影子可卖库存</h2></div>
-              <span class="pill">按组合 / 代码</span>
-            </div>
-            <div class="secondary-list" id="secondaryInventoryList"></div>
-          </section>
-
-          <section class="panel secondary-panel">
-            <div class="panel-head">
-              <div><span class="step">CODE</span><h2>待补代码池</h2></div>
-              <span class="pill">一级中标常见</span>
-            </div>
-            <div class="secondary-list" id="secondaryPendingCodeList"></div>
-          </section>
-
-          <section class="panel secondary-panel secondary-trade-panel">
-            <div class="panel-head">
-              <div><span class="step">FLOW</span><h2>待成交台账 / 一级入库流水</h2></div>
-              <span class="pill">谈判即占用</span>
-            </div>
-            <div class="secondary-list" id="secondaryTradeList"></div>
-          </section>
+              <section class="panel secondary-panel secondary-trade-panel">
+                <div class="panel-head">
+                  <div><span class="step">PENDING</span><h2>待成交</h2></div>
+                  <span class="pill">填入净价后点击成交</span>
+                </div>
+                <div class="secondary-list" id="secondaryTradeList"></div>
+              </section>
             </div>
           </div>
 
@@ -683,6 +656,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260617-dynamic-inquiry-ranges"></script>
+  <script type="module" src="./app.js?v=20260717-secondary-intake"></script>
 </body>
 </html>
