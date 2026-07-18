@@ -4,6 +4,18 @@ import test from "node:test";
 
 const VERSION = "20260718-secondary-main";
 
+test("exposes a readable product version consistent with package metadata", async () => {
+  const [html, packageText] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ]);
+  const packageVersion = JSON.parse(packageText).version;
+  const visibleVersion = packageVersion.split(".").slice(0, 2).join(".");
+
+  assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
+  assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
+});
+
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, lifecycle, reminders] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
