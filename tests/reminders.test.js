@@ -98,5 +98,11 @@ test("combines project cutoff, result and protocol transfer reminders", () => {
   const reminders = buildUnifiedReminders(state, new Date("2026-07-08T15:00:00+08:00"));
   assert.equal(reminders.some((item) => item.id === "project:bid:bid" && item.severity === "critical"), true);
   assert.equal(reminders.some((item) => item.id === "project:result:result"), true);
-  assert.equal(reminders.some((item) => item.id === "protocol:protocol:counterparty"), true);
+  const protocolReminder = reminders.find((item) => item.id === "protocol:protocol:counterparty");
+  assert.equal(Boolean(protocolReminder), true);
+  assert.deepEqual(protocolReminder.route, {
+    view: "secondary-trading",
+    target: "protocol",
+    step: "counterparty",
+  });
 });

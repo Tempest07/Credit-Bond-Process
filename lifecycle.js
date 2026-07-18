@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260716-dm-rating-primary";
+import { parseUnderwriterNames } from "./core.js?v=20260718-secondary-main";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

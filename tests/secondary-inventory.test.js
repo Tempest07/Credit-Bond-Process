@@ -4,12 +4,21 @@ import assert from "node:assert/strict";
 import {
   applyCodeMappingText,
   buildPrimaryAwardTrades,
+  buildSecondaryOfferListText,
   calculateShadowInventory,
+  isValidSecondaryNetPrice,
+  markSecondaryTradeFrontOffice,
+  normalizeSecondaryInventoryPositions,
+  normalizeSecondaryOrders,
   parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
+  parseSecondaryTradeIntake,
   parseSecondaryTradeText,
   pendingCodeTrades,
+  pendingSecondaryTrades,
+  secondaryDashboardCounts,
+  secondaryTradesForLedger,
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
@@ -50,6 +59,23 @@ test("parses internal balance ledger xlsx rows", () => {
   assert.equal(positions[2].quantityWan, 1200);
 });
 
+test("parses balance ledger rows with alternate headers and comma amounts", () => {
+  const rows = [
+    ["证券代码", "证券简称", "持仓面值", "投资组合", "业务日期"],
+    ["245129.SH", "26南控01", "50,000,000.00", "BK_BD_AS_SDR", "2026-06-25"],
+    ["SZ524746", "26工控K2", "3,000万", "BK_BD_AS_TX", "2026-06-25"],
+  ];
+  const positions = parseInventoryLedgerRows(rows);
+
+  assert.equal(positions.length, 2);
+  assert.equal(positions[0].code, "245129.SH");
+  assert.equal(positions[0].quantityWan, 5000);
+  assert.equal(positions[0].account, "SDR");
+  assert.equal(positions[1].code, "524746.SZ");
+  assert.equal(positions[1].quantityWan, 3000);
+  assert.equal(positions[1].account, "TX");
+});
+
 test("parses regional OFR quote lists with optional amount", () => {
   const orders = parseSecondaryOrderText(`OFR
 陕西（西安）
@@ -64,13 +90,94 @@ test("parses regional OFR quote lists with optional amount", () => {
   assert.equal(orders[0].shortName, "26西轨03");
   assert.equal(orders[0].quantityWan, 0);
   assert.equal(orders[0].yieldRate, 1.93);
+  assert.equal(orders[0].region, "陕西（西安）");
   assert.equal(orders[1].quantityWan, 3000);
   assert.equal(orders[1].price, "100");
   assert.equal(orders[2].shortName, "24广越04");
   assert.equal(orders[2].price, "估值");
   assert.equal(orders[3].price, "100");
+  assert.equal(orders[4].shortName, "24华阳新材MTN010B");
   assert.equal(orders[4].price, "估值-2");
   assert.equal(orders[4].yieldRate, null);
+});
+
+test("exports active offer orders as grouped OFR text", () => {
+  const cleanOrders = parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr
+012681284.IB，26陕西金控SCP003，3000，净价100*ofr
+
+广东（广州）
+25广越03，OFR净价100
+24广越04，OFR估值`);
+  const dirtyOldOrders = [
+    { side: "offer", code: "281640.SH", shortName: "26??03", quantityWan: 0, yieldRate: 1.93, status: "active", sourceText: "281640.SH，26??03，1.93*ofr" },
+    { side: "offer", code: "", shortName: "24????", quantityWan: 0, price: "??-2", status: "active", sourceText: "24????，??-2*ofr" },
+  ];
+
+  const text = buildSecondaryOfferListText([...cleanOrders, ...dirtyOldOrders]);
+
+  assert.equal(text, [
+    "OFR",
+    "",
+    "陕西（西安）",
+    "281640.SH，26西轨03，1.93*ofr",
+    "012681284.IB，26陕西金控SCP003，3000，净价100*ofr",
+    "",
+    "广东（广州）",
+    "25广越03，净价100*ofr",
+    "24广越04，OFR估值",
+  ].join("\n"));
+});
+
+test("updates existing secondary offer by code when a grouped quote is re-imported", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryOrders(state, [{ code: "281640.SH", shortName: "26??03", yieldRate: 1.93, status: "active" }]);
+  state = upsertSecondaryOrders(state, parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr`));
+
+  assert.equal(state.secondaryOrders.length, 1);
+  assert.equal(state.secondaryOrders[0].shortName, "26西轨03");
+  assert.equal(state.secondaryOrders[0].region, "陕西（西安）");
+});
+
+test("re-imported secondary offer list controls export order", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryOrders(state, [
+    { code: "524474.SZ", shortName: "25??K2", yieldRate: 1.84, status: "active" },
+    { code: "281640.SH", shortName: "26??03", yieldRate: 1.93, status: "active" },
+  ]);
+  state = upsertSecondaryOrders(state, parseSecondaryOrderText(`OFR
+陕西（西安）
+281640.SH，26西轨03，1.93*ofr
+524474.SZ，25长汇K2，1.84*ofr`));
+
+  const text = buildSecondaryOfferListText(state.secondaryOrders);
+  assert.match(text, /281640\.SH，26西轨03，1\.93\*ofr\n524474\.SZ，25长汇K2，1\.84\*ofr/);
+});
+
+test("drops garbled secondary records from loaded state", () => {
+  const positions = normalizeSecondaryInventoryPositions([
+    { code: "281640.SH", shortName: "26??03", quantityWan: 3000, sourceText: "???? AFS ?? 281640.SH 3000" },
+    { code: "102682346.IB", shortName: "26JSGMTN002", quantityWan: 6000 },
+  ]);
+  const orders = normalizeSecondaryOrders([
+    { code: "281640.SH", shortName: "26??03", region: "??(??)", yieldRate: 1.93, sourceText: "281640.SH,26??03,1.93*ofr" },
+    { code: "102682346.IB", shortName: "26JSGMTN002", yieldRate: 1.9 },
+  ]);
+
+  assert.equal(positions.length, 1);
+  assert.equal(positions[0].code, "102682346.IB");
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0].code, "102682346.IB");
+
+  const rows = calculateShadowInventory({
+    secondaryInventoryPositions: [{ code: "281640.SH", shortName: "26??03", quantityWan: 3000 }],
+    secondaryOrders: [{ code: "281640.SH", shortName: "26??03", status: "active", quantityWan: 1000 }],
+    secondaryTrades: [],
+  });
+  assert.equal(rows.length, 0);
 });
 
 test("subtracts unsettled sells from available inventory after a real snapshot", () => {
@@ -105,6 +212,123 @@ test("keeps negotiated T+1 sells locked before settlement and applies same-day s
   assert.equal(sameDayTrade.settlementDate, "2026-06-18");
 });
 
+test("parses Trade-Phraser style trade elements into pending secondary trades", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 102682346.IB 26酒钢MTN002 余额6000万", {
+    snapshotDate: "2026-06-25",
+  }));
+  const trades = parseSecondaryTradeText(
+    "【上海】06.26+0 26酒钢MTN002  102682346.IB 1.9% 5k 兴业银行 出给 建信基金 对话发俞维谦",
+    {
+      referenceDate: new Date("2026-06-25T09:00:00+08:00"),
+      negotiationDate: "2026-06-25",
+    },
+  );
+  state = upsertSecondaryTrades(state, trades);
+
+  assert.equal(trades.length, 1);
+  assert.equal(trades[0].intermediary, "上海");
+  assert.equal(trades[0].side, "sell");
+  assert.equal(trades[0].counterparty, "建信基金");
+  assert.equal(trades[0].shortName, "26酒钢MTN002");
+  assert.equal(trades[0].code, "102682346.IB");
+  assert.equal(trades[0].yieldRate, 1.9);
+  assert.equal(trades[0].quantityWan, 5000);
+  assert.equal(trades[0].tradeDate, "2026-06-26");
+  assert.equal(trades[0].settlementSpeed, 0);
+  assert.equal(trades[0].settlementDate, "2026-06-26");
+  assert.equal(trades[0].tradeStage, "negotiated");
+  assert.equal(trades[0].frontOfficeDone, false);
+
+  const row = calculateShadowInventory(state, { asOfDate: "2026-06-25" })[0];
+  assert.equal(row.snapshotQuantityWan, 6000);
+  assert.equal(row.soldWan, 5000);
+  assert.equal(row.availableWan, 1000);
+});
+
+test("turns pasted public and PPN trade elements into pending trades", () => {
+  const input = `【广州】4.90Y  524835.SZ  26越产02  1.97  3000  07.20交易所  兴业银行 出给 华创证券 联系联储证券 熊丹丹 99.346
+【国利】 1) 4.78Y(休1)    245129.SH    26南控01    1.83  4000   07.20交易所 兴业银行 出给 中泰证券资管
+【北京】259D    26广州产投SCP006    012681665.IB  1.52  5000 7.20+0 兴业银行 出给 国泰海通，对话发给兴业银行俞维谦
+【上海】2.80Y  26测试PPN001  032680001.IB  2.05  2000  07.20+0 兴业银行 出给 某理财`;
+  const result = parseSecondaryTradeIntake(input, {
+    referenceDate: new Date("2026-07-17T09:00:00+08:00"),
+    negotiationDate: "2026-07-17",
+  });
+
+  assert.equal(result.trades.length, 4);
+  assert.equal(result.protocolCandidates.length, 0);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.code), ["524835.SZ", "245129.SH", "012681665.IB"]);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.quantityWan), [3000, 4000, 5000]);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.tradeDate), ["2026-07-20", "2026-07-20", "2026-07-20"]);
+  assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.settlementSpeed), [1, 1, 0]);
+  assert.equal(result.trades[0].remainingTerm, "4.90Y");
+  assert.equal(result.trades[0].price, "99.346");
+  assert.equal(result.trades[0].contactNote, "联储证券 熊丹丹");
+  assert.equal(result.trades[2].contactNote, "兴业银行俞维谦");
+  assert.equal(result.trades[3].instrumentScope, "ppn");
+});
+
+test("routes explicitly marked exchange private trades away from secondary intake", () => {
+  const input = `【深圳】 4.42Y(休1)  280607.SH  25汉投03  私募债  2.0  3000  07.20交易所  兴业银行 出给 南方基金
+【上海】 3.00Y  032680001.IB  26测试PPN001  2.05  2000  07.20+0  兴业银行 出给 某理财`;
+  const result = parseSecondaryTradeIntake(input, {
+    referenceDate: new Date("2026-07-17T09:00:00+08:00"),
+  });
+
+  assert.equal(result.protocolCandidates.length, 1);
+  assert.equal(result.protocolCandidates[0].instrumentScope, "exchange_private");
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.trades[0].instrumentScope, "ppn");
+  assert.equal(result.diagnostics[0].status, "protocol");
+});
+
+test("supports frequent variants found in the 2026 trade record", () => {
+  const input = `【国利】 4.57Y+2Y 012681999.IB 26测试MTN001 2.185行权 1E 7月20日+0 兴业银行 出给 测试证券 100净价
+【上海】 9.05Y+1Y(休1) 254999.SH 26测试01 2.45/101.677 3kw 7月20日交易所 兴业银行 出给 测试基金`;
+  const result = parseSecondaryTradeIntake(input, {
+    negotiationDate: "2026-07-17",
+  });
+
+  assert.equal(result.trades.length, 2);
+  assert.deepEqual(result.trades.map((trade) => trade.remainingTerm), ["4.57Y+2Y", "9.05Y+1Y(休1)"]);
+  assert.deepEqual(result.trades.map((trade) => trade.quantityWan), [10000, 3000]);
+  assert.deepEqual(result.trades.map((trade) => trade.tradeDate), ["2026-07-20", "2026-07-20"]);
+  assert.deepEqual(result.trades.map((trade) => trade.settlementSpeed), [0, 1]);
+  assert.equal(result.trades[0].yieldRate, 2.185);
+  assert.equal(result.trades[0].price, "100");
+  assert.equal(result.trades[1].yieldRate, 2.45);
+  assert.equal(result.trades[1].price, "101.677");
+  assert.match(result.trades[1].parseWarnings.join("；"), /疑似交易所私募/);
+});
+
+test("keeps PPN in secondary intake even when the text also says private bond", () => {
+  const result = parseSecondaryTradeIntake(
+    "【北京】 2.80Y 032680999.IB 26测试PPN002 私募债 2.10 1000w 7.20+0 兴业银行 出给 测试资管",
+    { negotiationDate: "2026-07-17" },
+  );
+
+  assert.equal(result.trades.length, 1);
+  assert.equal(result.protocolCandidates.length, 0);
+  assert.equal(result.trades[0].instrumentScope, "ppn");
+});
+
+test("lists only unconfirmed public and PPN trades as pending", () => {
+  const parsed = parseSecondaryTradeText(
+    "【广州】4.90Y 524835.SZ 26越产02 1.97 3000 07.20交易所 兴业银行 出给 华创证券",
+    { referenceDate: new Date("2026-07-17T09:00:00+08:00") },
+  );
+  let state = { secondaryTrades: parsed };
+  assert.equal(pendingSecondaryTrades(state).length, 1);
+  state = {
+    ...state,
+    secondaryTrades: [markSecondaryTradeFrontOffice(parsed[0], { frontOfficePrice: "99.346" })],
+  };
+  assert.equal(pendingSecondaryTrades(state).length, 0);
+  assert.equal(isValidSecondaryNetPrice("99.346"), true);
+  assert.equal(isValidSecondaryNetPrice("1.97"), false);
+});
+
 test("warns when active offers exceed inventory after confirmed sells", () => {
   let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
   state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 280680.SH 25联投17 余额5000万", {
@@ -129,16 +353,33 @@ test("does not treat order quantity as available inventory", () => {
   assert.equal(rowWithoutSnapshot.snapshotQuantityWan, 0);
   assert.equal(rowWithoutSnapshot.activeOfferWan, 3000);
   assert.equal(rowWithoutSnapshot.availableWan, -3000);
-  assert.match(rowWithoutSnapshot.warning, /可能卖空\s*3000万/);
+  assert.equal(rowWithoutSnapshot.needsSnapshot, true);
+  assert.equal(rowWithoutSnapshot.warning, "缺少库存快照，请先导入余额台账");
 
   state = upsertInventoryPositions(state, parseInventorySnapshotText("SDR 102681284.IB 26陕西金控SCP003 余额1000万", {
     snapshotDate: "2026-06-23",
   }));
   const rowWithSnapshot = calculateShadowInventory(state, { asOfDate: "2026-06-23" })[0];
+  assert.equal(rowWithSnapshot.needsSnapshot, false);
   assert.equal(rowWithSnapshot.snapshotQuantityWan, 1000);
   assert.equal(rowWithSnapshot.activeOfferWan, 3000);
   assert.equal(rowWithSnapshot.availableWan, -2000);
   assert.match(rowWithSnapshot.warning, /可能卖空\s*2000万/);
+});
+
+test("marks order-only rows as missing snapshots instead of true sell-empty warnings", () => {
+  const state = {
+    secondaryInventoryPositions: [],
+    secondaryOrders: parseSecondaryOrderText("245129.SH 26南控01 3000 1.76*ofr"),
+    secondaryTrades: [],
+  };
+  const row = calculateShadowInventory(state, { asOfDate: "2026-06-25" })[0];
+  const counts = secondaryDashboardCounts(state);
+
+  assert.equal(row.needsSnapshot, true);
+  assert.equal(row.availableWan, -3000);
+  assert.equal(row.warning, "缺少库存快照，请先导入余额台账");
+  assert.equal(counts.warnings, 0);
 });
 
 test("creates primary award inventory drafts and lets code mapping fill missing codes", () => {
@@ -170,4 +411,31 @@ test("creates primary award inventory drafts and lets code mapping fill missing 
   assert.equal(result.updatedCount, 1);
   assert.equal(result.state.secondaryTrades[0].code, "012681999.IB");
   assert.equal(result.state.secondaryTrades[0].codeStatus, "confirmed");
+});
+
+test("adds front-office confirmed secondary trades to the daily ledger", () => {
+  let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
+  state = upsertSecondaryTrades(state, parseSecondaryTradeText(
+    "SDR 280680.SH 25联投17 3000万 06.18 兴业银行 出给 首创证券 100.990",
+    { referenceDate: new Date("2026-06-18T09:00:00+08:00") },
+  ));
+
+  assert.equal(secondaryTradesForLedger(state, "2026-06-18").length, 0);
+
+  state = {
+    ...state,
+    secondaryTrades: [
+      markSecondaryTradeFrontOffice(state.secondaryTrades[0], {
+        frontOfficePrice: "100.98",
+        now: "2026-06-18T10:20:00.000Z",
+      }),
+    ],
+  };
+
+  const rows = secondaryTradesForLedger(state, "2026-06-18");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].frontOfficeDone, true);
+  assert.equal(rows[0].tradeStage, "front_office_done");
+  assert.equal(rows[0].frontOfficePrice, "100.98");
+  assert.equal(rows[0].ledgerDate, "2026-06-18");
 });

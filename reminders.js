@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260716-dm-rating-primary";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260716-dm-rating-primary";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260718-secondary-main";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260718-secondary-main";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";
@@ -74,7 +74,7 @@ export function buildUnifiedReminders(state = {}, referenceDate = new Date()) {
       detail: formatDueDate(item.step.dueDate, today, tomorrow),
       dueAt: `${item.step.dueDate}T10:00`,
       actionLabel: item.step.label,
-      route: { view: "protocol-transfer", target: item.record.id, step: item.step.key },
+      route: { view: "secondary-trading", target: item.record.id, step: item.step.key },
       priority: severityPriority(severity) + timingPriority(item.timing),
     });
   }

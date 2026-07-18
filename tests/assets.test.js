@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260716-dm-rating-primary";
+const VERSION = "20260718-secondary-main";
 
 test("versions all first-party browser modules together", async () => {
   const [html, app, historyParser, lifecycle, reminders] = await Promise.all([

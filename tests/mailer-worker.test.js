@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { onRequestGet as onMailProxyGet } from "../functions/api/mail/today.js";
-import mailerWorker, { buildTodayMail, selectTodayBidProjects } from "../mailer-worker.js";
+import { onRequestPost as onSecondaryLedgerProxyPost } from "../functions/api/mail/secondary-ledger.js";
+import mailerWorker, {
+  buildSecondaryLedgerMail,
+  buildTodayMail,
+  selectSecondaryLedgerRows,
+  selectTodayBidProjects,
+} from "../mailer-worker.js";
 
 const today = "2026-06-11";
 
@@ -75,6 +81,51 @@ test("uses a fallback project brief when source text is missing", () => {
   assert.match(report.text, /流程意见：\n【暂无流程意见】/);
 });
 
+test("builds one secondary ledger mail from non-protocol and protocol trades", () => {
+  const state = {
+    secondaryTrades: [{
+      id: "trade-1",
+      side: "sell",
+      account: "SDR",
+      code: "280680.SH",
+      shortName: "25联投17",
+      quantityWan: 3000,
+      price: "100.99",
+      frontOfficeDone: true,
+      frontOfficePrice: "100.98",
+      tradeDate: today,
+      ledgerDate: today,
+      settlementDate: "2026-06-12",
+      counterparty: "首创证券",
+      tradeCategory: "non_protocol",
+    }],
+    protocolTransfers: [{
+      id: "protocol-1",
+      code: "281926.SH",
+      shortName: "26光交01",
+      tradeDate: today,
+      buyer: "中信证券",
+      seller: "兴业银行",
+      finalBuyer: "测试资管",
+      price: "101.033",
+      amountTenThousand: 2000,
+      counterpartySealed: true,
+    }],
+  };
+
+  const rows = selectSecondaryLedgerRows(state, today);
+  const report = buildSecondaryLedgerMail(state, { date: today });
+
+  assert.equal(rows.length, 2);
+  assert.equal(report.subject, "二级成交台账260611");
+  assert.equal(report.rowCount, 2);
+  assert.equal(report.tradeCount, 1);
+  assert.equal(report.protocolCount, 1);
+  assert.match(report.text, /非协议\t卖出\tSDR\t280680\.SH\t25联投17\t3000万\t100\.98/);
+  assert.match(report.text, /协议转让\t协议转让\tSSE\t281926\.SH\t26光交01\t2000万\t净价101\.033/);
+  assert.match(report.html, /二级成交台账/);
+});
+
 test("returns a readable JSON error when sending is misconfigured", async () => {
   const response = await mailerWorker.fetch(new Request("https://mailer.test/send-today", {
     method: "POST",
@@ -113,6 +164,35 @@ test("mail proxy authenticates the page session and forwards the mailer password
 
     assert.equal(response.status, 200);
     assert.equal(body.text, "preview");
+    assert.equal(forwardedAuthorization, "Bearer mailer-password");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("secondary ledger proxy authenticates the page session and forwards the mailer password", async () => {
+  const originalFetch = globalThis.fetch;
+  let forwardedAuthorization = "";
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://credit-bond-mailer.weiqian-yu.workers.dev/send-secondary-ledger?date=2026-07-20");
+    forwardedAuthorization = init.headers.Authorization;
+    return new Response(JSON.stringify({ status: "sent", date: "2026-07-20" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const response = await onSecondaryLedgerProxyPost({
+      env: { APP_PASSWORD: "mailer-password", DB: createSessionDb() },
+      request: new Request("http://127.0.0.1:8788/api/mail/secondary-ledger?date=2026-07-20", {
+        method: "POST",
+      }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.status, "sent");
     assert.equal(forwardedAuthorization, "Bearer mailer-password");
   } finally {
     globalThis.fetch = originalFetch;
