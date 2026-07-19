@@ -508,13 +508,14 @@ test("DM valuation assistant prefers society code when loading issuer comparable
       }));
     } else if (url.includes("/bond/market-data/date")) {
       assert.deepEqual(request.securityIdList, ["256800002.SH"]);
+      assert.deepEqual(request.dataSourceList, [1, 3, 4, 7]);
       assert.deepEqual(request.fieldNames, [
         "securityId",
         "secShortName",
         "issuerName",
         "remainingTenor",
         "dataSource",
-        "valuationDate",
+        "issueDate",
         "cbReliability",
         "cbYtm",
         "cbYte",
@@ -526,7 +527,7 @@ test("DM valuation assistant prefers society code when loading issuer comparable
       data = [{
         security_id: "256800002.SH",
         sec_short_name: "26锡城02",
-        valuation_date: "2026-06-30",
+        issue_date: "2026-06-30",
         cb_ytm: 2.4575,
         cb_reliability: "推荐",
       }];
@@ -550,6 +551,82 @@ test("DM valuation assistant prefers society code when loading issuer comparable
     assert.equal(payload.query.societyCode, "91320200123456789X");
     assert.equal(payload.trancheSuggestions[0].comparableItems[0].shortName, "26锡城02");
     assert.equal(outstandingRequests.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM valuation assistant retries without field projection when projected rows cannot be priced", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const issuerName = "投影回退测试发行人";
+  const securityId = "102699901.IB";
+  let marketDataCalls = 0;
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      data = { list: [{
+        security_id: securityId,
+        sec_short_name: "25投影MTN001",
+        sec_full_name: "投影回退测试发行人2025年度第一期中期票据",
+        issuer_name: issuerName,
+        remaining_tenor: "2.9Y",
+        bond_issue_tenor: "3Y",
+        bond_type_desc: "中期票据",
+      }], maxOffset: null };
+    } else if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: securityId,
+        sec_short_name: "25投影MTN001",
+        sec_full_name: "投影回退测试发行人2025年度第一期中期票据",
+        issuer_name: issuerName,
+        remaining_tenor: "2.9Y",
+        bond_issue_tenor: "3Y",
+        bond_type_desc: "中期票据",
+        payment_order: "普通债权",
+        special_item: "",
+      }];
+    } else if (url.includes("/bond/market-data/date")) {
+      marketDataCalls += 1;
+      assert.deepEqual(request.dataSourceList, [1, 3, 4, 7]);
+      if (marketDataCalls === 1) {
+        assert.ok(request.fieldNames.includes("issueDate"));
+        assert.ok(!request.fieldNames.includes("valuationDate"));
+        data = [{ security_id: securityId, sec_short_name: "25投影MTN001" }];
+      } else {
+        assert.equal(request.fieldNames, undefined);
+        data = [{
+          security_id: securityId,
+          sec_short_name: "25投影MTN001",
+          issue_date: "2026-07-17",
+          cb_ytm: 1.8123,
+          cb_reliability: "推荐",
+        }];
+      }
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onValuationRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request(`http://127.0.0.1:8788/api/dm/valuation?issuerName=${encodeURIComponent(issuerName)}&durationText=3Y&offeringType=${encodeURIComponent("公募")}&venue=${encodeURIComponent("银行间")}&shortName=26投影MTN001&valuationDate=2026-07-17`, {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.pricedCandidateCount, 1);
+    assert.equal(payload.actualValuationDate, "2026-07-17");
+    assert.equal(payload.trancheSuggestions[0].comparableItems[0].shortName, "25投影MTN001");
+    assert.equal(payload.diagnostic.marketDataFallbackRequests, 1);
+    assert.equal(payload.diagnostic.marketDataFallbackSecurities, 1);
+    assert.equal(payload.diagnostic.marketDataFallbackErrors, 0);
+    assert.equal(marketDataCalls, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -30,7 +30,7 @@ const MAX_LOCAL_SLOPE_BP_PER_YEAR = 30;
 const OUTLIER_MIN_DISTANCE = 0.08;
 const CURVE_RESIDUAL_OUTLIER_MIN_DISTANCE = 0.05;
 const STANDARD_CURVE_TERMS = [0.25, 0.5, 0.75, 1, 2, 3, 4, 5, 7, 10, 15, 20, 30];
-const DATA_SOURCE_LIST = [1, 2, 3, 4, 7];
+const DATA_SOURCE_LIST = [1, 3, 4, 7];
 const CHINABOND_CURVE_SOURCE = "18";
 const CURVE_TYPE_YTM = "1";
 const SUPPORTED_CHINABOND_MTN_CURVE_RATINGS = new Set(["AAA+", "AAA", "AAA-", "AA+", "AA", "AA-", "A+", "A", "A-"]);
@@ -40,7 +40,7 @@ const MARKET_DATA_FIELDS = [
   "issuerName",
   "remainingTenor",
   "dataSource",
-  "valuationDate",
+  "issueDate",
   "cbReliability",
   "cbYtm",
   "cbYte",
@@ -109,7 +109,8 @@ export async function onRequestGet(context) {
     }
 
     const valuationUniverse = candidatesForMarketData(candidates, targetDurations);
-    const marketRows = await lookupMarketDataRows(dm, valuationUniverse.map((item) => item.securityId), valuationDate);
+    const marketData = await lookupMarketDataRows(dm, valuationUniverse.map((item) => item.securityId), valuationDate);
+    const marketRows = marketData.rows;
     const marketRowsBySecurityId = groupMarketRowsBySecurityId(marketRows);
     let actualValuationDate = commonValuationDateForCandidates(
       candidates,
@@ -169,6 +170,10 @@ export async function onRequestGet(context) {
         outstandingRows: outstanding.rows.length,
         outstandingPages: outstanding.pages,
         marketRows: marketRows.length,
+        marketDataPrimaryRequests: marketData.diagnostic.primaryRequests,
+        marketDataFallbackRequests: marketData.diagnostic.fallbackRequests,
+        marketDataFallbackSecurities: marketData.diagnostic.fallbackSecurities,
+        marketDataFallbackErrors: marketData.diagnostic.fallbackErrors,
         marketDataLookbackDays: MARKET_DATA_LOOKBACK_DAYS,
         curveCalibratedSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveResidualCalibration").length,
         curveOnlyFallbackSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveOnlyFallback").length,
@@ -259,19 +264,44 @@ async function enrichOutstandingWithBasicInfo(dm, rows) {
 
 async function lookupMarketDataRows(dm, securityIds, valuationDate) {
   const rows = [];
+  const diagnostic = { primaryRequests: 0, fallbackRequests: 0, fallbackSecurities: 0, fallbackErrors: 0 };
   const uniqueIds = [...new Set(securityIds.map(normalizeSecurityId).filter(Boolean))].slice(0, MAX_MARKET_DATA_SECURITIES);
   for (let index = 0; index < uniqueIds.length; index += MARKET_DATA_BATCH_SIZE) {
     const securityIdList = uniqueIds.slice(index, index + MARKET_DATA_BATCH_SIZE);
-    const raw = await dm.post(MARKET_DATA_DATE_PATH, {
+    const request = {
       securityIdList,
       dataSourceList: DATA_SOURCE_LIST,
       startDate: offsetIsoDate(valuationDate, -MARKET_DATA_LOOKBACK_DAYS),
       endDate: valuationDate,
       fieldNames: MARKET_DATA_FIELDS,
-    });
-    rows.push(...rowsFromDm(raw));
+    };
+    const raw = await dm.post(MARKET_DATA_DATE_PATH, request);
+    diagnostic.primaryRequests += 1;
+    const primaryRows = rowsFromDm(raw).map(normalizeMarketDataObservationRow);
+    rows.push(...primaryRows);
+
+    const pricedIds = new Set(primaryRows
+      .filter((row) => marketRowValuationDate(row) && marketRowHasUsableValuation(row))
+      .map((row) => normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"])))
+      .filter(Boolean));
+    const fallbackIds = securityIdList.filter((securityId) => !pricedIds.has(securityId));
+    if (!fallbackIds.length) continue;
+
+    diagnostic.fallbackRequests += 1;
+    diagnostic.fallbackSecurities += fallbackIds.length;
+    try {
+      const fallbackRaw = await dm.post(MARKET_DATA_DATE_PATH, {
+        securityIdList: fallbackIds,
+        dataSourceList: DATA_SOURCE_LIST,
+        startDate: request.startDate,
+        endDate: request.endDate,
+      });
+      rows.push(...rowsFromDm(fallbackRaw).map(normalizeMarketDataObservationRow));
+    } catch {
+      diagnostic.fallbackErrors += 1;
+    }
   }
-  return rows;
+  return { rows, diagnostic };
 }
 
 async function lookupYieldCurveRows(dm, { impliedRating, terms, valuationDate }) {
@@ -994,6 +1024,13 @@ function deduplicateValuationObservations(observations) {
 
 function marketRowValuationDate(row) {
   return pickFirstDateString(row, ["valuation_date", "valuationDate"]);
+}
+
+function normalizeMarketDataObservationRow(row) {
+  if (!row || typeof row !== "object") return row;
+  const valuationDate = pickFirstDateString(row, ["valuation_date", "valuationDate", "issue_date", "issueDate"]);
+  if (!valuationDate || row.valuation_date || row.valuationDate) return row;
+  return { ...row, valuation_date: valuationDate };
 }
 
 function latestValuationDate(rows, ceilingDate = "") {
