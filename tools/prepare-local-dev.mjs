@@ -11,7 +11,11 @@ compatibility_date = "2026-06-09"
 binding = "DB"
 database_name = "credit-bond-process-local"
 database_id = "00000000-0000-0000-0000-000000000001"
+
+[[r2_buckets]]
+binding = "PAYMENT_RECEIPTS"
+bucket_name = "credit-bond-payment-receipts-local"
 `;
 
 await writeFile(new URL("../wrangler.toml", import.meta.url), config, "utf8");
-console.log("Prepared local wrangler.toml for D1 binding DB.");
+console.log("Prepared local wrangler.toml for D1 and payment receipt R2 bindings.");

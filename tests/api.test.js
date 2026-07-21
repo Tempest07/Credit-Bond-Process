@@ -5,6 +5,20 @@ import { onRequestPost as onLoginPost } from "../functions/api/auth/login.js";
 import { onRequestPost as onLogoutPost } from "../functions/api/auth/logout.js";
 import { onRequestGet as onSessionGet } from "../functions/api/auth/session.js";
 import { onRequestGet as onRemindersGet } from "../functions/api/reminders.js";
+import { onRequestGet as onPaymentReceiptsGet } from "../functions/api/payment-receipts.js";
+import { onRequestGet as onPaymentReceiptCoverageGet } from "../functions/api/payment-receipt-coverage.js";
+import {
+  onRequestDelete as onPaymentReceiptDelete,
+  onRequestPatch as onPaymentReceiptPatch,
+} from "../functions/api/payment-receipts/[id].js";
+import { onRequestGet as onPaymentReceiptFileGet } from "../functions/api/payment-receipts/[id]/file.js";
+import { onRequestGet as onPaymentReceiptSourceGet } from "../functions/api/payment-receipts/[id]/source.js";
+import { onRequestGet as onPaymentReceiptEmailGet } from "../functions/api/payment-receipts/[id]/email.js";
+import { onRequestGet as onPendingReceiptFileGet } from "../functions/api/payment-receipt-files/[id]/file.js";
+import { onRequestGet as onPendingReceiptEmailGet } from "../functions/api/payment-receipt-files/[id]/email.js";
+import { onRequestGet as onPendingReceiptPagesGet } from "../functions/api/payment-receipt-files/[id]/pages.js";
+import { onRequestPost as onPendingReceiptRegroupPost } from "../functions/api/payment-receipt-files/[id]/regroup.js";
+import { onRequestGet as onPendingReceiptBatchEmailGet } from "../functions/api/payment-receipt-batches/[id]/email.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
 
 test("rejects remote state access without a gateway assertion", async () => {
@@ -13,6 +27,73 @@ test("rejects remote state access without a gateway assertion", async () => {
     request: new Request("https://example.com/api/state"),
   });
   assert.equal(response.status, 401);
+});
+
+test("protects every payment-receipt archive, mutation and original-file route", async () => {
+  const calls = [
+    () => onPaymentReceiptsGet({ env: {}, request: new Request("https://example.com/api/payment-receipts") }),
+    () => onPaymentReceiptCoverageGet({ env: {}, request: new Request("https://example.com/api/payment-receipt-coverage") }),
+    () => onPaymentReceiptPatch({
+      env: {},
+      params: { id: "receipt-1" },
+      request: new Request("https://example.com/api/payment-receipts/receipt-1", { method: "PATCH" }),
+    }),
+    () => onPaymentReceiptDelete({
+      env: {},
+      params: { id: "receipt-1" },
+      request: new Request("https://example.com/api/payment-receipts/receipt-1", { method: "DELETE" }),
+    }),
+    () => onPaymentReceiptFileGet({ env: {}, params: { id: "receipt-1" }, request: new Request("https://example.com/api/payment-receipts/receipt-1/file") }),
+    () => onPaymentReceiptSourceGet({ env: {}, params: { id: "receipt-1" }, request: new Request("https://example.com/api/payment-receipts/receipt-1/source") }),
+    () => onPaymentReceiptEmailGet({ env: {}, params: { id: "receipt-1" }, request: new Request("https://example.com/api/payment-receipts/receipt-1/email") }),
+    () => onPendingReceiptFileGet({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/file") }),
+    () => onPendingReceiptEmailGet({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/email") }),
+    () => onPendingReceiptPagesGet({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/pages") }),
+    () => onPendingReceiptRegroupPost({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/regroup", { method: "POST" }) }),
+    () => onPendingReceiptBatchEmailGet({ env: {}, params: { id: "batch-1" }, request: new Request("https://example.com/api/payment-receipt-batches/batch-1/email") }),
+  ];
+
+  for (const call of calls) assert.equal((await call()).status, 401);
+});
+
+test("blocks manual receipt regrouping while automatic PDF processing is active", async () => {
+  const DB = createRegroupGuardDb({
+    id: "file-1",
+    batch_id: "batch-1",
+    processing_status: "processing",
+    updated_at: "2026-07-21T01:00:00.000Z",
+  });
+  let objectReads = 0;
+  const response = await onPendingReceiptRegroupPost({
+    env: { DB, PAYMENT_RECEIPTS: { async get() { objectReads += 1; return null; } } },
+    params: { id: "file-1" },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipt-files/file-1/regroup", {
+      method: "POST",
+      body: JSON.stringify({ groups: [[1]], blankPages: [], expectedUpdatedAt: "2026-07-21T01:00:00.000Z" }),
+    }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal(objectReads, 0);
+});
+
+test("rejects a stale manual receipt regroup revision before touching R2", async () => {
+  const DB = createRegroupGuardDb({
+    id: "file-1",
+    batch_id: "batch-1",
+    processing_status: "review",
+    updated_at: "2026-07-21T02:00:00.000Z",
+  });
+  let objectReads = 0;
+  const response = await onPendingReceiptRegroupPost({
+    env: { DB, PAYMENT_RECEIPTS: { async get() { objectReads += 1; return null; } } },
+    params: { id: "file-1" },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipt-files/file-1/regroup", {
+      method: "POST",
+      body: JSON.stringify({ groups: [[1]], blankPages: [], expectedUpdatedAt: "2026-07-21T01:00:00.000Z" }),
+    }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal(objectReads, 0);
 });
 
 test("allows local D1 access without a gateway assertion", async () => {
@@ -253,4 +334,31 @@ function createMockDb({ legacyData = null } = {}) {
     },
   };
   return db;
+}
+
+function createRegroupGuardDb(file) {
+  return {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return this;
+        },
+        async run() {
+          return { meta: { changes: 1 } };
+        },
+        async all() {
+          return { results: [] };
+        },
+        async first() {
+          if (/SELECT f\.\*, b\.received_date/i.test(sql)) {
+            return values[1] === file.id ? { ...file, received_date: "2026-07-21" } : null;
+          }
+          if (/SELECT id FROM users WHERE username/i.test(sql)) return { id: "admin" };
+          return null;
+        },
+      };
+    },
+  };
 }

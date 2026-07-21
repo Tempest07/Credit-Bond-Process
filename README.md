@@ -22,6 +22,11 @@
 - 支持将流程意见保存为项目台账，通过看板跟踪待投标、待结果、中标和未中标项目
 - 支持按品种记录投标利率、投标量、中标利率、中标量，并自动生成结果摘要
 - 支持记录综合定价扣税后营收、FTP，并自动计算扣除 FTP 后收益
+- 支持专用邮箱自动接收缴款单，保留原始邮件与 PDF，识别多项目、续页和空白页
+- 支持在项目品种内直接查看已对应缴款单，并按日期查看全部归档和人工复核候选
+- 支持“应收单据对账”，同时提示已缴款和未缴款中标品种的缺单情况
+- 支持按原 PDF 页码人工修正多项目、续页和空白页分组，原始文件始终保留
+- 自动匹配缴款单不会改变缴款状态；缴款仍须人工确认
 
 ## 规则
 
@@ -53,6 +58,8 @@
    - `INNO_APP_KEY` / `INNO_APP_SECRET`：DM 债券档案、发行、主体评级与评级机构
    - `WIND_API_KEY`：Wind 中债隐含评级；仅由 Pages Function 读取，不下发到浏览器
 8. 重新部署 Pages。
+
+缴款单系统还需要 R2、Queue、Email Routing 和独立 Email Worker，详见 [PAYMENT_RECEIPTS_DEPLOYMENT.md](./PAYMENT_RECEIPTS_DEPLOYMENT.md)。
 
 Pages Function 会在首次通过 gateway 访问资料库时自动创建所需表，并把旧 `app_state` 数据迁移到 `admin` 管理员账号名下；也可以手动执行 `schema.sql`。
 

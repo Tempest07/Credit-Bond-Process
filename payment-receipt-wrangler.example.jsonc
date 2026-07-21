@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "credit-bond-payment-receipts",
+  "main": "payment-receipt-worker.js",
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "limits": {
+    "cpu_ms": 300000
+  },
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "vars": {
+    "TIME_ZONE": "Asia/Shanghai",
+    "RECEIPT_OWNER_USER_ID": "admin",
+    "ALLOWED_SENDERS": "REPLACE_WITH_FORWARDER@example.com",
+    // Keep false until compliance has approved sending receipt content to Workers AI.
+    "AI_PROCESSING_APPROVED": "false",
+    // Optional: add a verified destination address for top-level Email handler failures.
+    // "FALLBACK_FORWARD_ADDRESS": "payment-receipts-fallback@example.com",
+    "EXPECTED_RECIPIENT": "payment-receipts@tempest07.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "credit-bond-process",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PAYMENT_RECEIPTS",
+      "bucket_name": "credit-bond-payment-receipts"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "RECEIPT_QUEUE",
+        "queue": "credit-bond-payment-receipts"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "credit-bond-payment-receipts",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_concurrency": 2,
+        "max_retries": 5,
+        "dead_letter_queue": "credit-bond-payment-receipts-dlq"
+      },
+      {
+        "queue": "credit-bond-payment-receipts-dlq",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 10,
+        "max_concurrency": 1
+      }
+    ]
+  }
+}

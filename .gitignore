@@ -1,6 +1,7 @@
 node_modules/
 .wrangler/
 wrangler.toml
+payment-receipt-wrangler.jsonc
 .dev.vars*
 .env*
 android/.gradle/

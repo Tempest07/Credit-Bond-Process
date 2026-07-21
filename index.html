@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="3.0.2">
-  <meta name="application-build-version" content="3.0.2.1">
-  <meta name="application-build" content="20260721-preissue-peer-rating">
+  <meta name="application-version" content="3.1.0">
+  <meta name="application-build-version" content="3.1.0.0">
+  <meta name="application-build" content="20260721-payment-receipts">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260718-version-3-0">
+  <link rel="stylesheet" href="./styles.css?v=20260721-payment-receipts">
 </head>
 <body>
   <div class="app-shell">
@@ -18,13 +18,14 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.0.2.1 · 2026-07-21 更新">v3.0.2</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.1.0.0 · 2026-07-21 更新">v3.1.0</span></small>
         </span>
       </a>
 
       <nav class="nav">
         <button class="nav-item" data-view-target="reminders">待办中心</button>
         <button class="nav-item active" data-view-target="ledger">项目中心</button>
+        <button class="nav-item" data-view-target="payment-receipts">缴款单</button>
         <button class="nav-item" data-view-target="secondary-trading">二级交易</button>
         <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch" hidden>批量撰写</button>
@@ -870,6 +871,57 @@
         </section>
       </section>
 
+      <section class="view" data-view="payment-receipts">
+        <div class="payment-receipt-workspace">
+          <header class="payment-receipt-hero">
+            <div>
+              <span class="step">RECEIPT</span>
+              <h2>缴款单归档</h2>
+              <p>专用邮箱来件会保留原始邮件和原始 PDF；多项目附件按页拆分，空白页自动排除，续页归入对应单据。</p>
+            </div>
+            <div class="payment-receipt-hero-note">
+              <strong>缴款状态仍由人工确认</strong>
+              <span>自动收取和匹配只建立单据关联，不会代替“缴款”按钮。</span>
+            </div>
+          </header>
+
+          <section class="panel payment-receipt-coverage-panel">
+            <div class="panel-head payment-receipt-coverage-head">
+              <div><span class="step">CHECK</span><h2>应收单据对账</h2></div>
+              <span>覆盖已缴款和未缴款的中标品种；随下方归档日期筛选，仅检查单据，不改变缴款状态</span>
+            </div>
+            <div class="payment-receipt-summary" id="paymentReceiptCoverageSummary" aria-live="polite"></div>
+            <div class="payment-receipt-coverage" id="paymentReceiptCoverage" aria-live="polite"></div>
+          </section>
+
+          <section class="panel payment-receipt-archive-panel">
+            <div class="panel-head payment-receipt-archive-head">
+              <div><span class="step">ALL</span><h2>全部缴款单</h2></div>
+              <button class="button subtle" id="paymentReceiptRefreshButton" type="button">刷新邮箱识别结果</button>
+            </div>
+            <div class="payment-receipt-toolbar">
+              <label>归档日期<input id="paymentReceiptDateFilter" type="date" aria-label="按缴款日或收件日筛选缴款单"></label>
+              <label>对应状态
+                <select id="paymentReceiptStatusFilter">
+                  <option value="">全部状态</option>
+                  <option value="matched">已对应项目</option>
+                  <option value="review">待人工确认</option>
+                  <option value="unmatched">未对应</option>
+                  <option value="duplicate">重复单据</option>
+                  <option value="error">识别失败</option>
+                </select>
+              </label>
+              <div class="payment-receipt-toolbar-actions">
+                <button class="button subtle" id="paymentReceiptTodayButton" type="button">今日</button>
+                <button class="button subtle" id="paymentReceiptAllDatesButton" type="button">全部日期</button>
+              </div>
+            </div>
+            <div class="payment-receipt-summary" id="paymentReceiptSummary" aria-live="polite"></div>
+            <div class="payment-receipt-archive" id="paymentReceiptArchive" aria-live="polite"></div>
+          </section>
+        </div>
+      </section>
+
       <section class="view" data-view="rules">
         <div class="rules-grid">
           <article class="rule-card"><span>比例规则 01</span><h2>授信比例为默认值</h2><p>建议投资比例默认采用主体最新授信记录中的批复比例。</p></article>
@@ -892,6 +944,31 @@
       </section>
     </main>
   </div>
+
+  <section class="payment-receipt-regroup-panel" id="paymentReceiptRegroupPanel" role="dialog" aria-modal="true" aria-labelledby="paymentReceiptRegroupTitle" hidden>
+    <button class="payment-receipt-regroup-backdrop" type="button" data-close-receipt-regroup aria-label="关闭拆页修正"></button>
+    <form class="payment-receipt-regroup-dialog" id="paymentReceiptRegroupForm">
+      <header class="payment-receipt-regroup-head">
+        <div><span class="step">PAGES</span><h2 id="paymentReceiptRegroupTitle">修正 PDF 拆页</h2></div>
+        <button class="prepayment-close" type="button" data-close-receipt-regroup aria-label="关闭">×</button>
+      </header>
+      <p class="payment-receipt-regroup-note">按原 PDF 页码确认每张单据的页组；分号分隔不同项目，空白页单独填写。原件不会被修改或删除。</p>
+      <div class="payment-receipt-regroup-layout">
+        <div class="payment-receipt-regroup-pages" id="paymentReceiptRegroupPages" aria-live="polite"></div>
+        <aside class="payment-receipt-regroup-controls">
+          <a class="button subtle" id="paymentReceiptRegroupSource" href="#" target="_blank" rel="noopener">对照原始 PDF</a>
+          <label>单据页组<input id="paymentReceiptRegroupGroups" type="text" autocomplete="off" placeholder="例如：1-2; 3-5"></label>
+          <small>每个分号代表一个项目；同一项目的首页、续页和附件写在同一组。</small>
+          <label>空白页<input id="paymentReceiptRegroupBlankPages" type="text" autocomplete="off" placeholder="例如：6,8"></label>
+          <small>每一页必须且只能出现在一个页组或空白页中。</small>
+        </aside>
+      </div>
+      <footer class="payment-receipt-regroup-actions">
+        <button class="button subtle" type="button" data-close-receipt-regroup>取消</button>
+        <button class="button primary" id="paymentReceiptRegroupSubmit" type="submit">保存拆页并重新生成单据</button>
+      </footer>
+    </form>
+  </section>
 
   <section class="prepayment-entry-panel" id="prepaymentEntryPanel" role="dialog" aria-modal="true" aria-labelledby="prepaymentEntryTitle" hidden>
     <button class="prepayment-entry-backdrop" type="button" data-close-prepayment aria-label="关闭预缴款编号录入"></button>
@@ -916,6 +993,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260718-secondary-main"></script>
+  <script type="module" src="./app.js?v=20260721-payment-receipts"></script>
 </body>
 </html>

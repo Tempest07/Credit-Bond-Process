@@ -1,11 +1,16 @@
 {
   "name": "credit-bond-process",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "prepare:local": "node tools/prepare-local-dev.mjs",
     "dev:local": "npm run prepare:local && npx --yes wrangler@latest pages dev . --port 8788 --persist-to .wrangler/state --show-interactive-dev-session=false",
+    "receipts:preflight": "node tools/check-payment-receipt-readiness.mjs",
     "test": "node --test"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "postal-mime": "^2.7.5"
   }
 }
