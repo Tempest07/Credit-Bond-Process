@@ -444,7 +444,11 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(html, /data-view-target="payment-receipts">缴款单/);
   assert.match(html, /id="paymentReceiptArchive"/);
   assert.match(html, /缴款状态仍由人工确认/);
+  assert.match(html, /只按缴款日期归档；收件时间仅作辅助信息/);
+  assert.match(html, /aria-label="按缴款日期筛选缴款单"/);
+  assert.doesNotMatch(html, /按缴款日或收件日筛选缴款单/);
   assert.match(app, /renderTranchePaymentReceipts\(selectedProjectId, tranche\)/);
+  assert.match(app, /entry\.value\.archiveDate \|\| "缴款日期待识别"/);
   assert.match(app, /未缴款（仍需人工点击）/);
   assert.match(app, /method: "PATCH"/);
   assert.match(app, /method: "DELETE"/);

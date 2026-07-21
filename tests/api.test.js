@@ -56,6 +56,39 @@ test("protects every payment-receipt archive, mutation and original-file route",
   for (const call of calls) assert.equal((await call()).status, 401);
 });
 
+test("filters the receipt archive by payment date and excludes undated pending items", async () => {
+  const DB = createReceiptArchiveListDb();
+  const response = await onPaymentReceiptsGet({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipts?date=2026-07-17"),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.receipts[0].archiveDate, "2026-07-17");
+  assert.deepEqual(payload.pendingFiles, []);
+  assert.deepEqual(payload.pendingBatches, []);
+  assert.equal(DB.pendingQueries, 0);
+  assert.match(DB.receiptQuery, /r\.payment_date = \?/);
+  assert.doesNotMatch(DB.receiptQuery, /COALESCE\s*\(\s*r\.payment_date/i);
+});
+
+test("shows undated pending originals only in the all-dates archive", async () => {
+  const DB = createReceiptArchiveListDb();
+  const response = await onPaymentReceiptsGet({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipts"),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.pendingFiles[0].archiveDate, "");
+  assert.equal(payload.pendingBatches[0].archiveDate, "");
+  assert.equal(payload.pendingFiles[0].receivedAt, "2026-07-21T14:00:00.000Z");
+  assert.equal(payload.pendingBatches[0].receivedAt, "2026-07-21T14:00:00.000Z");
+  assert.equal(DB.pendingQueries, 2);
+});
+
 test("deletes only a duplicate receipt and its exclusively owned R2 archives", async () => {
   const DB = createReceiptDeletionDb({ matchStatus: "duplicate", fileReceiptCount: 1, batchFileCount: 1 });
   let deletedKeys = null;
@@ -402,6 +435,61 @@ function createMockDb({ legacyData = null } = {}) {
           return null;
         },
       };
+    },
+  };
+  return db;
+}
+
+function createReceiptArchiveListDb() {
+  const receiptRow = {
+    id: "receipt-1",
+    payment_date: "2026-07-17",
+    received_date: "2026-07-21",
+    received_at: "2026-07-21T14:00:00.000Z",
+  };
+  const pendingRow = {
+    id: "pending-1",
+    received_date: "2026-07-21",
+    received_at: "2026-07-21T14:00:00.000Z",
+  };
+  const db = {
+    receiptQuery: "",
+    pendingQueries: 0,
+    prepare(sql) {
+      return {
+        sql,
+        bind() { return this; },
+        async run() { return {}; },
+        async first() {
+          if (/SELECT id FROM users WHERE username/i.test(sql)) return { id: "admin" };
+          if (/SELECT user_id FROM user_app_state WHERE user_id/i.test(sql)) return { user_id: "admin" };
+          return null;
+        },
+        async all() {
+          if (/PRAGMA table_info\(payment_receipt_files\)/i.test(sql)) {
+            return { results: [{ name: "page_analysis_json" }, { name: "grouping_json" }] };
+          }
+          if (/PRAGMA table_info\(payment_receipt_batches\)/i.test(sql)) {
+            return { results: [{ name: "raw_sha256" }] };
+          }
+          if (/FROM payment_receipts r\s+JOIN payment_receipt_batches/i.test(sql)) {
+            db.receiptQuery = sql;
+            return { results: [receiptRow] };
+          }
+          if (/FROM payment_receipt_files f\s+JOIN payment_receipt_batches/i.test(sql)) {
+            db.pendingQueries += 1;
+            return { results: [pendingRow] };
+          }
+          if (/FROM payment_receipt_batches b/i.test(sql)) {
+            db.pendingQueries += 1;
+            return { results: [pendingRow] };
+          }
+          return { results: [] };
+        },
+      };
+    },
+    async batch(statements) {
+      return statements.map(() => ({}));
     },
   };
   return db;

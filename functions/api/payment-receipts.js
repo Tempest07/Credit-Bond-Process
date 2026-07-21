@@ -31,11 +31,12 @@ export async function onRequestGet(context) {
       limit,
       offset,
     });
-    const pendingFiles = !projectId && (![...MATCH_STATUSES].includes(requestedStatus) || ["error", "review", "unmatched"].includes(requestedStatus))
-      ? await listPendingPaymentReceiptFiles(context.env.DB, auth.user.id, { date, status, limit, offset })
+    const includePending = !date && !projectId;
+    const pendingFiles = includePending && (![...MATCH_STATUSES].includes(requestedStatus) || ["error", "review", "unmatched"].includes(requestedStatus))
+      ? await listPendingPaymentReceiptFiles(context.env.DB, auth.user.id, { status, limit, offset })
       : [];
-    const pendingBatches = !projectId && (![...MATCH_STATUSES].includes(requestedStatus) || ["error", "review"].includes(requestedStatus))
-      ? await listPendingPaymentReceiptBatches(context.env.DB, auth.user.id, { date, status, limit, offset })
+    const pendingBatches = includePending && (![...MATCH_STATUSES].includes(requestedStatus) || ["error", "review"].includes(requestedStatus))
+      ? await listPendingPaymentReceiptBatches(context.env.DB, auth.user.id, { status, limit, offset })
       : [];
     return json({ ok: true, receipts, pendingFiles, pendingBatches });
   } catch (error) {

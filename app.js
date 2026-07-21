@@ -740,7 +740,7 @@ function renderPaymentReceiptArchive() {
     ...paymentReceiptPendingBatches.map((value) => ({ kind: "batch", value })),
   ];
   entries.forEach((entry) => {
-    const key = entry.value.archiveDate || "日期待识别";
+    const key = entry.value.archiveDate || "缴款日期待识别";
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(entry);
   });
@@ -1219,7 +1219,7 @@ function renderTranchePaymentReceiptContent(projectId, trancheId) {
     <div class="tranche-payment-receipt-list">
       ${receipts.map((receipt) => `
         <a href="${paymentReceiptFileUrl(receipt.id)}" target="_blank" rel="noopener">
-          <span>${escapeHtml(receipt.paymentDate || receipt.archiveDate || "日期待识别")} · ${escapeHtml(receipt.sourcePageLabel ? `原附件第 ${receipt.sourcePageLabel} 页` : receipt.sourceFilename || "PDF")}</span>
+          <span>${escapeHtml(receipt.paymentDate || receipt.archiveDate || "缴款日期待识别")} · ${escapeHtml(receipt.sourcePageLabel ? `原附件第 ${receipt.sourcePageLabel} 页` : receipt.sourceFilename || "PDF")}</span>
           <strong>查看缴款单</strong>
         </a>
       `).join("")}

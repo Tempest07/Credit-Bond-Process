@@ -117,7 +117,7 @@ export async function listPaymentReceipts(db, ownerUserId, filters = {}) {
   const where = ["r.owner_user_id = ?"];
   const values = [ownerUserId];
   if (filters.date) {
-    where.push("COALESCE(r.payment_date, b.received_date) = ?");
+    where.push("r.payment_date = ?");
     values.push(filters.date);
   }
   if (filters.status) {
@@ -158,7 +158,11 @@ export async function listPaymentReceipts(db, ownerUserId, filters = {}) {
     JOIN payment_receipt_files f ON f.id = r.file_id
     LEFT JOIN payment_receipt_matches m ON m.receipt_id = r.id
     WHERE ${where.join(" AND ")}
-    ORDER BY COALESCE(r.payment_date, b.received_date) DESC, r.created_at DESC
+    ORDER BY
+      CASE WHEN r.payment_date IS NULL OR r.payment_date = '' THEN 1 ELSE 0 END,
+      r.payment_date DESC,
+      r.created_at DESC,
+      r.id DESC
     LIMIT ? OFFSET ?
   `).bind(...values).all();
   return (result?.results || []).map(paymentReceiptFromRow);
@@ -170,10 +174,6 @@ export async function listPendingPaymentReceiptFiles(db, ownerUserId, filters = 
     "NOT EXISTS (SELECT 1 FROM payment_receipts r WHERE r.file_id = f.id)",
   ];
   const values = [ownerUserId];
-  if (filters.date) {
-    where.push("b.received_date = ?");
-    values.push(filters.date);
-  }
   if (["error", "review"].includes(filters.status)) {
     where.push("f.processing_status = ?");
     values.push(filters.status);
@@ -188,7 +188,7 @@ export async function listPendingPaymentReceiptFiles(db, ownerUserId, filters = 
     FROM payment_receipt_files f
     JOIN payment_receipt_batches b ON b.id = f.batch_id
     WHERE ${where.join(" AND ")}
-    ORDER BY b.received_date DESC, f.created_at DESC
+    ORDER BY f.created_at DESC, f.id DESC
     LIMIT ? OFFSET ?
   `).bind(...values).all();
   return (result?.results || []).map((row) => ({
@@ -204,7 +204,7 @@ export async function listPendingPaymentReceiptFiles(db, ownerUserId, filters = 
     sender: String(row.sender || ""),
     subject: decodePaymentReceiptSubject(row.subject),
     receivedAt: String(row.received_at || ""),
-    archiveDate: String(row.received_date || ""),
+    archiveDate: "",
   }));
 }
 
@@ -214,10 +214,6 @@ export async function listPendingPaymentReceiptBatches(db, ownerUserId, filters 
     "NOT EXISTS (SELECT 1 FROM payment_receipt_files f WHERE f.batch_id = b.id)",
   ];
   const values = [ownerUserId];
-  if (filters.date) {
-    where.push("b.received_date = ?");
-    values.push(filters.date);
-  }
   if (["error", "review"].includes(filters.status)) {
     where.push("b.processing_status = ?");
     values.push(filters.status);
@@ -230,7 +226,7 @@ export async function listPendingPaymentReceiptBatches(db, ownerUserId, filters 
            b.processing_status, b.error_message
     FROM payment_receipt_batches b
     WHERE ${where.join(" AND ")}
-    ORDER BY b.received_date DESC, b.created_at DESC
+    ORDER BY b.created_at DESC, b.id DESC
     LIMIT ? OFFSET ?
   `).bind(...values).all();
   return (result?.results || []).map((row) => ({
@@ -239,7 +235,7 @@ export async function listPendingPaymentReceiptBatches(db, ownerUserId, filters 
     recipient: String(row.recipient || ""),
     subject: decodePaymentReceiptSubject(row.subject),
     receivedAt: String(row.received_at || ""),
-    archiveDate: String(row.received_date || ""),
+    archiveDate: "",
     processingStatus: String(row.processing_status || "received"),
     errorMessage: String(row.error_message || ""),
   }));
@@ -686,7 +682,7 @@ export function paymentReceiptFromRow(row = {}) {
     batchErrorMessage: String(row.batch_error_message || ""),
     mimeType: String(row.mime_type || "application/pdf"),
     paymentDate: String(row.payment_date || ""),
-    archiveDate: String(row.payment_date || row.received_date || ""),
+    archiveDate: String(row.payment_date || ""),
     amountFen: Number.isSafeInteger(Number(row.amount_fen)) ? Number(row.amount_fen) : null,
     payerName: String(row.payer_name || ""),
     payeeName: String(row.payee_name || ""),

@@ -888,7 +888,7 @@
           <section class="panel payment-receipt-coverage-panel">
             <div class="panel-head payment-receipt-coverage-head">
               <div><span class="step">CHECK</span><h2>应收单据对账</h2></div>
-              <span>覆盖已缴款和未缴款的中标品种；随下方归档日期筛选，仅检查单据，不改变缴款状态</span>
+              <span>覆盖已缴款和未缴款的中标品种；随下方缴款日期筛选，仅检查单据，不改变缴款状态</span>
             </div>
             <div class="payment-receipt-summary" id="paymentReceiptCoverageSummary" aria-live="polite"></div>
             <div class="payment-receipt-coverage" id="paymentReceiptCoverage" aria-live="polite"></div>
@@ -897,10 +897,11 @@
           <section class="panel payment-receipt-archive-panel">
             <div class="panel-head payment-receipt-archive-head">
               <div><span class="step">ALL</span><h2>全部缴款单</h2></div>
+              <span>只按缴款日期归档；收件时间仅作辅助信息</span>
               <button class="button subtle" id="paymentReceiptRefreshButton" type="button">刷新邮箱识别结果</button>
             </div>
             <div class="payment-receipt-toolbar">
-              <label>归档日期<input id="paymentReceiptDateFilter" type="date" aria-label="按缴款日或收件日筛选缴款单"></label>
+              <label>缴款日期<input id="paymentReceiptDateFilter" type="date" aria-label="按缴款日期筛选缴款单"></label>
               <label>对应状态
                 <select id="paymentReceiptStatusFilter">
                   <option value="">全部状态</option>

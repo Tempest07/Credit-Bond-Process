@@ -8,7 +8,55 @@ import {
   recognizePaymentReceiptText,
   selectPaymentReceiptMatch,
 } from "../payment-receipts.js";
-import { readPaymentProjects } from "../functions/api/_payment-receipts.js";
+import {
+  listPaymentReceipts,
+  listPendingPaymentReceiptBatches,
+  listPendingPaymentReceiptFiles,
+  readPaymentProjects,
+} from "../functions/api/_payment-receipts.js";
+
+test("archives receipts strictly by payment date without falling back to received date", async () => {
+  const queries = [];
+  const db = archiveListDb(queries, [{
+    id: "receipt-undated",
+    payment_date: "",
+    received_date: "2026-07-21",
+    received_at: "2026-07-21T14:00:00.000Z",
+  }]);
+
+  const [receipt] = await listPaymentReceipts(db, "admin", { date: "2026-07-17" });
+
+  assert.match(queries[0].sql, /r\.payment_date = \?/);
+  assert.doesNotMatch(queries[0].sql, /COALESCE\s*\(\s*r\.payment_date/i);
+  assert.match(queries[0].sql, /r\.created_at DESC,\s*r\.id DESC/);
+  assert.deepEqual(queries[0].values, ["admin", "2026-07-17", 200, 0]);
+  assert.equal(receipt.archiveDate, "");
+  assert.equal(receipt.receivedAt, "2026-07-21T14:00:00.000Z");
+});
+
+test("keeps files without a recognized payment date in the undated archive group", async () => {
+  const fileQueries = [];
+  const [file] = await listPendingPaymentReceiptFiles(archiveListDb(fileQueries, [{
+    id: "file-undated",
+    received_date: "2026-07-21",
+    received_at: "2026-07-21T14:00:00.000Z",
+  }]), "admin", { date: "2026-07-17" });
+  const batchQueries = [];
+  const [batch] = await listPendingPaymentReceiptBatches(archiveListDb(batchQueries, [{
+    id: "batch-undated",
+    received_date: "2026-07-21",
+    received_at: "2026-07-21T14:00:00.000Z",
+  }]), "admin", { date: "2026-07-17" });
+
+  assert.doesNotMatch(fileQueries[0].sql, /received_date\s*=\s*\?/i);
+  assert.doesNotMatch(batchQueries[0].sql, /received_date\s*=\s*\?/i);
+  assert.match(fileQueries[0].sql, /f\.created_at DESC, f\.id DESC/);
+  assert.match(batchQueries[0].sql, /b\.created_at DESC, b\.id DESC/);
+  assert.equal(file.archiveDate, "");
+  assert.equal(batch.archiveDate, "");
+  assert.equal(file.receivedAt, "2026-07-21T14:00:00.000Z");
+  assert.equal(batch.receivedAt, "2026-07-21T14:00:00.000Z");
+});
 
 test("reconciles receipt coverage for both manually paid and unpaid winning tranches", () => {
   const projects = [{
@@ -37,6 +85,24 @@ test("reconciles receipt coverage for both manually paid and unpaid winning tran
   assert.equal(result.targets.find((target) => target.trancheId === "unpaid")?.covered, true);
   assert.equal(result.targets.some((target) => target.trancheId === "lost"), false);
 });
+
+function archiveListDb(queries, results) {
+  return {
+    prepare(sql) {
+      const query = { sql, values: [] };
+      queries.push(query);
+      return {
+        bind(...values) {
+          query.values = values;
+          return this;
+        },
+        async all() {
+          return { results };
+        },
+      };
+    },
+  };
+}
 
 test("validates manual PDF receipt groups and keeps blank pages outside every receipt", () => {
   assert.deepEqual(normalizePaymentReceiptPageGroups({
