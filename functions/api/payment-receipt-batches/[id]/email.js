@@ -1,5 +1,5 @@
 import { ensureAuthSchema, json, requireUser } from "../../_auth.js";
-import { ensurePaymentReceiptSchema } from "../../_payment-receipts.js";
+import { decodePaymentReceiptSubject, ensurePaymentReceiptSchema } from "../../_payment-receipts.js";
 
 export async function onRequestGet(context) {
   const auth = await requireUser(context);
@@ -16,7 +16,7 @@ export async function onRequestGet(context) {
     if (!row?.raw_object_key) return json({ error: "未找到原始邮件" }, 404);
     const object = await context.env.PAYMENT_RECEIPTS.get(row.raw_object_key, { onlyIf: context.request.headers });
     if (!object) return json({ error: "原始邮件文件不存在" }, 404);
-    const filename = `${row.received_date || "未识别日期"}-${safeName(row.subject || "缴款单邮件")}.eml`;
+    const filename = `${row.received_date || "未识别日期"}-${safeName(decodePaymentReceiptSubject(row.subject) || "缴款单邮件")}.eml`;
     const headers = new Headers({
       "Content-Type": "message/rfc822",
       "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,

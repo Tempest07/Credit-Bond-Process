@@ -1,3 +1,5 @@
+import { decodeWords } from "postal-mime";
+
 const RECEIPT_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS payment_receipt_batches (
     id TEXT PRIMARY KEY,
@@ -200,7 +202,7 @@ export async function listPendingPaymentReceiptFiles(db, ownerUserId, filters = 
     processingStatus: String(row.processing_status || "received"),
     errorMessage: String(row.error_message || ""),
     sender: String(row.sender || ""),
-    subject: String(row.subject || ""),
+    subject: decodePaymentReceiptSubject(row.subject),
     receivedAt: String(row.received_at || ""),
     archiveDate: String(row.received_date || ""),
   }));
@@ -235,7 +237,7 @@ export async function listPendingPaymentReceiptBatches(db, ownerUserId, filters 
     id: String(row.id || ""),
     sender: String(row.sender || ""),
     recipient: String(row.recipient || ""),
-    subject: String(row.subject || ""),
+    subject: decodePaymentReceiptSubject(row.subject),
     receivedAt: String(row.received_at || ""),
     archiveDate: String(row.received_date || ""),
     processingStatus: String(row.processing_status || "received"),
@@ -703,7 +705,7 @@ export function paymentReceiptFromRow(row = {}) {
     matchScore: Number(row.match_score) || 0,
     matchReason: String(row.match_reason || ""),
     sender: String(row.sender || ""),
-    subject: String(row.subject || ""),
+    subject: decodePaymentReceiptSubject(row.subject),
     receivedAt: String(row.received_at || ""),
     createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
@@ -712,6 +714,16 @@ export function paymentReceiptFromRow(row = {}) {
 
 async function ensurePaymentReceiptFileColumn(db, columnName, definition) {
   return ensurePaymentReceiptColumn(db, "payment_receipt_files", columnName, definition);
+}
+
+export function decodePaymentReceiptSubject(value) {
+  const subject = String(value || "").replace(/\r?\n[\t ]+/g, " ").trim();
+  if (!subject) return "";
+  try {
+    return decodeWords(subject).trim() || subject;
+  } catch {
+    return subject;
+  }
 }
 
 async function ensurePaymentReceiptColumn(db, tableName, columnName, definition) {

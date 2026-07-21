@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { PDFDocument } from "pdf-lib";
 
 import {
   analyzePaymentReceiptPage,
+  extractPaymentReceiptPageImage,
   finalizeBatchStatus,
   paymentReceiptFingerprintMaterial,
   paymentReceiptMessageIdConflict,
@@ -12,6 +14,25 @@ import {
   recordDeadLetterFailure,
   recipientAllowed,
 } from "../payment-receipt-worker.js";
+import { decodePaymentReceiptSubject } from "../functions/api/_payment-receipts.js";
+
+async function scannedPagePdf() {
+  const document = await PDFDocument.create();
+  const page = document.addPage([100, 100]);
+  const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+  const image = document.context.stream(jpegBytes, {
+    Type: "XObject",
+    Subtype: "Image",
+    Width: 2,
+    Height: 2,
+    ColorSpace: "DeviceRGB",
+    BitsPerComponent: 8,
+    Filter: "DCTDecode",
+  });
+  const imageRef = document.context.register(image);
+  page.node.newXObject("Image", imageRef);
+  return document.save({ useObjectStreams: false });
+}
 
 test("fails closed when the dedicated receipt recipient is not configured", () => {
   assert.equal(recipientAllowed("payment-receipts@tempest07.com", ""), false);
@@ -104,6 +125,7 @@ test("does not finalize a batch before the email attachment pass completes", asy
 
 test("classifies and extracts one scanned receipt page through Workers AI", async () => {
   let request;
+  const pdf = await scannedPagePdf();
   const result = await analyzePaymentReceiptPage({
     AI: {
       async run(model, input) {
@@ -126,19 +148,24 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
         };
       },
     },
-  }, new Uint8Array([0x25, 0x50, 0x44, 0x46]), 1);
+  }, pdf, 1);
 
-  assert.equal(request.model, "@cf/google/gemma-4-26b-a4b-it");
-  assert.equal(request.input.response_format.json_schema.name, "payment_receipt_page");
-  assert.equal(request.input.response_format.json_schema.schema.type, "object");
-  assert.match(request.input.messages[0].content[1].file.file_data, /^data:application\/pdf;base64,/);
+  assert.equal(request.model, "@cf/mistralai/mistral-small-3.1-24b-instruct");
+  assert.equal(request.input.response_format, undefined);
+  assert.equal(request.input.max_tokens, 600);
+  assert.match(request.input.messages[0].content[1].image_url.url, /^data:image\/jpeg;base64,/);
+  assert.match(request.input.messages[0].content[0].text, /绝不能返回 blank/);
+  assert.match(request.input.messages[0].content[0].text, /"classification":"receipt_start"/);
   assert.equal(result.classification, "receipt_start");
+  assert.equal(result.analysisVersion, 2);
+  assert.equal(result.analysisSource, "workers-ai-page-image");
   assert.equal(result.fields.securityCode, "283234.SH");
   assert.match(result.recognizedText, /9,000万元/);
 });
 
 test("downgrades a low-confidence page to uncertain and supplies prior-page context", async () => {
   let request;
+  const pdf = await scannedPagePdf();
   const result = await analyzePaymentReceiptPage({
     AI: {
       async run(_model, input) {
@@ -161,7 +188,7 @@ test("downgrades a low-confidence page to uncertain and supplies prior-page cont
         };
       },
     },
-  }, new Uint8Array([0x25, 0x50, 0x44, 0x46]), 2, {
+  }, pdf, 2, {
     classification: "receipt_start",
     recognizedText: "26示例01",
   });
@@ -170,6 +197,90 @@ test("downgrades a low-confidence page to uncertain and supplies prior-page cont
   assert.equal(result.confidence, 0.62);
   assert.match(request.messages[0].content[0].text, /26示例01/);
   assert.match(request.messages[0].content[0].text, /低于 0\.8/);
+});
+
+test("never accepts blank when OCR found a payment-notice title", async () => {
+  const pdf = await scannedPagePdf();
+  const result = await analyzePaymentReceiptPage({
+    AI: {
+      async run() {
+        return {
+          response: {
+            classification: "blank",
+            confidence: 0.95,
+            boundary_evidence: "",
+            recognized_text: "厦门思明国有控股集团有限公司配售确认及缴款通知书",
+            payment_date: "2026-07-21",
+            amount_text: "3,000.0000 万元人民币",
+            bond_short_name: "26思明国控MTN002",
+            security_code: "102602143",
+            prepayment_number: "",
+            payer_name: "",
+            payee_name: "",
+            bank_reference: "",
+          },
+        };
+      },
+    },
+  }, pdf, 1);
+  assert.equal(result.classification, "receipt_start");
+  assert.equal(result.fields.securityCode, "102602143");
+  assert.match(result.recognizedText, /3,000\.0000/);
+});
+
+test("preserves an explicit continuation even when a repeated title has date and amount fields", async () => {
+  const pdf = await scannedPagePdf();
+  const result = await analyzePaymentReceiptPage({
+    AI: {
+      async run() {
+        return {
+          response: {
+            classification: "continuation",
+            confidence: 0.95,
+            boundary_evidence: "repeated header on the second page",
+            document_title: "某项目配售确认及缴款通知书",
+            payment_date: "2026-07-21",
+            amount_text: "3,000.0000 万元人民币",
+            bond_short_name: "26示例MTN001",
+            security_code: "102600001",
+            prepayment_number: "",
+            payer_name: "",
+          },
+        };
+      },
+    },
+  }, pdf, 2, {
+    classification: "receipt_start",
+    recognizedText: "26示例MTN001",
+  });
+  assert.equal(result.classification, "continuation");
+});
+
+test("repairs bond suffixes and numeric codes placed in adjacent AI fields", async () => {
+  const pdf = await scannedPagePdf();
+  const result = await analyzePaymentReceiptPage({
+    AI: {
+      async run() {
+        return {
+          response: {
+            classification: "receipt_start",
+            confidence: 0.95,
+            boundary_evidence: "",
+            document_title: "杭州市实业投资集团有限公司配售确认及缴款通知书",
+            payment_date: "2026-07-17",
+            amount_text: "30,000.0000 万元人民币",
+            bond_short_name: "26杭实投",
+            security_code: "SCP007",
+            prepayment_number: "012681821",
+            payer_name: "",
+          },
+        };
+      },
+    },
+  }, pdf, 1);
+  assert.equal(result.fields.bondShortName, "26杭实投 SCP007");
+  assert.equal(result.fields.securityCode, "012681821");
+  assert.equal(result.fields.prepaymentNumber, "");
 });
 
 test("treats a successfully OCRed empty scan as blank but keeps OCR failures uncertain", async () => {
@@ -189,6 +300,48 @@ test("treats a successfully OCRed empty scan as blank but keeps OCR failures unc
 
   assert.equal(blank.classification, "blank");
   assert.equal(failed.classification, "uncertain");
+});
+
+test("extracts the full-page JPEG scan and rejects placeholder Markdown as OCR", async () => {
+  const pdf = await scannedPagePdf();
+  const image = await extractPaymentReceiptPageImage(pdf);
+  assert.equal(image.mimeType, "image/jpeg");
+  assert.equal(image.width, 2);
+  assert.deepEqual([...image.bytes], [0xff, 0xd8, 0xff, 0xd9]);
+
+  const fallback = await analyzePaymentReceiptPage({
+    AI: {
+      async run() { throw new Error("primary unavailable"); },
+      async toMarkdown() { return { format: "text", data: "Contents\nPage 1" }; },
+    },
+  }, pdf, 1);
+  assert.equal(fallback.classification, "uncertain");
+  assert.equal(fallback.analysisSource, "unavailable");
+  assert.equal(fallback.recognizedText, "");
+});
+
+test("keeps meaningful embedded-text pages as continuations only after a trusted prior page", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([100, 100]);
+  const pdf = await document.save();
+  const env = {
+    AI: {
+      async toMarkdown() { return { format: "text", data: "账户分配信息表\n承销手续费结算明细" }; },
+    },
+  };
+  const continuation = await analyzePaymentReceiptPage(env, pdf, 2, {
+    classification: "receipt_start",
+    recognizedText: "某项目配售确认及缴款通知书",
+  });
+  const orphan = await analyzePaymentReceiptPage(env, pdf, 1, null);
+  assert.equal(continuation.classification, "continuation");
+  assert.equal(orphan.classification, "uncertain");
+});
+
+test("decodes RFC 2047 payment-receipt subjects while preserving ordinary text", () => {
+  assert.equal(decodePaymentReceiptSubject("=?UTF-8?B?5rWL6K+V?="), "测试");
+  assert.equal(decodePaymentReceiptSubject("=?UTF-8?Q?=E7=BC=B4=E6=AC=BE=E5=8D=95?="), "缴款单");
+  assert.equal(decodePaymentReceiptSubject("普通缴款邮件"), "普通缴款邮件");
 });
 
 test("builds a stable business fingerprint independent of regenerated PDF bytes", () => {
