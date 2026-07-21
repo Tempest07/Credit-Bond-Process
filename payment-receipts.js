@@ -14,12 +14,13 @@ export const PAYMENT_RECEIPT_MATCH_STATUSES = new Set([
 
 export function recognizePaymentReceiptText(rawText = "", fallback = {}) {
   const text = normalizeWhitespace(rawText);
+  const allocationTable = extractAllocationTableFields(text);
   const paymentDate = normalizeDate(fallback.paymentDate) || extractPaymentDate(text);
   const prepaymentNumber = normalizePrepaymentNumber(
     fallback.prepaymentNumber || text.match(PREPAYMENT_PATTERN)?.[0],
   );
   const amountFen = normalizeAmountFen(
-    fallback.amountFen ?? extractAmountFen(text),
+    fallback.amountFen ?? allocationTable.amountFen ?? extractAmountFen(text),
   );
 
   return {
@@ -27,10 +28,14 @@ export function recognizePaymentReceiptText(rawText = "", fallback = {}) {
     amountFen,
     prepaymentNumber,
     securityCode: cleanIdentifier(
-      fallback.securityCode || extractLabelValue(text, ["债券代码", "证券代码", "债券编码"], /[A-Z]?\d{6,18}(?:\.[A-Z]{2})?/i),
+      fallback.securityCode
+        || allocationTable.securityCode
+        || extractLabelValue(text, ["债券代码", "证券代码", "债券编码"], /[A-Z]?\d{6,18}(?:\.[A-Z]{2})?/i),
     ),
     bondShortName: cleanBondShortName(
-      fallback.bondShortName || extractLabelValue(text, ["债券简称", "证券简称", "缴款项目"], /[^\n；;]{2,50}/),
+      fallback.bondShortName
+        || allocationTable.bondShortName
+        || extractLabelValue(text, ["债券简称", "证券简称", "缴款项目"], /[^\n；;]{2,50}/),
     ),
     payerName: cleanTextField(
       fallback.payerName || extractLabelValue(text, ["投资者名称", "付款人", "付款单位", "汇款人", "缴款人"], /[^\n；;]{2,80}/),
@@ -119,7 +124,9 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
   const uniqueBest = !second || best.score - second.score >= 20;
   const exactIdentifier = best.signals.prepaymentNumber || best.signals.securityCode;
   const exactBusinessMatch = best.signals.shortName
-    && (best.signals.amount || datedCandidates.length === 1);
+    && (best.signals.amount
+      || (best.signals.date && best.signals.issuerName)
+      || datedCandidates.length === 1);
   const canAutoMatch = uniqueBest && (exactIdentifier || exactBusinessMatch);
 
   return {
@@ -368,6 +375,36 @@ function extractAmountFen(text) {
   if (!Number.isFinite(yuan)) return null;
   const multiplier = /万元|万人民币/.test(`${match[0]} ${match[2] || ""}`) ? 10_000 : 1;
   return Math.round(yuan * multiplier * 100);
+}
+
+function extractAllocationTableFields(text) {
+  const header = text.match(/债券简称\s+债券代码[\s\S]{0,240}?缴款金额\s*[（(]?\s*(万?元|万人民币)?\s*[)）]?/i);
+  if (!header || header.index === undefined) return {};
+
+  const tail = text.slice(header.index + header[0].length);
+  const boundaryIndex = tail.search(/(?:请贵公司|请将|请于|收款人名称|开户行名称|银行账号|贵公司办理|联系人)/);
+  const row = tail.slice(0, boundaryIndex >= 0 ? boundaryIndex : 320).trim();
+  const codeMatch = row.match(/\b\d{6,18}(?:\.[A-Z]{2})?\b/i);
+  if (!codeMatch || codeMatch.index === undefined) return {};
+
+  const rawShortName = row.slice(0, codeMatch.index).replace(/^[：:\s]+|[：:\s]+$/g, "");
+  const bondShortName = /^\d{2}/.test(rawShortName) && normalizeMatchText(rawShortName).length <= 32
+    ? cleanBondShortName(rawShortName)
+    : "";
+  const values = [...row.slice(codeMatch.index + codeMatch[0].length).matchAll(/[+-]?\d[\d,]*(?:\.\d{1,4})?/g)];
+  const lastValue = values.at(-1)?.[0] || "";
+  const amount = Number(lastValue.replace(/,/g, ""));
+  const unit = header[1] || "";
+  const multiplier = /万/.test(unit) ? 10_000 : 1;
+  const amountFen = Number.isFinite(amount) && amount > 0
+    ? Math.round(amount * multiplier * 100)
+    : null;
+
+  return {
+    bondShortName,
+    securityCode: codeMatch[0],
+    amountFen,
+  };
 }
 
 function normalizeReceiptPage(input = {}) {

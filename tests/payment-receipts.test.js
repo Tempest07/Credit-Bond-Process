@@ -112,6 +112,20 @@ test("recognizes the embedded-text CICC sample with spaces in the bond short nam
   assert.equal(result.bondShortName, "26 香建 03");
 });
 
+test("recognizes the live allocation-table row after its column headers", () => {
+  const result = recognizePaymentReceiptText(`
+    保利发展控股集团股份有限公司 2026 年面向专业投资者公开发行公司债券(第五期)配售确认及缴款通知书
+    债券简称 债券代码 发行规模 (万元) 期限 票面利率/价格 获配面值 (万元) 缴款金额 (万元)
+    26 保利 08 245694.SH 270,000.00 5+2 年 2.20% 30,000.00 30,000.00
+    请贵公司将上述应缴款项于 2026 年 07 月 17 日 15:00 前划至簿记管理人指定账户。
+  `);
+
+  assert.equal(result.paymentDate, "2026-07-17");
+  assert.equal(result.amountFen, 30_000_000_000);
+  assert.equal(result.securityCode, "245694.SH");
+  assert.equal(result.bondShortName, "26 保利 08");
+});
+
 test("groups a mixed PDF into project receipts while retaining blank-page provenance", () => {
   const grouped = groupPaymentReceiptPages([
     { pageNumber: 1, text: "26项目A 配售缴款通知书 债券简称 26项目A01", inkRatio: 0.15 },
@@ -226,6 +240,45 @@ test("automatically matches both unpaid and paid candidate populations without c
   assert.equal(result.trancheId, "tranche-unpaid");
   assert.deepEqual(projects, before);
   assert.equal(projects[1].tranches[0].paymentCompleted, false);
+});
+
+test("auto-matches a unique same-day short-name and issuer pair even when the OCR amount is wrong", () => {
+  const projects = [{
+    id: "project-poly",
+    shortName: "26保利07/08",
+    issuerName: "保利发展控股集团股份有限公司",
+    tranches: [
+      {
+        id: "tranche-07",
+        shortName: "26保利07",
+        winningAmountWan: 0,
+        paymentDate: "2026-07-17",
+        paymentCompleted: false,
+      },
+      {
+        id: "tranche-08",
+        shortName: "26保利08",
+        winningAmountWan: 30_000,
+        paymentDate: "2026-07-17",
+        paymentCompleted: true,
+      },
+    ],
+  }];
+  const before = structuredClone(projects);
+
+  const result = selectPaymentReceiptMatch({
+    paymentDate: "2026-07-17",
+    amountFen: 26_000_000,
+    bondShortName: "26保利08",
+    recognizedText: "保利发展控股集团股份有限公司 债券简称 26保利08",
+  }, projects);
+
+  assert.equal(result.status, "matched");
+  assert.equal(result.projectId, "project-poly");
+  assert.equal(result.trancheId, "tranche-08");
+  assert.deepEqual(projects, before);
+  assert.equal(projects[0].tranches[0].paymentCompleted, false);
+  assert.equal(projects[0].tranches[1].paymentCompleted, true);
 });
 
 test("does not auto-match two same-day projects from amount alone", () => {
