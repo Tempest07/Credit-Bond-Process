@@ -10,9 +10,10 @@ test("exposes a readable product version consistent with package metadata", asyn
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   const packageVersion = JSON.parse(packageText).version;
-  const visibleVersion = packageVersion.split(".").slice(0, 2).join(".");
+  const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
+  assert.match(html, /<meta name="application-build-version" content="3\.0\.2\.1">/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
