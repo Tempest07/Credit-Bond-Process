@@ -229,6 +229,11 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(app, /projectPaymentReceiptCache/);
   assert.match(app, /从全部项目中人工选择/);
   assert.match(html, /id="paymentReceiptCoverage"/);
+  assert.match(app, /paymentReceiptCoverageFilter = "missing"/);
+  assert.match(app, /data-receipt-coverage-filter="\$\{filter\.value\}"/);
+  assert.match(app, /aria-pressed="\$\{paymentReceiptCoverageFilter === filter\.value\}"/);
+  assert.match(app, /paymentReceiptCoverageFilter === "covered" && target\.covered/);
+  assert.match(app, /paymentReceiptCoverageFilter === "missing" && !target\.covered/);
   assert.match(html, /id="paymentReceiptRegroupPanel"/);
   assert.match(app, /已人工确认缴款，但缺单/);
   assert.match(app, /data-receipt-regroup/);
@@ -240,5 +245,7 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(config, /"crons": \["\*\/10 \* \* \* \*"\]/);
   assert.match(config, /"queue": "credit-bond-payment-receipts-dlq"/);
   assert.match(styles, /\.payment-receipt-date-group/);
+  assert.match(styles, /\.payment-receipt-summary-filter\[aria-pressed="true"\]/);
+  assert.match(styles, /\.payment-receipt-coverage-item\.covered/);
   assert.match(styles, /\.tranche-payment-receipts/);
 });

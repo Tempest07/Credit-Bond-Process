@@ -860,14 +860,21 @@ label[data-recognition-source="wind"]::after {
 .payment-receipt-coverage-panel { padding: 18px 20px; border-radius: 20px; }
 .payment-receipt-coverage-head > span { max-width: 520px; color: var(--muted); font-size: 10px; line-height: 1.6; text-align: right; }
 .payment-receipt-summary .is-warning { border-color: color-mix(in srgb, var(--warning) 32%, var(--line)); color: #8a5c00; background: var(--warning-soft); }
+.payment-receipt-summary-filter { min-height: 34px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #fff; font: inherit; font-size: 10px; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, color .18s ease, background .18s ease, transform .18s ease; }
+.payment-receipt-summary-filter:hover { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); color: var(--text); transform: translateY(-1px); }
+.payment-receipt-summary-filter:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 24%, transparent); outline-offset: 2px; }
+.payment-receipt-summary-filter[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 52%, var(--line)); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, #fff); box-shadow: 0 4px 12px rgba(91,108,255,.13); }
+.payment-receipt-summary-filter.is-warning[aria-pressed="true"] { border-color: color-mix(in srgb, var(--warning) 52%, var(--line)); color: #8a5c00; background: var(--warning-soft); box-shadow: 0 4px 12px rgba(217,132,0,.12); }
 .payment-receipt-coverage { display: grid; gap: 8px; }
 .payment-receipt-coverage-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--line); border-left: 3px solid var(--warning); border-radius: 11px; background: #fff; }
 .payment-receipt-coverage-item.paid { border-left-color: var(--danger); }
+.payment-receipt-coverage-item.covered { border-left-color: #16a36f; }
 .payment-receipt-coverage-item > div { display: grid; gap: 3px; min-width: 0; }
 .payment-receipt-coverage-item strong { font-size: 11px; }
 .payment-receipt-coverage-item span { color: var(--muted); font-size: 9px; }
 .payment-receipt-coverage-state { color: #8a5c00 !important; font-weight: 800; white-space: nowrap; }
 .payment-receipt-coverage-item.paid .payment-receipt-coverage-state { color: var(--danger) !important; }
+.payment-receipt-coverage-item.covered .payment-receipt-coverage-state { color: #08724d !important; }
 .payment-receipt-coverage-item .button { min-height: 30px; padding: 0 10px; font-size: 9px; }
 .payment-receipt-coverage-ok { padding: 11px 13px; border: 1px solid rgba(22,163,111,.22); border-radius: 11px; color: #08724d; background: rgba(22,163,111,.06); font-size: 10px; }
 .payment-receipt-coverage-empty { min-height: 70px; }

@@ -16,7 +16,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260721-payment-receipts";
+} from "./core.js?v=20260721-payment-receipt-filters";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -35,13 +35,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260721-payment-receipts";
+} from "./lifecycle.js?v=20260721-payment-receipt-filters";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260721-payment-receipts";
+} from "./history-parser.js?v=20260721-payment-receipt-filters";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -54,12 +54,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260721-payment-receipts";
+} from "./protocol-transfer.js?v=20260721-payment-receipt-filters";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260721-payment-receipts";
+} from "./reminders.js?v=20260721-payment-receipt-filters";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -85,8 +85,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260721-payment-receipts";
-import { initializeDatePickers } from "./date-picker.js?v=20260721-payment-receipts";
+} from "./secondary-inventory.js?v=20260721-payment-receipt-filters";
+import { initializeDatePickers } from "./date-picker.js?v=20260721-payment-receipt-filters";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -95,19 +95,19 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260721-payment-receipts";
+} from "./project-screenshot-ocr.js?v=20260721-payment-receipt-filters";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260721-payment-receipts";
+} from "./project-screenshot-layout.js?v=20260721-payment-receipt-filters";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260721-payment-receipts";
-import { normalizePaymentReceiptPageGroups } from "./payment-receipts.js?v=20260721-payment-receipts";
+} from "./project-screenshot-image.js?v=20260721-payment-receipt-filters";
+import { normalizePaymentReceiptPageGroups } from "./payment-receipts.js?v=20260721-payment-receipt-filters";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -211,6 +211,7 @@ let paymentReceipts = [];
 let paymentReceiptPendingFiles = [];
 let paymentReceiptPendingBatches = [];
 let paymentReceiptCoverage = { expected: 0, covered: 0, missing: 0, targets: [] };
+let paymentReceiptCoverageFilter = "missing";
 let paymentReceiptCoverageError = "";
 let paymentReceiptsLoading = false;
 let paymentReceiptsError = "";
@@ -418,6 +419,13 @@ function bindPaymentReceipts() {
   $("#paymentReceiptArchive")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-receipt-regroup]");
     if (button?.dataset.receiptRegroup) void openPaymentReceiptRegroup(button.dataset.receiptRegroup, button);
+  });
+  $("#paymentReceiptCoverageSummary")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-receipt-coverage-filter]");
+    const filter = button?.dataset.receiptCoverageFilter;
+    if (!button || !["all", "covered", "missing"].includes(filter)) return;
+    paymentReceiptCoverageFilter = filter;
+    renderPaymentReceiptCoverage();
   });
   $("#paymentReceiptCoverage")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-receipt-coverage-project]");
@@ -728,11 +736,20 @@ function renderPaymentReceiptCoverage() {
   const container = $("#paymentReceiptCoverage");
   if (!summary || !container) return;
   const coverage = paymentReceiptCoverage;
-  summary.innerHTML = `
-    <span><strong>${coverage.expected}</strong> 个应有单据的品种</span>
-    <span><strong>${coverage.covered}</strong> 已有对应单据</span>
-    <span class="${coverage.missing ? "is-warning" : ""}"><strong>${coverage.missing}</strong> 缺少单据</span>
-  `;
+  const summaryFilters = [
+    { value: "all", count: coverage.expected, label: "个应有单据的品种" },
+    { value: "covered", count: coverage.covered, label: "已有对应单据" },
+    { value: "missing", count: coverage.missing, label: "缺少单据", warning: coverage.missing > 0 },
+  ];
+  summary.innerHTML = summaryFilters.map((filter) => `
+    <button
+      class="payment-receipt-summary-filter ${filter.warning ? "is-warning" : ""}"
+      type="button"
+      data-receipt-coverage-filter="${filter.value}"
+      aria-pressed="${paymentReceiptCoverageFilter === filter.value}"
+      aria-controls="paymentReceiptCoverage"
+    ><strong>${filter.count}</strong> ${filter.label}</button>
+  `).join("");
   if (paymentReceiptsLoading) {
     container.innerHTML = '<div class="empty payment-receipt-coverage-empty">正在核对应收单据……</div>';
     return;
@@ -741,18 +758,27 @@ function renderPaymentReceiptCoverage() {
     container.innerHTML = `<div class="empty payment-receipt-coverage-empty error">对账读取失败：${escapeHtml(paymentReceiptCoverageError)}</div>`;
     return;
   }
-  const missing = coverage.targets.filter((target) => !target.covered);
-  if (!missing.length) {
-    container.innerHTML = '<div class="payment-receipt-coverage-ok">当前范围内，应有缴款单的项目品种均已建立单据对应。</div>';
+  const targets = coverage.targets.filter((target) => (
+    paymentReceiptCoverageFilter === "all"
+      || (paymentReceiptCoverageFilter === "covered" && target.covered)
+      || (paymentReceiptCoverageFilter === "missing" && !target.covered)
+  ));
+  if (!targets.length) {
+    const message = paymentReceiptCoverageFilter === "missing"
+      ? "当前范围内，应有缴款单的项目品种均已建立单据对应。"
+      : paymentReceiptCoverageFilter === "covered"
+        ? "当前范围内还没有已对应单据的项目品种。"
+        : "当前范围内没有应收缴款单的项目品种。";
+    container.innerHTML = `<div class="payment-receipt-coverage-ok">${message}</div>`;
     return;
   }
-  container.innerHTML = missing.map((target) => `
-    <article class="payment-receipt-coverage-item ${target.paymentCompleted ? "paid" : "unpaid"}">
+  container.innerHTML = targets.map((target) => `
+    <article class="payment-receipt-coverage-item ${target.covered ? "covered" : target.paymentCompleted ? "paid" : "unpaid"}">
       <div>
         <strong>${escapeHtml(target.shortName || target.projectShortName || "未命名品种")}</strong>
         <span>${escapeHtml([target.paymentDate, target.issuerName].filter(Boolean).join(" · "))}</span>
       </div>
-      <span class="payment-receipt-coverage-state">${escapeHtml(target.paymentCompleted ? "已人工确认缴款，但缺单" : "未缴款，且缺单")}</span>
+      <span class="payment-receipt-coverage-state">${escapeHtml(target.covered ? "已有对应单据" : target.paymentCompleted ? "已人工确认缴款，但缺单" : "未缴款，且缺单")}</span>
       <button class="button subtle" type="button" data-receipt-coverage-project="${escapeAttribute(target.projectId)}">查看项目</button>
     </article>
   `).join("");
