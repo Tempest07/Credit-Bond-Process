@@ -1210,12 +1210,13 @@ test("DM lookup uses V2.5 dedicated rating APIs before compatibility fallbacks",
   }
 });
 
-test("DM lookup searches additional DM issuer data before falling back to D1", async () => {
+test("DM lookup fills an unissued bond implied rating from a non-perpetual issuer peer", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
   const calls = [];
   globalThis.fetch = async (url, init) => {
-    calls.push(url);
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    calls.push({ url, request });
     let data;
     if (url.includes("/bond/basic-info/info")) {
       data = [{
@@ -1233,21 +1234,46 @@ test("DM lookup searches additional DM issuer data before falling back to D1", a
           issuer_full_name: "DM Rating Issuer",
           bond_issue_tenor: "180D",
           plan_issue_amount: 50000,
+          actu_issue_amount: 0,
+          subscribe_date: "2026-07-22",
+          issue_status_desc: "待发行",
         }],
       };
     } else if (url.includes("/company/basic-info/info")) {
       data = [{ com_full_name: "DM Rating Issuer", society_code: "91330000123456789X" }];
     } else if (url.includes("/bond/basic-info/outstanding-bonds")) {
       data = {
-        list: [{
-          security_id: "012681000.IB",
-          sec_short_name: "26DMOTHER001",
-          issuer_name: "DM Rating Issuer",
-          subject_rating: "AA+",
-          rating_agency: "DM Agency",
-          implied_rating: "AA",
-        }],
+        list: [
+          {
+            security_id: "102580999.IB",
+            sec_short_name: "25DM永续MTN001",
+            sec_full_name: "DM Rating Issuer 2025 Perpetual MTN001 永续中期票据",
+            issuer_name: "DM Rating Issuer",
+            bond_issue_tenor: "3+N",
+            implied_rating: "AAA",
+          },
+          {
+            security_id: "012681000.IB",
+            sec_short_name: "26DMOTHER001",
+            sec_full_name: "DM Rating Issuer 2026 SCP001",
+            issuer_name: "DM Rating Issuer",
+            bond_issue_tenor: "180D",
+            subject_rating: "AA+",
+            rating_agency: "DM Agency",
+          },
+        ],
       };
+    } else if (url.includes("/bond/analysis/implied-rating")) {
+      data = request.securityIdList?.includes("012681000.IB")
+        ? [{
+            security_id: "012681000.IB",
+            rating_date: "2026-07-20",
+            cb_implied_rating: "AA",
+            cs_implied_rating: "AA-",
+          }]
+        : [];
+    } else if (url.includes("/company/rating/data") || url.includes("/bond/rating/data") || url.includes("/bond/default-rate/data")) {
+      data = [];
     } else {
       throw new Error(`unexpected DM path: ${url}`);
     }
@@ -1264,7 +1290,7 @@ test("DM lookup searches additional DM issuer data before falling back to D1", a
   try {
     const response = await onRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
-      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26DMFIND001", {
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26DMFIND001&endDate=2026-07-21", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
@@ -1276,11 +1302,93 @@ test("DM lookup searches additional DM issuer data before falling back to D1", a
     assert.deepEqual(payload.normalized.ratingSource, {
       subjectRating: "dm-discovery",
       ratingAgency: "dm-discovery",
-      impliedRating: "dm-discovery",
+      impliedRating: "dm-issuer-peer",
+      cbImpliedRating: "dm-issuer-peer",
+      csImpliedRating: "dm-issuer-peer",
+      impliedRatingBasis: "dm-issuer-peer",
+      impliedRatingAsOf: "dm-issuer-peer",
     });
+    assert.equal(payload.normalized.impliedRatingBasis, "中债");
+    assert.equal(payload.normalized.impliedRatingAsOf, "2026-07-20");
     assert.ok(payload.diagnostic.rating.dmDiscoverySources.includes("outstandingBondsByIssuer"));
+    assert.deepEqual(payload.diagnostic.rating.filledFromIssuerPeer, ["impliedRating"]);
+    assert.equal(payload.diagnostic.rating.issuerPeerImpliedRating.status, "filled");
+    assert.equal(payload.diagnostic.rating.issuerPeerImpliedRating.peerShortName, "26DMOTHER001");
     assert.deepEqual(payload.diagnostic.rating.filledFromIssuerDb, []);
-    assert.ok(calls.some((url) => url.includes("/bond/basic-info/outstanding-bonds")));
+    assert.ok(calls.some((call) => call.url.includes("/bond/basic-info/outstanding-bonds")));
+    const impliedCalls = calls.filter((call) => call.url.includes("/bond/analysis/implied-rating"));
+    assert.equal(impliedCalls.length, 2);
+    assert.deepEqual(impliedCalls[1].request.securityIdList, ["012681000.IB"]);
+    assert.ok(!impliedCalls.some((call) => call.request.securityIdList?.includes("102580999.IB")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DM lookup does not borrow an issuer peer implied rating for an issued bond", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const impliedRequests = [];
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "012681444.IB",
+        sec_short_name: "26ISSUED001",
+        sec_full_name: "Issued Rating Issuer 2026 SCP001",
+        issuer_name: "Issued Rating Issuer",
+        society_code: "91330000987654321X",
+        subject_rating: "AAA",
+        rating_agency: "DM Agency",
+      }];
+    } else if (url.includes("/bond/primary/data")) {
+      data = { list: [{
+        security_id: "012681444.IB",
+        sec_short_name: "26ISSUED001",
+        issuer_full_name: "Issued Rating Issuer",
+        bond_issue_tenor: "180D",
+        plan_issue_amount: 50000,
+        actu_issue_amount: 50000,
+        coupon_rate: 1.68,
+        issue_status_desc: "发行成功",
+      }] };
+    } else if (url.includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "Issued Rating Issuer", society_code: "91330000987654321X" }];
+    } else if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      data = { list: [{
+        security_id: "012681400.IB",
+        sec_short_name: "26ISSUED000",
+        issuer_name: "Issued Rating Issuer",
+        bond_issue_tenor: "270D",
+        implied_rating: "AA+",
+      }] };
+    } else if (url.includes("/bond/analysis/implied-rating")) {
+      impliedRequests.push(request);
+      data = [];
+    } else if (url.includes("/company/rating/data") || url.includes("/bond/rating/data") || url.includes("/bond/default-rate/data")) {
+      data = [];
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26ISSUED001&endDate=2026-07-21", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.normalized.impliedRating, "");
+    assert.equal(payload.diagnostic.rating.issuerPeerImpliedRating.eligible, false);
+    assert.equal(payload.diagnostic.rating.issuerPeerImpliedRating.reason, "issue_result_present");
+    assert.equal(impliedRequests.length, 1);
+    assert.deepEqual(impliedRequests[0].securityIdList, ["012681444.IB"]);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -872,6 +872,8 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
   const outstandingPayloads = [];
   if (issuerName) outstandingPayloads.push({ issuerFullName: issuerName });
   if (societyCode) outstandingPayloads.push({ societyCode });
+  const outstandingRows = [];
+  let discovered = initial;
 
   for (const payload of outstandingPayloads) {
     const sourceName = payload.issuerFullName ? "outstandingBondsByIssuer" : "outstandingBondsBySocietyCode";
@@ -879,10 +881,14 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
       const raw = await dm.post(OUTSTANDING_BONDS_PATH, payload);
       const source = { name: sourceName, raw, rows: rowsFromDm(raw) };
       sources.push(source);
-      const discovered = mergeRatingDiscoveries(dedicated, extractRatingsFromDmSources(sources, { includeImplied }));
-      if (ratingsComplete({ ...normalized, ...discovered.values }, { includeImplied })) {
-        return { ...discovered, sources, errors };
-      }
+      outstandingRows.push(...source.rows);
+      // Outstanding bonds may belong to a different capital structure. They can
+      // fill issuer-level fields here, but implied rating is handled separately
+      // with pre-issue and non-perpetual guards below.
+      discovered = mergeRatingDiscoveries(
+        discovered,
+        extractRatingsFromDmSources([source], { includeImplied: false }),
+      );
     } catch (error) {
       errors.push({
         source: sourceName,
@@ -892,7 +898,225 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
     }
   }
 
-  return { ...mergeRatingDiscoveries(dedicated, extractRatingsFromDmSources(sources, { includeImplied })), sources, errors };
+  const preIssue = confirmedPreIssueEvidence({ normalized, basic, primary, asOfDate });
+  let peerImpliedRating = {
+    eligible: Boolean(includeImplied && preIssue.confirmed && !normalized?.impliedRating && !discovered.values?.impliedRating),
+    status: "not_needed",
+    reason: preIssue.reason,
+    evidenceDate: preIssue.evidenceDate,
+    evidenceStatus: preIssue.evidenceStatus,
+  };
+  if (peerImpliedRating.eligible) {
+    const peer = await lookupIssuerPeerImpliedRating(dm, {
+      rows: outstandingRows,
+      normalized,
+      asOfDate,
+    });
+    sources.push(...peer.sources);
+    errors.push(...peer.errors);
+    discovered = mergeRatingDiscoveries(discovered, peer);
+    peerImpliedRating = { ...peerImpliedRating, ...peer.diagnostic };
+  }
+
+  return { ...discovered, sources, errors, peerImpliedRating };
+}
+
+function confirmedPreIssueEvidence({ normalized, basic, primary, asOfDate = "" } = {}) {
+  const primaryRow = bestPrimaryRow(primary, normalized?.shortName, normalized?.securityId, normalized?.fullName);
+  const basicRow = firstRow(basic);
+  const rows = [primaryRow, basicRow].filter((row) => row && Object.keys(row).length);
+  const hasIssueResult = rows.some((row) => {
+    const actualAmount = numberFromRow(row, ["actu_issue_amount", "actuIssueAmount", "actu_iss_amut", "actuIssAmut", "new_size", "newSize"]);
+    const couponRate = numberFromRow(row, ["coupon_rate", "couponRate", "issue_rate", "issueRate", "winning_rate", "winningRate"]);
+    return Number.isFinite(actualAmount) && actualAmount > 0
+      || Number.isFinite(couponRate) && couponRate > 0;
+  });
+  if (hasIssueResult) return { confirmed: false, reason: "issue_result_present", evidenceDate: "", evidenceStatus: "" };
+
+  const evidenceStatus = rows.map((row) => pickFirstString(row, [
+    "issue_status_desc", "issueStatusDesc", "issue_status", "issueStatus",
+    "issuance_status_desc", "issuanceStatusDesc", "issuance_status", "issuanceStatus",
+  ])).filter(Boolean).join(" ");
+  if (/(?:发行成功|已发行|发行完毕|发行结束|已上市)/.test(evidenceStatus)) {
+    return { confirmed: false, reason: "issued_status", evidenceDate: "", evidenceStatus };
+  }
+  if (/(?:发行失败|取消发行|终止发行|流标)/.test(evidenceStatus)) {
+    return { confirmed: false, reason: "failed_or_cancelled", evidenceDate: "", evidenceStatus };
+  }
+  if (/(?:尚未发行|未发行|待发行|预发行|计划发行|即将发行|发行中|簿记中|待簿记|申购中)/.test(evidenceStatus)) {
+    return { confirmed: true, reason: "pre_issue_status", evidenceDate: "", evidenceStatus };
+  }
+
+  const cutoff = /^\d{4}-\d{2}-\d{2}$/.test(asOfDate) ? asOfDate : localDate(new Date());
+  const evidenceDate = uniqueStrings(rows.flatMap((row) => [
+    pickFirstDateString(row, ["subscribe_date", "subscribeDate"]),
+    pickFirstDateString(row, ["issue_start_date", "issueStartDate", "iss_start_date", "issStartDate"]),
+  ])).filter((date) => date > cutoff).sort()[0] || "";
+  return evidenceDate
+    ? { confirmed: true, reason: "future_issue_date", evidenceDate, evidenceStatus }
+    : { confirmed: false, reason: "pre_issue_not_confirmed", evidenceDate: "", evidenceStatus };
+}
+
+async function lookupIssuerPeerImpliedRating(dm, { rows = [], normalized, asOfDate = "" } = {}) {
+  const candidates = issuerPeerImpliedRatingCandidates(rows, normalized);
+  const sources = [];
+  const errors = [];
+  const dateWindow = dmDailyRatingWindow(asOfDate);
+  const batches = chunk(candidates.filter((candidate) => candidate.securityId), 5);
+
+  for (const batch of batches) {
+    const payload = { securityIdList: batch.map((candidate) => candidate.securityId), ...dateWindow };
+    try {
+      const raw = await dm.post(IMPLIED_RATING_PATH, payload);
+      const ratingRows = rowsFromDm(raw);
+      const source = { name: "issuerPeerImpliedRating", path: IMPLIED_RATING_PATH, raw, rows: ratingRows };
+      sources.push(source);
+      const ids = new Set(batch.map((candidate) => normalizeSecurityId(candidate.securityId)));
+      const impliedRow = latestDmRatingRow(ratingRows, asOfDate, (row) => (
+        ids.has(normalizeSecurityId(pickFirstString(row, ["security_id", "securityId"])))
+        && Boolean(dmImpliedRatingValues(row).rating)
+      ));
+      const implied = dmImpliedRatingValues(impliedRow);
+      if (implied.rating) {
+        const peerSecurityId = pickFirstString(impliedRow, ["security_id", "securityId"]);
+        const peer = batch.find((candidate) => securityIdMatches(candidate.securityId, normalizeSecurityId(peerSecurityId))) || batch[0];
+        return issuerPeerImpliedRatingResult({ implied, peer, sources, errors, sourceField: implied.field });
+      }
+    } catch (error) {
+      errors.push({
+        source: "issuerPeerImpliedRating",
+        path: IMPLIED_RATING_PATH,
+        payloadKeys: Object.keys(payload),
+        error: dmDedicatedRatingError(error),
+      });
+    }
+  }
+
+  const nameOnly = candidates.filter((candidate) => !candidate.securityId && candidate.shortName);
+  for (const batch of chunk(nameOnly, 5)) {
+    const payload = { secShortNameList: batch.map((candidate) => candidate.shortName), ...dateWindow };
+    try {
+      const raw = await dm.post(IMPLIED_RATING_PATH, payload);
+      const ratingRows = rowsFromDm(raw);
+      const source = { name: "issuerPeerImpliedRating", path: IMPLIED_RATING_PATH, raw, rows: ratingRows };
+      sources.push(source);
+      const names = new Set(batch.map((candidate) => normalizeLookupName(candidate.shortName)));
+      const impliedRow = latestDmRatingRow(ratingRows, asOfDate, (row) => (
+        names.has(normalizeLookupName(pickFirstString(row, ["sec_short_name", "secShortName"])))
+        && Boolean(dmImpliedRatingValues(row).rating)
+      ));
+      const implied = dmImpliedRatingValues(impliedRow);
+      if (implied.rating) {
+        const peerShortName = pickFirstString(impliedRow, ["sec_short_name", "secShortName"]);
+        const peer = batch.find((candidate) => normalizeLookupName(candidate.shortName) === normalizeLookupName(peerShortName)) || batch[0];
+        return issuerPeerImpliedRatingResult({ implied, peer, sources, errors, sourceField: implied.field });
+      }
+    } catch (error) {
+      errors.push({
+        source: "issuerPeerImpliedRating",
+        path: IMPLIED_RATING_PATH,
+        payloadKeys: Object.keys(payload),
+        error: dmDedicatedRatingError(error),
+      });
+    }
+  }
+
+  for (const candidate of candidates) {
+    const rating = pickRatingLike([candidate.row], "implied");
+    if (!rating) continue;
+    const implied = { cbRating: "", csRating: "", rating, basis: "", field: "implied_rating", date: "" };
+    return issuerPeerImpliedRatingResult({ implied, peer: candidate, sources, errors, sourceField: "implied_rating" });
+  }
+
+  return {
+    values: {},
+    matches: {},
+    authoritativeFields: [],
+    sources,
+    errors,
+    diagnostic: {
+      status: candidates.length ? "no_rating" : "no_non_perpetual_peer",
+      candidateCount: candidates.length,
+      peerSecurityId: "",
+      peerShortName: "",
+    },
+  };
+}
+
+function issuerPeerImpliedRatingResult({ implied, peer, sources, errors, sourceField }) {
+  return {
+    values: {
+      cbImpliedRating: implied.cbRating,
+      csImpliedRating: implied.csRating,
+      impliedRating: implied.rating,
+      impliedRatingBasis: implied.basis,
+      impliedRatingAsOf: implied.date,
+    },
+    matches: {
+      impliedRating: {
+        source: "issuerPeerImpliedRating",
+        apiPath: IMPLIED_RATING_PATH,
+        path: sourceField,
+        value: implied.rating,
+        date: implied.date,
+        peerSecurityId: peer.securityId,
+        peerShortName: peer.shortName,
+      },
+    },
+    authoritativeFields: [],
+    sources,
+    errors,
+    diagnostic: {
+      status: "filled",
+      candidateCount: null,
+      peerSecurityId: peer.securityId,
+      peerShortName: peer.shortName,
+      rating: implied.rating,
+      ratingAsOf: implied.date,
+    },
+  };
+}
+
+function issuerPeerImpliedRatingCandidates(rows = [], normalized = {}) {
+  const targetSecurityId = normalizeSecurityId(normalized?.securityId);
+  const targetShortName = normalizeLookupName(normalized?.shortName);
+  const seen = new Set();
+  const candidates = [];
+  for (const row of rows || []) {
+    if (outstandingBondIsPerpetual(row)) continue;
+    const securityId = pickFirstString(row, ["security_id", "securityId"]);
+    const shortName = pickFirstString(row, ["sec_short_name", "secShortName"]);
+    if (!securityId && !shortName) continue;
+    if (targetSecurityId && securityIdMatches(securityId, targetSecurityId)) continue;
+    if (targetShortName && normalizeLookupName(shortName) === targetShortName) continue;
+    const key = `${normalizeSecurityId(securityId)}|${normalizeLookupName(shortName)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({ securityId, shortName, row });
+  }
+  return candidates;
+}
+
+function outstandingBondIsPerpetual(row = {}) {
+  const tenor = pickFirstString(row, [
+    "remaining_tenor", "remainingTenor", "bond_issue_tenor", "bondIssueTenor", "bond_matu", "bondMatu",
+  ]).toUpperCase().replace(/\s+/g, "");
+  const text = [
+    pickFirstString(row, ["sec_short_name", "secShortName"]),
+    pickFirstString(row, ["sec_full_name", "secFullName"]),
+    pickFirstString(row, ["bond_type_desc", "bondTypeDesc"]),
+    pickFirstString(row, ["special_item", "specialItem"]),
+    tenor,
+  ].filter(Boolean).join(" ").toUpperCase();
+  return /永续|可续期|无固定期限|续期中票|续期选择权|发行人续期|递延支付|利息递延|可递延|PERP/.test(text)
+    || /\+N(?:Y)?$/.test(tenor)
+    || /N\+N/.test(tenor);
+}
+
+function chunk(values = [], size = 5) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
 }
 
 async function lookupDedicatedDmRatingSources(dm, normalized, { includeImplied = true, asOfDate = "" } = {}) {
@@ -1197,12 +1421,15 @@ function applyDmRatingDiscovery(normalized, discovery) {
   const values = discovery?.values || {};
   const next = { ...normalized };
   const ratingSource = { ...(next.ratingSource || {}) };
+  const issuerPeerFields = new Set(["impliedRating", "impliedRatingBasis", "impliedRatingAsOf", "cbImpliedRating", "csImpliedRating"]);
   for (const [field, value] of Object.entries(values)) {
     const authoritative = (discovery?.authoritativeFields || []).includes(field)
       || Boolean(discovery?.matches?.[field]?.authoritative);
     if (value !== null && value !== undefined && value !== "" && (authoritative || !next[field])) {
       next[field] = value;
-      ratingSource[field] = authoritative ? "dm-rating-api" : "dm-discovery";
+      ratingSource[field] = discovery?.peerImpliedRating?.status === "filled" && issuerPeerFields.has(field)
+        ? "dm-issuer-peer"
+        : authoritative ? "dm-rating-api" : "dm-discovery";
     }
   }
   if (Object.keys(ratingSource).length) next.ratingSource = ratingSource;
@@ -2196,12 +2423,14 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
   const filledFromDm = fields.filter((field) => Boolean(original?.[field]));
   const filledFromDmRatingApi = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-rating-api");
   const filledFromDmDiscovery = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-discovery");
+  const filledFromIssuerPeer = fields.filter((field) => enriched?.ratingSource?.[field] === "dm-issuer-peer");
   const filledFromWind = fields.filter((field) => enriched?.ratingSource?.[field] === "wind-analytics");
   const filledFromIssuerDb = fields.filter((field) => enriched?.ratingSource?.[field] === "issuer-db");
   return {
     filledFromDm,
     filledFromDmRatingApi,
     filledFromDmDiscovery,
+    filledFromIssuerPeer,
     filledFromWind,
     filledFromIssuerDb,
     missing: fields.filter((field) => !enriched?.[field]),
@@ -2209,6 +2438,13 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
     dmRatingApiSources: (dmDiscovery?.sources || []).filter((source) => source.path).map((source) => source.name),
     dmDiscoveryMatches: dmDiscovery?.matches || {},
     dmDiscoveryErrors: dmDiscovery?.errors || [],
+    issuerPeerImpliedRating: dmDiscovery?.peerImpliedRating || {
+      eligible: false,
+      status: "not_run",
+      reason: "",
+      peerSecurityId: "",
+      peerShortName: "",
+    },
     windImpliedRating: {
       enabled: windEnabled,
       status: windImpliedRating?.status || "not_run",
@@ -2226,6 +2462,8 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
     matchedTarget: issuerFallback?.matchedTarget || "",
     note: filledFromDmRatingApi.includes("impliedRating")
       ? "DM V2.5 专用评级接口已为新增项目返回主体评级、评级机构和隐含评级；Wind 不覆盖 DM。"
+      : filledFromIssuerPeer.includes("impliedRating")
+      ? `目标债券尚未发行且自身无隐含评级，已采用同主体非永续债${dmDiscovery?.peerImpliedRating?.peerShortName ? `“${dmDiscovery.peerImpliedRating.peerShortName}”` : ""}的 DM 隐含评级。`
       : filledFromWind.length
       ? "DM 未返回隐含评级，已仅将 Wind 用作备用来源。"
       : filledFromDmRatingApi.length
