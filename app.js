@@ -16,7 +16,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260721-payment-receipt-filters";
+} from "./core.js?v=20260721-payment-receipt-delete";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -35,13 +35,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260721-payment-receipt-filters";
+} from "./lifecycle.js?v=20260721-payment-receipt-delete";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260721-payment-receipt-filters";
+} from "./history-parser.js?v=20260721-payment-receipt-delete";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -54,12 +54,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260721-payment-receipt-filters";
+} from "./protocol-transfer.js?v=20260721-payment-receipt-delete";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260721-payment-receipt-filters";
+} from "./reminders.js?v=20260721-payment-receipt-delete";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -85,8 +85,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260721-payment-receipt-filters";
-import { initializeDatePickers } from "./date-picker.js?v=20260721-payment-receipt-filters";
+} from "./secondary-inventory.js?v=20260721-payment-receipt-delete";
+import { initializeDatePickers } from "./date-picker.js?v=20260721-payment-receipt-delete";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -95,19 +95,19 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260721-payment-receipt-filters";
+} from "./project-screenshot-ocr.js?v=20260721-payment-receipt-delete";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260721-payment-receipt-filters";
+} from "./project-screenshot-layout.js?v=20260721-payment-receipt-delete";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260721-payment-receipt-filters";
-import { normalizePaymentReceiptPageGroups } from "./payment-receipts.js?v=20260721-payment-receipt-filters";
+} from "./project-screenshot-image.js?v=20260721-payment-receipt-delete";
+import { normalizePaymentReceiptPageGroups } from "./payment-receipts.js?v=20260721-payment-receipt-delete";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -452,11 +452,15 @@ function bindPaymentReceipts() {
 }
 
 async function handlePaymentReceiptArchiveClick(event) {
-  const button = event.target.closest("[data-receipt-match], [data-receipt-assign], [data-receipt-unlink]");
+  const button = event.target.closest("[data-receipt-match], [data-receipt-assign], [data-receipt-unlink], [data-receipt-delete]");
   if (!button) return;
-  const receiptId = button.dataset.receiptMatch || button.dataset.receiptAssign || button.dataset.receiptUnlink;
+  const receiptId = button.dataset.receiptMatch || button.dataset.receiptAssign || button.dataset.receiptUnlink || button.dataset.receiptDelete;
   if (!receiptId) return;
 
+  if (button.dataset.receiptDelete) {
+    await deleteDuplicatePaymentReceipt(receiptId, button);
+    return;
+  }
   if (button.dataset.receiptUnlink) {
     await unlinkPaymentReceipt(receiptId, button);
     return;
@@ -514,6 +518,29 @@ async function unlinkPaymentReceipt(receiptId, button) {
   } catch (error) {
     button.disabled = false;
     showToast(`解除对应失败：${error.message || "请稍后重试"}`);
+  }
+}
+
+async function deleteDuplicatePaymentReceipt(receiptId, button) {
+  const confirmed = window.confirm("确定删除这张重复缴款单吗？被判定为原件的缴款单不会删除，项目缴款状态也不会改变。");
+  if (!confirmed) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(`${PAYMENT_RECEIPTS_URL}/${encodeURIComponent(receiptId)}?action=delete-duplicate`, {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    invalidateProjectPaymentReceiptCache(receiptId);
+    await loadPaymentReceipts({ silent: true });
+    showToast(payload.storageCleanup === false
+      ? "重复单据记录已删除，但存储文件清理失败，请稍后告知管理员。"
+      : "重复单据已删除；原件和项目缴款状态未改变。");
+  } catch (error) {
+    button.disabled = false;
+    showToast(`删除失败：${error.message || "请稍后重试"}`);
   }
 }
 
@@ -875,6 +902,7 @@ function renderPaymentReceiptCard(receipt) {
         <a class="button subtle" href="${paymentReceiptSourceUrl(receipt.id)}" target="_blank" rel="noopener">原始 PDF</a>
         <button class="button subtle" type="button" data-receipt-regroup="${escapeAttribute(receipt.fileId)}">修正拆页</button>
         <a class="text-button" href="${paymentReceiptEmailUrl(receipt.id)}">原始邮件</a>
+        ${receipt.matchStatus === "duplicate" ? `<button class="button subtle danger-button" type="button" data-receipt-delete="${escapeAttribute(receipt.id)}">删除重复单据</button>` : ""}
       </div>
     </article>
   `;

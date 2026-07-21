@@ -559,6 +559,83 @@ export async function unassignPaymentReceipt(db, input) {
   ]);
 }
 
+export async function deleteDuplicatePaymentReceipt(db, input) {
+  const row = await db.prepare(`
+    SELECT r.id, r.batch_id, r.file_id, r.match_status,
+           r.object_key AS receipt_object_key,
+           f.object_key AS file_object_key,
+           b.raw_object_key,
+           (SELECT COUNT(*) FROM payment_receipts other_receipt WHERE other_receipt.file_id = r.file_id) AS file_receipt_count,
+           (SELECT COUNT(*) FROM payment_receipt_files other_file WHERE other_file.batch_id = r.batch_id) AS batch_file_count
+    FROM payment_receipts r
+    JOIN payment_receipt_files f ON f.id = r.file_id
+    JOIN payment_receipt_batches b ON b.id = r.batch_id
+    WHERE r.owner_user_id = ?1 AND b.owner_user_id = ?1 AND r.id = ?2
+  `).bind(input.ownerUserId, input.receiptId).first();
+  if (!row) return null;
+  if (String(row.match_status || "") !== "duplicate") {
+    throw new Error("只有已标记为重复的缴款单才能删除");
+  }
+  if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
+
+  const now = input.deletedAt || new Date().toISOString();
+  const fileHasOnlyThisReceipt = Number(row.file_receipt_count) === 1;
+  const batchHasOnlyThisFile = Number(row.batch_file_count) === 1;
+  const deleteBatch = fileHasOnlyThisReceipt && batchHasOnlyThisFile;
+  const results = await db.batch([
+    db.prepare(`
+      INSERT INTO payment_receipt_events (
+        id, owner_user_id, receipt_id, batch_id, event_type, detail_json, created_at
+      ) VALUES (?1, ?2, ?3, ?4, 'receipt_duplicate_deleted', ?5, ?6)
+    `).bind(
+      crypto.randomUUID(),
+      input.ownerUserId,
+      input.receiptId,
+      String(row.batch_id || ""),
+      JSON.stringify({
+        fileId: String(row.file_id || ""),
+        deletedSourceFile: fileHasOnlyThisReceipt,
+        deletedEmailArchive: deleteBatch,
+      }),
+      now,
+    ),
+    db.prepare(`
+      DELETE FROM payment_receipt_matches
+      WHERE owner_user_id = ?1 AND receipt_id = ?2
+    `).bind(input.ownerUserId, input.receiptId),
+    db.prepare(`
+      DELETE FROM payment_receipts
+      WHERE owner_user_id = ?1 AND id = ?2 AND match_status = 'duplicate'
+    `).bind(input.ownerUserId, input.receiptId),
+    db.prepare(`
+      DELETE FROM payment_receipt_files
+      WHERE id = ?1
+        AND batch_id IN (SELECT id FROM payment_receipt_batches WHERE owner_user_id = ?2)
+        AND NOT EXISTS (SELECT 1 FROM payment_receipts WHERE file_id = ?1)
+    `).bind(String(row.file_id || ""), input.ownerUserId),
+    db.prepare(`
+      DELETE FROM payment_receipt_batches
+      WHERE id = ?1 AND owner_user_id = ?2
+        AND NOT EXISTS (SELECT 1 FROM payment_receipt_files WHERE batch_id = ?1)
+    `).bind(String(row.batch_id || ""), input.ownerUserId),
+  ]);
+  const receiptDeleteChanges = Number(results?.[2]?.meta?.changes ?? results?.[2]?.changes ?? 0);
+  if (receiptDeleteChanges !== 1) throw new Error("重复单据状态已变化，请刷新后重试");
+
+  return {
+    receiptId: input.receiptId,
+    batchId: String(row.batch_id || ""),
+    fileId: String(row.file_id || ""),
+    deletedSourceFile: fileHasOnlyThisReceipt,
+    deletedEmailArchive: deleteBatch,
+    objectKeys: [
+      String(row.receipt_object_key || ""),
+      fileHasOnlyThisReceipt ? String(row.file_object_key || "") : "",
+      deleteBatch ? String(row.raw_object_key || "") : "",
+    ].filter(Boolean),
+  };
+}
+
 export async function updatePaymentReceiptMatchStatus(db, ownerUserId, receiptId, input = {}) {
   await db.prepare(`
     UPDATE payment_receipts

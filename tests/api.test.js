@@ -56,6 +56,77 @@ test("protects every payment-receipt archive, mutation and original-file route",
   for (const call of calls) assert.equal((await call()).status, 401);
 });
 
+test("deletes only a duplicate receipt and its exclusively owned R2 archives", async () => {
+  const DB = createReceiptDeletionDb({ matchStatus: "duplicate", fileReceiptCount: 1, batchFileCount: 1 });
+  let deletedKeys = null;
+  const response = await onPaymentReceiptDelete({
+    env: {
+      DB,
+      PAYMENT_RECEIPTS: {
+        async delete(keys) { deletedKeys = keys; },
+      },
+    },
+    params: { id: "receipt-duplicate" },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipts/receipt-duplicate?action=delete-duplicate", {
+      method: "DELETE",
+    }),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.deleted, true);
+  assert.equal(payload.deletedSourceFile, true);
+  assert.equal(payload.deletedEmailArchive, true);
+  assert.equal(payload.storageCleanup, true);
+  assert.deepEqual(deletedKeys, ["receipts/duplicate.pdf", "attachments/duplicate.pdf", "emails/duplicate.eml"]);
+  assert.ok(DB.mutations.some((sql) => /DELETE FROM payment_receipts[\s\S]+match_status = 'duplicate'/i.test(sql)));
+  assert.ok(DB.mutations.some((sql) => /receipt_duplicate_deleted/i.test(sql)));
+});
+
+test("preserves shared source archives when deleting one duplicate receipt", async () => {
+  const DB = createReceiptDeletionDb({ matchStatus: "duplicate", fileReceiptCount: 2, batchFileCount: 1 });
+  let deletedKeys = null;
+  const response = await onPaymentReceiptDelete({
+    env: {
+      DB,
+      PAYMENT_RECEIPTS: {
+        async delete(keys) { deletedKeys = keys; },
+      },
+    },
+    params: { id: "receipt-duplicate" },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipts/receipt-duplicate?action=delete-duplicate", {
+      method: "DELETE",
+    }),
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.deletedSourceFile, false);
+  assert.equal(payload.deletedEmailArchive, false);
+  assert.deepEqual(deletedKeys, ["receipts/duplicate.pdf"]);
+});
+
+test("refuses to delete a non-duplicate payment receipt", async () => {
+  const DB = createReceiptDeletionDb({ matchStatus: "matched" });
+  let storageTouched = false;
+  const response = await onPaymentReceiptDelete({
+    env: {
+      DB,
+      PAYMENT_RECEIPTS: {
+        async delete() { storageTouched = true; },
+      },
+    },
+    params: { id: "receipt-duplicate" },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipts/receipt-duplicate?action=delete-duplicate", {
+      method: "DELETE",
+    }),
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(storageTouched, false);
+  assert.equal(DB.mutations.some((sql) => /DELETE FROM payment_receipts/i.test(sql)), false);
+});
+
 test("blocks manual receipt regrouping while automatic PDF processing is active", async () => {
   const DB = createRegroupGuardDb({
     id: "file-1",
@@ -359,6 +430,90 @@ function createRegroupGuardDb(file) {
           return null;
         },
       };
+    },
+  };
+}
+
+function createReceiptDeletionDb({ matchStatus = "duplicate", fileReceiptCount = 1, batchFileCount = 1 } = {}) {
+  const mutations = [];
+  const receiptRow = {
+    id: "receipt-duplicate",
+    owner_user_id: "admin",
+    batch_id: "batch-duplicate",
+    file_id: "file-duplicate",
+    source_pages_json: "[1]",
+    source_page_label: "1",
+    object_key: "receipts/duplicate.pdf",
+    mime_type: "application/pdf",
+    sha256: "duplicate-sha",
+    payment_date: "2026-07-17",
+    amount_fen: 30_000_000_000,
+    bond_short_name: "26保利08",
+    security_code: "245694.SH",
+    recognized_text: "26保利08",
+    recognition_status: "recognized",
+    match_status: matchStatus,
+    candidate_json: "[]",
+    error_message: "",
+    sender: "internal@example.com",
+    subject: "重复缴款单",
+    received_at: "2026-07-21T01:00:00.000Z",
+    received_date: "2026-07-21",
+    source_filename: "duplicate.pdf",
+    blank_pages_json: "[]",
+  };
+  return {
+    mutations,
+    prepare(sql) {
+      let values = [];
+      return {
+        sql,
+        bind(...args) {
+          values = args;
+          return this;
+        },
+        async run() {
+          if (/INSERT|UPDATE|DELETE/i.test(sql)) mutations.push(sql);
+          return { meta: { changes: 1 } };
+        },
+        async all() {
+          if (/PRAGMA table_info\(payment_receipt_files\)/i.test(sql)) {
+            return { results: [{ name: "page_analysis_json" }, { name: "grouping_json" }] };
+          }
+          if (/PRAGMA table_info\(payment_receipt_batches\)/i.test(sql)) {
+            return { results: [{ name: "raw_sha256" }] };
+          }
+          return { results: [] };
+        },
+        async first() {
+          if (/SELECT id FROM users WHERE username/i.test(sql)) return { id: "admin" };
+          if (/SELECT user_id FROM user_app_state WHERE user_id/i.test(sql)) return { user_id: "admin" };
+          if (/SELECT r\.id, r\.batch_id, r\.file_id, r\.match_status/i.test(sql)) {
+            return {
+              id: receiptRow.id,
+              batch_id: receiptRow.batch_id,
+              file_id: receiptRow.file_id,
+              match_status: matchStatus,
+              receipt_object_key: receiptRow.object_key,
+              file_object_key: "attachments/duplicate.pdf",
+              raw_object_key: "emails/duplicate.eml",
+              file_receipt_count: fileReceiptCount,
+              batch_file_count: batchFileCount,
+            };
+          }
+          if (/FROM payment_receipts r[\s\S]+WHERE r\.owner_user_id/i.test(sql)) {
+            return values[1] === receiptRow.id ? receiptRow : null;
+          }
+          if (/SELECT data, updated_at FROM app_state/i.test(sql)) return null;
+          return null;
+        },
+      };
+    },
+    async batch(statements) {
+      statements.forEach((statement) => {
+        if (/INSERT|UPDATE|DELETE/i.test(statement.sql)) mutations.push(statement.sql);
+      });
+      return statements.map(() => ({ meta: { changes: 1 } }));
     },
   };
 }

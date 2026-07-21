@@ -1,6 +1,7 @@
 import { ensureAuthSchema, json, requireUser } from "../_auth.js";
 import {
   assignPaymentReceipt,
+  deleteDuplicatePaymentReceipt,
   ensurePaymentReceiptSchema,
   getPaymentReceipt,
   insertPaymentReceiptEvent,
@@ -19,6 +20,7 @@ export async function onRequestPatch(context) {
     const receiptId = String(context.params.id || "");
     const receipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     if (!receipt) return json({ error: "未找到缴款单" }, 404);
+    if (receipt.matchStatus === "duplicate") return json({ error: "重复单据不能对应项目，请删除重复件或保留归档" }, 409);
 
     const body = await context.request.json().catch(() => ({}));
     const projectId = String(body.projectId || "");
@@ -62,6 +64,31 @@ export async function onRequestDelete(context) {
     const receiptId = String(context.params.id || "");
     const receipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     if (!receipt) return json({ error: "未找到缴款单" }, 404);
+    const action = new URL(context.request.url).searchParams.get("action") || "unlink";
+    if (action === "delete-duplicate") {
+      if (receipt.matchStatus !== "duplicate") return json({ error: "只有重复单据才能删除" }, 409);
+      if (!context.env.PAYMENT_RECEIPTS) return json({ error: "Cloudflare R2 binding PAYMENT_RECEIPTS 尚未配置" }, 503);
+      const deleted = await deleteDuplicatePaymentReceipt(context.env.DB, {
+        ownerUserId: auth.user.id,
+        receiptId,
+      });
+      if (!deleted) return json({ error: "未找到缴款单" }, 404);
+      const { objectKeys, ...publicDeleted } = deleted;
+      let storageCleanup = true;
+      try {
+        if (objectKeys.length) await context.env.PAYMENT_RECEIPTS.delete(objectKeys);
+      } catch (error) {
+        storageCleanup = false;
+        console.error(JSON.stringify({
+          event: "payment_receipt_duplicate_storage_cleanup_failed",
+          receiptId,
+          error: error.message || String(error),
+        }));
+      }
+      return json({ ok: true, deleted: true, storageCleanup, ...publicDeleted });
+    }
+    if (action !== "unlink") return json({ error: "不支持的缴款单删除操作" }, 400);
+    if (receipt.matchStatus !== "matched") return json({ error: "只有已对应项目的缴款单才能解除对应" }, 409);
     await unassignPaymentReceipt(context.env.DB, { ownerUserId: auth.user.id, receiptId });
     await insertPaymentReceiptEvent(context.env.DB, {
       id: crypto.randomUUID(),

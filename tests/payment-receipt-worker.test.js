@@ -237,6 +237,9 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(html, /id="paymentReceiptRegroupPanel"/);
   assert.match(app, /已人工确认缴款，但缺单/);
   assert.match(app, /data-receipt-regroup/);
+  assert.match(app, /data-receipt-delete="\$\{escapeAttribute\(receipt\.id\)\}"/);
+  assert.match(app, /\?action=delete-duplicate/);
+  assert.match(app, /被判定为原件的缴款单不会删除/);
   assert.match(worker, /kind: "email"/);
   assert.match(worker, /processPaymentReceiptEmail/);
   assert.match(worker, /recordDeadLetterFailure/);
