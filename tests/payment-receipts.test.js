@@ -281,6 +281,83 @@ test("auto-matches a unique same-day short-name and issuer pair even when the OC
   assert.equal(projects[0].tranches[1].paymentCompleted, true);
 });
 
+test("auto-matches a standard bond short name with a conservative issuer abbreviation", () => {
+  const projects = [{
+    id: "project-yuexiu",
+    shortName: "26越秀租赁SCP005",
+    issuerName: "广州越秀融资租赁有限公司",
+    tranches: [{
+      id: "tranche-yuexiu",
+      shortName: "26越秀租赁SCP005",
+      winningAmountWan: 18_000,
+      paymentDate: "2026-07-21",
+      paymentCompleted: true,
+    }],
+  }];
+  const before = structuredClone(projects);
+
+  const result = selectPaymentReceiptMatch({
+    paymentDate: "2026-07-21",
+    amountFen: 18_000_000_000,
+    bondShortName: "26越秀租SCP005",
+    recognizedText: "债券简称 26越秀租SCP005 缴款金额 18,000 万元",
+  }, projects);
+
+  assert.equal(result.status, "matched");
+  assert.equal(result.projectId, "project-yuexiu");
+  assert.equal(result.trancheId, "tranche-yuexiu");
+  assert.deepEqual(projects, before);
+  assert.equal(projects[0].tranches[0].paymentCompleted, true);
+});
+
+test("does not treat a different issuer stem as a short-name abbreviation", () => {
+  const result = selectPaymentReceiptMatch({
+    paymentDate: "2026-07-21",
+    amountFen: 18_000_000_000,
+    bondShortName: "26越秀资本SCP005",
+    recognizedText: "债券简称 26越秀资本SCP005 缴款金额 18,000 万元",
+  }, [{
+    id: "project-yuexiu-lease",
+    shortName: "26越秀租赁SCP005",
+    tranches: [{
+      id: "tranche-yuexiu-lease",
+      shortName: "26越秀租赁SCP005",
+      winningAmountWan: 18_000,
+      paymentDate: "2026-07-21",
+      paymentCompleted: false,
+    }],
+  }]);
+
+  assert.equal(result.status, "review");
+  assert.equal(result.projectId, "");
+  assert.equal(result.trancheId, "");
+  assert.equal(result.candidates[0].signals.shortName, false);
+});
+
+test("requires corroboration before auto-matching an abbreviated short name", () => {
+  const result = selectPaymentReceiptMatch({
+    paymentDate: "2026-07-21",
+    bondShortName: "26高新发展MTN001",
+    recognizedText: "债券简称 26高新发展MTN001",
+  }, [{
+    id: "project-shanghai-high-tech",
+    shortName: "26上海高新发展MTN001",
+    tranches: [{
+      id: "tranche-shanghai-high-tech",
+      shortName: "26上海高新发展MTN001",
+      winningAmountWan: 5_000,
+      paymentDate: "2026-07-21",
+      paymentCompleted: false,
+    }],
+  }]);
+
+  assert.equal(result.status, "review");
+  assert.equal(result.projectId, "");
+  assert.equal(result.trancheId, "");
+  assert.equal(result.candidates[0].signals.abbreviatedShortName, true);
+  assert.equal(result.candidates[0].signals.amount, false);
+});
+
 test("does not auto-match two same-day projects from amount alone", () => {
   const projects = ["a", "b"].map((suffix) => ({
     id: `project-${suffix}`,

@@ -127,7 +127,11 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
     && (best.signals.amount
       || (best.signals.date && best.signals.issuerName)
       || datedCandidates.length === 1);
-  const canAutoMatch = uniqueBest && (exactIdentifier || exactBusinessMatch);
+  const abbreviationCorroborated = !best.signals.abbreviatedShortName
+    || best.signals.amount
+    || best.signals.issuerName
+    || exactIdentifier;
+  const canAutoMatch = uniqueBest && (exactIdentifier || (exactBusinessMatch && abbreviationCorroborated));
 
   return {
     status: canAutoMatch ? "matched" : "review",
@@ -307,14 +311,20 @@ function positiveFiniteNumber(value) {
 }
 
 function scoreCandidate(receipt, candidate) {
+  const exactShortName = textContainsBusinessName(receipt.searchText, candidate.shortName)
+    || textContainsBusinessName(receipt.searchText, candidate.projectShortName);
+  const abbreviatedShortName = !exactShortName && (
+    bondShortNamesLikelySame(receipt.bondShortName, candidate.shortName)
+      || bondShortNamesLikelySame(receipt.bondShortName, candidate.projectShortName)
+  );
   const signals = {
     date: Boolean(receipt.paymentDate && receipt.paymentDate === candidate.paymentDate),
     prepaymentNumber: Boolean(candidate.prepaymentNumber
       && (candidate.prepaymentNumber === receipt.prepaymentNumber || receipt.searchText.includes(normalizeMatchText(candidate.prepaymentNumber)))),
     securityCode: Boolean(candidate.securityCode
       && (candidate.securityCode === receipt.securityCode || receipt.searchText.includes(normalizeMatchText(candidate.securityCode)))),
-    shortName: textContainsBusinessName(receipt.searchText, candidate.shortName)
-      || textContainsBusinessName(receipt.searchText, candidate.projectShortName),
+    shortName: exactShortName || abbreviatedShortName,
+    abbreviatedShortName,
     issuerName: textContainsBusinessName(receipt.searchText, candidate.issuerName),
     amount: amountsMatch(receipt.amountFen, candidate.winningAmountWan),
   };
@@ -481,6 +491,32 @@ function normalizeMatchText(value) {
 function textContainsBusinessName(haystack, value) {
   const needle = normalizeMatchText(value);
   return needle.length >= 4 && haystack.includes(needle);
+}
+
+function bondShortNamesLikelySame(leftValue, rightValue) {
+  const left = parseStandardBondShortName(leftValue);
+  const right = parseStandardBondShortName(rightValue);
+  if (!left || !right) return false;
+  if (left.year !== right.year || left.instrument !== right.instrument || left.issue !== right.issue
+      || left.bc !== right.bc || left.tail !== right.tail) return false;
+  if (left.issuer === right.issuer) return true;
+  const shorter = left.issuer.length <= right.issuer.length ? left.issuer : right.issuer;
+  const longer = shorter === left.issuer ? right.issuer : left.issuer;
+  return shorter.length >= 3 && longer.length - shorter.length <= 2 && longer.includes(shorter);
+}
+
+function parseStandardBondShortName(value) {
+  const text = normalizeMatchText(value);
+  const match = text.match(/^(\d{2})(.+?)(SCP|MTN|PPN|CP)(\d{3})(BC)?(.*)$/);
+  if (!match) return null;
+  return {
+    year: match[1],
+    issuer: match[2],
+    instrument: match[3],
+    issue: match[4],
+    bc: match[5] || "",
+    tail: match[6] || "",
+  };
 }
 
 function cleanIdentifier(value) {

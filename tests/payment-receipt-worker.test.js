@@ -157,7 +157,7 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
   assert.match(request.input.messages[0].content[0].text, /绝不能返回 blank/);
   assert.match(request.input.messages[0].content[0].text, /"classification":"receipt_start"/);
   assert.equal(result.classification, "receipt_start");
-  assert.equal(result.analysisVersion, 2);
+  assert.equal(result.analysisVersion, 3);
   assert.equal(result.analysisSource, "workers-ai-page-image");
   assert.equal(result.fields.securityCode, "283234.SH");
   assert.match(result.recognizedText, /9,000万元/);
@@ -252,8 +252,79 @@ test("preserves an explicit continuation even when a repeated title has date and
   }, pdf, 2, {
     classification: "receipt_start",
     recognizedText: "26示例MTN001",
+    fields: { securityCode: "102600001" },
   });
   assert.equal(result.classification, "continuation");
+});
+
+test("starts a new receipt when an apparent continuation has a different security code", async () => {
+  const pdf = await scannedPagePdf();
+  const result = await analyzePaymentReceiptPage({
+    AI: {
+      async run() {
+        return {
+          response: {
+            classification: "continuation",
+            confidence: 0.95,
+            boundary_evidence: "table content",
+            document_title: "",
+            payment_date: "",
+            amount_text: "10,000.0000 万元人民币",
+            bond_short_name: "26格力SCP001",
+            security_code: "012681818",
+            prepayment_number: "",
+            payer_name: "",
+          },
+        };
+      },
+    },
+  }, pdf, 5, {
+    classification: "receipt_start",
+    recognizedText: "26江西交MTN006",
+    fields: { securityCode: "102682629", bondShortName: "26江西交MTN006" },
+  });
+  assert.equal(result.classification, "receipt_start");
+});
+
+test("does not silently split a same-identity continuation when a security code drifts", async () => {
+  const pdf = await scannedPagePdf();
+  const envWith = (prepaymentNumber) => ({
+    AI: {
+      async run() {
+        return {
+          response: {
+            classification: "continuation",
+            confidence: 0.95,
+            boundary_evidence: "same bond continuation",
+            document_title: "",
+            payment_date: "",
+            amount_text: "",
+            bond_short_name: "26示例MTN001",
+            security_code: "102600002",
+            prepayment_number: prepaymentNumber,
+            payer_name: "",
+          },
+        };
+      },
+    },
+  });
+  const samePrepayment = await analyzePaymentReceiptPage(envWith("W2026072100001"), pdf, 2, {
+    classification: "receipt_start",
+    recognizedText: "26示例MTN001",
+    fields: {
+      securityCode: "102600001",
+      prepaymentNumber: "W2026072100001",
+      bondShortName: "26示例MTN001",
+    },
+  });
+  assert.equal(samePrepayment.classification, "continuation");
+
+  const noPrepayment = await analyzePaymentReceiptPage(envWith(""), pdf, 2, {
+    classification: "receipt_start",
+    recognizedText: "26示例MTN001",
+    fields: { securityCode: "102600001", bondShortName: "26示例MTN001" },
+  });
+  assert.equal(noPrepayment.classification, "uncertain");
 });
 
 test("repairs bond suffixes and numeric codes placed in adjacent AI fields", async () => {
