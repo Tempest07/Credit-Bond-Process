@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260721-payment-receipt-delete";
+import { parseUnderwriterNames } from "./core.js?v=20260722-payment-receipt-explorer";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

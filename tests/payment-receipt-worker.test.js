@@ -443,12 +443,19 @@ test("ships a complete receipt archive UI while preserving manual payment confir
 
   assert.match(html, /data-view-target="payment-receipts">缴款单/);
   assert.match(html, /id="paymentReceiptArchive"/);
+  assert.match(html, /id="paymentReceiptExplorerButton"[^>]*>打开文件管理器</);
+  assert.match(html, /id="paymentReceiptExplorerPanel"[^>]*role="dialog"[^>]*aria-modal="true"/);
+  assert.match(html, /缴款单 → 缴款日期 → 原始 PDF/);
   assert.match(html, /缴款状态仍由人工确认/);
   assert.match(html, /只按缴款日期归档；收件时间仅作辅助信息/);
   assert.match(html, /aria-label="按缴款日期筛选缴款单"/);
   assert.doesNotMatch(html, /按缴款日或收件日筛选缴款单/);
   assert.match(app, /renderTranchePaymentReceipts\(selectedProjectId, tranche\)/);
   assert.match(app, /entry\.value\.archiveDate \|\| "缴款日期待识别"/);
+  assert.match(app, /buildPaymentReceiptOriginalFileTree\(archive\.receipts, archive\.pendingFiles\)/);
+  assert.match(app, /fetchPaymentReceiptArchivePages\(\{ signal: controller\.signal \}\)/);
+  assert.match(app, /paymentReceiptPendingFileUrl\(file\.fileId\)/);
+  assert.match(app, /paymentReceiptExplorerTrigger/);
   assert.match(app, /未缴款（仍需人工点击）/);
   assert.match(app, /method: "PATCH"/);
   assert.match(app, /method: "DELETE"/);
@@ -476,6 +483,9 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(config, /"crons": \["\*\/10 \* \* \* \*"\]/);
   assert.match(config, /"queue": "credit-bond-payment-receipts-dlq"/);
   assert.match(styles, /\.payment-receipt-date-group/);
+  assert.match(styles, /\.payment-receipt-explorer-dialog/);
+  assert.match(styles, /\.payment-receipt-explorer-icon\.folder/);
+  assert.match(styles, /\.payment-receipt-explorer-icon\.pdf/);
   assert.match(styles, /\.payment-receipt-summary-filter\[aria-pressed="true"\]/);
   assert.match(styles, /\.payment-receipt-coverage-item\.covered/);
   assert.match(styles, /\.tranche-payment-receipts/);

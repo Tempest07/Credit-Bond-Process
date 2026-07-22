@@ -16,7 +16,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260721-payment-receipt-delete";
+} from "./core.js?v=20260722-payment-receipt-explorer";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -35,13 +35,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260721-payment-receipt-delete";
+} from "./lifecycle.js?v=20260722-payment-receipt-explorer";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260721-payment-receipt-delete";
+} from "./history-parser.js?v=20260722-payment-receipt-explorer";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -54,12 +54,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260721-payment-receipt-delete";
+} from "./protocol-transfer.js?v=20260722-payment-receipt-explorer";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260721-payment-receipt-delete";
+} from "./reminders.js?v=20260722-payment-receipt-explorer";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -85,8 +85,8 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260721-payment-receipt-delete";
-import { initializeDatePickers } from "./date-picker.js?v=20260721-payment-receipt-delete";
+} from "./secondary-inventory.js?v=20260722-payment-receipt-explorer";
+import { initializeDatePickers } from "./date-picker.js?v=20260722-payment-receipt-explorer";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -95,19 +95,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260721-payment-receipt-delete";
+} from "./project-screenshot-ocr.js?v=20260722-payment-receipt-explorer";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260721-payment-receipt-delete";
+} from "./project-screenshot-layout.js?v=20260722-payment-receipt-explorer";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260721-payment-receipt-delete";
-import { normalizePaymentReceiptPageGroups } from "./payment-receipts.js?v=20260721-payment-receipt-delete";
+} from "./project-screenshot-image.js?v=20260722-payment-receipt-explorer";
+import {
+  buildPaymentReceiptOriginalFileTree,
+  normalizePaymentReceiptPageGroups,
+} from "./payment-receipts.js?v=20260722-payment-receipt-explorer";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -221,6 +224,13 @@ let activePaymentReceiptRegroupFileId = "";
 let paymentReceiptRegroupData = null;
 let paymentReceiptRegroupTrigger = null;
 let paymentReceiptRegroupController = null;
+let paymentReceiptExplorerTree = buildPaymentReceiptOriginalFileTree();
+let paymentReceiptExplorerLevel = "root";
+let paymentReceiptExplorerDate = "";
+let paymentReceiptExplorerLoading = false;
+let paymentReceiptExplorerError = "";
+let paymentReceiptExplorerController = null;
+let paymentReceiptExplorerTrigger = null;
 const projectPaymentReceiptCache = new Map();
 const projectPaymentReceiptLoads = new Map();
 const projectPaymentReceiptErrors = new Map();
@@ -415,6 +425,9 @@ function bindReminders() {
 
 function bindPaymentReceipts() {
   $("#paymentReceiptRefreshButton")?.addEventListener("click", () => loadPaymentReceipts());
+  $("#paymentReceiptExplorerButton")?.addEventListener("click", (event) => {
+    void openPaymentReceiptExplorer(event.currentTarget);
+  });
   $("#paymentReceiptArchive")?.addEventListener("click", handlePaymentReceiptArchiveClick);
   $("#paymentReceiptArchive")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-receipt-regroup]");
@@ -446,8 +459,18 @@ function bindPaymentReceipts() {
   $("#paymentReceiptRegroupPanel")?.addEventListener("click", (event) => {
     if (event.target.closest("[data-close-receipt-regroup]")) closePaymentReceiptRegroup();
   });
+  $("#paymentReceiptExplorerPanel")?.addEventListener("click", handlePaymentReceiptExplorerClick);
+  $("#paymentReceiptExplorerBack")?.addEventListener("click", navigatePaymentReceiptExplorerBack);
+  $("#paymentReceiptExplorerRefresh")?.addEventListener("click", () => {
+    void loadPaymentReceiptExplorer();
+  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !$("#paymentReceiptRegroupPanel")?.hidden) closePaymentReceiptRegroup();
+    if (event.key !== "Escape") return;
+    if (!$("#paymentReceiptExplorerPanel")?.hidden) {
+      closePaymentReceiptExplorer();
+    } else if (!$("#paymentReceiptRegroupPanel")?.hidden) {
+      closePaymentReceiptRegroup();
+    }
   });
 }
 
@@ -566,51 +589,12 @@ async function loadPaymentReceipts(options = {}) {
   renderPaymentReceiptCoverage();
   const date = $("#paymentReceiptDateFilter")?.value || "";
   const status = $("#paymentReceiptStatusFilter")?.value || "";
-  const collected = [];
-  let collectedPendingFiles = [];
-  let collectedPendingBatches = [];
-  const seenReceiptIds = new Set();
-  const seenFileIds = new Set();
-  const seenBatchIds = new Set();
   try {
-    for (let offset = 0; ; offset += 200) {
-      const params = new URLSearchParams({ limit: "200", offset: String(offset) });
-      if (date) params.set("date", date);
-      if (status) params.set("status", status);
-      const response = await fetch(`${PAYMENT_RECEIPTS_URL}?${params}`, {
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: authHeaders(),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          clearAuthSession();
-          redirectToGatewayLogin();
-        }
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || `HTTP ${response.status}`);
-      }
-      const payload = await response.json();
-      const page = Array.isArray(payload.receipts) ? payload.receipts : [];
-      const filePage = Array.isArray(payload.pendingFiles) ? payload.pendingFiles : [];
-      const batchPage = Array.isArray(payload.pendingBatches) ? payload.pendingBatches : [];
-      const unseen = page.filter((receipt) => receipt?.id && !seenReceiptIds.has(receipt.id));
-      const unseenFiles = filePage.filter((file) => file?.id && !seenFileIds.has(file.id));
-      const unseenBatches = batchPage.filter((batch) => batch?.id && !seenBatchIds.has(batch.id));
-      unseen.forEach((receipt) => seenReceiptIds.add(receipt.id));
-      unseenFiles.forEach((file) => seenFileIds.add(file.id));
-      unseenBatches.forEach((batch) => seenBatchIds.add(batch.id));
-      collected.push(...unseen);
-      collectedPendingFiles.push(...unseenFiles);
-      collectedPendingBatches.push(...unseenBatches);
-      if (Math.max(page.length, filePage.length, batchPage.length) < 200) break;
-      if (!unseen.length && !unseenFiles.length && !unseenBatches.length) throw new Error("缴款单分页未推进，请刷新后重试");
-    }
+    const archive = await fetchPaymentReceiptArchivePages({ date, status, signal: controller.signal });
     if (requestId !== paymentReceiptArchiveRequestId) return;
-    paymentReceipts = collected;
-    paymentReceiptPendingFiles = collectedPendingFiles;
-    paymentReceiptPendingBatches = collectedPendingBatches;
+    paymentReceipts = archive.receipts;
+    paymentReceiptPendingFiles = archive.pendingFiles;
+    paymentReceiptPendingBatches = archive.pendingBatches;
     try {
       paymentReceiptCoverage = await fetchPaymentReceiptCoverage(date, controller.signal);
     } catch (coverageError) {
@@ -636,6 +620,50 @@ async function loadPaymentReceipts(options = {}) {
       renderPaymentReceiptCoverage();
     }
   }
+}
+
+async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal } = {}) {
+  const receipts = [];
+  const pendingFiles = [];
+  const pendingBatches = [];
+  const seenReceiptIds = new Set();
+  const seenFileIds = new Set();
+  const seenBatchIds = new Set();
+  for (let offset = 0; ; offset += 200) {
+    const params = new URLSearchParams({ limit: "200", offset: String(offset) });
+    if (date) params.set("date", date);
+    if (status) params.set("status", status);
+    const response = await fetch(`${PAYMENT_RECEIPTS_URL}?${params}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: authHeaders(),
+      signal,
+    });
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearAuthSession();
+        redirectToGatewayLogin();
+      }
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    const page = Array.isArray(payload.receipts) ? payload.receipts : [];
+    const filePage = Array.isArray(payload.pendingFiles) ? payload.pendingFiles : [];
+    const batchPage = Array.isArray(payload.pendingBatches) ? payload.pendingBatches : [];
+    const unseen = page.filter((receipt) => receipt?.id && !seenReceiptIds.has(receipt.id));
+    const unseenFiles = filePage.filter((file) => file?.id && !seenFileIds.has(file.id));
+    const unseenBatches = batchPage.filter((batch) => batch?.id && !seenBatchIds.has(batch.id));
+    unseen.forEach((receipt) => seenReceiptIds.add(receipt.id));
+    unseenFiles.forEach((file) => seenFileIds.add(file.id));
+    unseenBatches.forEach((batch) => seenBatchIds.add(batch.id));
+    receipts.push(...unseen);
+    pendingFiles.push(...unseenFiles);
+    pendingBatches.push(...unseenBatches);
+    if (Math.max(page.length, filePage.length, batchPage.length) < 200) break;
+    if (!unseen.length && !unseenFiles.length && !unseenBatches.length) throw new Error("缴款单分页未推进，请刷新后重试");
+  }
+  return { receipts, pendingFiles, pendingBatches };
 }
 
 async function fetchPaymentReceiptCoverage(date, signal) {
@@ -1037,6 +1065,214 @@ function paymentReceiptPendingEmailUrl(fileId) {
 
 function paymentReceiptPendingBatchEmailUrl(batchId) {
   return `./api/payment-receipt-batches/${encodeURIComponent(batchId)}/email`;
+}
+
+async function openPaymentReceiptExplorer(trigger) {
+  paymentReceiptExplorerTrigger = trigger || null;
+  paymentReceiptExplorerLevel = "root";
+  paymentReceiptExplorerDate = "";
+  paymentReceiptExplorerError = "";
+  const panel = $("#paymentReceiptExplorerPanel");
+  panel.hidden = false;
+  syncModalOpenState();
+  renderPaymentReceiptExplorer();
+  requestAnimationFrame(() => $("#paymentReceiptExplorerDialog")?.focus({ preventScroll: true }));
+  await loadPaymentReceiptExplorer();
+}
+
+async function loadPaymentReceiptExplorer() {
+  paymentReceiptExplorerController?.abort();
+  const controller = new AbortController();
+  paymentReceiptExplorerController = controller;
+  paymentReceiptExplorerLoading = true;
+  paymentReceiptExplorerError = "";
+  renderPaymentReceiptExplorer();
+  try {
+    const archive = await fetchPaymentReceiptArchivePages({ signal: controller.signal });
+    if (paymentReceiptExplorerController !== controller) return;
+    paymentReceiptExplorerTree = buildPaymentReceiptOriginalFileTree(archive.receipts, archive.pendingFiles);
+  } catch (error) {
+    if (error.name === "AbortError" || paymentReceiptExplorerController !== controller) return;
+    paymentReceiptExplorerError = error.message || "读取原始 PDF 失败";
+  } finally {
+    if (paymentReceiptExplorerController === controller) {
+      paymentReceiptExplorerController = null;
+      paymentReceiptExplorerLoading = false;
+      renderPaymentReceiptExplorer();
+    }
+  }
+}
+
+function renderPaymentReceiptExplorer() {
+  const panel = $("#paymentReceiptExplorerPanel");
+  const content = $("#paymentReceiptExplorerContent");
+  const breadcrumb = $("#paymentReceiptExplorerBreadcrumb");
+  const status = $("#paymentReceiptExplorerStatus");
+  const back = $("#paymentReceiptExplorerBack");
+  const refresh = $("#paymentReceiptExplorerRefresh");
+  if (!panel || panel.hidden || !content || !breadcrumb || !status || !back || !refresh) return;
+
+  const selectedFolder = paymentReceiptExplorerFolder();
+  back.disabled = paymentReceiptExplorerLevel === "root";
+  refresh.disabled = paymentReceiptExplorerLoading;
+  breadcrumb.innerHTML = renderPaymentReceiptExplorerBreadcrumb(selectedFolder);
+
+  if (paymentReceiptExplorerLoading) {
+    status.textContent = "正在读取全部原始 PDF……";
+    content.innerHTML = '<div class="empty payment-receipt-explorer-empty">正在整理缴款日期文件夹……</div>';
+    return;
+  }
+  if (paymentReceiptExplorerError) {
+    status.textContent = "读取失败";
+    content.innerHTML = `<div class="empty payment-receipt-explorer-empty error">读取失败：${escapeHtml(paymentReceiptExplorerError)}</div>`;
+    return;
+  }
+
+  if (paymentReceiptExplorerLevel === "root") {
+    status.textContent = "1 个文件夹";
+    content.innerHTML = `
+      <div class="payment-receipt-explorer-grid">
+        <button class="payment-receipt-explorer-item folder" type="button" data-receipt-explorer-open="receipts">
+          <span class="payment-receipt-explorer-icon folder" aria-hidden="true"></span>
+          <span class="payment-receipt-explorer-item-copy">
+            <strong>${escapeHtml(paymentReceiptExplorerTree.rootLabel)}</strong>
+            <span>${paymentReceiptExplorerTree.folderCount} 个日期文件夹 · ${paymentReceiptExplorerTree.physicalFileCount} 个原始 PDF</span>
+          </span>
+          <span class="payment-receipt-explorer-open-label">打开</span>
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  if (paymentReceiptExplorerLevel === "dates") {
+    status.textContent = `${paymentReceiptExplorerTree.folderCount} 个日期文件夹 · ${paymentReceiptExplorerTree.physicalFileCount} 个原始 PDF`;
+    if (!paymentReceiptExplorerTree.folders.length) {
+      content.innerHTML = '<div class="empty payment-receipt-explorer-empty">暂时没有原始缴款单 PDF。</div>';
+      return;
+    }
+    content.innerHTML = `
+      <div class="payment-receipt-explorer-grid">
+        ${paymentReceiptExplorerTree.folders.map((folder) => `
+          <button class="payment-receipt-explorer-item folder" type="button" data-receipt-explorer-date="${escapeAttribute(folder.key)}">
+            <span class="payment-receipt-explorer-icon folder" aria-hidden="true"></span>
+            <span class="payment-receipt-explorer-item-copy">
+              <strong>${escapeHtml(folder.label)}</strong>
+              <span>${folder.fileCount} 个原始 PDF${folder.receiptCount ? ` · ${folder.receiptCount} 张拆分单据` : ""}</span>
+            </span>
+            <span class="payment-receipt-explorer-open-label">打开</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  if (!selectedFolder) {
+    paymentReceiptExplorerLevel = "dates";
+    renderPaymentReceiptExplorer();
+    return;
+  }
+  status.textContent = `${selectedFolder.fileCount} 个原始 PDF`;
+  if (!selectedFolder.files.length) {
+    content.innerHTML = '<div class="empty payment-receipt-explorer-empty">这个日期文件夹中没有原始 PDF。</div>';
+    return;
+  }
+  content.innerHTML = `
+    <div class="payment-receipt-explorer-file-list">
+      ${selectedFolder.files.map(renderPaymentReceiptExplorerFile).join("")}
+    </div>
+  `;
+}
+
+function renderPaymentReceiptExplorerBreadcrumb(selectedFolder) {
+  const parts = ['<button type="button" data-receipt-explorer-path="root">此电脑</button>'];
+  if (paymentReceiptExplorerLevel !== "root") {
+    parts.push('<span aria-hidden="true">›</span>', '<button type="button" data-receipt-explorer-path="dates">缴款单</button>');
+  }
+  if (paymentReceiptExplorerLevel === "files" && selectedFolder) {
+    parts.push('<span aria-hidden="true">›</span>', `<strong>${escapeHtml(selectedFolder.label)}</strong>`);
+  }
+  return parts.join("");
+}
+
+function renderPaymentReceiptExplorerFile(file) {
+  const metadata = [
+    file.receiptCount ? `${file.receiptCount} 张拆分单据` : paymentReceiptFileStatusLabel(file.processingStatus),
+    file.sourcePageLabels.length ? `相关页 ${file.sourcePageLabels.join("、")}` : "",
+    file.pageCount ? `${file.pageCount} 页` : "",
+    formatPaymentReceiptReceivedAt(file.receivedAt),
+  ].filter(Boolean).join(" · ");
+  const crossDateNote = file.otherPaymentDates.length
+    ? `<span class="payment-receipt-explorer-cross-date">此原件同时包含：${escapeHtml(file.otherPaymentDates.join("、"))}</span>`
+    : "";
+  return `
+    <a class="payment-receipt-explorer-file" href="${paymentReceiptPendingFileUrl(file.fileId)}" target="_blank" rel="noopener">
+      <span class="payment-receipt-explorer-icon pdf" aria-hidden="true"></span>
+      <span class="payment-receipt-explorer-item-copy">
+        <strong>${escapeHtml(file.name)}</strong>
+        <span>${escapeHtml(metadata)}</span>
+        ${crossDateNote}
+      </span>
+      <span class="payment-receipt-explorer-open-label">打开 PDF ↗</span>
+    </a>
+  `;
+}
+
+function paymentReceiptExplorerFolder() {
+  if (paymentReceiptExplorerLevel !== "files") return null;
+  return paymentReceiptExplorerTree.folders.find((folder) => folder.paymentDate === paymentReceiptExplorerDate) || null;
+}
+
+function handlePaymentReceiptExplorerClick(event) {
+  if (event.target.closest("[data-close-receipt-explorer]")) {
+    closePaymentReceiptExplorer();
+    return;
+  }
+  const rootFolder = event.target.closest('[data-receipt-explorer-open="receipts"]');
+  if (rootFolder) {
+    paymentReceiptExplorerLevel = "dates";
+    paymentReceiptExplorerDate = "";
+    renderPaymentReceiptExplorer();
+    return;
+  }
+  const dateFolder = event.target.closest("[data-receipt-explorer-date]");
+  if (dateFolder) {
+    const folder = paymentReceiptExplorerTree.folders.find((item) => item.key === dateFolder.dataset.receiptExplorerDate);
+    if (!folder) return;
+    paymentReceiptExplorerLevel = "files";
+    paymentReceiptExplorerDate = folder.paymentDate;
+    renderPaymentReceiptExplorer();
+    return;
+  }
+  const path = event.target.closest("[data-receipt-explorer-path]")?.dataset.receiptExplorerPath;
+  if (path === "root" || path === "dates") {
+    paymentReceiptExplorerLevel = path;
+    paymentReceiptExplorerDate = "";
+    renderPaymentReceiptExplorer();
+  }
+}
+
+function navigatePaymentReceiptExplorerBack() {
+  if (paymentReceiptExplorerLevel === "files") {
+    paymentReceiptExplorerLevel = "dates";
+    paymentReceiptExplorerDate = "";
+  } else if (paymentReceiptExplorerLevel === "dates") {
+    paymentReceiptExplorerLevel = "root";
+  }
+  renderPaymentReceiptExplorer();
+}
+
+function closePaymentReceiptExplorer({ restoreFocus = true } = {}) {
+  const trigger = paymentReceiptExplorerTrigger;
+  paymentReceiptExplorerController?.abort();
+  paymentReceiptExplorerController = null;
+  paymentReceiptExplorerLoading = false;
+  paymentReceiptExplorerTrigger = null;
+  const panel = $("#paymentReceiptExplorerPanel");
+  if (panel) panel.hidden = true;
+  syncModalOpenState();
+  if (restoreFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
 }
 
 async function openPaymentReceiptRegroup(fileId, trigger) {
@@ -8044,7 +8280,10 @@ function closeResultEntryPanel() {
 function syncModalOpenState() {
   document.body.classList.toggle(
     "modal-open",
-    !$("#resultEntryPanel").hidden || !$("#prepaymentEntryPanel").hidden || !$("#paymentReceiptRegroupPanel").hidden,
+    !$("#resultEntryPanel").hidden
+      || !$("#prepaymentEntryPanel").hidden
+      || !$("#paymentReceiptRegroupPanel").hidden
+      || !$("#paymentReceiptExplorerPanel").hidden,
   );
 }
 

@@ -12,6 +12,120 @@ export const PAYMENT_RECEIPT_MATCH_STATUSES = new Set([
   "error",
 ]);
 
+export function buildPaymentReceiptOriginalFileTree(receipts = [], pendingFiles = []) {
+  const folderMaps = new Map();
+  const fileDates = new Map();
+  const physicalFileIds = new Set();
+
+  const ensureFolder = (paymentDate) => {
+    const key = paymentDate || "";
+    if (!folderMaps.has(key)) folderMaps.set(key, new Map());
+    return folderMaps.get(key);
+  };
+  const trackFileDate = (fileId, paymentDate) => {
+    if (!fileDates.has(fileId)) fileDates.set(fileId, new Set());
+    fileDates.get(fileId).add(paymentDate || "");
+  };
+
+  for (const rawReceipt of Array.isArray(receipts) ? receipts : []) {
+    const fileId = cleanIdentifier(rawReceipt?.fileId);
+    if (!fileId) continue;
+    const paymentDate = normalizeDate(rawReceipt?.paymentDate);
+    const folder = ensureFolder(paymentDate);
+    if (!folder.has(fileId)) {
+      folder.set(fileId, originalFileTreeItem(rawReceipt, fileId, false));
+    }
+    const file = folder.get(fileId);
+    const receiptId = cleanIdentifier(rawReceipt?.id);
+    const pageLabel = cleanTextField(rawReceipt?.sourcePageLabel);
+    const matchStatus = cleanIdentifier(rawReceipt?.matchStatus);
+    if (receiptId && !file.receiptIds.includes(receiptId)) file.receiptIds.push(receiptId);
+    if (pageLabel && !file.sourcePageLabels.includes(pageLabel)) file.sourcePageLabels.push(pageLabel);
+    if (matchStatus && !file.matchStatuses.includes(matchStatus)) file.matchStatuses.push(matchStatus);
+    physicalFileIds.add(fileId);
+    trackFileDate(fileId, paymentDate);
+  }
+
+  for (const rawFile of Array.isArray(pendingFiles) ? pendingFiles : []) {
+    const fileId = cleanIdentifier(rawFile?.id);
+    if (!fileId || !isPdfOriginal(rawFile)) continue;
+    const folder = ensureFolder("");
+    if (!folder.has(fileId)) folder.set(fileId, originalFileTreeItem(rawFile, fileId, true));
+    physicalFileIds.add(fileId);
+    trackFileDate(fileId, "");
+  }
+
+  const folders = [...folderMaps.entries()].map(([paymentDate, filesById]) => {
+    const files = [...filesById.values()].map((file) => ({
+      ...file,
+      receiptCount: file.receiptIds.length,
+      sourcePageLabels: [...file.sourcePageLabels].sort(comparePageLabels),
+      otherPaymentDates: [...(fileDates.get(file.fileId) || [])]
+        .filter((date) => date !== paymentDate)
+        .sort(comparePaymentReceiptFolderDates)
+        .map((date) => date || "缴款日期待识别"),
+    })).sort(compareOriginalPaymentReceiptFiles);
+    return {
+      key: paymentDate || "undated",
+      paymentDate,
+      label: paymentDate || "缴款日期待识别",
+      fileCount: files.length,
+      receiptCount: files.reduce((total, file) => total + file.receiptCount, 0),
+      files,
+    };
+  }).sort((left, right) => comparePaymentReceiptFolderDates(left.paymentDate, right.paymentDate));
+
+  return {
+    rootLabel: "缴款单",
+    physicalFileCount: physicalFileIds.size,
+    folderReferenceCount: folders.reduce((total, folder) => total + folder.fileCount, 0),
+    folderCount: folders.length,
+    folders,
+  };
+}
+
+function originalFileTreeItem(source, fileId, pending) {
+  const rawName = cleanTextField(source?.sourceFilename || source?.filename);
+  const baseName = rawName || `原始缴款单-${fileId.slice(0, 8)}`;
+  const numericPageCount = Number(source?.pageCount);
+  return {
+    fileId,
+    name: /\.pdf$/i.test(baseName) ? baseName : `${baseName}.pdf`,
+    pending,
+    receivedAt: cleanTextField(source?.receivedAt),
+    sender: cleanTextField(source?.sender),
+    subject: cleanTextField(source?.subject),
+    processingStatus: cleanIdentifier(source?.processingStatus || source?.fileProcessingStatus),
+    pageCount: Number.isSafeInteger(numericPageCount) && numericPageCount > 0 ? numericPageCount : null,
+    receiptIds: [],
+    sourcePageLabels: [],
+    matchStatuses: [],
+  };
+}
+
+function isPdfOriginal(file) {
+  const filename = cleanTextField(file?.sourceFilename || file?.filename);
+  const mimeType = cleanTextField(file?.mimeType).toLowerCase();
+  return (!filename && !mimeType) || /\.pdf$/i.test(filename) || mimeType.includes("pdf");
+}
+
+function comparePaymentReceiptFolderDates(left, right) {
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return String(right).localeCompare(String(left));
+}
+
+function compareOriginalPaymentReceiptFiles(left, right) {
+  return left.name.localeCompare(right.name, "zh-CN", { numeric: true, sensitivity: "base" })
+    || left.fileId.localeCompare(right.fileId);
+}
+
+function comparePageLabels(left, right) {
+  return (Number.parseInt(left, 10) || Number.MAX_SAFE_INTEGER) - (Number.parseInt(right, 10) || Number.MAX_SAFE_INTEGER)
+    || left.localeCompare(right, "zh-CN", { numeric: true });
+}
+
 export function recognizePaymentReceiptText(rawText = "", fallback = {}) {
   const text = normalizeWhitespace(rawText);
   const allocationTable = extractAllocationTableFields(text);

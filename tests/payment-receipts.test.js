@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildPaymentReceiptOriginalFileTree,
   buildPaymentReceiptCoverage,
   groupPaymentReceiptPages,
   normalizePaymentReceiptPageGroups,
@@ -14,6 +15,36 @@ import {
   listPendingPaymentReceiptFiles,
   readPaymentProjects,
 } from "../functions/api/_payment-receipts.js";
+
+test("builds an Explorer-style original PDF tree by payment date and file id", () => {
+  const tree = buildPaymentReceiptOriginalFileTree([
+    { id: "r1", fileId: "file-a", sourceFilename: "合并缴款单.pdf", paymentDate: "2026-07-22", sourcePageLabel: "1", receivedAt: "2026-07-22T09:00:00Z" },
+    { id: "r2", fileId: "file-a", sourceFilename: "合并缴款单.pdf", paymentDate: "2026-07-22", sourcePageLabel: "2-3", receivedAt: "2026-07-22T09:00:00Z" },
+    { id: "r3", fileId: "file-a", sourceFilename: "合并缴款单.pdf", paymentDate: "2026-07-21", sourcePageLabel: "4", receivedAt: "2026-07-22T09:00:00Z" },
+    { id: "r4", fileId: "file-a", sourceFilename: "合并缴款单.pdf", paymentDate: "", archiveDate: "2026-07-20", sourcePageLabel: "5", receivedAt: "2026-07-22T09:00:00Z" },
+    { id: "r5", fileId: "file-b", sourceFilename: "合并缴款单.pdf", paymentDate: "2026-07-22", sourcePageLabel: "1" },
+    { id: "ignored", fileId: "", sourceFilename: "无文件标识.pdf", paymentDate: "2026-07-22" },
+  ], [
+    { id: "file-pending", sourceFilename: "待识别原件", mimeType: "application/pdf", pageCount: 6, receivedAt: "2026-07-22T10:00:00Z" },
+    { id: "not-pdf", sourceFilename: "说明.txt", mimeType: "text/plain" },
+  ]);
+
+  assert.equal(tree.rootLabel, "缴款单");
+  assert.equal(tree.physicalFileCount, 3);
+  assert.equal(tree.folderReferenceCount, 5);
+  assert.deepEqual(tree.folders.map((folder) => folder.label), ["2026-07-22", "2026-07-21", "缴款日期待识别"]);
+  const july22 = tree.folders[0];
+  assert.equal(july22.fileCount, 2);
+  assert.deepEqual(july22.files.map((file) => file.fileId), ["file-a", "file-b"]);
+  assert.equal(july22.files[0].receiptCount, 2);
+  assert.deepEqual(july22.files[0].sourcePageLabels, ["1", "2-3"]);
+  assert.deepEqual(july22.files[0].otherPaymentDates, ["2026-07-21", "缴款日期待识别"]);
+  const undated = tree.folders[2];
+  assert.deepEqual(undated.files.map((file) => file.fileId), ["file-pending", "file-a"]);
+  assert.equal(undated.files[0].name, "待识别原件.pdf");
+  assert.equal(undated.files[0].pageCount, 6);
+  assert.equal(undated.files.some((file) => file.fileId === "not-pdf"), false);
+});
 
 test("archives receipts strictly by payment date without falling back to received date", async () => {
   const queries = [];
