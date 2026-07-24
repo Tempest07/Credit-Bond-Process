@@ -13,7 +13,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.3">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.4">/);
+  assert.match(html, /styles\.css\?v=20260724-mobile-ledger-nav/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
@@ -220,7 +221,7 @@ test("uses single-pane project navigation on compact screens", async () => {
   assert.match(app, /element\.inert = !visible/);
   assert.match(app, /if \(isCompactLedger\(\)\) requestAnimationFrame\(\(\) => \$\("#resultEntryDialog"\)\?\.focus/);
   assert.match(app, /route\.target === selected\.id[\s\S]+route\.kind === "project-result"/);
-  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.ledger-mobile-nav\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.view\[data-view="ledger"\] > \.ledger-mobile-nav\s*\{[^}]*position:\s*fixed;[^}]*right:\s*14px;[^}]*left:\s*14px;[^}]*width:\s*auto;[^}]*max-width:\s*430px;/s);
   assert.match(styles, /data-mobile-pane="list"[\s\S]+\.project-detail-panel/);
   assert.match(styles, /data-mobile-pane="detail"[\s\S]+\.project-list-panel/);
   assert.match(styles, /data-mobile-pane="overview"[^\n]+\.ledger-grid\s*\{\s*display:\s*none;/);
