@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.1">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.2">/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
@@ -100,20 +100,18 @@ test("maps DM V2.5 ratings into the new-project fields", async () => {
   assert.match(app, /patch\.hiddenRatingAsOf = normalized\.impliedRatingAsOf/);
 });
 
-test("lets short project lists expand without internal scrolling", async () => {
+test("lets every project list set the page height without internal scrolling", async () => {
   const [app, styles] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(app, /SHORT_PROJECT_LIST_LIMIT = 3/);
-  assert.match(app, /classList\.toggle\("is-short-list", isShortList\)/);
-  assert.match(app, /function keepSelectedProjectCardClear[\s\S]+activeBottom \+ clearance > visibleBottom/);
-  assert.match(styles, /\.project-list\s*\{[^}]*padding:\s*0 4px 14px 0;[^}]*scroll-padding-block:\s*12px;/s);
-  assert.match(styles, /\.project-list\.is-short-list\s*\{[^}]*max-height:\s*none;[^}]*padding:\s*0;[^}]*overflow:\s*visible;/s);
+  assert.doesNotMatch(app, /SHORT_PROJECT_LIST_LIMIT|is-short-list|has-short-list|keepSelectedProjectCardClear/);
+  assert.match(styles, /\.project-list-panel\s*\{[^}]*position:\s*static;[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+  assert.match(styles, /\.project-list\s*\{[^}]*max-height:\s*none;[^}]*padding:\s*0 0 14px;[^}]*overflow:\s*visible;/s);
+  assert.doesNotMatch(styles, /\.project-list\s*\{[^}]*overflow:\s*auto;/s);
   assert.match(styles, /\.project-item\s*\{[^}]*scroll-margin-block:\s*12px;/s);
   assert.match(styles, /\.project-list\.liquid-track::before\s*\{[^}]*box-sizing:\s*border-box;/s);
-  assert.match(styles, /\.project-list-panel\.has-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
 });
 
 test("places the optional valuation badge between inquiry and offering facts", async () => {

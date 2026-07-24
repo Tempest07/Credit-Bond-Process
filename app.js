@@ -282,7 +282,6 @@ const LEDGER_FILTER_LABELS = {
   dueToday: "今日待投标",
   paymentToday: "今日缴款",
 };
-const SHORT_PROJECT_LIST_LIMIT = 3;
 const LEDGER_MOBILE_BREAKPOINT = "(max-width: 760px)";
 const LEDGER_MOBILE_PANES = new Set(["list", "detail", "overview"]);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -7608,9 +7607,6 @@ function renderProjectList() {
     .sort(compareProjects);
 
   const projectList = $("#projectList");
-  const isShortList = projects.length <= SHORT_PROJECT_LIST_LIMIT;
-  projectList.classList.toggle("is-short-list", isShortList);
-  projectList.closest(".project-list-panel")?.classList.toggle("has-short-list", isShortList);
   projectList.innerHTML = projects.length
     ? projects.map((item) => {
       const valuationSummary = formatProjectValuationSummary(item);
@@ -7640,30 +7636,6 @@ function renderProjectList() {
   $$("[data-project-id]").forEach((button) => {
     button.addEventListener("click", () => {
       openLedgerProject(button.dataset.projectId);
-    });
-  });
-  keepSelectedProjectCardClear(projectList);
-}
-
-function keepSelectedProjectCardClear(projectList) {
-  requestAnimationFrame(() => {
-    const active = projectList?.querySelector(".project-item.active");
-    if (!active || !projectList.isConnected || projectList.scrollHeight <= projectList.clientHeight) return;
-
-    const clearance = 12;
-    const activeTop = active.offsetTop;
-    const activeBottom = activeTop + active.offsetHeight;
-    const visibleTop = projectList.scrollTop;
-    const visibleBottom = visibleTop + projectList.clientHeight;
-    let nextTop = visibleTop;
-
-    if (activeBottom + clearance > visibleBottom) nextTop = activeBottom + clearance - projectList.clientHeight;
-    else if (activeTop - clearance < visibleTop) nextTop = activeTop - clearance;
-    if (nextTop === visibleTop) return;
-
-    projectList.scrollTo({
-      top: Math.max(0, nextTop),
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   });
 }
