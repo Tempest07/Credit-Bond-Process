@@ -1,0 +1,13 @@
+name = "credit-bond-mailer"
+main = "mailer-worker.js"
+compatibility_date = "2026-06-11"
+workers_dev = true
+preview_urls = false
+
+[triggers]
+crons = ["30 0 * * 1-5"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "credit-bond-process"
+database_id = "c3f5354a-2243-4b7c-89c7-1a5130afdbce"
