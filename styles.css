@@ -622,6 +622,7 @@ label[data-recognition-source="wind"]::after {
 .payment-todo-main { display: grid; gap: 2px; min-width: 0; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; }
 .payment-todo-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 1.45; }
 .payment-todo-main span, .payment-todo-empty { color: #7f899d; font-size: 9px; }
+.cutoff-todo-item .payment-todo-main { overflow: hidden; }
 .cutoff-todo-item .payment-todo-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .payment-todo-number { justify-self: start; padding: 4px 7px; border: 1px solid rgba(14,165,183,.22); border-radius: 7px; color: #087f8d; background: rgba(233,251,253,.88); font-size: 11px; font-weight: 850; letter-spacing: .015em; }
 .payment-todo-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -668,9 +669,9 @@ label[data-recognition-source="wind"]::after {
 .project-empty[hidden] { display: none; }
 @media (min-width: 761px) {
   .cutoff-todo-item { column-gap: 18px; padding-inline: 14px; }
-  .cutoff-todo-item .payment-todo-main { grid-template-columns: minmax(150px, 1fr) minmax(200px, .9fr); align-items: center; column-gap: clamp(24px, 5vw, 72px); }
+  .cutoff-todo-item .payment-todo-main { grid-template-columns: minmax(120px, 1fr) minmax(0, .9fr); align-items: center; column-gap: clamp(12px, 2vw, 36px); }
   .cutoff-todo-item .payment-todo-main strong { font-size: 11px; }
-  .cutoff-todo-item .payment-todo-main span { justify-self: start; min-width: 0; padding: 5px 0 5px 16px; border-left: 1px solid rgba(196,205,224,.82); }
+  .cutoff-todo-item .payment-todo-main span { justify-self: stretch; min-width: 0; padding: 5px 0 5px 16px; border-left: 1px solid rgba(196,205,224,.82); }
   .project-detail-panel:has(> .project-empty:not([hidden])) { min-height: 0; }
   .project-detail-panel > .project-empty:not([hidden]) { min-height: 140px; }
 }
@@ -1288,6 +1289,7 @@ label[data-recognition-source="wind"]::after {
 
 @media (max-width: 1050px) {
   .ledger-command-bottom { grid-template-columns: 1fr; }
+  .ledger-todo-zone { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {

@@ -13,8 +13,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.5">/);
-  assert.match(html, /styles\.css\?v=20260724-page-flow-sidebar/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.6">/);
+  assert.match(html, /styles\.css\?v=20260724-responsive-cutoff-actions/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
@@ -88,8 +88,10 @@ test("keeps the desktop sidebar rail continuous and the empty detail state compa
 test("spreads cutoff todo details across desktop rows only", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
-  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main\s*\{[^}]*grid-template-columns:\s*minmax\(150px, 1fr\) minmax\(200px, \.9fr\);[^}]*column-gap:\s*clamp\(24px, 5vw, 72px\);/s);
-  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main span\s*\{[^}]*border-left:\s*1px solid/s);
+  assert.match(styles, /\.cutoff-todo-item \.payment-todo-main\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main\s*\{[^}]*grid-template-columns:\s*minmax\(120px, 1fr\) minmax\(0, \.9fr\);[^}]*column-gap:\s*clamp\(12px, 2vw, 36px\);/s);
+  assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.cutoff-todo-item \.payment-todo-main span\s*\{[^}]*justify-self:\s*stretch;[^}]*border-left:\s*1px solid/s);
+  assert.match(styles, /@media \(max-width: 1050px\)[\s\S]+\.ledger-todo-zone\s*\{\s*grid-template-columns:\s*1fr;/s);
 });
 
 test("maps DM V2.5 ratings into the new-project fields", async () => {
