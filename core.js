@@ -1619,3 +1619,17 @@ export function formatNumber(value) {
   if (!Number.isFinite(Number(value))) return "";
   return Number(value).toFixed(4).replace(/\.?0+$/, "");
 }
+
+export function formatProjectValuationSummary(project = {}) {
+  const trancheValues = Array.isArray(project.tranches)
+    ? project.tranches.map((tranche) => numberOrNull(tranche?.marketValuation))
+    : [];
+  const legacyValues = Array.isArray(project.valuations)
+    ? project.valuations.map(numberOrNull)
+    : [numberOrNull(project.valuation)];
+  const values = trancheValues.some(Number.isFinite) ? trancheValues : legacyValues;
+  const displayed = values
+    .filter(Number.isFinite)
+    .map((value) => `${formatNumber(value)}%`);
+  return displayed.length ? `估值 ${displayed.join(" / ")}` : "";
+}

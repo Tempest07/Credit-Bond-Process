@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.0">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.1">/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
@@ -114,6 +114,19 @@ test("lets short project lists expand without internal scrolling", async () => {
   assert.match(styles, /\.project-item\s*\{[^}]*scroll-margin-block:\s*12px;/s);
   assert.match(styles, /\.project-list\.liquid-track::before\s*\{[^}]*box-sizing:\s*border-box;/s);
   assert.match(styles, /\.project-list-panel\.has-short-list\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s);
+});
+
+test("places the optional valuation badge between inquiry and offering facts", async () => {
+  const [app, styles] = await Promise.all([
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+  const inquiry = app.indexOf("formatInquirySummary(item.tranches)", app.indexOf("function renderProjectList"));
+  const valuation = app.indexOf('class="project-valuation-badge"', inquiry);
+  const offering = app.indexOf('class="project-offering-badge', valuation);
+
+  assert.ok(inquiry >= 0 && inquiry < valuation && valuation < offering);
+  assert.match(styles, /\.project-item-facts \.project-valuation-badge\s*\{[^}]*color:\s*#087f8d;[^}]*background:\s*linear-gradient/s);
 });
 
 test("keeps protocol transfer hover borders clear of the scroll viewport", async () => {

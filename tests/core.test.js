@@ -9,12 +9,35 @@ import {
   durationToDays,
   findIssuer,
   generateOpinion,
+  formatProjectValuationSummary,
   mergeImportedIssuers,
   normalizeIssuer,
   parseProjectBrief,
   replaceProjectWithDmLookup,
   splitProjectBriefs,
 } from "../core.js";
+
+test("formats stored project valuations for compact ledger cards", () => {
+  assert.equal(
+    formatProjectValuationSummary({ tranches: [{ marketValuation: 1.46 }] }),
+    "估值 1.46%",
+  );
+  assert.equal(
+    formatProjectValuationSummary({
+      tranches: [
+        { marketValuation: 1.46 },
+        { marketValuation: null },
+        { marketValuation: 1.73 },
+      ],
+    }),
+    "估值 1.46% / 1.73%",
+  );
+  assert.equal(
+    formatProjectValuationSummary({ valuations: [1.51, 1.68] }),
+    "估值 1.51% / 1.68%",
+  );
+  assert.equal(formatProjectValuationSummary({ tranches: [{ marketValuation: null }] }), "");
+});
 
 test("preserves supported enterprise types in issuer records", () => {
   assert.equal(normalizeIssuer({ legalName: "测试民企有限公司", enterpriseType: "民营企业" }).enterpriseType, "民营企业");

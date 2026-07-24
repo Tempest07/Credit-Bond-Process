@@ -7,6 +7,7 @@ import {
   durationToDays,
   findIssuer,
   formatNumber,
+  formatProjectValuationSummary,
   generateOpinion,
   isAbsProject,
   mergeImportedIssuers,
@@ -7611,25 +7612,29 @@ function renderProjectList() {
   projectList.classList.toggle("is-short-list", isShortList);
   projectList.closest(".project-list-panel")?.classList.toggle("has-short-list", isShortList);
   projectList.innerHTML = projects.length
-    ? projects.map((item) => `
-      <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
-        <span class="project-item-head">
-          <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
-          <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
-        </span>
-        <span class="project-item-meta project-item-primary">
-          <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>
-          <span class="project-item-schedule">${escapeHtml(formatProjectSchedule(item))}</span>
-        </span>
-        <span class="project-item-facts">
-          <span>${escapeHtml(formatTrancheDurationSummary(item))}</span>
-          <span>${escapeHtml(formatProjectScaleSummary(item))}</span>
-          <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
-          <span class="project-offering-badge ${projectOfferingBadgeClass(item)}">${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
-          <span>${escapeHtml(formatProjectVenueLead(item))}</span>
-        </span>
-      </button>
-    `).join("")
+    ? projects.map((item) => {
+      const valuationSummary = formatProjectValuationSummary(item);
+      return `
+        <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
+          <span class="project-item-head">
+            <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
+            <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
+          </span>
+          <span class="project-item-meta project-item-primary">
+            <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>
+            <span class="project-item-schedule">${escapeHtml(formatProjectSchedule(item))}</span>
+          </span>
+          <span class="project-item-facts">
+            <span>${escapeHtml(formatTrancheDurationSummary(item))}</span>
+            <span>${escapeHtml(formatProjectScaleSummary(item))}</span>
+            <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
+            ${valuationSummary ? `<span class="project-valuation-badge">${escapeHtml(valuationSummary)}</span>` : ""}
+            <span class="project-offering-badge ${projectOfferingBadgeClass(item)}">${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
+            <span>${escapeHtml(formatProjectVenueLead(item))}</span>
+          </span>
+        </button>
+      `;
+    }).join("")
     : '<div class="empty">当前筛选下暂无项目。</div>';
 
   $$("[data-project-id]").forEach((button) => {
