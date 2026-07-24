@@ -655,7 +655,7 @@ label[data-recognition-source="wind"]::after {
 .project-item-issuer { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-item-schedule { color: var(--accent); white-space: nowrap; }
 .project-item-facts { display: flex; gap: 5px; flex-wrap: wrap; }
-.project-item-facts span { max-width: 100%; overflow: hidden; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--panel-soft); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 800; }
+.project-item-facts span { display: inline-flex; min-height: 22px; max-width: 100%; align-items: center; justify-content: center; overflow: hidden; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--panel-soft); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 800; line-height: 1; }
 .project-item-facts .project-valuation-badge { border-color: rgba(14,165,183,.34); color: #087f8d; background: linear-gradient(135deg, #e9fbfd, #f8feff); }
 .project-item-facts .project-offering-badge { padding-inline: 8px; border-width: 1px; font-size: 10px; box-shadow: inset 0 -1px 0 rgba(255,255,255,.55); }
 .project-offering-badge.is-public { border-color: color-mix(in srgb, #16a34a 44%, var(--line)); color: #137333; background: linear-gradient(135deg, #e9fbe9, #f8fff9); }

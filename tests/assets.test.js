@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.2">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.3">/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
@@ -124,6 +124,7 @@ test("places the optional valuation badge between inquiry and offering facts", a
   const offering = app.indexOf('class="project-offering-badge', valuation);
 
   assert.ok(inquiry >= 0 && inquiry < valuation && valuation < offering);
+  assert.match(styles, /\.project-item-facts span\s*\{[^}]*display:\s*inline-flex;[^}]*min-height:\s*22px;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*line-height:\s*1;/s);
   assert.match(styles, /\.project-item-facts \.project-valuation-badge\s*\{[^}]*color:\s*#087f8d;[^}]*background:\s*linear-gradient/s);
 });
 
