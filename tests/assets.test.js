@@ -13,8 +13,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.4">/);
-  assert.match(html, /styles\.css\?v=20260724-mobile-ledger-nav/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.5">/);
+  assert.match(html, /styles\.css\?v=20260724-page-flow-sidebar/);
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
 
@@ -79,6 +79,7 @@ test("keeps the desktop sidebar rail continuous and the empty detail state compa
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.app-shell\s*\{[^}]*background:\s*linear-gradient\(90deg,\s*#10172d 0 252px,\s*transparent 252px\)/s);
+  assert.match(styles, /\.sidebar\s*\{[^}]*position:\s*relative;[^}]*align-self:\s*stretch;[^}]*min-height:\s*100vh;[^}]*overflow:\s*visible;[^}]*border-right:\s*0;[^}]*box-shadow:\s*none;/s);
   assert.match(styles, /@media \(min-width: 761px\)[\s\S]+\.project-detail-panel:has\(> \.project-empty:not\(\[hidden\]\)\)\s*\{\s*min-height:\s*0;/);
   assert.match(styles, /\.project-detail-panel > \.project-empty:not\(\[hidden\]\)\s*\{\s*min-height:\s*140px;/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.app-shell\s*\{[^}]*background:\s*transparent;/);
