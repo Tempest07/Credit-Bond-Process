@@ -198,8 +198,8 @@ test("subtracts unsettled sells from available inventory after a real snapshot",
   assert.match(row.warning, /未交割卖出/);
 });
 
-test("keeps negotiated T+1 sells locked before settlement and applies same-day sells explicitly", () => {
-  const nextDayTrade = parseSecondaryTradeText("280680.SH 25联投17 1000万 06.18 兴业银行 出给 首创证券 100.990", {
+test("keeps explicitly marked T+1 sells locked before settlement and applies same-day sells explicitly", () => {
+  const nextDayTrade = parseSecondaryTradeText("280680.SH 25联投17 1000万 06.18+1 兴业银行 出给 首创证券 100.990", {
     referenceDate: new Date("2026-06-18T09:00:00+08:00"),
   })[0];
   const sameDayTrade = parseSecondaryTradeText("280680.SH 25联投17 1000万 06.18 +0 兴业银行 出给 首创证券 100.990", {
@@ -239,6 +239,9 @@ test("parses Trade-Phraser style trade elements into pending secondary trades", 
   assert.equal(trades[0].settlementDate, "2026-06-26");
   assert.equal(trades[0].tradeStage, "negotiated");
   assert.equal(trades[0].frontOfficeDone, false);
+  assert.equal(trades[0].tradeRecordSource, "trade-phraser-54d42a6");
+  assert.equal(trades[0].tradeRecord["收益率(%)"], "1.9");
+  assert.equal(Object.keys(trades[0].tradeRecord).length, 19);
 
   const row = calculateShadowInventory(state, { asOfDate: "2026-06-25" })[0];
   assert.equal(row.snapshotQuantityWan, 6000);
@@ -263,7 +266,8 @@ test("turns pasted public and PPN trade elements into pending trades", () => {
   assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.tradeDate), ["2026-07-20", "2026-07-20", "2026-07-20"]);
   assert.deepEqual(result.trades.slice(0, 3).map((trade) => trade.settlementSpeed), [1, 1, 0]);
   assert.equal(result.trades[0].remainingTerm, "4.90Y");
-  assert.equal(result.trades[0].price, "99.346");
+  assert.equal(result.trades[0].price, "");
+  assert.equal(result.trades[0].tradeRecord["净价"], "");
   assert.equal(result.trades[0].contactNote, "联储证券 熊丹丹");
   assert.equal(result.trades[2].contactNote, "兴业银行俞维谦");
   assert.equal(result.trades[3].instrumentScope, "ppn");
@@ -297,9 +301,9 @@ test("supports frequent variants found in the 2026 trade record", () => {
   assert.deepEqual(result.trades.map((trade) => trade.settlementSpeed), [0, 1]);
   assert.equal(result.trades[0].yieldRate, 2.185);
   assert.equal(result.trades[0].price, "100");
-  assert.equal(result.trades[1].yieldRate, 2.45);
-  assert.equal(result.trades[1].price, "101.677");
-  assert.match(result.trades[1].parseWarnings.join("；"), /疑似交易所私募/);
+  assert.equal(result.trades[1].yieldRate, null);
+  assert.equal(result.trades[1].price, "");
+  assert.match(result.trades[1].parseWarnings.join("；"), /未识别收益率或净价/);
 });
 
 test("keeps PPN in secondary intake even when the text also says private bond", () => {
@@ -416,7 +420,7 @@ test("creates primary award inventory drafts and lets code mapping fill missing 
 test("adds front-office confirmed secondary trades to the daily ledger", () => {
   let state = { secondaryInventoryPositions: [], secondaryOrders: [], secondaryTrades: [] };
   state = upsertSecondaryTrades(state, parseSecondaryTradeText(
-    "SDR 280680.SH 25联投17 3000万 06.18 兴业银行 出给 首创证券 100.990",
+    "SDR 280680.SH 25联投17 3000万 06.18+0 兴业银行 出给 首创证券 100.990",
     { referenceDate: new Date("2026-06-18T09:00:00+08:00") },
   ));
 
@@ -437,5 +441,6 @@ test("adds front-office confirmed secondary trades to the daily ledger", () => {
   assert.equal(rows[0].frontOfficeDone, true);
   assert.equal(rows[0].tradeStage, "front_office_done");
   assert.equal(rows[0].frontOfficePrice, "100.98");
+  assert.equal(rows[0].tradeRecord["净价"], "100.98");
   assert.equal(rows[0].ledgerDate, "2026-06-18");
 });

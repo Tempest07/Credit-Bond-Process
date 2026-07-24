@@ -1,3 +1,8 @@
+import {
+  normalizeTradeRecord,
+  parseTradeRecordLine,
+} from "./trade-record-converter.js";
+
 const ACCOUNT_ALIASES = new Map([
   ["SDR", "SDR"],
   ["THR", "THR"],
@@ -12,6 +17,7 @@ const SHORT_NAME_PATTERN = /\b(\d{2}[\u4e00-\u9fa5A-Za-z0-9]+?(?:SCP|CP|MTN|PPN|
 const SECONDARY_TRADE_STAGES = new Set(["negotiated", "front_office_done", "ledgered", "sent"]);
 const SECONDARY_TRADE_CATEGORIES = new Set(["protocol", "non_protocol", "primary_award"]);
 const SECONDARY_INSTRUMENT_SCOPES = new Set(["public", "ppn", "exchange_private"]);
+const TRADE_RECORD_SOURCE = "trade-phraser-54d42a6";
 
 export function normalizeSecondaryInventoryPositions(input = []) {
   return Array.isArray(input) ? input.map(normalizeInventoryPosition).filter(isUsableSecondaryRecord) : [];
@@ -22,7 +28,7 @@ export function normalizeSecondaryOrders(input = []) {
 }
 
 export function normalizeSecondaryTrades(input = []) {
-  return Array.isArray(input) ? input.map(normalizeSecondaryTrade).filter(isUsableSecondaryRecord) : [];
+  return Array.isArray(input) ? input.map(normalizeSecondaryTrade).filter(isUsableSecondaryTrade) : [];
 }
 
 export function hasGarbledSecondaryText(record = {}) {
@@ -37,6 +43,13 @@ export function hasGarbledSecondaryText(record = {}) {
 
 function isUsableSecondaryRecord(record = {}) {
   return Boolean(record.code || record.shortName) && !hasGarbledSecondaryText(record);
+}
+
+function isUsableSecondaryTrade(record = {}) {
+  return (
+    isUsableSecondaryRecord(record)
+    || (record.tradeRecordSource === TRADE_RECORD_SOURCE && Boolean(record.sourceText))
+  ) && !hasGarbledSecondaryText(record);
 }
 
 export function normalizeInventoryPosition(input = {}) {
@@ -83,9 +96,16 @@ export function normalizeSecondaryTrade(input = {}) {
   const frontOfficeDone = Boolean(input.frontOfficeDone)
     || Boolean(String(input.frontOfficeAt || "").trim())
     || ["front_office_done", "ledgered", "sent"].includes(input.tradeStage);
+  const frontOfficePrice = normalizePrice(input.frontOfficePrice ?? (frontOfficeDone ? input.price : ""));
+  const tradeRecord = normalizeTradeRecord({
+    ...secondaryTradeToTradeRecord(input),
+    ...(frontOfficeDone && frontOfficePrice ? { 净价: frontOfficePrice } : {}),
+  });
   return {
     id: input.id || crypto.randomUUID(),
-    side: ["buy", "sell"].includes(input.side) ? input.side : "sell",
+    side: ["buy", "sell", "unknown"].includes(input.side)
+      ? input.side
+      : input.tradeRecordSource === TRADE_RECORD_SOURCE ? "unknown" : "sell",
     account: normalizeAccount(input.account),
     code: normalizeSecurityCode(input.code),
     shortName: String(input.shortName || "").trim(),
@@ -104,6 +124,8 @@ export function normalizeSecondaryTrade(input = {}) {
     instrumentScope: normalizeSecondaryInstrumentScope(input.instrumentScope, input.sourceText, input.code, input.shortName),
     parseWarnings: Array.isArray(input.parseWarnings) ? input.parseWarnings.map((item) => String(item || "").trim()).filter(Boolean) : [],
     sourceType: String(input.sourceType || "manual").trim(),
+    tradeRecord,
+    tradeRecordSource: String(input.tradeRecordSource || "").trim(),
     sourceProjectId: String(input.sourceProjectId || "").trim(),
     sourceTrancheId: String(input.sourceTrancheId || "").trim(),
     orderId: String(input.orderId || "").trim(),
@@ -111,7 +133,7 @@ export function normalizeSecondaryTrade(input = {}) {
     tradeCategory: normalizeSecondaryTradeCategory(input.tradeCategory, input.sourceType, input.code),
     tradeStage: normalizeSecondaryTradeStage(input.tradeStage, frontOfficeDone, ledgerSentAt),
     frontOfficeDone,
-    frontOfficePrice: normalizePrice(input.frontOfficePrice ?? (frontOfficeDone ? input.price : "")),
+    frontOfficePrice,
     frontOfficeAt: String(input.frontOfficeAt || "").trim(),
     ledgerDate: normalizeDate(input.ledgerDate) || tradeDate,
     ledgerSentAt,
@@ -201,19 +223,20 @@ export function parseSecondaryTradeIntake(text = "", options = {}) {
   const trades = [];
   const protocolCandidates = [];
   const diagnostics = [];
+  const negotiationDate = normalizeDate(options.negotiationDate) || localDate(new Date());
+  const negotiationDateValue = parseDate(negotiationDate) || new Date();
+  const bankName = String(options.bankName || "兴业银行").trim() || "兴业银行";
   String(text || "").split(/\r?\n/).forEach((rawLine, index) => {
     const line = normalizeLine(rawLine);
     if (!line) return;
-    const trade = parseSecondaryTradeLine(rawLine, options);
-    if (!trade) {
-      diagnostics.push({
-        lineNumber: index + 1,
-        original: String(rawLine || "").trim(),
-        status: "rejected",
-        message: secondaryTradeLineIssue(line),
-      });
-      return;
-    }
+    const parsed = parseTradeRecordLine(rawLine, negotiationDateValue, bankName);
+    const trade = tradeRecordToSecondaryTrade(parsed.trade, {
+      ...options,
+      bankName,
+      negotiationDate,
+      sourceText: rawLine,
+      warnings: parsed.warnings,
+    });
     if (trade.instrumentScope === "exchange_private") {
       protocolCandidates.push(trade);
       diagnostics.push({
@@ -225,16 +248,78 @@ export function parseSecondaryTradeIntake(text = "", options = {}) {
       return;
     }
     trades.push(trade);
-    if (trade.parseWarnings.length) {
+    if (parsed.warnings.length) {
       diagnostics.push({
         lineNumber: index + 1,
         original: trade.sourceText,
         status: "warning",
-        message: trade.parseWarnings.join("；"),
+        message: parsed.warnings.join("；"),
       });
     }
   });
   return { trades, protocolCandidates, diagnostics };
+}
+
+export function tradeRecordToSecondaryTrade(record = {}, context = {}) {
+  const tradeRecord = normalizeTradeRecord(record);
+  const sourceText = String(context.sourceText || "").trim();
+  const code = normalizeSecurityCode(tradeRecord["债券代码"]);
+  const shortName = String(tradeRecord["债券简称"] || extractShortName(normalizeLine(sourceText), code)).trim();
+  const tradeDate = normalizeDate(tradeRecord["交易日"]) || normalizeDate(context.negotiationDate) || localDate(new Date());
+  const settlementSpeed = tradeRecord["清算速度(0/1)"];
+  const instrumentScope = classifySecondaryInstrument(normalizeLine(sourceText), code, shortName);
+  return normalizeSecondaryTrade({
+    side: tradeRecord["我行方向"] === "买入"
+      ? "buy"
+      : tradeRecord["我行方向"] === "卖出" ? "sell" : "unknown",
+    account: tradeRecord["组合"] || context.account || DEFAULT_ACCOUNT,
+    code,
+    shortName,
+    quantityWan: numberOrNull(tradeRecord["面值（万元）"]) ?? 0,
+    price: tradeRecord["净价"],
+    yieldRate: numberOrNull(tradeRecord["收益率(%)"]),
+    negotiationDate: tradeRecord["谈判日"] || context.negotiationDate,
+    tradeDate,
+    settlementSpeed,
+    settlementDate: inferSettlementDate(tradeDate, settlementSpeed),
+    counterparty: tradeRecord["真实交易对手"],
+    intermediary: tradeRecord["中介"],
+    remainingTerm: extractRemainingTerm(normalizeLine(sourceText)),
+    contactNote: extractContactNote(sourceText),
+    instrumentScope,
+    market: normalizeSecondaryMarket("", code),
+    parseWarnings: context.warnings || [],
+    sourceType: "trade_phraser",
+    tradeRecord,
+    tradeRecordSource: TRADE_RECORD_SOURCE,
+    sourceText,
+  });
+}
+
+export function secondaryTradeToTradeRecord(input = {}) {
+  const existing = normalizeTradeRecord(input.tradeRecord || {});
+  if (input.tradeRecordSource === TRADE_RECORD_SOURCE && input.tradeRecord) return existing;
+  return normalizeTradeRecord({
+    ...existing,
+    谈判日: existing["谈判日"] || normalizeDate(input.negotiationDate),
+    交易日: existing["交易日"] || normalizeDate(input.tradeDate),
+    债券代码: existing["债券代码"] || normalizeSecurityCode(input.code),
+    净价: existing["净价"] || normalizePrice(input.frontOfficePrice || input.price),
+    "收益率(%)": existing["收益率(%)"] || (
+      Number.isFinite(numberOrNull(input.yieldRate)) ? String(input.yieldRate) : ""
+    ),
+    我行方向: existing["我行方向"] || (input.side === "buy" ? "买入" : input.side === "sell" ? "卖出" : ""),
+    "面值（万元）": existing["面值（万元）"] || (
+      Number.isFinite(numberOrNull(input.quantityWan ?? input.quantity))
+        ? String(numberOrNull(input.quantityWan ?? input.quantity))
+        : ""
+    ),
+    真实交易对手: existing["真实交易对手"] || String(input.counterparty || "").trim(),
+    中介: existing["中介"] || String(input.intermediary || "").trim(),
+    "清算速度(0/1)": existing["清算速度(0/1)"] || (
+      input.settlementSpeed === 0 || input.settlementSpeed === 1 ? String(input.settlementSpeed) : ""
+    ),
+  });
 }
 
 export function upsertInventoryPositions(state, positions = []) {
@@ -294,11 +379,17 @@ export function removeSecondaryTrade(state = {}, id = "") {
 export function markSecondaryTradeFrontOffice(trade, input = {}) {
   const now = String(input.frontOfficeAt || input.now || new Date().toISOString());
   const tradeDate = normalizeDate(input.tradeDate) || trade.tradeDate;
+  const frontOfficePrice = normalizePrice(input.frontOfficePrice ?? trade.frontOfficePrice ?? trade.price);
   return normalizeSecondaryTrade({
     ...trade,
     tradeDate,
     frontOfficeDone: true,
-    frontOfficePrice: normalizePrice(input.frontOfficePrice ?? trade.frontOfficePrice ?? trade.price),
+    frontOfficePrice,
+    tradeRecord: {
+      ...secondaryTradeToTradeRecord(trade),
+      净价: frontOfficePrice,
+      交易日: tradeDate,
+    },
     frontOfficeAt: now,
     ledgerDate: normalizeDate(input.ledgerDate) || tradeDate,
     tradeStage: "front_office_done",
@@ -371,7 +462,7 @@ export function calculateShadowInventory(state = {}, options = {}) {
     if (trade.side === "sell") {
       row.soldWan += trade.quantityWan;
       if (trade.settlementDate > asOfDate) row.unsettledSellWan += trade.quantityWan;
-    } else {
+    } else if (trade.side === "buy") {
       if (trade.settlementDate <= asOfDate) row.settledBuyWan += trade.quantityWan;
       else row.pendingBuyWan += trade.quantityWan;
     }
@@ -610,64 +701,6 @@ function formatSecondaryOfferPriceQuote(price) {
   return /ofr/i.test(price) ? price : `${price}*ofr`;
 }
 
-function parseSecondaryTradeLine(rawLine, options = {}) {
-  const line = normalizeLine(rawLine);
-  if (!line) return null;
-  const code = extractSecurityCode(line);
-  const shortName = extractShortName(line, code);
-  const quantityWan = extractAmountWan(line);
-  if (!code && !shortName) return null;
-  if (!Number.isFinite(quantityWan)) return null;
-
-  const bankName = options.bankName || "兴业银行";
-  const isSell = new RegExp(`${escapeRegExp(bankName)}\\s*(?:出给|to)`, "i").test(line)
-    || /(?:卖出|出给)/.test(line) && line.includes(bankName);
-  const isBuy = new RegExp(`(?:出给|to)\\s*${escapeRegExp(bankName)}`, "i").test(line)
-    || /(?:买入|收)/.test(line) && line.includes(bankName);
-  const side = isBuy && !isSell ? "buy" : "sell";
-  const sideDetected = isSell || isBuy;
-  const tradeDateInfo = extractTradeDateAndSpeed(line, {
-    referenceDate: parseDate(options.negotiationDate) || options.referenceDate || new Date(),
-    defaultSpeed: options.defaultSettlementSpeed ?? 1,
-  });
-  const instrumentScope = classifySecondaryInstrument(line, code, shortName);
-  const price = extractPrice(line);
-  const yieldRate = extractYieldRate(line);
-  const counterparty = extractCounterparty(line, bankName, side);
-  const intermediary = line.match(/【([^】]+)】/)?.[1]?.trim() || "";
-  return normalizeSecondaryTrade({
-    side,
-    account: extractAccount(line) || options.account || DEFAULT_ACCOUNT,
-    code,
-    shortName,
-    quantityWan,
-    price,
-    yieldRate,
-    negotiationDate: normalizeDate(options.negotiationDate) || localDate(new Date()),
-    tradeDate: tradeDateInfo.tradeDate || localDate(new Date()),
-    settlementSpeed: tradeDateInfo.speed,
-    settlementDate: inferSettlementDate(tradeDateInfo.tradeDate || localDate(new Date()), tradeDateInfo.speed),
-    counterparty,
-    intermediary,
-    remainingTerm: extractRemainingTerm(line),
-    contactNote: extractContactNote(rawLine),
-    instrumentScope,
-    market: normalizeSecondaryMarket("", code),
-    parseWarnings: secondaryTradeWarnings({
-      code,
-      shortName,
-      price,
-      yieldRate,
-      counterparty,
-      intermediary,
-      instrumentScope,
-      sideDetected,
-    }),
-    sourceType: "manual",
-    sourceText: rawLine,
-  });
-}
-
 function latestInventoryPositions(positions = []) {
   const latest = new Map();
   for (const position of normalizeSecondaryInventoryPositions(positions)) {
@@ -697,30 +730,6 @@ function baseInventoryRow(input = {}, snapshotQuantityWan = 0) {
     needsSnapshot: false,
     warning: "",
   };
-}
-
-function secondaryTradeLineIssue(line = "") {
-  const code = extractSecurityCode(line);
-  const shortName = extractShortName(line, code);
-  if (!code && !shortName) return "未识别债券代码或简称";
-  if (!Number.isFinite(extractAmountWan(line))) return "未识别面值（万元）";
-  return "未识别为有效交易记录";
-}
-
-function secondaryTradeWarnings(input = {}) {
-  const warnings = [];
-  if (!input.code) warnings.push("债券代码待补");
-  if (!input.shortName) warnings.push("债券简称待补");
-  if (!Number.isFinite(input.yieldRate) && !input.price) warnings.push("收益率待复核");
-  if (!input.counterparty) warnings.push("交易对手待复核");
-  if (!input.intermediary) warnings.push("中介待复核");
-  if (!input.sideDetected) warnings.push("买卖方向待复核");
-  if (input.code && !/\.(?:IB|SH|SZ)$/i.test(input.code)) warnings.push("市场后缀待复核");
-  if (
-    input.instrumentScope === "public"
-    && /^(?:28\d{4}|254\d{3})\.SH$/i.test(input.code)
-  ) warnings.push("疑似交易所私募，请确认是否转协议转让");
-  return warnings;
 }
 
 function extractRemainingTerm(line = "") {
@@ -957,65 +966,6 @@ function normalizeSecondaryTradeCategory(category, sourceType = "", code = "") {
   return normalizeSecurityCode(code).endsWith(".SH") && sourceType === "protocol" ? "protocol" : "non_protocol";
 }
 
-function extractTradeDateAndSpeed(line = "", options = {}) {
-  const referenceDate = options.referenceDate || new Date();
-  const defaultSpeed = Number.isFinite(Number(options.defaultSpeed)) ? Number(options.defaultSpeed) : 1;
-  const explicitSameDay = /(?:\+0|T\+0|当天|今日|立即)(?:交割|点交易|交易)?/i.test(line);
-  const explicitNextDay = /(?:\+1|T\+1|明天|次日|下一工作日)(?:交割|点交易|交易)?/i.test(line);
-  const fallbackSpeed = explicitSameDay ? 0 : explicitNextDay ? 1 : defaultSpeed;
-  const iso = line.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
-  if (iso) {
-    const tradeDate = validTradeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
-    if (tradeDate) return { tradeDate, speed: fallbackSpeed };
-  }
-  const speedMatch = line.match(/(?:^|[^\d.])(\d{1,2})[./](\d{1,2})\s*\+\s*([01])(?:\s*(?:交易所|现券交易))?/i);
-  if (speedMatch) {
-    const tradeDate = inferMonthDayTradeDate(speedMatch[1], speedMatch[2], referenceDate);
-    if (tradeDate) return { tradeDate, speed: Number(speedMatch[3]) };
-  }
-  const chineseSpeedMatch = line.match(/(?:^|\D)(\d{1,2})月(\d{1,2})日?\s*\+\s*([01])(?:\s*(?:交易所|现券交易))?/i);
-  if (chineseSpeedMatch) {
-    const tradeDate = inferMonthDayTradeDate(chineseSpeedMatch[1], chineseSpeedMatch[2], referenceDate);
-    if (tradeDate) return { tradeDate, speed: Number(chineseSpeedMatch[3]) };
-  }
-  const exchangeMatch = line.match(/(?:^|[^\d.])(\d{1,2})[./](\d{1,2})\s*(?:交易所|现券交易)/i);
-  if (exchangeMatch) {
-    const tradeDate = inferMonthDayTradeDate(exchangeMatch[1], exchangeMatch[2], referenceDate);
-    if (tradeDate) return { tradeDate, speed: fallbackSpeed };
-  }
-  const chineseExchangeMatch = line.match(/(?:^|\D)(\d{1,2})月(\d{1,2})日?\s*(?:交易所|现券交易)/i);
-  if (chineseExchangeMatch) {
-    const tradeDate = inferMonthDayTradeDate(chineseExchangeMatch[1], chineseExchangeMatch[2], referenceDate);
-    if (tradeDate) return { tradeDate, speed: fallbackSpeed };
-  }
-  return { tradeDate: localDate(new Date(referenceDate)), speed: fallbackSpeed };
-}
-
-function inferMonthDayTradeDate(monthValue, dayValue, referenceDate = new Date()) {
-  const month = Number(monthValue);
-  const day = Number(dayValue);
-  const reference = new Date(referenceDate);
-  if (!Number.isFinite(reference.getTime())) return "";
-  let year = reference.getFullYear();
-  let tradeDate = validTradeDate(year, month, day);
-  if (!tradeDate) return "";
-  const candidate = parseDate(tradeDate);
-  const distanceDays = Math.round((candidate.getTime() - reference.getTime()) / 86400000);
-  if (distanceDays < -180) year += 1;
-  else if (distanceDays > 180) year -= 1;
-  return validTradeDate(year, month, day);
-}
-
-function validTradeDate(year, month, day) {
-  const date = new Date(year, month - 1, day);
-  if (
-    date.getFullYear() !== year
-    || date.getMonth() !== month - 1
-    || date.getDate() !== day
-  ) return "";
-  return localDate(date);
-}
-
 function normalizeSettlementSpeed(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
@@ -1025,15 +975,6 @@ function inferSettlementDate(tradeDate, speed = 0) {
   const date = parseDate(tradeDate) || new Date();
   date.setDate(date.getDate() + normalizeSettlementSpeed(speed));
   return localDate(date);
-}
-
-function extractCounterparty(line = "", bankName = "兴业银行", side = "sell") {
-  const escaped = escapeRegExp(bankName);
-  const sellMatch = line.match(new RegExp(`${escaped}\\s*(?:出给|to)\\s*([^，,;；]+)`, "i"));
-  if (sellMatch && side === "sell") return sellMatch[1].trim().split(/\s+/)[0];
-  const buyMatch = line.match(new RegExp(`([^，,;；]+?)\\s*(?:出给|to)\\s*${escaped}`, "i"));
-  if (buyMatch && side === "buy") return buyMatch[1].trim().split(/\s+/).at(-1);
-  return "";
 }
 
 function normalizeDate(value = "") {

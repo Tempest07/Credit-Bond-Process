@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260722-payment-receipt-explorer";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260724-trade-record-migration";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

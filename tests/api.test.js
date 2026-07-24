@@ -237,7 +237,20 @@ test("accepts and preserves project ledger records under admin", async () => {
           protocolTransfers: [{ id: "t1", code: "281926.SH", shortName: "26光交01" }],
           secondaryInventoryPositions: [{ id: "s1", code: "280680.SH", shortName: "25联投17", quantityWan: 5000 }],
           secondaryOrders: [{ id: "o1", code: "280680.SH", shortName: "25联投17", side: "offer", quantityWan: 2000 }],
-          secondaryTrades: [{ id: "f1", code: "280680.SH", shortName: "25联投17", side: "sell", quantityWan: 1000 }],
+          secondaryTrades: [{
+            id: "f1",
+            code: "280680.SH",
+            shortName: "25联投17",
+            side: "sell",
+            quantityWan: 1000,
+            tradeRecordSource: "trade-phraser-54d42a6",
+            tradeRecord: {
+              谈判日: "2026-07-23",
+              交易日: "2026-07-24",
+              债券代码: "280680.SH",
+              "面值（万元）": "1000",
+            },
+          }],
           ftpCurve: { y1: 1.5 },
           reminderState: { dailyMailSentDates: ["2026-07-10"] },
         },
@@ -252,6 +265,8 @@ test("accepts and preserves project ledger records under admin", async () => {
   assert.equal(saved.secondaryInventoryPositions[0].quantityWan, 5000);
   assert.equal(saved.secondaryOrders[0].side, "offer");
   assert.equal(saved.secondaryTrades[0].quantityWan, 1000);
+  assert.equal(saved.secondaryTrades[0].tradeRecordSource, "trade-phraser-54d42a6");
+  assert.equal(saved.secondaryTrades[0].tradeRecord["债券代码"], "280680.SH");
   assert.equal(saved.ftpCurve.y1, 1.5);
   assert.deepEqual(saved.reminderState.dailyMailSentDates, ["2026-07-10"]);
 });

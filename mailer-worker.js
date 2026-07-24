@@ -1,3 +1,9 @@
+import { TRADE_RECORD_COLUMNS } from "./trade-record-converter.js";
+import {
+  buildTradeRecordRows,
+  buildTradeRecordTableText,
+} from "./trade-record-ledger.js";
+
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
 const REPORT_KIND = "today-bid-opinions";
@@ -219,48 +225,7 @@ export function buildSecondaryLedgerMail(state, options = {}) {
 }
 
 export function selectSecondaryLedgerRows(state = {}, date) {
-  const secondaryTrades = Array.isArray(state.secondaryTrades) ? state.secondaryTrades : [];
-  const protocolTransfers = Array.isArray(state.protocolTransfers) ? state.protocolTransfers : [];
-  const secondaryRows = secondaryTrades
-    .filter((trade) => isFrontOfficeDoneTrade(trade) && String(trade.ledgerDate || trade.tradeDate || "").slice(0, 10) === date)
-    .map((trade) => ({
-      id: String(trade.id || ""),
-      source: "secondary",
-      kind: trade.tradeCategory === "primary_award" ? "一级入库" : trade.tradeCategory === "protocol" ? "协议转让" : "非协议",
-      side: trade.side === "buy" ? "买入" : "卖出",
-      account: String(trade.account || ""),
-      code: String(trade.code || ""),
-      shortName: String(trade.shortName || ""),
-      amountText: formatWan(trade.quantityWan),
-      priceText: String(trade.frontOfficePrice || trade.price || ""),
-      tradeDate: String(trade.tradeDate || ""),
-      settlementText: trade.settlementDate ? `交割 ${trade.settlementDate}` : "",
-      counterparty: String(trade.counterparty || trade.intermediary || ""),
-      status: trade.ledgerSentAt ? "已发送" : "待发送",
-      sortKey: `${trade.tradeDate || ""}:${trade.shortName || ""}:${trade.id || ""}`,
-    }));
-
-  const linkedProtocolIds = new Set(secondaryTrades.map((trade) => String(trade.protocolTransferId || "")).filter(Boolean));
-  const protocolRows = protocolTransfers
-    .filter((record) => String(record.tradeDate || "").slice(0, 10) === date && !linkedProtocolIds.has(String(record.id || "")))
-    .map((record) => ({
-      id: String(record.id || ""),
-      source: "protocol",
-      kind: "协议转让",
-      side: "协议转让",
-      account: "SSE",
-      code: String(record.code || ""),
-      shortName: String(record.shortName || ""),
-      amountText: formatWan(record.amountTenThousand),
-      priceText: record.price ? `净价${record.price}` : "",
-      tradeDate: String(record.tradeDate || ""),
-      settlementText: "协议流程",
-      counterparty: protocolTransferFlow(record),
-      status: protocolTransferStatus(record),
-      sortKey: `${record.tradeDate || ""}:${record.shortName || ""}:${record.id || ""}`,
-    }));
-
-  return [...secondaryRows, ...protocolRows].sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+  return buildTradeRecordRows(state, date);
 }
 
 export function selectTodayBidProjects(projects = [], date) {
@@ -338,22 +303,7 @@ function buildHtmlMail(projects, date) {
 
 function buildSecondaryLedgerText(rows, date) {
   if (!rows.length) return `${date} 暂无二级成交台账记录。`;
-  const header = ["序号", "类型", "方向", "账户", "代码", "简称", "金额", "价格", "交易日", "交割/流程", "对手方", "状态"];
-  const body = rows.map((row, index) => [
-    index + 1,
-    row.kind,
-    row.side,
-    row.account,
-    row.code || "代码待补",
-    row.shortName || "简称待补",
-    row.amountText || "金额待补",
-    row.priceText || "价格待补",
-    row.tradeDate,
-    row.settlementText,
-    row.counterparty || "对手方待补",
-    row.status,
-  ].join("\t"));
-  return [`二级成交台账 ${date}`, header.join("\t"), ...body].join("\n");
+  return [`二级成交台账 ${date}`, buildTradeRecordTableText(rows)].join("\n");
 }
 
 function buildSecondaryLedgerHtml(rows, date) {
@@ -362,24 +312,13 @@ function buildSecondaryLedgerHtml(rows, date) {
       <table>
         <thead>
           <tr>
-            <th>序号</th><th>类型</th><th>方向</th><th>账户</th><th>代码</th><th>简称</th><th>金额</th><th>价格</th><th>交易日</th><th>交割/流程</th><th>对手方</th><th>状态</th>
+            ${TRADE_RECORD_COLUMNS.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}
           </tr>
         </thead>
         <tbody>
-          ${rows.map((row, index) => `
+          ${rows.map((row) => `
             <tr>
-              <td>${index + 1}</td>
-              <td>${escapeHtml(row.kind)}</td>
-              <td>${escapeHtml(row.side)}</td>
-              <td>${escapeHtml(row.account)}</td>
-              <td>${escapeHtml(row.code || "代码待补")}</td>
-              <td>${escapeHtml(row.shortName || "简称待补")}</td>
-              <td>${escapeHtml(row.amountText || "金额待补")}</td>
-              <td>${escapeHtml(row.priceText || "价格待补")}</td>
-              <td>${escapeHtml(row.tradeDate)}</td>
-              <td>${escapeHtml(row.settlementText)}</td>
-              <td>${escapeHtml(row.counterparty || "对手方待补")}</td>
-              <td>${escapeHtml(row.status)}</td>
+              ${TRADE_RECORD_COLUMNS.map((column) => `<td>${escapeHtml(row.record?.[column] || "")}</td>`).join("")}
             </tr>
           `).join("")}
         </tbody>
@@ -409,30 +348,6 @@ function buildSecondaryLedgerHtml(rows, date) {
   </main>
 </body>
 </html>`;
-}
-
-function isFrontOfficeDoneTrade(trade = {}) {
-  return Boolean(trade.frontOfficeDone)
-    || ["front_office_done", "ledgered", "sent"].includes(String(trade.tradeStage || ""));
-}
-
-function protocolTransferFlow(record = {}) {
-  return [record.seller || "卖方待补", record.buyer || "买方/做市商待补", record.finalBuyer]
-    .filter(Boolean)
-    .join(" → ");
-}
-
-function protocolTransferStatus(record = {}) {
-  if (record.exchangeSubmitted) return "已递交";
-  if (record.ownSealed) return "待递交上交所";
-  if (record.counterpartySealed) return "待本方用印";
-  return "待对手方用印";
-}
-
-function formatWan(value) {
-  const number = numberOrNull(value);
-  if (!Number.isFinite(number)) return "";
-  return Math.abs(number) >= 10000 ? `${formatNumber(number / 10000)}亿` : `${formatNumber(number)}万`;
 }
 
 function formatProjectBrief(project) {

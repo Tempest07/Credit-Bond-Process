@@ -121,9 +121,11 @@ test("builds one secondary ledger mail from non-protocol and protocol trades", (
   assert.equal(report.rowCount, 2);
   assert.equal(report.tradeCount, 1);
   assert.equal(report.protocolCount, 1);
-  assert.match(report.text, /非协议\t卖出\tSDR\t280680\.SH\t25联投17\t3000万\t100\.98/);
-  assert.match(report.text, /协议转让\t协议转让\tSSE\t281926\.SH\t26光交01\t2000万\t净价101\.033/);
+  assert.match(report.text, /谈判日\t交易日\t债券代码\t债券简称\t债券类型\t净价\t收益率\(%\)/);
+  assert.match(report.text, /2026-06-11\t280680\.SH\t25联投17\t\t100\.98\t\t\t卖出\t3000\t首创证券\t\tSDR/);
+  assert.match(report.text, /2026-06-11\t2026-06-11\t281926\.SH\t26光交01\t\t101\.033\t\t\t卖出\t2000\t中信证券\t\tSSE/);
   assert.match(report.html, /二级成交台账/);
+  assert.match(report.html, /<th>估值收益率<\/th>/);
 });
 
 test("returns a readable JSON error when sending is misconfigured", async () => {

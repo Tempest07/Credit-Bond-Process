@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260722-payment-receipt-explorer";
+} from "./core.js?v=20260724-trade-record-migration";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260722-payment-receipt-explorer";
+} from "./lifecycle.js?v=20260724-trade-record-migration";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260722-payment-receipt-explorer";
+} from "./history-parser.js?v=20260724-trade-record-migration";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260722-payment-receipt-explorer";
+} from "./protocol-transfer.js?v=20260724-trade-record-migration";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260722-payment-receipt-explorer";
+} from "./reminders.js?v=20260724-trade-record-migration";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -86,8 +86,13 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260722-payment-receipt-explorer";
-import { initializeDatePickers } from "./date-picker.js?v=20260722-payment-receipt-explorer";
+} from "./secondary-inventory.js?v=20260724-trade-record-migration";
+import { buildTradeRecordClipboardText } from "./trade-record-converter.js?v=20260724-trade-record-migration";
+import {
+  buildTradeRecordRows,
+  buildTradeRecordTableText,
+} from "./trade-record-ledger.js?v=20260724-trade-record-migration";
+import { initializeDatePickers } from "./date-picker.js?v=20260724-trade-record-migration";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -96,22 +101,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260722-payment-receipt-explorer";
+} from "./project-screenshot-ocr.js?v=20260724-trade-record-migration";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260722-payment-receipt-explorer";
+} from "./project-screenshot-layout.js?v=20260724-trade-record-migration";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260722-payment-receipt-explorer";
+} from "./project-screenshot-image.js?v=20260724-trade-record-migration";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260722-payment-receipt-explorer";
+} from "./payment-receipts.js?v=20260724-trade-record-migration";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -6774,6 +6779,7 @@ function bindSecondaryInventory() {
     renderSecondaryLedger();
   });
   $("#secondaryLedgerPreviewButton").addEventListener("click", () => callSecondaryLedgerMailer("preview"));
+  $("#secondaryLedgerCopyButton").addEventListener("click", copySecondaryLedgerRows);
   $("#secondaryLedgerSendButton").addEventListener("click", () => callSecondaryLedgerMailer("send"));
   $("#secondaryLedgerOutputCloseButton").addEventListener("click", hideSecondaryLedgerOutput);
   $("#secondaryTradeList").addEventListener("click", (event) => {
@@ -6916,7 +6922,7 @@ function renderSecondaryTrades() {
             <span class="status-badge muted">待成交</span>
           </div>
           <div class="secondary-meta">
-            <span>${escapeHtml(trade.side === "sell" ? "卖出" : "买入")}</span>
+            <span>${escapeHtml(trade.side === "sell" ? "卖出" : trade.side === "buy" ? "买入" : "方向待复核")}</span>
             <span>${escapeHtml(instrumentLabel)}</span>
             <span>${escapeHtml(trade.code || "代码待补")}</span>
             <span>${escapeHtml(formatAmountWan(trade.quantityWan))}</span>
@@ -7018,48 +7024,35 @@ function renderSecondaryLedger() {
 
 function buildSecondaryLedgerRows(date = "") {
   const ledgerDate = date || localDate(new Date());
-  const secondaryRows = secondaryTradesForLedger(state, ledgerDate);
-  const linkedProtocolIds = new Set(secondaryRows.map((trade) => trade.protocolTransferId).filter(Boolean));
-  const rows = secondaryRows.map((trade) => ({
-    id: trade.id,
-    kind: secondaryTradeCategoryLabel(trade),
-    sideLabel: trade.side === "sell" ? "卖出" : "买入",
-    account: trade.account,
-    code: trade.code,
-    shortName: trade.shortName,
-    amountText: formatAmountWan(trade.quantityWan),
-    amountWan: trade.quantityWan,
-    priceText: trade.frontOfficePrice || trade.price,
-    tradeDate: trade.tradeDate,
-    settlementText: `交割 ${trade.settlementDate}`,
-    counterparty: trade.counterparty || trade.intermediary,
-    statusLabel: trade.ledgerSentAt ? "已发送" : "待发送",
-    sent: Boolean(trade.ledgerSentAt),
-    sortKey: `${trade.tradeDate}:${trade.shortName}:${trade.id}`,
-  }));
-
-  for (const record of protocolTransferRecordsForDate(ledgerDate)) {
-    if (linkedProtocolIds.has(record.id)) continue;
-    rows.push({
-      id: record.id,
-      kind: "协议转让",
-      sideLabel: "协议转让",
-      account: "SSE",
-      code: record.code,
-      shortName: record.shortName,
-      amountText: record.amountTenThousand ? `${formatNumber(record.amountTenThousand)}万` : "",
-      amountWan: record.amountTenThousand || 0,
-      priceText: record.price ? `净价${formatProtocolPrice(record.price)}` : "",
-      tradeDate: record.tradeDate,
-      settlementText: "协议流程",
-      counterparty: formatProtocolTransferFlow(record),
-      statusLabel: protocolTransferStatus(record),
-      sent: true,
-      sortKey: `${record.tradeDate}:${record.shortName}:${record.id}`,
-    });
-  }
-
-  return rows.sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+  const sharedRows = buildTradeRecordRows(state, ledgerDate);
+  return sharedRows.map((row) => {
+    const record = row.record;
+    const trade = row.source === "secondary"
+      ? (state.secondaryTrades || []).find((item) => item.id === row.id)
+      : null;
+    const protocol = row.source === "protocol"
+      ? (state.protocolTransfers || []).find((item) => item.id === row.id)
+      : null;
+    const amountWan = numberOrNull(record["面值（万元）"]) || 0;
+    return {
+      id: row.id,
+      kind: trade ? secondaryTradeCategoryLabel(trade) : "协议转让",
+      sideLabel: record["我行方向"] || "协议转让",
+      account: record["组合"] || (trade?.account || "SSE"),
+      code: record["债券代码"],
+      shortName: record["债券简称"],
+      amountText: formatAmountWan(amountWan),
+      amountWan,
+      priceText: record["净价"],
+      tradeDate: record["交易日"],
+      settlementText: trade ? `交割 ${trade.settlementDate}` : "协议流程",
+      counterparty: record["真实交易对手"] || (protocol ? formatProtocolTransferFlow(protocol) : ""),
+      statusLabel: trade ? (trade.ledgerSentAt ? "已发送" : "待发送") : protocolTransferStatus(protocol),
+      sent: row.sent,
+      tradeRecord: record,
+      sortKey: row.sortKey,
+    };
+  });
 }
 
 function secondaryLedgerDateValue() {
@@ -7070,22 +7063,27 @@ function secondaryLedgerDateValue() {
 
 function buildSecondaryLedgerPreviewText(rows, date) {
   if (!rows.length) return `${date} 暂无二级成交台账记录。`;
-  const header = ["序号", "类型", "方向", "账户", "代码", "简称", "金额", "价格", "交易日", "交割/流程", "对手方", "状态"];
-  const body = rows.map((row, index) => [
-    index + 1,
-    row.kind,
-    row.sideLabel,
-    row.account,
-    row.code || "代码待补",
-    row.shortName || "简称待补",
-    row.amountText || "金额待补",
-    row.priceText || "价格待补",
-    row.tradeDate,
-    row.settlementText,
-    row.counterparty || "对手方待补",
-    row.statusLabel,
-  ].join("\t"));
-  return [`二级成交台账 ${date}`, header.join("\t"), ...body].join("\n");
+  return [
+    `二级成交台账 ${date}`,
+    buildTradeRecordTableText(rows.map((row) => ({ record: row.tradeRecord }))),
+  ].join("\n");
+}
+
+async function copySecondaryLedgerRows() {
+  const date = secondaryLedgerDateValue();
+  const rows = buildTradeRecordRows(state, date);
+  if (!rows.length) {
+    showToast("当日暂无可复制的成交记录。");
+    return;
+  }
+  const text = buildTradeRecordClipboardText(rows.map((row) => row.record));
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(`已按交易记录转换器格式复制 ${rows.length} 笔。`);
+  } catch {
+    downloadBlob(`二级成交台账-${date}.txt`, new Blob([text], { type: "text/plain;charset=utf-8" }));
+    showToast(`已导出 ${rows.length} 笔交易记录。`);
+  }
 }
 
 async function callSecondaryLedgerMailer(action) {
