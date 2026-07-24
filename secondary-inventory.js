@@ -125,6 +125,8 @@ export function normalizeSecondaryTrade(input = {}) {
     parseWarnings: Array.isArray(input.parseWarnings) ? input.parseWarnings.map((item) => String(item || "").trim()).filter(Boolean) : [],
     sourceType: String(input.sourceType || "manual").trim(),
     tradeRecord,
+    tradeRecordSources: normalizeTradeRecordSources(input.tradeRecordSources),
+    tradeRecordDm: normalizeTradeRecordDm(input.tradeRecordDm),
     tradeRecordSource: String(input.tradeRecordSource || "").trim(),
     sourceProjectId: String(input.sourceProjectId || "").trim(),
     sourceTrancheId: String(input.sourceTrancheId || "").trim(),
@@ -258,6 +260,27 @@ export function parseSecondaryTradeIntake(text = "", options = {}) {
     }
   });
   return { trades, protocolCandidates, diagnostics };
+}
+
+function normalizeTradeRecordSources(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, source]) => ["manual", "dm", "parsed"].includes(source))
+      .map(([column, source]) => [String(column), source]),
+  );
+}
+
+function normalizeTradeRecordDm(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return {
+    status: String(value.status || ""),
+    requestedDate: String(value.requestedDate || ""),
+    valuationDate: String(value.valuationDate || ""),
+    valuationField: String(value.valuationField || ""),
+    missing: Array.isArray(value.missing) ? value.missing.map(String) : [],
+    queriedAt: String(value.queriedAt || ""),
+  };
 }
 
 export function tradeRecordToSecondaryTrade(record = {}, context = {}) {

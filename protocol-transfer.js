@@ -39,6 +39,9 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
     price: normalizePrice(input.price),
     amountTenThousand,
     quantityHands,
+    tradeRecord: normalizeStoredObject(input.tradeRecord),
+    tradeRecordSources: normalizeStoredObject(input.tradeRecordSources),
+    tradeRecordDm: normalizeStoredObject(input.tradeRecordDm),
     rawText: String(input.rawText || "").trim(),
     counterpartySealDate,
     ownSealDate,
@@ -50,6 +53,10 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
+}
+
+function normalizeStoredObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
 }
 
 export function upsertProtocolTransfer(state, input) {

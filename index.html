@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="3.2.0">
-  <meta name="application-build-version" content="3.2.0.7">
-  <meta name="application-build" content="20260724-trade-record-migration">
+  <meta name="application-version" content="3.2.1">
+  <meta name="application-build-version" content="3.2.1.0">
+  <meta name="application-build" content="20260724-editable-ledger">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260724-trade-record-migration">
+  <link rel="stylesheet" href="./styles.css?v=20260724-editable-ledger">
 </head>
 <body>
   <div class="app-shell">
@@ -18,7 +18,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.0.7 · 2026-07-24 更新">v3.2.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.1.0 · 2026-07-24 更新">v3.2.1</span></small>
         </span>
       </a>
 
@@ -542,9 +542,16 @@
               <div class="secondary-ledger-toolbar">
                 <label>台账日期<input id="secondaryLedgerDate" type="date"></label>
                 <button class="button subtle" id="secondaryLedgerTodayButton" type="button">今日</button>
+                <button class="button subtle" id="secondaryLedgerDmButton" type="button">读取 DM</button>
+                <button class="button subtle" id="secondaryLedgerUndoButton" type="button" disabled>撤销</button>
+                <button class="button secondary-ledger-save-button" id="secondaryLedgerSaveButton" type="button" disabled>保存修改</button>
                 <button class="button subtle" id="secondaryLedgerPreviewButton" type="button">预览邮件</button>
                 <button class="button subtle" id="secondaryLedgerCopyButton" type="button">复制Excel记录</button>
                 <button class="button primary" id="secondaryLedgerSendButton" type="button">发送邮件</button>
+              </div>
+              <div class="secondary-ledger-sheet-meta">
+                <span class="secondary-ledger-save-status saved" id="secondaryLedgerSaveStatus">已保存</span>
+                <span id="secondaryLedgerDmStatus">DM 待读取</span>
               </div>
               <div class="secondary-ledger-list" id="secondaryLedgerList"></div>
               <div class="mail-output-card secondary-ledger-output-card" id="secondaryLedgerOutputPanel" hidden>
@@ -1018,6 +1025,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260724-trade-record-migration"></script>
+  <script type="module" src="./app.js?v=20260724-editable-ledger"></script>
 </body>
 </html>

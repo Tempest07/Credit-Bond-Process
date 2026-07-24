@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260724-trade-record-migration";
+const VERSION = "20260724-editable-ledger";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.0\.7">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.0">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -35,6 +35,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`trade-record-converter\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`trade-record-grid\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`trade-record-ledger\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`date-picker\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-ocr\\.js\\?v=${VERSION}`));
@@ -204,6 +205,26 @@ test("uses a reusable, layout-aware OCR worker for project screenshots", async (
   assert.match(app, /row\.status === "ok" && row\.dmVerified && row\.verifiedFullName && row\.verifiedShortName/);
   assert.match(styles, /\.project-screenshot-item\.is-pending/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-screenshot-correction input, \.project-screenshot-correction select\s*\{[^}]*min-height:\s*44px;[^}]*font-size:\s*16px;/);
+});
+
+test("ships the daily trade ledger as an editable DM-backed spreadsheet", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="secondaryLedgerDmButton"[^>]*>读取 DM</);
+  assert.match(html, /id="secondaryLedgerSaveButton"[^>]*>保存修改</);
+  assert.match(app, /class="secondary-ledger-table"/);
+  assert.match(app, /data-ledger-row-index=/);
+  assert.match(app, /pasteTradeRecordDraftCells/);
+  assert.match(app, /DM_TRADE_RECORDS_URL = "\.\/api\/dm\/trade-records"/);
+  assert.match(app, /buildTradeRecordTableText\(rows, \{ includeHeader: false \}\)/);
+  assert.doesNotMatch(app, /buildTradeRecordClipboardText/);
+  assert.match(styles, /\.secondary-ledger-sheet\s*\{[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.secondary-ledger-cell:focus\s*\{[^}]*outline:\s*2px solid #3f9e95;/s);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-ledger-cell\s*\{[^}]*font-size:\s*16px;/s);
 });
 
 test("uses single-pane project navigation on compact screens", async () => {

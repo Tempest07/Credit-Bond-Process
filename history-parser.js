@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260724-trade-record-migration";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260724-editable-ledger";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

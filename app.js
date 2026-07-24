@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260724-trade-record-migration";
+} from "./core.js?v=20260724-editable-ledger";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260724-trade-record-migration";
+} from "./lifecycle.js?v=20260724-editable-ledger";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260724-trade-record-migration";
+} from "./history-parser.js?v=20260724-editable-ledger";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260724-trade-record-migration";
+} from "./protocol-transfer.js?v=20260724-editable-ledger";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260724-trade-record-migration";
+} from "./reminders.js?v=20260724-editable-ledger";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -86,13 +86,28 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260724-trade-record-migration";
-import { buildTradeRecordClipboardText } from "./trade-record-converter.js?v=20260724-trade-record-migration";
+} from "./secondary-inventory.js?v=20260724-editable-ledger";
 import {
+  TRADE_RECORD_COLUMNS,
+  TRADE_RECORD_FORMULA_COLUMNS,
+} from "./trade-record-converter.js?v=20260724-editable-ledger";
+import {
+  cloneTradeRecordDraftRows,
+  createTradeRecordDraftRows,
+  mergeTradeRecordDmResults,
+  pasteTradeRecordDraftCells,
+  isTradeRecordCellValueValid,
+  tradeRecordDirtyCellCount,
+  tradeRecordDmRequestRows,
+  updateTradeRecordDraftCell,
+  validateTradeRecordDraftRows,
+} from "./trade-record-grid.js?v=20260724-editable-ledger";
+import {
+  applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260724-trade-record-migration";
-import { initializeDatePickers } from "./date-picker.js?v=20260724-trade-record-migration";
+} from "./trade-record-ledger.js?v=20260724-editable-ledger";
+import { initializeDatePickers } from "./date-picker.js?v=20260724-editable-ledger";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -101,22 +116,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260724-trade-record-migration";
+} from "./project-screenshot-ocr.js?v=20260724-editable-ledger";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260724-trade-record-migration";
+} from "./project-screenshot-layout.js?v=20260724-editable-ledger";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260724-trade-record-migration";
+} from "./project-screenshot-image.js?v=20260724-editable-ledger";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260724-trade-record-migration";
+} from "./payment-receipts.js?v=20260724-editable-ledger";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -127,6 +142,7 @@ const API_URL = "./api/state";
 const PAYMENT_RECEIPTS_URL = "./api/payment-receipts";
 const PAYMENT_RECEIPT_COVERAGE_URL = "./api/payment-receipt-coverage";
 const DM_VALUATION_URL = "./api/dm/valuation";
+const DM_TRADE_RECORDS_URL = "./api/dm/trade-records";
 const DM_POLICY_CURVE_URL = "./api/dm/curve?curve=cdb";
 const MAILER_URL = "./api/mail/today";
 const SECONDARY_MAILER_URL = "./api/mail/secondary-ledger";
@@ -277,6 +293,14 @@ const LIQUID_TRACK_CONFIGS = [
 ];
 const liquidMotionTimers = new WeakMap();
 let activeSecondaryWorkspacePanel = "intake";
+let secondaryLedgerDraftDate = "";
+let secondaryLedgerDraftRows = [];
+let secondaryLedgerUndoStack = [];
+let secondaryLedgerEditSnapshot = null;
+let secondaryLedgerDmLoading = false;
+let secondaryLedgerDmAttemptKey = "";
+let secondaryLedgerSavePending = false;
+let cloudSaveQueue = Promise.resolve(true);
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -6773,15 +6797,27 @@ function bindSecondaryInventory() {
   });
   $("#secondaryParseTradesButton").addEventListener("click", importSecondaryTrades);
   $("#secondaryClearInputButton").addEventListener("click", clearSecondaryIntake);
-  $("#secondaryLedgerDate").addEventListener("change", renderSecondaryLedger);
-  $("#secondaryLedgerTodayButton").addEventListener("click", () => {
-    $("#secondaryLedgerDate").value = localDate(new Date());
+  $("#secondaryLedgerDate").addEventListener("change", () => {
+    resetSecondaryLedgerDraft();
     renderSecondaryLedger();
   });
+  $("#secondaryLedgerTodayButton").addEventListener("click", () => {
+    $("#secondaryLedgerDate").value = localDate(new Date());
+    resetSecondaryLedgerDraft();
+    renderSecondaryLedger();
+  });
+  $("#secondaryLedgerDmButton").addEventListener("click", () => enrichSecondaryLedgerFromDm({ refresh: true }));
+  $("#secondaryLedgerUndoButton").addEventListener("click", undoSecondaryLedgerEdit);
+  $("#secondaryLedgerSaveButton").addEventListener("click", () => saveSecondaryLedgerDraft());
   $("#secondaryLedgerPreviewButton").addEventListener("click", () => callSecondaryLedgerMailer("preview"));
   $("#secondaryLedgerCopyButton").addEventListener("click", copySecondaryLedgerRows);
   $("#secondaryLedgerSendButton").addEventListener("click", () => callSecondaryLedgerMailer("send"));
   $("#secondaryLedgerOutputCloseButton").addEventListener("click", hideSecondaryLedgerOutput);
+  $("#secondaryLedgerList").addEventListener("input", handleSecondaryLedgerCellInput);
+  $("#secondaryLedgerList").addEventListener("focusin", handleSecondaryLedgerCellFocus);
+  $("#secondaryLedgerList").addEventListener("focusout", handleSecondaryLedgerCellBlur);
+  $("#secondaryLedgerList").addEventListener("paste", handleSecondaryLedgerPaste);
+  $("#secondaryLedgerList").addEventListener("keydown", handleSecondaryLedgerKeydown);
   $("#secondaryTradeList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-secondary-trade-action]");
     if (!button) return;
@@ -6997,62 +7033,280 @@ function removePendingSecondaryTrade(id) {
 function renderSecondaryLedger() {
   if (!$("#secondaryLedgerList")) return;
   const date = secondaryLedgerDateValue();
-  const rows = buildSecondaryLedgerRows(date);
+  const rows = ensureSecondaryLedgerDraft(date);
   $("#secondaryLedgerCountPill").textContent = `${rows.length}笔`;
   $("#secondaryLedgerList").innerHTML = rows.length
-    ? rows.map((row, index) => `
-      <article class="secondary-card secondary-ledger-row ${row.sent ? "" : "attention"}">
-        <div class="secondary-card-head">
-          <strong>${index + 1}. ${escapeHtml(row.shortName || row.code || "未命名成交")}</strong>
-          <span class="status-badge ${row.kind === "协议转让" ? "warning" : ""}">${escapeHtml(row.kind)}</span>
-        </div>
-        <div class="secondary-meta">
-          <span>${escapeHtml(row.sideLabel)}</span>
-          <span>${escapeHtml(row.account)}</span>
-          <span>${escapeHtml(row.code || "代码待补")}</span>
-          <span>${escapeHtml(row.amountText || "金额待补")}</span>
-          <span>${escapeHtml(row.priceText || "价格待补")}</span>
-          <span>交易 ${escapeHtml(row.tradeDate)}</span>
-          <span>${escapeHtml(row.settlementText)}</span>
-          <span>${escapeHtml(row.counterparty || "对手方待补")}</span>
-          <span>${escapeHtml(row.statusLabel)}</span>
-        </div>
-      </article>
-    `).join("")
+    ? `
+      <div class="secondary-ledger-sheet" id="secondaryLedgerSheet">
+        <table class="secondary-ledger-table">
+          <colgroup>
+            <col class="secondary-ledger-row-number-column">
+            ${TRADE_RECORD_COLUMNS.map((column) => `<col data-ledger-column="${escapeHtml(column)}">`).join("")}
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="secondary-ledger-row-number" scope="col">#</th>
+              ${TRADE_RECORD_COLUMNS.map((column) => `
+                <th scope="col" class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-column" : ""}">
+                  ${escapeHtml(column)}
+                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM</span>' : ""}
+                </th>
+              `).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, rowIndex) => renderSecondaryLedgerSheetRow(row, rowIndex)).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
     : '<div class="empty">暂无当日已前台成交记录。</div>';
+  updateSecondaryLedgerControls();
+  const dmRows = tradeRecordDmRequestRows(rows);
+  const attemptKey = `${date}:${dmRows.map((row) => `${row.id}:${row.securityId}:${row.negotiationDate}`).join("|")}`;
+  if (dmRows.length && !secondaryLedgerDmLoading && secondaryLedgerDmAttemptKey !== attemptKey) {
+    secondaryLedgerDmAttemptKey = attemptKey;
+    queueMicrotask(() => enrichSecondaryLedgerFromDm({ automatic: true }));
+  }
 }
 
-function buildSecondaryLedgerRows(date = "") {
-  const ledgerDate = date || localDate(new Date());
-  const sharedRows = buildTradeRecordRows(state, ledgerDate);
-  return sharedRows.map((row) => {
-    const record = row.record;
-    const trade = row.source === "secondary"
-      ? (state.secondaryTrades || []).find((item) => item.id === row.id)
-      : null;
-    const protocol = row.source === "protocol"
-      ? (state.protocolTransfers || []).find((item) => item.id === row.id)
-      : null;
-    const amountWan = numberOrNull(record["面值（万元）"]) || 0;
-    return {
-      id: row.id,
-      kind: trade ? secondaryTradeCategoryLabel(trade) : "协议转让",
-      sideLabel: record["我行方向"] || "协议转让",
-      account: record["组合"] || (trade?.account || "SSE"),
-      code: record["债券代码"],
-      shortName: record["债券简称"],
-      amountText: formatAmountWan(amountWan),
-      amountWan,
-      priceText: record["净价"],
-      tradeDate: record["交易日"],
-      settlementText: trade ? `交割 ${trade.settlementDate}` : "协议流程",
-      counterparty: record["真实交易对手"] || (protocol ? formatProtocolTransferFlow(protocol) : ""),
-      statusLabel: trade ? (trade.ledgerSentAt ? "已发送" : "待发送") : protocolTransferStatus(protocol),
-      sent: row.sent,
-      tradeRecord: record,
-      sortKey: row.sortKey,
-    };
+function renderSecondaryLedgerSheetRow(row, rowIndex) {
+  const dmStatus = secondaryLedgerDmRowStatus(row);
+  return `
+    <tr class="${row.sent ? "sent" : "pending"} ${row.dirty ? "dirty" : ""}" data-ledger-row-key="${escapeHtml(row.key)}">
+      <th class="secondary-ledger-row-number" scope="row">
+        <span>${rowIndex + 1}</span>
+        ${dmStatus.label ? `<small class="${dmStatus.className}" title="${escapeHtml(dmStatus.title)}">${escapeHtml(dmStatus.label)}</small>` : ""}
+      </th>
+      ${TRADE_RECORD_COLUMNS.map((column, columnIndex) => {
+        const source = row.fieldSources[column] || "";
+        const sourceLabel = source === "dm" ? "DM" : source === "manual" && TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "人工" : "";
+        const title = source === "dm"
+          ? secondaryLedgerDmCellTitle(row, column)
+          : source === "manual" ? "人工编辑" : "";
+        return `
+          <td class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-cell" : ""}" data-source="${escapeHtml(source)}">
+            <div class="secondary-ledger-cell-wrap">
+              <input
+                class="secondary-ledger-cell ${isTradeRecordCellValueValid(column, row.record[column] || "") ? "" : "invalid"}"
+                type="text"
+                value="${escapeHtml(row.record[column] || "")}"
+                data-ledger-key="${escapeHtml(row.key)}"
+                data-ledger-column="${escapeHtml(column)}"
+                data-ledger-row-index="${rowIndex}"
+                data-ledger-column-index="${columnIndex}"
+                inputmode="${secondaryLedgerInputMode(column)}"
+                spellcheck="false"
+                autocomplete="off"
+                aria-invalid="${isTradeRecordCellValueValid(column, row.record[column] || "") ? "false" : "true"}"
+                aria-label="第${rowIndex + 1}行 ${escapeHtml(column)}"
+              >
+              ${sourceLabel ? `<span class="secondary-ledger-cell-source" title="${escapeHtml(title)}">${sourceLabel}</span>` : ""}
+            </div>
+          </td>
+        `;
+      }).join("")}
+    </tr>
+  `;
+}
+
+function ensureSecondaryLedgerDraft(date) {
+  if (
+    secondaryLedgerDraftDate === date
+    && (secondaryLedgerDmLoading || secondaryLedgerDraftRows.some((row) => row.dirty))
+  ) {
+    return secondaryLedgerDraftRows;
+  }
+  secondaryLedgerDraftDate = date;
+  secondaryLedgerDraftRows = createTradeRecordDraftRows(buildTradeRecordRows(state, date));
+  secondaryLedgerUndoStack = [];
+  secondaryLedgerEditSnapshot = null;
+  return secondaryLedgerDraftRows;
+}
+
+function resetSecondaryLedgerDraft() {
+  secondaryLedgerDraftDate = "";
+  secondaryLedgerDraftRows = [];
+  secondaryLedgerUndoStack = [];
+  secondaryLedgerEditSnapshot = null;
+  secondaryLedgerDmAttemptKey = "";
+}
+
+function handleSecondaryLedgerCellFocus(event) {
+  const input = event.target.closest(".secondary-ledger-cell");
+  if (!input) return;
+  secondaryLedgerEditSnapshot = {
+    key: input.dataset.ledgerKey,
+    column: input.dataset.ledgerColumn,
+    value: input.value,
+    rows: cloneTradeRecordDraftRows(secondaryLedgerDraftRows),
+  };
+}
+
+function handleSecondaryLedgerCellInput(event) {
+  const input = event.target.closest(".secondary-ledger-cell");
+  if (!input) return;
+  secondaryLedgerDraftRows = updateTradeRecordDraftCell(secondaryLedgerDraftRows, {
+    key: input.dataset.ledgerKey,
+    column: input.dataset.ledgerColumn,
+    value: input.value,
+    source: "manual",
   });
+  const valid = isTradeRecordCellValueValid(input.dataset.ledgerColumn, input.value);
+  input.classList.toggle("invalid", !valid);
+  input.setAttribute("aria-invalid", valid ? "false" : "true");
+  const cell = input.closest("td");
+  cell.dataset.source = "manual";
+  let badge = cell.querySelector(".secondary-ledger-cell-source");
+  if (TRADE_RECORD_FORMULA_COLUMNS.has(input.dataset.ledgerColumn)) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "secondary-ledger-cell-source";
+      cell.querySelector(".secondary-ledger-cell-wrap").append(badge);
+    }
+    badge.textContent = "人工";
+    badge.title = "人工编辑";
+  } else {
+    badge?.remove();
+  }
+  input.closest("tr")?.classList.add("dirty");
+  updateSecondaryLedgerControls();
+}
+
+function handleSecondaryLedgerCellBlur(event) {
+  const input = event.target.closest(".secondary-ledger-cell");
+  if (!input || !secondaryLedgerEditSnapshot) return;
+  const dependencyChanged = ["债券代码", "谈判日"].includes(input.dataset.ledgerColumn)
+    && secondaryLedgerEditSnapshot.value !== input.value;
+  if (
+    secondaryLedgerEditSnapshot.key === input.dataset.ledgerKey
+    && secondaryLedgerEditSnapshot.column === input.dataset.ledgerColumn
+    && secondaryLedgerEditSnapshot.value !== input.value
+  ) {
+    pushSecondaryLedgerUndo(secondaryLedgerEditSnapshot.rows);
+  }
+  secondaryLedgerEditSnapshot = null;
+  if (dependencyChanged) renderSecondaryLedger();
+}
+
+function handleSecondaryLedgerPaste(event) {
+  const input = event.target.closest(".secondary-ledger-cell");
+  const text = event.clipboardData?.getData("text/plain");
+  if (!input || !text || (!text.includes("\t") && !/[\r\n]/.test(text))) return;
+  event.preventDefault();
+  const before = cloneTradeRecordDraftRows(secondaryLedgerDraftRows);
+  secondaryLedgerEditSnapshot = null;
+  secondaryLedgerDraftRows = pasteTradeRecordDraftCells(secondaryLedgerDraftRows, {
+    rowIndex: Number(input.dataset.ledgerRowIndex),
+    columnIndex: Number(input.dataset.ledgerColumnIndex),
+    text,
+  });
+  pushSecondaryLedgerUndo(before);
+  renderSecondaryLedger();
+  focusSecondaryLedgerCell(Number(input.dataset.ledgerRowIndex), Number(input.dataset.ledgerColumnIndex));
+}
+
+function handleSecondaryLedgerKeydown(event) {
+  const input = event.target.closest(".secondary-ledger-cell");
+  if (!input) return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (secondaryLedgerEditSnapshot?.rows) {
+      secondaryLedgerDraftRows = secondaryLedgerEditSnapshot.rows;
+      secondaryLedgerEditSnapshot = null;
+      renderSecondaryLedger();
+    } else {
+      undoSecondaryLedgerEdit();
+    }
+    return;
+  }
+  if (event.key === "Escape" && secondaryLedgerEditSnapshot?.rows) {
+    event.preventDefault();
+    secondaryLedgerDraftRows = secondaryLedgerEditSnapshot.rows;
+    secondaryLedgerEditSnapshot = null;
+    renderSecondaryLedger();
+    return;
+  }
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const rowIndex = Number(input.dataset.ledgerRowIndex) + (event.shiftKey ? -1 : 1);
+  focusSecondaryLedgerCell(rowIndex, Number(input.dataset.ledgerColumnIndex));
+}
+
+function focusSecondaryLedgerCell(rowIndex, columnIndex) {
+  const input = $(`.secondary-ledger-cell[data-ledger-row-index="${rowIndex}"][data-ledger-column-index="${columnIndex}"]`);
+  input?.focus();
+  input?.select();
+}
+
+function pushSecondaryLedgerUndo(rows) {
+  secondaryLedgerUndoStack.push(cloneTradeRecordDraftRows(rows));
+  if (secondaryLedgerUndoStack.length > 20) secondaryLedgerUndoStack.shift();
+  updateSecondaryLedgerControls();
+}
+
+function undoSecondaryLedgerEdit() {
+  const previous = secondaryLedgerUndoStack.pop();
+  if (!previous) return;
+  secondaryLedgerDraftRows = previous;
+  secondaryLedgerEditSnapshot = null;
+  renderSecondaryLedger();
+}
+
+function updateSecondaryLedgerControls() {
+  const dirtyCells = tradeRecordDirtyCellCount(secondaryLedgerDraftRows);
+  const dirtyRows = secondaryLedgerDraftRows.filter((row) => row.dirty).length;
+  const status = $("#secondaryLedgerSaveStatus");
+  if (status) {
+    status.textContent = secondaryLedgerSavePending
+      ? "正在保存"
+      : dirtyRows ? `${dirtyRows} 行 · ${dirtyCells} 格待保存` : "已保存";
+    status.className = `secondary-ledger-save-status ${dirtyRows ? "dirty" : "saved"}`;
+  }
+  const dmStatus = $("#secondaryLedgerDmStatus");
+  if (dmStatus) {
+    const complete = secondaryLedgerDraftRows.filter((row) => row.dmLookup?.status === "complete").length;
+    const partial = secondaryLedgerDraftRows.filter((row) => ["partial", "missing"].includes(row.dmLookup?.status)).length;
+    dmStatus.textContent = secondaryLedgerDmLoading
+      ? "DM 读取中"
+      : complete || partial ? `DM ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : "DM 待读取";
+  }
+  const saveButton = $("#secondaryLedgerSaveButton");
+  if (saveButton) saveButton.disabled = secondaryLedgerSavePending || !dirtyRows;
+  const undoButton = $("#secondaryLedgerUndoButton");
+  if (undoButton) undoButton.disabled = !secondaryLedgerUndoStack.length;
+  const dmButton = $("#secondaryLedgerDmButton");
+  if (dmButton) dmButton.disabled = secondaryLedgerDmLoading || !secondaryLedgerDraftRows.length;
+}
+
+function secondaryLedgerInputMode(column) {
+  return ["净价", "收益率(%)", "估值收益率", "面值（万元）", "成本", "价差", "清算速度(0/1)"].includes(column)
+    ? "decimal"
+    : "text";
+}
+
+function secondaryLedgerDmRowStatus(row) {
+  if (row.dmLookup?.status === "complete") {
+    return { label: "DM", className: "complete", title: `DM 已补全；估值日 ${row.dmLookup.valuationDate || "未返回"}` };
+  }
+  if (row.dmLookup?.status === "partial") {
+    return { label: "DM", className: "partial", title: `DM 部分返回：${(row.dmLookup.missing || []).join("、")}` };
+  }
+  if (row.dmLookup?.status === "missing") {
+    return { label: "—", className: "missing", title: "DM 未返回对应字段" };
+  }
+  if (row.dmLookup?.status === "error") {
+    return { label: "!", className: "error", title: "DM 读取失败" };
+  }
+  return { label: "", className: "", title: "" };
+}
+
+function secondaryLedgerDmCellTitle(row, column) {
+  if (column === "估值收益率") {
+    const basis = row.dmLookup?.valuationField === "cbYte" ? "中债行权收益率" : "中债到期收益率";
+    return `DM ${basis} · ${row.dmLookup?.valuationDate || row.dmLookup?.requestedDate || "日期未返回"}`;
+  }
+  return `DM ${column}`;
 }
 
 function secondaryLedgerDateValue() {
@@ -7061,25 +7315,107 @@ function secondaryLedgerDateValue() {
   return input.value;
 }
 
+async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false } = {}) {
+  const date = secondaryLedgerDateValue();
+  const rows = ensureSecondaryLedgerDraft(date);
+  const requestRows = tradeRecordDmRequestRows(rows, { refresh });
+  if (!requestRows.length) {
+    if (!automatic) showToast("当前台账的 DM 字段已齐全。");
+    return;
+  }
+  secondaryLedgerDmLoading = true;
+  updateSecondaryLedgerControls();
+  try {
+    const response = await fetch(DM_TRADE_RECORDS_URL, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ rows: requestRows }),
+    });
+    const text = await response.text();
+    const payload = parseJson(text);
+    if (!response.ok || !payload?.ok) {
+      if (response.status === 401) {
+        clearAuthSession();
+        redirectToGatewayLogin();
+      }
+      throw new Error(payload?.hint || payload?.reason || `HTTP ${response.status}`);
+    }
+    const before = cloneTradeRecordDraftRows(secondaryLedgerDraftRows);
+    secondaryLedgerDraftRows = mergeTradeRecordDmResults(secondaryLedgerDraftRows, payload.rows || []);
+    if (secondaryLedgerDraftRows.some((row, index) =>
+      JSON.stringify(row.record) !== JSON.stringify(before[index]?.record)
+    )) {
+      pushSecondaryLedgerUndo(before);
+    }
+    renderSecondaryLedger();
+    if (!automatic) {
+      const complete = (payload.rows || []).filter((row) => row.status === "complete").length;
+      const partial = (payload.rows || []).length - complete;
+      showToast(`DM 已返回 ${payload.rows?.length || 0} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+    }
+  } catch (error) {
+    const requestedKeys = new Set(requestRows.map((row) => row.id));
+    secondaryLedgerDraftRows = secondaryLedgerDraftRows.map((row) =>
+      requestedKeys.has(row.key)
+        ? { ...row, dmLookup: { ...(row.dmLookup || {}), status: "error" } }
+        : row
+    );
+    renderSecondaryLedger();
+    if (!automatic) showToast(error.message || "DM 成交台账字段读取失败。");
+  } finally {
+    secondaryLedgerDmLoading = false;
+    updateSecondaryLedgerControls();
+  }
+}
+
+async function saveSecondaryLedgerDraft({ silent = false } = {}) {
+  if (secondaryLedgerSavePending) return false;
+  const dirtyRows = secondaryLedgerDraftRows.filter((row) => row.dirty);
+  if (!dirtyRows.length) return true;
+  const validationErrors = validateTradeRecordDraftRows(dirtyRows);
+  if (validationErrors.length) {
+    const first = validationErrors[0];
+    focusSecondaryLedgerCell(first.rowIndex, TRADE_RECORD_COLUMNS.indexOf(first.column));
+    showToast(`第 ${first.rowIndex + 1} 行：${first.message}。`);
+    return false;
+  }
+  secondaryLedgerSavePending = true;
+  updateSecondaryLedgerControls();
+  state = applyTradeRecordRowsToState(state, dirtyRows);
+  persistLocal();
+  const saved = await saveCloudState();
+  secondaryLedgerSavePending = false;
+  if (!saved) {
+    updateSecondaryLedgerControls();
+    if (!silent) showToast("台账修改尚未同步到 D1，请检查登录或网络后重试。");
+    return false;
+  }
+  resetSecondaryLedgerDraft();
+  renderSecondaryLedger();
+  if (!silent) showToast(`已保存 ${dirtyRows.length} 行成交台账修改。`);
+  return true;
+}
+
 function buildSecondaryLedgerPreviewText(rows, date) {
   if (!rows.length) return `${date} 暂无二级成交台账记录。`;
   return [
     `二级成交台账 ${date}`,
-    buildTradeRecordTableText(rows.map((row) => ({ record: row.tradeRecord }))),
+    buildTradeRecordTableText(rows.map((row) => ({ record: row.record }))),
   ].join("\n");
 }
 
 async function copySecondaryLedgerRows() {
   const date = secondaryLedgerDateValue();
-  const rows = buildTradeRecordRows(state, date);
+  const rows = ensureSecondaryLedgerDraft(date);
   if (!rows.length) {
     showToast("当日暂无可复制的成交记录。");
     return;
   }
-  const text = buildTradeRecordClipboardText(rows.map((row) => row.record));
+  const text = buildTradeRecordTableText(rows, { includeHeader: false });
   try {
     await navigator.clipboard.writeText(text);
-    showToast(`已按交易记录转换器格式复制 ${rows.length} 笔。`);
+    showToast(`已复制 ${rows.length} 笔 DM 可用值，不含 Wind 公式。`);
   } catch {
     downloadBlob(`二级成交台账-${date}.txt`, new Blob([text], { type: "text/plain;charset=utf-8" }));
     showToast(`已导出 ${rows.length} 笔交易记录。`);
@@ -7088,7 +7424,7 @@ async function copySecondaryLedgerRows() {
 
 async function callSecondaryLedgerMailer(action) {
   const date = secondaryLedgerDateValue();
-  const rows = buildSecondaryLedgerRows(date);
+  let rows = ensureSecondaryLedgerDraft(date);
   const isSend = action === "send";
   if (!rows.length) {
     showSecondaryLedgerOutput("暂无可发送台账", "warning", `${date} 暂无二级成交台账记录。`);
@@ -7106,6 +7442,15 @@ async function callSecondaryLedgerMailer(action) {
     showSecondaryLedgerOutput("请先登录", "warning", "请先通过 tempest07.com 统一登录后再发送二级成交台账邮件。");
     redirectToGatewayLogin();
     return;
+  }
+
+  if (rows.some((row) => row.dirty)) {
+    const saved = await saveSecondaryLedgerDraft({ silent: true });
+    if (!saved) {
+      showSecondaryLedgerOutput("台账尚未保存", "warning", "请先完成 D1 同步，再发送二级成交台账邮件。");
+      return;
+    }
+    rows = ensureSecondaryLedgerDraft(date);
   }
 
   const button = $("#secondaryLedgerSendButton");
@@ -10248,14 +10593,22 @@ async function loadCloudState() {
   if (batchItems.length) renderBatchResults();
 }
 
-async function saveCloudState() {
+function saveCloudState() {
   persistLocal();
+  const snapshot = structuredClone(state);
+  cloudSaveQueue = cloudSaveQueue
+    .catch(() => false)
+    .then(() => saveCloudStateSnapshot(snapshot));
+  return cloudSaveQueue;
+}
+
+async function saveCloudStateSnapshot(snapshot) {
   try {
     const response = await fetch(API_URL, {
       method: "PUT",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ data: state }),
+      body: JSON.stringify({ data: snapshot }),
     });
     if (!response.ok) {
       if (response.status === 401) {
@@ -10283,7 +10636,7 @@ async function saveCloudState() {
 function persistState() {
   state.updatedAt = new Date().toISOString();
   persistLocal();
-  if (cloudAvailable) saveCloudState();
+  if (cloudAvailable) void saveCloudState();
 }
 
 function loadLocalState() {
