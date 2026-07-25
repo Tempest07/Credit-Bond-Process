@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260725-secondary-short-name";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260725-secondary-short-name";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260725-secondary-short-name-repair";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260725-secondary-short-name-repair";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

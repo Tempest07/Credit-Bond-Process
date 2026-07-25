@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260725-secondary-short-name";
+import { parseUnderwriterNames } from "./core.js?v=20260725-secondary-short-name-repair";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

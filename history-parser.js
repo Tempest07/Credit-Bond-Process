@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260725-secondary-short-name";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260725-secondary-short-name-repair";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

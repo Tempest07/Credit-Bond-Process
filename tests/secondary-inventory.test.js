@@ -10,6 +10,7 @@ import {
   markSecondaryTradeFrontOffice,
   normalizeSecondaryInventoryPositions,
   normalizeSecondaryOrders,
+  normalizeSecondaryTrades,
   parseInventoryLedgerRows,
   parseInventorySnapshotText,
   parseSecondaryOrderText,
@@ -286,6 +287,17 @@ test("does not mistake a remaining-term token for the bond short name", () => {
   assert.equal(trade.remainingTerm, "19.9Y(休2)");
   assert.equal(trade.shortName, "26电网MTN018");
   assert.equal(trade.code, "102682206.IB");
+});
+
+test("repairs an already stored trade whose short name is actually its remaining term", () => {
+  const [trade] = normalizeSecondaryTrades([{
+    code: "102682206.IB",
+    shortName: "19.9Y(休2)",
+    sourceText: "【国际】 19.9Y(休2) 102682206.IB 26电网MTN018 AAA 2.3325 1000 7月27日+0 兴业银行 出给 人保资产",
+  }]);
+
+  assert.equal(trade.shortName, "26电网MTN018");
+  assert.equal(trade.remainingTerm, "");
 });
 
 test("turns pasted public and PPN trade elements into pending trades", () => {

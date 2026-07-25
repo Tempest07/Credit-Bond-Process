@@ -92,6 +92,11 @@ export function normalizeSecondaryTrade(input = {}) {
   const tradeDate = normalizeDate(input.tradeDate) || localDate(new Date());
   const settlementSpeed = normalizeSettlementSpeed(input.settlementSpeed);
   const settlementDate = normalizeDate(input.settlementDate) || inferSettlementDate(tradeDate, settlementSpeed);
+  const code = normalizeSecurityCode(input.code);
+  const storedShortName = String(input.shortName || "").trim();
+  const shortName = storedShortName && !extractRemainingTerm(storedShortName)
+    ? storedShortName
+    : extractShortName(normalizeLine(input.sourceText), code);
   const ledgerSentAt = String(input.ledgerSentAt || "").trim();
   const frontOfficeDone = Boolean(input.frontOfficeDone)
     || Boolean(String(input.frontOfficeAt || "").trim())
@@ -107,8 +112,8 @@ export function normalizeSecondaryTrade(input = {}) {
       ? input.side
       : input.tradeRecordSource === TRADE_RECORD_SOURCE ? "unknown" : "sell",
     account: normalizeAccount(input.account),
-    code: normalizeSecurityCode(input.code),
-    shortName: String(input.shortName || "").trim(),
+    code,
+    shortName,
     quantityWan: numberOrNull(input.quantityWan ?? input.quantity) ?? 0,
     price: normalizePrice(input.price),
     yieldRate: numberOrNull(input.yieldRate),
@@ -120,8 +125,8 @@ export function normalizeSecondaryTrade(input = {}) {
     intermediary: String(input.intermediary || "").trim(),
     remainingTerm: String(input.remainingTerm || "").trim(),
     contactNote: String(input.contactNote || "").trim(),
-    market: normalizeSecondaryMarket(input.market, input.code),
-    instrumentScope: normalizeSecondaryInstrumentScope(input.instrumentScope, input.sourceText, input.code, input.shortName),
+    market: normalizeSecondaryMarket(input.market, code),
+    instrumentScope: normalizeSecondaryInstrumentScope(input.instrumentScope, input.sourceText, code, shortName),
     parseWarnings: Array.isArray(input.parseWarnings) ? input.parseWarnings.map((item) => String(item || "").trim()).filter(Boolean) : [],
     sourceType: String(input.sourceType || "manual").trim(),
     tradeRecord,
