@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260725-ledger-width";
+import { parseUnderwriterNames } from "./core.js?v=20260725-secondary-settlement-defaults";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

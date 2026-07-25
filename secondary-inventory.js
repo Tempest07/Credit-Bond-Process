@@ -232,12 +232,22 @@ export function parseSecondaryTradeIntake(text = "", options = {}) {
     const line = normalizeLine(rawLine);
     if (!line) return;
     const parsed = parseTradeRecordLine(rawLine, negotiationDateValue, bankName);
-    const trade = tradeRecordToSecondaryTrade(parsed.trade, {
+    const tradeRecord = normalizeTradeRecord(parsed.trade);
+    if (!normalizeDate(tradeRecord["交易日"])) tradeRecord["交易日"] = negotiationDate;
+    if (!String(tradeRecord["清算速度(0/1)"] || "").trim()) {
+      tradeRecord["清算速度(0/1)"] = "0";
+    }
+    const warnings = parsed.warnings.filter((warning) => {
+      if (warning === "未识别交易日" && tradeRecord["交易日"]) return false;
+      if (warning === "未识别清算速度" && tradeRecord["清算速度(0/1)"]) return false;
+      return true;
+    });
+    const trade = tradeRecordToSecondaryTrade(tradeRecord, {
       ...options,
       bankName,
       negotiationDate,
       sourceText: rawLine,
-      warnings: parsed.warnings,
+      warnings,
     });
     if (trade.instrumentScope === "exchange_private") {
       protocolCandidates.push(trade);
@@ -250,12 +260,12 @@ export function parseSecondaryTradeIntake(text = "", options = {}) {
       return;
     }
     trades.push(trade);
-    if (parsed.warnings.length) {
+    if (warnings.length) {
       diagnostics.push({
         lineNumber: index + 1,
         original: trade.sourceText,
         status: "warning",
-        message: parsed.warnings.join("；"),
+        message: warnings.join("；"),
       });
     }
   });
@@ -1001,6 +1011,9 @@ function inferSettlementDate(tradeDate, speed = 0) {
 }
 
 function normalizeDate(value = "") {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "" : localDate(value);
+  }
   const text = String(value || "").trim();
   if (!text) return "";
   const date = parseDate(text);
