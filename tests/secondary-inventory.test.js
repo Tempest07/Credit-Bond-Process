@@ -277,6 +277,17 @@ test("requires missing trade elements to be completed instead of inventing date 
   assert.doesNotMatch(completed.parseWarnings.join("；"), /未识别交易日|未识别清算速度/);
 });
 
+test("does not mistake a remaining-term token for the bond short name", () => {
+  const trade = parseSecondaryTradeText(
+    "【国际】 19.9Y(休2) 102682206.IB 26电网MTN018 AAA 2.3325 1000 7月27日+0 兴业银行 出给 人保资产",
+    { negotiationDate: "2026-07-24" },
+  )[0];
+
+  assert.equal(trade.remainingTerm, "19.9Y(休2)");
+  assert.equal(trade.shortName, "26电网MTN018");
+  assert.equal(trade.code, "102682206.IB");
+});
+
 test("turns pasted public and PPN trade elements into pending trades", () => {
   const input = `【广州】4.90Y  524835.SZ  26越产02  1.97  3000  07.20交易所  兴业银行 出给 华创证券 联系联储证券 熊丹丹 99.346
 【国利】 1) 4.78Y(休1)    245129.SH    26南控01    1.83  4000   07.20交易所 兴业银行 出给 中泰证券资管

@@ -972,6 +972,7 @@ function extractShortName(line = "", code = "") {
 function isShortNameToken(value = "") {
   const text = String(value || "").trim();
   if (!text || SECURITY_CODE_PATTERN.test(text)) return false;
+  if (extractRemainingTerm(text)) return false;
   if (/^(?:ofr|offer|bid|净价|全价|价格|估值|收益|收益率)/i.test(text)) return false;
   if (/^\d+(?:\.\d+)?(?:亿|万|w|kw|k|e|千万|手)?$/i.test(text)) return false;
   return /^\d{2}[\u4e00-\u9fa5A-Za-z0-9()（）/.-]+$/.test(text);

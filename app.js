@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260725-secondary-required-fields";
+} from "./core.js?v=20260725-secondary-short-name";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260725-secondary-required-fields";
+} from "./lifecycle.js?v=20260725-secondary-short-name";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260725-secondary-required-fields";
+} from "./history-parser.js?v=20260725-secondary-short-name";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260725-secondary-required-fields";
+} from "./protocol-transfer.js?v=20260725-secondary-short-name";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260725-secondary-required-fields";
+} from "./reminders.js?v=20260725-secondary-short-name";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +87,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260725-secondary-required-fields";
+} from "./secondary-inventory.js?v=20260725-secondary-short-name";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260725-secondary-required-fields";
+} from "./trade-record-converter.js?v=20260725-secondary-short-name";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260725-secondary-required-fields";
+} from "./trade-record-grid.js?v=20260725-secondary-short-name";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260725-secondary-required-fields";
-import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-required-fields";
+} from "./trade-record-ledger.js?v=20260725-secondary-short-name";
+import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-short-name";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,22 +117,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260725-secondary-required-fields";
+} from "./project-screenshot-ocr.js?v=20260725-secondary-short-name";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260725-secondary-required-fields";
+} from "./project-screenshot-layout.js?v=20260725-secondary-short-name";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260725-secondary-required-fields";
+} from "./project-screenshot-image.js?v=20260725-secondary-short-name";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260725-secondary-required-fields";
+} from "./payment-receipts.js?v=20260725-secondary-short-name";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
