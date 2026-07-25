@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260726-android-app-shell";
+import { parseUnderwriterNames } from "./core.js?v=20260726-secondary-excel-columns";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

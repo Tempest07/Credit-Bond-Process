@@ -433,18 +433,31 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
   const tradeDate = normalizeDate(has("tradeDate") ? input.tradeDate : existing["交易日"]);
   const code = normalizeSecurityCode(has("code") ? input.code : existing["债券代码"]);
   const shortName = String(has("shortName") ? input.shortName : trade.shortName || existing["债券简称"] || "").trim();
+  const bondType = String(has("bondType") ? input.bondType : existing["债券类型"] || "").trim();
   const side = has("side")
     ? (["buy", "sell"].includes(input.side) ? input.side : "unknown")
     : existing["我行方向"] === "买入" ? "buy" : existing["我行方向"] === "卖出" ? "sell" : "unknown";
   const quantityWan = numberOrNull(has("quantityWan") ? input.quantityWan : existing["面值（万元）"]) ?? 0;
   const yieldRate = numberOrNull(has("yieldRate") ? input.yieldRate : existing["收益率(%)"] || trade.yieldRate);
+  const valuationYield = String(
+    has("valuationYield") ? input.valuationYield : existing["估值收益率"] || "",
+  ).trim();
   const counterparty = String(has("counterparty") ? input.counterparty : existing["真实交易对手"] || "").trim();
   const tradeCounterparty = String(
     has("tradeCounterparty") ? input.tradeCounterparty : existing["交易对手"] || "",
   ).trim();
+  const portfolio = String(has("portfolio") ? input.portfolio : existing["组合"] || trade.account || "").trim();
   const intermediary = String(has("intermediary") ? input.intermediary : existing["中介"] || "").trim();
   const speedValue = String(has("settlementSpeed") ? input.settlementSpeed : existing["清算速度(0/1)"] || "").trim();
   const settlementSpeed = ["0", "1"].includes(speedValue) ? speedValue : "";
+  const cost = String(has("cost") ? input.cost : existing["成本"] || "").trim();
+  const spread = String(has("spread") ? input.spread : existing["价差"] || "").trim();
+  const settlementSpeedText = String(
+    has("settlementSpeedText") ? input.settlementSpeedText : existing["清算速度"] || "",
+  ).trim();
+  const settlementMethod = String(
+    has("settlementMethod") ? input.settlementMethod : existing["结算方式"] || "",
+  ).trim();
   const frontOfficePrice = normalizePrice(
     has("frontOfficePrice") ? input.frontOfficePrice : trade.frontOfficePrice || trade.price || existing["净价"],
   );
@@ -454,14 +467,21 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
     交易日: tradeDate,
     债券代码: code,
     债券简称: shortName,
+    债券类型: bondType,
     净价: frontOfficePrice,
     "收益率(%)": Number.isFinite(yieldRate) ? String(yieldRate) : "",
+    估值收益率: valuationYield,
     我行方向: side === "buy" ? "买入" : side === "sell" ? "卖出" : "",
     "面值（万元）": quantityWan > 0 ? String(quantityWan) : "",
     真实交易对手: counterparty,
     交易对手: tradeCounterparty,
+    组合: portfolio,
     中介: intermediary,
     "清算速度(0/1)": settlementSpeed,
+    成本: cost,
+    价差: spread,
+    清算速度: settlementSpeedText,
+    结算方式: settlementMethod,
   });
   const parseWarnings = [];
   if (!intermediary) parseWarnings.push("未识别中介");
@@ -476,6 +496,7 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
     ...trade,
     code,
     shortName,
+    account: portfolio || trade.account,
     side,
     quantityWan,
     yieldRate,

@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260726-android-app-shell";
+const VERSION = "20260726-secondary-excel-columns";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -240,10 +240,12 @@ test("renders pending secondary trades as compact editable rows", async () => {
 
   assert.doesNotMatch(html, /一笔一行|一行一笔；可一次粘贴多笔交易|当前仅接收公募债及 PPN/);
   assert.match(app, /class="secondary-pending-table"/);
-  assert.match(app, /fieldAttributes\("shortName"\)/);
-  assert.match(app, /fieldAttributes\("tradeCounterparty"\)/);
-  assert.match(app, /fieldAttributes\("frontOfficePrice"\)/);
+  assert.match(app, /TRADE_RECORD_COLUMNS\.map\(\(column\) => `<th>\$\{escapeHtml\(column\)\}<\/th>`\)/);
+  assert.match(app, /TRADE_RECORD_COLUMNS\.map\(\(column\) =>\s*renderSecondaryPendingCell\(trade, record, column, missingKeys\)/);
+  assert.match(app, /"清算速度\(0\/1\)": "settlementSpeed"/);
+  assert.match(app, /清算速度: "settlementSpeedText"/);
   assert.match(app, /data-secondary-trade-action="front-office">成交</);
+  assert.doesNotMatch(app, /secondary-pending-status|<th>#<\/th>|<th>状态<\/th>/);
   assert.doesNotMatch(app, /secondary-card secondary-pending-trade/);
   assert.match(styles, /\.secondary-pending-sheet\s*\{[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.secondary-pending-actions, \.secondary-pending-action-heading\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s);
