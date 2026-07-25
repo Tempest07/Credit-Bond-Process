@@ -891,6 +891,13 @@ label[data-recognition-source="wind"]::after {
 .secondary-inline-input input { width: 118px; min-height: 28px; padding: 4px 7px; font-size: 10px; }
 .secondary-pending-trade { gap: 9px; }
 .secondary-trade-warning { padding: 7px 8px; border-radius: 7px; color: #8a5c00; background: var(--warning-soft); font-size: 10px; line-height: 1.55; }
+.secondary-meta .secondary-meta-missing { border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); color: #8a5c00; background: var(--warning-soft); font-weight: 800; }
+.secondary-completion-panel { display: grid; gap: 8px; padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--warning) 28%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--warning) 28%, var(--line)); }
+.secondary-completion-panel > strong { color: #80530a; font-size: 10px; }
+.secondary-completion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
+.secondary-completion-grid label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 9px; font-weight: 800; }
+.secondary-completion-grid input, .secondary-completion-grid select { width: 100%; min-width: 0; min-height: 32px; padding: 5px 7px; border-radius: 6px; font-size: 10px; }
+.secondary-completion-grid [aria-invalid="true"], .secondary-net-price-control [aria-invalid="true"] { border-color: color-mix(in srgb, var(--warning) 72%, var(--line)); background: #fffdf7; box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 12%, transparent); }
 .secondary-trade-source { overflow-wrap: anywhere; padding: 8px 9px; border-left: 3px solid color-mix(in srgb, var(--secondary) 42%, var(--line)); color: var(--muted); background: var(--panel-soft); font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 10px; line-height: 1.6; }
 .secondary-net-price-control { margin-right: auto; }
 .secondary-net-price-control input { width: 148px; }

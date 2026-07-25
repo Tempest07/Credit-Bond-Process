@@ -18,7 +18,9 @@ import {
   pendingCodeTrades,
   pendingSecondaryTrades,
   secondaryDashboardCounts,
+  secondaryTradeMissingFields,
   secondaryTradesForLedger,
+  updateSecondaryPendingTrade,
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
@@ -247,6 +249,32 @@ test("parses Trade-Phraser style trade elements into pending secondary trades", 
   assert.equal(row.snapshotQuantityWan, 6000);
   assert.equal(row.soldWan, 5000);
   assert.equal(row.availableWan, 1000);
+});
+
+test("requires missing trade elements to be completed instead of inventing date or clearing speed", () => {
+  const result = parseSecondaryTradeIntake(
+    "【北京】 9.38Y 102585170.IB 25国新控股MTN003(稳增长扩投资专项债) 2.10 1000 中信证券 出给 兴业银行 对话发兴业银行俞维谦",
+    { negotiationDate: "2026-07-24" },
+  );
+  const pending = result.trades[0];
+
+  assert.equal(pending.tradeRecord["交易日"], "");
+  assert.equal(pending.tradeRecord["清算速度(0/1)"], "");
+  assert.deepEqual(
+    secondaryTradeMissingFields(pending).map((field) => field.key),
+    ["tradeDate", "settlementSpeed", "frontOfficePrice"],
+  );
+
+  const completed = updateSecondaryPendingTrade(pending, {
+    tradeDate: "2026-07-24",
+    settlementSpeed: "0",
+    frontOfficePrice: "100.125",
+  });
+  assert.equal(completed.tradeRecord["交易日"], "2026-07-24");
+  assert.equal(completed.tradeRecord["清算速度(0/1)"], "0");
+  assert.equal(completed.tradeRecord["净价"], "100.125");
+  assert.deepEqual(secondaryTradeMissingFields(completed), []);
+  assert.doesNotMatch(completed.parseWarnings.join("；"), /未识别交易日|未识别清算速度/);
 });
 
 test("turns pasted public and PPN trade elements into pending trades", () => {

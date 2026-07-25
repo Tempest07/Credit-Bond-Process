@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260725-ledger-width";
+} from "./core.js?v=20260725-secondary-required-fields";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260725-ledger-width";
+} from "./lifecycle.js?v=20260725-secondary-required-fields";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260725-ledger-width";
+} from "./history-parser.js?v=20260725-secondary-required-fields";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,19 +55,18 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260725-ledger-width";
+} from "./protocol-transfer.js?v=20260725-secondary-required-fields";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260725-ledger-width";
+} from "./reminders.js?v=20260725-secondary-required-fields";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
   buildPrimaryAwardTrades,
   calculateShadowInventory,
   formatAmountWan,
-  isValidSecondaryNetPrice,
   markSecondaryOrderStatus,
   markSecondaryTradeFrontOffice,
   markSecondaryTradesLedgerSent,
@@ -82,15 +81,17 @@ import {
   pendingSecondaryTrades,
   positionKey,
   removeSecondaryTrade,
+  secondaryTradeMissingFields,
   secondaryTradesForLedger,
+  updateSecondaryPendingTrade,
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260725-ledger-width";
+} from "./secondary-inventory.js?v=20260725-secondary-required-fields";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260725-ledger-width";
+} from "./trade-record-converter.js?v=20260725-secondary-required-fields";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -101,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260725-ledger-width";
+} from "./trade-record-grid.js?v=20260725-secondary-required-fields";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260725-ledger-width";
-import { initializeDatePickers } from "./date-picker.js?v=20260725-ledger-width";
+} from "./trade-record-ledger.js?v=20260725-secondary-required-fields";
+import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-required-fields";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -116,22 +117,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260725-ledger-width";
+} from "./project-screenshot-ocr.js?v=20260725-secondary-required-fields";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260725-ledger-width";
+} from "./project-screenshot-layout.js?v=20260725-secondary-required-fields";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260725-ledger-width";
+} from "./project-screenshot-image.js?v=20260725-secondary-required-fields";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260725-ledger-width";
+} from "./payment-receipts.js?v=20260725-secondary-required-fields";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -6946,36 +6947,95 @@ function renderSecondaryPendingCodes() {
     : '<div class="empty">暂无待补代码记录。</div>';
 }
 
+function renderSecondaryCompletionField(trade, field) {
+  const record = trade.tradeRecord || {};
+  const common = `data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-field="${escapeAttribute(field.key)}" aria-invalid="true"`;
+  if (field.key === "negotiationDate") {
+    return `<label><span>${escapeHtml(field.label)}</span><input type="date" value="${escapeAttribute(record["谈判日"] || "")}" ${common}></label>`;
+  }
+  if (field.key === "tradeDate") {
+    return `<label><span>${escapeHtml(field.label)}</span><input type="date" value="${escapeAttribute(record["交易日"] || "")}" ${common}></label>`;
+  }
+  if (field.key === "settlementSpeed") {
+    return `
+      <label>
+        <span>${escapeHtml(field.label)}</span>
+        <select ${common}>
+          <option value="">请选择</option>
+          <option value="0">T+0</option>
+          <option value="1">T+1</option>
+        </select>
+      </label>
+    `;
+  }
+  if (field.key === "side") {
+    return `
+      <label>
+        <span>${escapeHtml(field.label)}</span>
+        <select ${common}>
+          <option value="">请选择</option>
+          <option value="buy">买入</option>
+          <option value="sell">卖出</option>
+        </select>
+      </label>
+    `;
+  }
+  if (field.key === "quantityWan") {
+    return `<label><span>${escapeHtml(field.label)}（万元）</span><input type="number" min="0" step="1" inputmode="decimal" value="${escapeAttribute(record["面值（万元）"] || "")}" ${common}></label>`;
+  }
+  const value = field.key === "code"
+    ? record["债券代码"] || ""
+    : field.key === "counterparty"
+      ? record["真实交易对手"] || ""
+      : field.key === "intermediary" ? record["中介"] || "" : "";
+  return `<label><span>${escapeHtml(field.label)}</span><input type="text" value="${escapeAttribute(value)}" ${common}></label>`;
+}
+
 function renderSecondaryTrades() {
   const trades = pendingSecondaryTrades(state).slice(0, 120);
   $("#secondaryTradeList").innerHTML = trades.length
     ? trades.map((trade) => {
+        const record = trade.tradeRecord || {};
+        const missingFields = secondaryTradeMissingFields(trade);
+        const completionFields = missingFields.filter((field) => field.key !== "frontOfficePrice");
+        const tradeDate = String(record["交易日"] || "").trim();
+        const settlementSpeed = String(record["清算速度(0/1)"] || "").trim();
         const instrumentLabel = trade.instrumentScope === "ppn" ? "PPN" : "公募";
         return `
-        <article class="secondary-card secondary-pending-trade ${trade.parseWarnings.length ? "attention" : ""}">
+        <article class="secondary-card secondary-pending-trade ${missingFields.length ? "attention" : ""}">
           <div class="secondary-card-head">
             <strong>${escapeHtml(trade.shortName || trade.code || "未命名流水")}</strong>
-            <span class="status-badge muted">待成交</span>
+            <span class="status-badge ${missingFields.length ? "warning" : "muted"}">${missingFields.length ? `待补 ${escapeHtml(missingFields.length)} 项` : "待成交"}</span>
           </div>
           <div class="secondary-meta">
             <span>${escapeHtml(trade.side === "sell" ? "卖出" : trade.side === "buy" ? "买入" : "方向待复核")}</span>
             <span>${escapeHtml(instrumentLabel)}</span>
             <span>${escapeHtml(trade.code || "代码待补")}</span>
-            <span>${escapeHtml(formatAmountWan(trade.quantityWan))}</span>
+            <span>${trade.quantityWan > 0 ? escapeHtml(formatAmountWan(trade.quantityWan)) : "面值待补"}</span>
             ${trade.remainingTerm ? `<span>剩余 ${escapeHtml(trade.remainingTerm)}</span>` : ""}
             ${Number.isFinite(trade.yieldRate) ? `<span>收益率 ${escapeHtml(formatNumber(trade.yieldRate))}%</span>` : ""}
             <span>谈判 ${escapeHtml(trade.negotiationDate)}</span>
-            <span>交易 ${escapeHtml(trade.tradeDate)}+${escapeHtml(trade.settlementSpeed)}</span>
+            ${tradeDate
+              ? `<span>交易 ${escapeHtml(tradeDate)}${settlementSpeed ? `+${escapeHtml(settlementSpeed)}` : " · 清算速度待补"}</span>`
+              : '<span class="secondary-meta-missing">交易日待补</span>'}
             ${trade.counterparty ? `<span>对手方 ${escapeHtml(trade.counterparty)}</span>` : ""}
             ${trade.intermediary ? `<span>中介 ${escapeHtml(trade.intermediary)}</span>` : ""}
             ${trade.contactNote ? `<span>联系 ${escapeHtml(trade.contactNote)}</span>` : ""}
           </div>
-          ${trade.parseWarnings.length ? `<div class="secondary-trade-warning">${escapeHtml(trade.parseWarnings.join("；"))}</div>` : ""}
+          ${missingFields.length ? `<div class="secondary-trade-warning">请补全：${escapeHtml(missingFields.map((field) => field.label).join("、"))}</div>` : ""}
+          ${completionFields.length ? `
+            <div class="secondary-completion-panel">
+              <strong>补全成交要素</strong>
+              <div class="secondary-completion-grid">
+                ${completionFields.map((field) => renderSecondaryCompletionField(trade, field)).join("")}
+              </div>
+            </div>
+          ` : ""}
           <div class="secondary-trade-source">${escapeHtml(trade.sourceText)}</div>
           <div class="secondary-card-actions">
             <label class="secondary-inline-input secondary-net-price-control">
               <span>成交净价</span>
-              <input type="number" min="50" max="150" step="0.001" inputmode="decimal" placeholder="例如 99.346" value="${escapeAttribute(trade.frontOfficePrice || trade.price || "")}" data-secondary-front-price="${escapeAttribute(trade.id)}">
+              <input type="number" min="50" max="150" step="0.001" inputmode="decimal" placeholder="例如 99.346" value="${escapeAttribute(trade.frontOfficePrice || trade.price || "")}" data-secondary-front-price="${escapeAttribute(trade.id)}" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-field="frontOfficePrice" ${missingFields.some((field) => field.key === "frontOfficePrice") ? 'aria-invalid="true"' : ""}>
             </label>
             <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">成交</button>
             <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove">删除</button>
@@ -7002,16 +7062,35 @@ function confirmSecondaryFrontOffice(id) {
   const trades = normalizeSecondaryTrades(state.secondaryTrades || []);
   const trade = trades.find((item) => item.id === id);
   if (!trade) return;
-  const priceInput = $$("[data-secondary-front-price]").find((input) => input.dataset.secondaryFrontPrice === id);
-  const frontOfficePrice = String(priceInput?.value || trade.frontOfficePrice || trade.price || "").trim();
-  if (!isValidSecondaryNetPrice(frontOfficePrice)) {
-    showToast("请先输入 50 至 150 之间的成交净价。");
+  const inputs = $$("[data-secondary-trade-field]").filter((input) => input.dataset.secondaryTradeId === id);
+  const updates = Object.fromEntries(inputs.map((input) => [input.dataset.secondaryTradeField, input.value]));
+  const completedTrade = updateSecondaryPendingTrade(trade, updates);
+  const missingFields = secondaryTradeMissingFields(completedTrade);
+  if (missingFields.length) {
+    state = {
+      ...state,
+      secondaryTrades: trades.map((item) => item.id === id ? completedTrade : item),
+      updatedAt: new Date().toISOString(),
+    };
+    persistState();
+    renderSecondaryInventoryWorkspace();
+    requestAnimationFrame(() => {
+      $$("[data-secondary-trade-field]")
+        .find((input) =>
+          input.dataset.secondaryTradeId === id
+          && input.dataset.secondaryTradeField === missingFields[0].key
+        )
+        ?.focus();
+    });
+    showToast(`请先补全：${missingFields.map((field) => field.label).join("、")}。`);
     return;
   }
   state = {
     ...state,
     secondaryTrades: trades.map((item) =>
-      item.id === id ? markSecondaryTradeFrontOffice(item, { frontOfficePrice }) : item,
+      item.id === id
+        ? markSecondaryTradeFrontOffice(completedTrade, { frontOfficePrice: completedTrade.frontOfficePrice })
+        : item,
     ),
     updatedAt: new Date().toISOString(),
   };

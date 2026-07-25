@@ -399,6 +399,84 @@ export function removeSecondaryTrade(state = {}, id = "") {
   };
 }
 
+export function secondaryTradeMissingFields(input = {}) {
+  const tradeRecord = normalizeTradeRecord(input.tradeRecord || secondaryTradeToTradeRecord(input));
+  const fields = [];
+  const add = (key, label) => fields.push({ key, label });
+  const settlementSpeed = String(tradeRecord["清算速度(0/1)"] || "").trim();
+
+  if (!normalizeDate(tradeRecord["谈判日"])) add("negotiationDate", "谈判日");
+  if (!normalizeDate(tradeRecord["交易日"])) add("tradeDate", "交易日");
+  if (!normalizeSecurityCode(tradeRecord["债券代码"])) add("code", "债券代码");
+  if (!["买入", "卖出"].includes(String(tradeRecord["我行方向"] || "").trim())) add("side", "我行方向");
+  if (!(numberOrNull(tradeRecord["面值（万元）"]) > 0)) add("quantityWan", "面值");
+  if (!String(tradeRecord["真实交易对手"] || "").trim()) add("counterparty", "真实交易对手");
+  if (!String(tradeRecord["中介"] || "").trim()) add("intermediary", "中介");
+  if (!["0", "1"].includes(settlementSpeed)) add("settlementSpeed", "清算速度");
+  if (!isValidSecondaryNetPrice(input.frontOfficePrice || input.price || tradeRecord["净价"])) {
+    add("frontOfficePrice", "成交净价");
+  }
+
+  return fields;
+}
+
+export function updateSecondaryPendingTrade(trade = {}, input = {}) {
+  const existing = normalizeTradeRecord(trade.tradeRecord || secondaryTradeToTradeRecord(trade));
+  const has = (key) => Object.prototype.hasOwnProperty.call(input, key);
+  const negotiationDate = normalizeDate(has("negotiationDate") ? input.negotiationDate : existing["谈判日"]);
+  const tradeDate = normalizeDate(has("tradeDate") ? input.tradeDate : existing["交易日"]);
+  const code = normalizeSecurityCode(has("code") ? input.code : existing["债券代码"]);
+  const side = has("side")
+    ? (["buy", "sell"].includes(input.side) ? input.side : "unknown")
+    : existing["我行方向"] === "买入" ? "buy" : existing["我行方向"] === "卖出" ? "sell" : "unknown";
+  const quantityWan = numberOrNull(has("quantityWan") ? input.quantityWan : existing["面值（万元）"]) ?? 0;
+  const counterparty = String(has("counterparty") ? input.counterparty : existing["真实交易对手"] || "").trim();
+  const intermediary = String(has("intermediary") ? input.intermediary : existing["中介"] || "").trim();
+  const speedValue = String(has("settlementSpeed") ? input.settlementSpeed : existing["清算速度(0/1)"] || "").trim();
+  const settlementSpeed = ["0", "1"].includes(speedValue) ? speedValue : "";
+  const frontOfficePrice = normalizePrice(
+    has("frontOfficePrice") ? input.frontOfficePrice : trade.frontOfficePrice || trade.price || existing["净价"],
+  );
+  const tradeRecord = normalizeTradeRecord({
+    ...existing,
+    谈判日: negotiationDate,
+    交易日: tradeDate,
+    债券代码: code,
+    净价: frontOfficePrice,
+    我行方向: side === "buy" ? "买入" : side === "sell" ? "卖出" : "",
+    "面值（万元）": quantityWan > 0 ? String(quantityWan) : "",
+    真实交易对手: counterparty,
+    中介: intermediary,
+    "清算速度(0/1)": settlementSpeed,
+  });
+  const parseWarnings = [];
+  if (!intermediary) parseWarnings.push("未识别中介");
+  if (!code) parseWarnings.push("未识别债券代码");
+  if (!tradeDate) parseWarnings.push("未识别交易日");
+  if (!settlementSpeed) parseWarnings.push("未识别清算速度");
+  if (!tradeRecord["收益率(%)"] && !frontOfficePrice) parseWarnings.push("未识别收益率或净价");
+  if (!(quantityWan > 0)) parseWarnings.push("未识别面值");
+  if (side === "unknown" || !counterparty) parseWarnings.push("未识别方向或真实交易对手");
+
+  return normalizeSecondaryTrade({
+    ...trade,
+    code,
+    side,
+    quantityWan,
+    negotiationDate,
+    tradeDate,
+    settlementSpeed,
+    settlementDate: tradeDate && settlementSpeed ? inferSettlementDate(tradeDate, settlementSpeed) : "",
+    counterparty,
+    intermediary,
+    frontOfficePrice,
+    price: frontOfficePrice || trade.price,
+    parseWarnings,
+    tradeRecord,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export function markSecondaryTradeFrontOffice(trade, input = {}) {
   const now = String(input.frontOfficeAt || input.now || new Date().toISOString());
   const tradeDate = normalizeDate(input.tradeDate) || trade.tradeDate;
