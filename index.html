@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.2.1">
-  <meta name="application-build-version" content="3.2.1.7">
-  <meta name="application-build" content="20260725-secondary-sticky-actions">
+  <meta name="application-build-version" content="3.2.1.8">
+  <meta name="application-build" content="20260725-secondary-clean-interface">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260725-secondary-sticky-actions">
+  <link rel="stylesheet" href="./styles.css?v=20260725-secondary-clean-interface">
 </head>
 <body>
   <div class="app-shell">
@@ -18,7 +18,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.1.7 · 2026-07-25 更新">v3.2.1</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.1.8 · 2026-07-25 更新">v3.2.1</span></small>
         </span>
       </a>
 
@@ -510,7 +510,6 @@
                 </div>
                 <div class="secondary-intake-toolbar">
                   <label>谈判日<input id="secondaryNegotiationDate" type="date"></label>
-                  <span>一行一笔；可一次粘贴多笔交易。</span>
                 </div>
                 <textarea id="secondaryInput" class="secondary-input" rows="10" spellcheck="false" placeholder="【广州】4.90Y 524835.SZ 26越产02 1.97 3000 07.20交易所 兴业银行 出给 华创证券 联系联储证券 熊丹丹 99.346&#10;【北京】259D 26广州产投SCP006 012681665.IB 1.52 5000 7.20+0 兴业银行 出给 国泰海通"></textarea>
                 <div class="batch-actions secondary-actions">
@@ -518,15 +517,11 @@
                   <button class="button subtle" id="secondaryClearInputButton" type="button">清空</button>
                 </div>
                 <div class="secondary-intake-result" id="secondaryIntakeResult" hidden></div>
-                <div class="warning-box secondary-note">
-                  当前仅接收公募债及 PPN。交易所私募请在原文中保留“私募债 / 非公开 / 协议转让”标记，系统会自动转入协议转让页；仅凭 .SH / .SZ 代码不会擅自判断公私募。
-                </div>
               </section>
 
               <section class="panel secondary-panel secondary-trade-panel">
                 <div class="panel-head">
                   <div><span class="step">PENDING</span><h2>待成交</h2></div>
-                  <span class="pill">一笔一行</span>
                 </div>
                 <div class="secondary-list" id="secondaryTradeList"></div>
               </section>
@@ -1025,6 +1020,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260725-secondary-sticky-actions"></script>
+  <script type="module" src="./app.js?v=20260725-secondary-clean-interface"></script>
 </body>
 </html>

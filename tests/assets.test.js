@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260725-secondary-sticky-actions";
+const VERSION = "20260725-secondary-clean-interface";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.7">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.8">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -238,7 +238,7 @@ test("renders pending secondary trades as compact editable rows", async () => {
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /<span class="pill">一笔一行<\/span>/);
+  assert.doesNotMatch(html, /一笔一行|一行一笔；可一次粘贴多笔交易|当前仅接收公募债及 PPN/);
   assert.match(app, /class="secondary-pending-table"/);
   assert.match(app, /fieldAttributes\("shortName"\)/);
   assert.match(app, /fieldAttributes\("tradeCounterparty"\)/);

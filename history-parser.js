@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260725-secondary-sticky-actions";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260725-secondary-clean-interface";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
