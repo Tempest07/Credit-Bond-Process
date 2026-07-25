@@ -439,6 +439,9 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
   const quantityWan = numberOrNull(has("quantityWan") ? input.quantityWan : existing["面值（万元）"]) ?? 0;
   const yieldRate = numberOrNull(has("yieldRate") ? input.yieldRate : existing["收益率(%)"] || trade.yieldRate);
   const counterparty = String(has("counterparty") ? input.counterparty : existing["真实交易对手"] || "").trim();
+  const tradeCounterparty = String(
+    has("tradeCounterparty") ? input.tradeCounterparty : existing["交易对手"] || "",
+  ).trim();
   const intermediary = String(has("intermediary") ? input.intermediary : existing["中介"] || "").trim();
   const speedValue = String(has("settlementSpeed") ? input.settlementSpeed : existing["清算速度(0/1)"] || "").trim();
   const settlementSpeed = ["0", "1"].includes(speedValue) ? speedValue : "";
@@ -456,6 +459,7 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
     我行方向: side === "buy" ? "买入" : side === "sell" ? "卖出" : "",
     "面值（万元）": quantityWan > 0 ? String(quantityWan) : "",
     真实交易对手: counterparty,
+    交易对手: tradeCounterparty,
     中介: intermediary,
     "清算速度(0/1)": settlementSpeed,
   });

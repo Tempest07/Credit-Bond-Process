@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260725-secondary-pending-sheet";
+} from "./core.js?v=20260725-secondary-sticky-actions";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260725-secondary-pending-sheet";
+} from "./lifecycle.js?v=20260725-secondary-sticky-actions";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260725-secondary-pending-sheet";
+} from "./history-parser.js?v=20260725-secondary-sticky-actions";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260725-secondary-pending-sheet";
+} from "./protocol-transfer.js?v=20260725-secondary-sticky-actions";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260725-secondary-pending-sheet";
+} from "./reminders.js?v=20260725-secondary-sticky-actions";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +87,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260725-secondary-pending-sheet";
+} from "./secondary-inventory.js?v=20260725-secondary-sticky-actions";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260725-secondary-pending-sheet";
+} from "./trade-record-converter.js?v=20260725-secondary-sticky-actions";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260725-secondary-pending-sheet";
+} from "./trade-record-grid.js?v=20260725-secondary-sticky-actions";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260725-secondary-pending-sheet";
-import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-pending-sheet";
+} from "./trade-record-ledger.js?v=20260725-secondary-sticky-actions";
+import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-sticky-actions";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,22 +117,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260725-secondary-pending-sheet";
+} from "./project-screenshot-ocr.js?v=20260725-secondary-sticky-actions";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260725-secondary-pending-sheet";
+} from "./project-screenshot-layout.js?v=20260725-secondary-sticky-actions";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260725-secondary-pending-sheet";
+} from "./project-screenshot-image.js?v=20260725-secondary-sticky-actions";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260725-secondary-pending-sheet";
+} from "./payment-receipts.js?v=20260725-secondary-sticky-actions";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -6964,6 +6964,7 @@ function renderSecondaryTrades() {
             <col class="amount-column">
             <col class="yield-column">
             <col class="party-column">
+            <col class="trade-party-column">
             <col class="intermediary-column">
             <col class="price-column">
             <col class="status-column">
@@ -6981,10 +6982,11 @@ function renderSecondaryTrades() {
               <th>面值（万）</th>
               <th>收益率（%）</th>
               <th>真实交易对手</th>
+              <th>交易对手</th>
               <th>中介</th>
               <th>成交净价</th>
               <th>状态</th>
-              <th>操作</th>
+              <th class="secondary-pending-action-heading">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -7024,12 +7026,15 @@ function renderSecondaryTrades() {
                   <td><input type="number" min="0" step="1" inputmode="decimal" value="${escapeAttribute(record["面值（万元）"] || (trade.quantityWan > 0 ? trade.quantityWan : ""))}" ${fieldAttributes("quantityWan")}></td>
                   <td><input type="number" step="0.0001" inputmode="decimal" value="${escapeAttribute(yieldRate)}" ${fieldAttributes("yieldRate")}></td>
                   <td><input type="text" value="${escapeAttribute(record["真实交易对手"] || trade.counterparty || "")}" ${fieldAttributes("counterparty")}></td>
+                  <td><input type="text" value="${escapeAttribute(record["交易对手"] || "")}" ${fieldAttributes("tradeCounterparty")}></td>
                   <td><input type="text" value="${escapeAttribute(record["中介"] || trade.intermediary || "")}" ${fieldAttributes("intermediary")}></td>
                   <td><input type="number" min="50" max="150" step="0.001" inputmode="decimal" placeholder="99.346" value="${escapeAttribute(trade.frontOfficePrice || trade.price || record["净价"] || "")}" ${fieldAttributes("frontOfficePrice")}></td>
                   <td><span class="secondary-pending-status ${missingFields.length ? "incomplete" : "ready"}" title="${escapeAttribute(statusTitle)}">${missingFields.length ? `待补 ${escapeHtml(missingFields.length)}` : "完整"}</span></td>
                   <td class="secondary-pending-actions">
-                    <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">成交</button>
-                    <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove">删除</button>
+                    <div class="secondary-pending-action-buttons">
+                      <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">成交</button>
+                      <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove">删除</button>
+                    </div>
                   </td>
                 </tr>
               `;

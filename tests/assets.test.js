@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260725-secondary-pending-sheet";
+const VERSION = "20260725-secondary-sticky-actions";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.6">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.7">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -241,11 +241,13 @@ test("renders pending secondary trades as compact editable rows", async () => {
   assert.match(html, /<span class="pill">一笔一行<\/span>/);
   assert.match(app, /class="secondary-pending-table"/);
   assert.match(app, /fieldAttributes\("shortName"\)/);
+  assert.match(app, /fieldAttributes\("tradeCounterparty"\)/);
   assert.match(app, /fieldAttributes\("frontOfficePrice"\)/);
   assert.match(app, /data-secondary-trade-action="front-office">成交</);
   assert.doesNotMatch(app, /secondary-card secondary-pending-trade/);
   assert.match(styles, /\.secondary-pending-sheet\s*\{[^}]*overflow-x:\s*auto;/s);
-  assert.match(styles, /\.secondary-pending-actions\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s);
+  assert.match(styles, /\.secondary-pending-actions, \.secondary-pending-action-heading\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s);
+  assert.match(styles, /\.secondary-pending-action-buttons\s*\{[^}]*display:\s*flex;[^}]*min-width:\s*118px;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-pending-table input, \.secondary-pending-table select\s*\{[^}]*font-size:\s*16px;/s);
 });
 

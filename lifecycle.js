@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260725-secondary-pending-sheet";
+import { parseUnderwriterNames } from "./core.js?v=20260725-secondary-sticky-actions";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
