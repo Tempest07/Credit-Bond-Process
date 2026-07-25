@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260724-editable-ledger";
+import { parseUnderwriterNames } from "./core.js?v=20260725-ledger-width";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

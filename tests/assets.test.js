@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260724-editable-ledger";
+const VERSION = "20260725-ledger-width";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.0">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.1">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -223,6 +223,10 @@ test("ships the daily trade ledger as an editable DM-backed spreadsheet", async 
   assert.match(app, /buildTradeRecordTableText\(rows, \{ includeHeader: false \}\)/);
   assert.doesNotMatch(app, /buildTradeRecordClipboardText/);
   assert.match(styles, /\.secondary-ledger-sheet\s*\{[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.secondary-workspace\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
+  assert.match(styles, /\.secondary-workspace-panel\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;/s);
+  assert.match(styles, /\.secondary-ledger-panel\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /\.secondary-ledger-sheet\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.secondary-ledger-cell:focus\s*\{[^}]*outline:\s*2px solid #3f9e95;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-ledger-cell\s*\{[^}]*font-size:\s*16px;/s);
 });
