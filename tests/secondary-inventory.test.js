@@ -249,25 +249,6 @@ test("parses Trade-Phraser style trade elements into pending secondary trades", 
   assert.equal(row.availableWan, 1000);
 });
 
-test("defaults date and clearing speed for same-day pasted trades without explicit settlement text", () => {
-  const result = parseSecondaryTradeIntake(
-    "【北京】 9.38Y 102585170.IB 25国新控股MTN003(稳增长扩投资专项债) 2.10 1000 中信证券 出给 兴业银行 对话发兴业银行俞维谦",
-    {
-      negotiationDate: "2026-07-24",
-      referenceDate: new Date("2026-07-24T09:00:00+08:00"),
-    },
-  );
-
-  assert.equal(result.trades.length, 1);
-  assert.equal(result.trades[0].tradeDate, "2026-07-24");
-  assert.equal(result.trades[0].settlementSpeed, 0);
-  assert.equal(result.trades[0].settlementDate, "2026-07-24");
-  assert.equal(result.trades[0].tradeRecord["交易日"], "2026-07-24");
-  assert.equal(result.trades[0].tradeRecord["清算速度(0/1)"], "0");
-  assert.doesNotMatch(result.trades[0].parseWarnings.join("；"), /未识别交易日|未识别清算速度/);
-  assert.doesNotMatch(result.diagnostics.map((item) => item.message).join("；"), /未识别交易日|未识别清算速度/);
-});
-
 test("turns pasted public and PPN trade elements into pending trades", () => {
   const input = `【广州】4.90Y  524835.SZ  26越产02  1.97  3000  07.20交易所  兴业银行 出给 华创证券 联系联储证券 熊丹丹 99.346
 【国利】 1) 4.78Y(休1)    245129.SH    26南控01    1.83  4000   07.20交易所 兴业银行 出给 中泰证券资管

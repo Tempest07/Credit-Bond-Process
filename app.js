@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260725-secondary-settlement-defaults";
+} from "./core.js?v=20260725-ledger-width";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260725-secondary-settlement-defaults";
+} from "./lifecycle.js?v=20260725-ledger-width";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260725-secondary-settlement-defaults";
+} from "./history-parser.js?v=20260725-ledger-width";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260725-secondary-settlement-defaults";
+} from "./protocol-transfer.js?v=20260725-ledger-width";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260725-secondary-settlement-defaults";
+} from "./reminders.js?v=20260725-ledger-width";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -86,11 +86,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260725-secondary-settlement-defaults";
+} from "./secondary-inventory.js?v=20260725-ledger-width";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260725-secondary-settlement-defaults";
+} from "./trade-record-converter.js?v=20260725-ledger-width";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -101,13 +101,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260725-secondary-settlement-defaults";
+} from "./trade-record-grid.js?v=20260725-ledger-width";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260725-secondary-settlement-defaults";
-import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-settlement-defaults";
+} from "./trade-record-ledger.js?v=20260725-ledger-width";
+import { initializeDatePickers } from "./date-picker.js?v=20260725-ledger-width";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -116,22 +116,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260725-secondary-settlement-defaults";
+} from "./project-screenshot-ocr.js?v=20260725-ledger-width";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260725-secondary-settlement-defaults";
+} from "./project-screenshot-layout.js?v=20260725-ledger-width";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260725-secondary-settlement-defaults";
+} from "./project-screenshot-image.js?v=20260725-ledger-width";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260725-secondary-settlement-defaults";
+} from "./payment-receipts.js?v=20260725-ledger-width";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
