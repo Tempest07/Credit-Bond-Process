@@ -413,6 +413,7 @@ export function secondaryTradeMissingFields(input = {}) {
   if (!normalizeDate(tradeRecord["谈判日"])) add("negotiationDate", "谈判日");
   if (!normalizeDate(tradeRecord["交易日"])) add("tradeDate", "交易日");
   if (!normalizeSecurityCode(tradeRecord["债券代码"])) add("code", "债券代码");
+  if (!String(tradeRecord["债券简称"] || input.shortName || "").trim()) add("shortName", "债券简称");
   if (!["买入", "卖出"].includes(String(tradeRecord["我行方向"] || "").trim())) add("side", "我行方向");
   if (!(numberOrNull(tradeRecord["面值（万元）"]) > 0)) add("quantityWan", "面值");
   if (!String(tradeRecord["真实交易对手"] || "").trim()) add("counterparty", "真实交易对手");
@@ -431,10 +432,12 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
   const negotiationDate = normalizeDate(has("negotiationDate") ? input.negotiationDate : existing["谈判日"]);
   const tradeDate = normalizeDate(has("tradeDate") ? input.tradeDate : existing["交易日"]);
   const code = normalizeSecurityCode(has("code") ? input.code : existing["债券代码"]);
+  const shortName = String(has("shortName") ? input.shortName : trade.shortName || existing["债券简称"] || "").trim();
   const side = has("side")
     ? (["buy", "sell"].includes(input.side) ? input.side : "unknown")
     : existing["我行方向"] === "买入" ? "buy" : existing["我行方向"] === "卖出" ? "sell" : "unknown";
   const quantityWan = numberOrNull(has("quantityWan") ? input.quantityWan : existing["面值（万元）"]) ?? 0;
+  const yieldRate = numberOrNull(has("yieldRate") ? input.yieldRate : existing["收益率(%)"] || trade.yieldRate);
   const counterparty = String(has("counterparty") ? input.counterparty : existing["真实交易对手"] || "").trim();
   const intermediary = String(has("intermediary") ? input.intermediary : existing["中介"] || "").trim();
   const speedValue = String(has("settlementSpeed") ? input.settlementSpeed : existing["清算速度(0/1)"] || "").trim();
@@ -447,7 +450,9 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
     谈判日: negotiationDate,
     交易日: tradeDate,
     债券代码: code,
+    债券简称: shortName,
     净价: frontOfficePrice,
+    "收益率(%)": Number.isFinite(yieldRate) ? String(yieldRate) : "",
     我行方向: side === "buy" ? "买入" : side === "sell" ? "卖出" : "",
     "面值（万元）": quantityWan > 0 ? String(quantityWan) : "",
     真实交易对手: counterparty,
@@ -466,8 +471,10 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
   return normalizeSecondaryTrade({
     ...trade,
     code,
+    shortName,
     side,
     quantityWan,
+    yieldRate,
     negotiationDate,
     tradeDate,
     settlementSpeed,

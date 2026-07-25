@@ -269,10 +269,14 @@ test("requires missing trade elements to be completed instead of inventing date 
   const completed = updateSecondaryPendingTrade(pending, {
     tradeDate: "2026-07-24",
     settlementSpeed: "0",
+    shortName: "25国新控股MTN003",
+    yieldRate: "2.105",
     frontOfficePrice: "100.125",
   });
   assert.equal(completed.tradeRecord["交易日"], "2026-07-24");
   assert.equal(completed.tradeRecord["清算速度(0/1)"], "0");
+  assert.equal(completed.tradeRecord["债券简称"], "25国新控股MTN003");
+  assert.equal(completed.tradeRecord["收益率(%)"], "2.105");
   assert.equal(completed.tradeRecord["净价"], "100.125");
   assert.deepEqual(secondaryTradeMissingFields(completed), []);
   assert.doesNotMatch(completed.parseWarnings.join("；"), /未识别交易日|未识别清算速度/);

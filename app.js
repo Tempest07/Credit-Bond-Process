@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260725-secondary-short-name-repair";
+} from "./core.js?v=20260725-secondary-pending-sheet";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260725-secondary-short-name-repair";
+} from "./lifecycle.js?v=20260725-secondary-pending-sheet";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260725-secondary-short-name-repair";
+} from "./history-parser.js?v=20260725-secondary-pending-sheet";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260725-secondary-short-name-repair";
+} from "./protocol-transfer.js?v=20260725-secondary-pending-sheet";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260725-secondary-short-name-repair";
+} from "./reminders.js?v=20260725-secondary-pending-sheet";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +87,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260725-secondary-short-name-repair";
+} from "./secondary-inventory.js?v=20260725-secondary-pending-sheet";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260725-secondary-short-name-repair";
+} from "./trade-record-converter.js?v=20260725-secondary-pending-sheet";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260725-secondary-short-name-repair";
+} from "./trade-record-grid.js?v=20260725-secondary-pending-sheet";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260725-secondary-short-name-repair";
-import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-short-name-repair";
+} from "./trade-record-ledger.js?v=20260725-secondary-pending-sheet";
+import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-pending-sheet";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,22 +117,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260725-secondary-short-name-repair";
+} from "./project-screenshot-ocr.js?v=20260725-secondary-pending-sheet";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260725-secondary-short-name-repair";
+} from "./project-screenshot-layout.js?v=20260725-secondary-pending-sheet";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260725-secondary-short-name-repair";
+} from "./project-screenshot-image.js?v=20260725-secondary-pending-sheet";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260725-secondary-short-name-repair";
+} from "./payment-receipts.js?v=20260725-secondary-pending-sheet";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -6947,102 +6947,97 @@ function renderSecondaryPendingCodes() {
     : '<div class="empty">暂无待补代码记录。</div>';
 }
 
-function renderSecondaryCompletionField(trade, field) {
-  const record = trade.tradeRecord || {};
-  const common = `data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-field="${escapeAttribute(field.key)}" aria-invalid="true"`;
-  if (field.key === "negotiationDate") {
-    return `<label><span>${escapeHtml(field.label)}</span><input type="date" value="${escapeAttribute(record["谈判日"] || "")}" ${common}></label>`;
-  }
-  if (field.key === "tradeDate") {
-    return `<label><span>${escapeHtml(field.label)}</span><input type="date" value="${escapeAttribute(record["交易日"] || "")}" ${common}></label>`;
-  }
-  if (field.key === "settlementSpeed") {
-    return `
-      <label>
-        <span>${escapeHtml(field.label)}</span>
-        <select ${common}>
-          <option value="">请选择</option>
-          <option value="0">T+0</option>
-          <option value="1">T+1</option>
-        </select>
-      </label>
-    `;
-  }
-  if (field.key === "side") {
-    return `
-      <label>
-        <span>${escapeHtml(field.label)}</span>
-        <select ${common}>
-          <option value="">请选择</option>
-          <option value="buy">买入</option>
-          <option value="sell">卖出</option>
-        </select>
-      </label>
-    `;
-  }
-  if (field.key === "quantityWan") {
-    return `<label><span>${escapeHtml(field.label)}（万元）</span><input type="number" min="0" step="1" inputmode="decimal" value="${escapeAttribute(record["面值（万元）"] || "")}" ${common}></label>`;
-  }
-  const value = field.key === "code"
-    ? record["债券代码"] || ""
-    : field.key === "counterparty"
-      ? record["真实交易对手"] || ""
-      : field.key === "intermediary" ? record["中介"] || "" : "";
-  return `<label><span>${escapeHtml(field.label)}</span><input type="text" value="${escapeAttribute(value)}" ${common}></label>`;
-}
-
 function renderSecondaryTrades() {
   const trades = pendingSecondaryTrades(state).slice(0, 120);
   $("#secondaryTradeList").innerHTML = trades.length
-    ? trades.map((trade) => {
-        const record = trade.tradeRecord || {};
-        const missingFields = secondaryTradeMissingFields(trade);
-        const completionFields = missingFields.filter((field) => field.key !== "frontOfficePrice");
-        const tradeDate = String(record["交易日"] || "").trim();
-        const settlementSpeed = String(record["清算速度(0/1)"] || "").trim();
-        const instrumentLabel = trade.instrumentScope === "ppn" ? "PPN" : "公募";
-        return `
-        <article class="secondary-card secondary-pending-trade ${missingFields.length ? "attention" : ""}">
-          <div class="secondary-card-head">
-            <strong>${escapeHtml(trade.shortName || trade.code || "未命名流水")}</strong>
-            <span class="status-badge ${missingFields.length ? "warning" : "muted"}">${missingFields.length ? `待补 ${escapeHtml(missingFields.length)} 项` : "待成交"}</span>
-          </div>
-          <div class="secondary-meta">
-            <span>${escapeHtml(trade.side === "sell" ? "卖出" : trade.side === "buy" ? "买入" : "方向待复核")}</span>
-            <span>${escapeHtml(instrumentLabel)}</span>
-            <span>${escapeHtml(trade.code || "代码待补")}</span>
-            <span>${trade.quantityWan > 0 ? escapeHtml(formatAmountWan(trade.quantityWan)) : "面值待补"}</span>
-            ${trade.remainingTerm ? `<span>剩余 ${escapeHtml(trade.remainingTerm)}</span>` : ""}
-            ${Number.isFinite(trade.yieldRate) ? `<span>收益率 ${escapeHtml(formatNumber(trade.yieldRate))}%</span>` : ""}
-            <span>谈判 ${escapeHtml(trade.negotiationDate)}</span>
-            ${tradeDate
-              ? `<span>交易 ${escapeHtml(tradeDate)}${settlementSpeed ? `+${escapeHtml(settlementSpeed)}` : " · 清算速度待补"}</span>`
-              : '<span class="secondary-meta-missing">交易日待补</span>'}
-            ${trade.counterparty ? `<span>对手方 ${escapeHtml(trade.counterparty)}</span>` : ""}
-            ${trade.intermediary ? `<span>中介 ${escapeHtml(trade.intermediary)}</span>` : ""}
-            ${trade.contactNote ? `<span>联系 ${escapeHtml(trade.contactNote)}</span>` : ""}
-          </div>
-          ${missingFields.length ? `<div class="secondary-trade-warning">请补全：${escapeHtml(missingFields.map((field) => field.label).join("、"))}</div>` : ""}
-          ${completionFields.length ? `
-            <div class="secondary-completion-panel">
-              <strong>补全成交要素</strong>
-              <div class="secondary-completion-grid">
-                ${completionFields.map((field) => renderSecondaryCompletionField(trade, field)).join("")}
-              </div>
-            </div>
-          ` : ""}
-          <div class="secondary-trade-source">${escapeHtml(trade.sourceText)}</div>
-          <div class="secondary-card-actions">
-            <label class="secondary-inline-input secondary-net-price-control">
-              <span>成交净价</span>
-              <input type="number" min="50" max="150" step="0.001" inputmode="decimal" placeholder="例如 99.346" value="${escapeAttribute(trade.frontOfficePrice || trade.price || "")}" data-secondary-front-price="${escapeAttribute(trade.id)}" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-field="frontOfficePrice" ${missingFields.some((field) => field.key === "frontOfficePrice") ? 'aria-invalid="true"' : ""}>
-            </label>
-            <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">成交</button>
-            <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove">删除</button>
-          </div>
-        </article>
-      `;
-      }).join("")
+    ? `
+      <div class="secondary-pending-sheet">
+        <table class="secondary-pending-table" aria-label="待成交工作表">
+          <colgroup>
+            <col class="row-number">
+            <col class="date-column">
+            <col class="date-column">
+            <col class="speed-column">
+            <col class="code-column">
+            <col class="name-column">
+            <col class="side-column">
+            <col class="amount-column">
+            <col class="yield-column">
+            <col class="party-column">
+            <col class="intermediary-column">
+            <col class="price-column">
+            <col class="status-column">
+            <col class="action-column">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>谈判日</th>
+              <th>交易日</th>
+              <th>清算</th>
+              <th>债券代码</th>
+              <th>债券简称</th>
+              <th>方向</th>
+              <th>面值（万）</th>
+              <th>收益率（%）</th>
+              <th>真实交易对手</th>
+              <th>中介</th>
+              <th>成交净价</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${trades.map((trade, index) => {
+              const record = trade.tradeRecord || {};
+              const missingFields = secondaryTradeMissingFields(trade);
+              const missingKeys = new Set(missingFields.map((field) => field.key));
+              const fieldAttributes = (key) =>
+                `data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-field="${escapeAttribute(key)}"${missingKeys.has(key) ? ' aria-invalid="true"' : ""}`;
+              const settlementSpeed = String(record["清算速度(0/1)"] || "").trim();
+              const side = record["我行方向"] === "买入" ? "buy" : record["我行方向"] === "卖出" ? "sell" : "";
+              const yieldRate = record["收益率(%)"] || (Number.isFinite(trade.yieldRate) ? trade.yieldRate : "");
+              const statusTitle = missingFields.length
+                ? `待补：${missingFields.map((field) => field.label).join("、")}`
+                : "要素完整";
+              return `
+                <tr class="${missingFields.length ? "incomplete" : "ready"}" title="${escapeAttribute(trade.sourceText || "")}">
+                  <th scope="row">${escapeHtml(index + 1)}</th>
+                  <td><input type="date" value="${escapeAttribute(record["谈判日"] || trade.negotiationDate || "")}" ${fieldAttributes("negotiationDate")}></td>
+                  <td><input type="date" value="${escapeAttribute(record["交易日"] || "")}" ${fieldAttributes("tradeDate")}></td>
+                  <td>
+                    <select ${fieldAttributes("settlementSpeed")}>
+                      <option value="">—</option>
+                      <option value="0" ${settlementSpeed === "0" ? "selected" : ""}>T+0</option>
+                      <option value="1" ${settlementSpeed === "1" ? "selected" : ""}>T+1</option>
+                    </select>
+                  </td>
+                  <td><input type="text" value="${escapeAttribute(record["债券代码"] || trade.code || "")}" ${fieldAttributes("code")}></td>
+                  <td><input type="text" value="${escapeAttribute(trade.shortName || record["债券简称"] || "")}" ${fieldAttributes("shortName")}></td>
+                  <td>
+                    <select ${fieldAttributes("side")}>
+                      <option value="">—</option>
+                      <option value="buy" ${side === "buy" ? "selected" : ""}>买入</option>
+                      <option value="sell" ${side === "sell" ? "selected" : ""}>卖出</option>
+                    </select>
+                  </td>
+                  <td><input type="number" min="0" step="1" inputmode="decimal" value="${escapeAttribute(record["面值（万元）"] || (trade.quantityWan > 0 ? trade.quantityWan : ""))}" ${fieldAttributes("quantityWan")}></td>
+                  <td><input type="number" step="0.0001" inputmode="decimal" value="${escapeAttribute(yieldRate)}" ${fieldAttributes("yieldRate")}></td>
+                  <td><input type="text" value="${escapeAttribute(record["真实交易对手"] || trade.counterparty || "")}" ${fieldAttributes("counterparty")}></td>
+                  <td><input type="text" value="${escapeAttribute(record["中介"] || trade.intermediary || "")}" ${fieldAttributes("intermediary")}></td>
+                  <td><input type="number" min="50" max="150" step="0.001" inputmode="decimal" placeholder="99.346" value="${escapeAttribute(trade.frontOfficePrice || trade.price || record["净价"] || "")}" ${fieldAttributes("frontOfficePrice")}></td>
+                  <td><span class="secondary-pending-status ${missingFields.length ? "incomplete" : "ready"}" title="${escapeAttribute(statusTitle)}">${missingFields.length ? `待补 ${escapeHtml(missingFields.length)}` : "完整"}</span></td>
+                  <td class="secondary-pending-actions">
+                    <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">成交</button>
+                    <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove">删除</button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
     : '<div class="empty">暂无待成交记录。把交易要素粘贴到上方，点击“转换为待成交”。</div>';
 }
 
@@ -7096,7 +7091,7 @@ function confirmSecondaryFrontOffice(id) {
   };
   persistState();
   renderSecondaryInventoryWorkspace();
-  showToast(`${trade.shortName || trade.code || "该笔交易"} 已成交，并进入 ${trade.tradeDate} 台账。`);
+  showToast(`${completedTrade.shortName || completedTrade.code || "该笔交易"} 已成交，并进入 ${completedTrade.tradeDate} 台账。`);
 }
 
 function removePendingSecondaryTrade(id) {

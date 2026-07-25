@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260725-secondary-short-name-repair";
+const VERSION = "20260725-secondary-pending-sheet";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.5">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.6">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -229,6 +229,24 @@ test("ships the daily trade ledger as an editable DM-backed spreadsheet", async 
   assert.match(styles, /\.secondary-ledger-sheet\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;/s);
   assert.match(styles, /\.secondary-ledger-cell:focus\s*\{[^}]*outline:\s*2px solid #3f9e95;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-ledger-cell\s*\{[^}]*font-size:\s*16px;/s);
+});
+
+test("renders pending secondary trades as compact editable rows", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /<span class="pill">一笔一行<\/span>/);
+  assert.match(app, /class="secondary-pending-table"/);
+  assert.match(app, /fieldAttributes\("shortName"\)/);
+  assert.match(app, /fieldAttributes\("frontOfficePrice"\)/);
+  assert.match(app, /data-secondary-trade-action="front-office">成交</);
+  assert.doesNotMatch(app, /secondary-card secondary-pending-trade/);
+  assert.match(styles, /\.secondary-pending-sheet\s*\{[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.secondary-pending-actions\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-pending-table input, \.secondary-pending-table select\s*\{[^}]*font-size:\s*16px;/s);
 });
 
 test("uses single-pane project navigation on compact screens", async () => {
