@@ -1518,7 +1518,7 @@ function applyRouteFromHash() {
     }
     return;
   }
-  if (route.view === "protocol-transfer") route.view = "secondary-trading";
+  if (["protocol-transfer", "secondary-inventory"].includes(route.view)) route.view = "secondary-trading";
   if (!$(`.view[data-view="${route.view}"]`)) return;
   if (route.view === "ledger") ledgerMobilePane = ledgerMobilePaneFromRoute(route);
   applyRouteSelection(route);

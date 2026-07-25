@@ -38,8 +38,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         ReminderReceiver.ensureChannel(this);
         requestNotificationPermissionIfNeeded();
-        ReminderSyncReceiver.schedulePeriodicSync(this);
-        ReminderSyncReceiver.requestOneShotSync(this);
+        ReminderSyncWorker.schedulePeriodicSync(this);
+        ReminderSyncWorker.requestOneShotSync(this);
         buildLayout();
         configureWebView();
         loadFromIntent(getIntent(), BASE_URL + "#reminders");
@@ -91,9 +91,9 @@ public class MainActivity extends Activity {
         bottomNav.setBackgroundColor(Color.WHITE);
         bottomNav.addView(navButton("待办", "reminders"));
         bottomNav.addView(navButton("项目", "ledger"));
+        bottomNav.addView(navButton("缴款", "payment-receipts"));
+        bottomNav.addView(navButton("二级", "secondary-trading"));
         bottomNav.addView(navButton("新增", "generator"));
-        bottomNav.addView(navButton("协议", "protocol-transfer"));
-        bottomNav.addView(navButton("库存", "secondary-inventory"));
         root.addView(bottomNav, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             dp(60)
@@ -129,7 +129,7 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " Tempest07Android/0.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " Tempest07Android/" + BuildConfig.VERSION_NAME);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         }
@@ -169,17 +169,26 @@ public class MainActivity extends Activity {
     }
 
     private boolean handleUrl(Uri uri) {
-        if (uri == null) return false;
+        if (uri == null) return true;
         String scheme = String.valueOf(uri.getScheme()).toLowerCase(Locale.ROOT);
-        if ("about".equals(scheme)) return false;
-        if (isInternalHost(uri)) return false;
+        if ("about:blank".equals(uri.toString())) return false;
+        if ("https".equals(scheme) && isInternalHost(uri)) return false;
+        if (!isAllowedExternalScheme(scheme)) return true;
         Intent external = new Intent(Intent.ACTION_VIEW, uri);
         try {
             startActivity(external);
             return true;
         } catch (ActivityNotFoundException error) {
-            return false;
+            return true;
         }
+    }
+
+    private boolean isAllowedExternalScheme(String scheme) {
+        return "https".equals(scheme)
+            || "http".equals(scheme)
+            || "mailto".equals(scheme)
+            || "tel".equals(scheme)
+            || "sms".equals(scheme);
     }
 
     private boolean isInternalHost(Uri uri) {
@@ -198,7 +207,14 @@ public class MainActivity extends Activity {
         String url = intent == null ? "" : intent.getStringExtra("url");
         Uri data = intent == null ? null : intent.getData();
         if ((url == null || url.isEmpty()) && data != null) url = data.toString();
-        webView.loadUrl(url == null || url.isEmpty() ? fallbackUrl : url);
+        webView.loadUrl(safeInternalUrl(url, fallbackUrl));
+    }
+
+    private String safeInternalUrl(String candidate, String fallbackUrl) {
+        if (candidate == null || candidate.trim().isEmpty()) return fallbackUrl;
+        Uri uri = Uri.parse(candidate.trim());
+        String scheme = String.valueOf(uri.getScheme()).toLowerCase(Locale.ROOT);
+        return "https".equals(scheme) && isInternalHost(uri) ? uri.toString() : fallbackUrl;
     }
 
     @Override
