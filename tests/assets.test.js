@@ -281,13 +281,14 @@ test("uses single-pane project navigation on compact screens", async () => {
   assert.match(styles, /\.view\.active\s*\{[^}]*animation:\s*workspaceSurfaceIn \.28s ease backwards;/);
 });
 
-test("uses a single immersive Android app shell without the mobile sidebar gap", async () => {
-  const [html, shellMode, app, styles, mainActivity] = await Promise.all([
+test("uses a single crash-safe immersive Android app shell without the mobile sidebar gap", async () => {
+  const [html, shellMode, app, styles, mainActivity, androidTheme] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app-shell-mode.js", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
     readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/MainActivity.java", import.meta.url), "utf8"),
+    readFile(new URL("../android/app/src/main/res/values/styles.xml", import.meta.url), "utf8"),
   ]);
 
   assert.match(html, /viewport-fit=cover/);
@@ -307,7 +308,14 @@ test("uses a single immersive Android app shell without the mobile sidebar gap",
   assert.match(styles, /html\.android-app \.android-app-nav\s*\{[^}]*position:\s*fixed;/s);
   assert.match(styles, /html\.android-app \.view\[data-view="ledger"\] > \.ledger-mobile-nav\s*\{[^}]*position:\s*sticky;/s);
   assert.match(mainActivity, /setContentView\(webView\)/);
+  assert.ok(mainActivity.indexOf("setContentView(webView)") < mainActivity.indexOf("scheduleStatusBarHide()"));
+  assert.match(mainActivity, /webView\.post\(this::hideStatusBarSafely\)/);
+  assert.match(mainActivity, /webView\.getWindowInsetsController\(\)/);
   assert.match(mainActivity, /WindowInsets\.Type\.statusBars\(\)/);
+  assert.match(mainActivity, /catch \(RuntimeException ignored\)/);
+  assert.doesNotMatch(mainActivity, /getWindow\(\)\.getInsetsController\(\)/);
+  assert.doesNotMatch(mainActivity, /onWindowFocusChanged|protected void onResume/);
+  assert.match(androidTheme, /name="android:windowFullscreen">true</);
   assert.doesNotMatch(mainActivity, /LinearLayout|android\.widget\.Button|webView\.reload/);
 });
 
@@ -403,8 +411,8 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(rootBuildGradle, /com\.android\.application" version "8\.6\.1"/);
   assert.match(buildGradle, /namespace "com\.tempest07\.bondcentre"/);
   assert.match(buildGradle, /applicationId "com\.tempest07\.bondcentre"/);
-  assert.match(buildGradle, /versionCode 3/);
-  assert.match(buildGradle, /versionName "0\.3\.0"/);
+  assert.match(buildGradle, /versionCode 4/);
+  assert.match(buildGradle, /versionName "0\.3\.1"/);
   assert.match(buildGradle, /androidx\.work:work-runtime:2\.11\.2/);
   assert.match(gradleProperties, /android\.useAndroidX=true/);
   assert.match(mainActivity, /https:\/\/tempest07\.com\/bond-centre\//);

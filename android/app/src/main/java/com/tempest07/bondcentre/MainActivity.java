@@ -39,12 +39,12 @@ public class MainActivity extends Activity {
         requestNotificationPermissionIfNeeded();
         ReminderSyncWorker.schedulePeriodicSync(this);
         ReminderSyncWorker.requestOneShotSync(this);
-        hideStatusBar();
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(244, 246, 251));
         setContentView(webView);
         configureWebView();
         loadFromIntent(getIntent(), BASE_URL + "#reminders");
+        scheduleStatusBarHide();
     }
 
     @Override
@@ -54,20 +54,29 @@ public class MainActivity extends Activity {
         loadFromIntent(intent, BASE_URL + "#reminders");
     }
 
-    private void hideStatusBar() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller == null) return;
-            controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            controller.hide(WindowInsets.Type.statusBars());
-            return;
+    private void scheduleStatusBarHide() {
+        if (webView == null) return;
+        webView.post(this::hideStatusBarSafely);
+    }
+
+    private void hideStatusBarSafely() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowInsetsController controller = webView.getWindowInsetsController();
+                if (controller == null) return;
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.statusBars());
+                return;
+            }
+            webView.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            );
+        } catch (RuntimeException ignored) {
+            // The fullscreen theme remains active if an OEM insets controller is not ready.
         }
-        getWindow().getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        );
     }
 
     private void configureWebView() {
@@ -169,18 +178,6 @@ public class MainActivity extends Activity {
             return;
         }
         super.onBackPressed();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        hideStatusBar();
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideStatusBar();
     }
 
     @Override
