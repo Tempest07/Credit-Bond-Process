@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260725-secondary-clean-interface";
+import { parseUnderwriterNames } from "./core.js?v=20260726-android-app-shell";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

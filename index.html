@@ -2,14 +2,15 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.2.1">
-  <meta name="application-build-version" content="3.2.1.8">
-  <meta name="application-build" content="20260725-secondary-clean-interface">
+  <meta name="application-build-version" content="3.2.1.9">
+  <meta name="application-build" content="20260726-android-app-shell">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <link rel="stylesheet" href="./styles.css?v=20260725-secondary-clean-interface">
+  <script src="./app-shell-mode.js?v=20260726-android-app-shell"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260726-android-app-shell">
 </head>
 <body>
   <div class="app-shell">
@@ -18,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.1.8 · 2026-07-25 更新">v3.2.1</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.1.9 · 2026-07-26 更新">v3.2.1</span></small>
         </span>
       </a>
 
@@ -74,6 +75,9 @@
           <label class="button subtle file-button">导入资料库<input id="importDataInput" type="file" accept=".json"></label>
           <button class="button" id="saveCloudButton">同步资料库</button>
         </div>
+        <button class="android-more-trigger" id="androidMoreButton" type="button" aria-controls="androidMorePanel" aria-expanded="false" aria-label="打开更多工具">
+          <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+        </button>
       </header>
 
       <section class="cloud-gate cloud-gate-idle" id="cloudGate">
@@ -949,6 +953,49 @@
           <p>历史 Word 可继续用于一次性迁移旧资料；异常记录可在导入前直接修正。日常新增主体、最新授信和单笔项目可从新增项目与主体资料库录入，无需继续维护原 Word 文档。</p>
         </section>
       </section>
+
+      <section class="android-more-panel" id="androidMorePanel" role="dialog" aria-modal="true" aria-labelledby="androidMoreTitle" hidden>
+        <button class="android-more-backdrop" type="button" data-close-android-more aria-label="关闭更多工具"></button>
+        <aside class="android-more-sheet">
+          <header class="android-more-head">
+            <div>
+              <span>TOOLS</span>
+              <h2 id="androidMoreTitle">更多工具</h2>
+            </div>
+            <button class="android-more-close" id="androidMoreCloseButton" type="button" data-close-android-more aria-label="关闭">×</button>
+          </header>
+          <nav class="android-more-links" aria-label="更多业务页面">
+            <button class="nav-item android-more-link" type="button" data-view-target="database" data-view-label="主体与授信库">主体与授信库</button>
+            <button class="nav-item android-more-link" type="button" data-view-target="dm-test" data-view-label="DM 测试">DM 测试</button>
+            <button class="nav-item android-more-link" type="button" data-view-target="rules" data-view-label="规则说明">规则说明</button>
+          </nav>
+          <div class="android-screenshot-mount" id="androidScreenshotMount"></div>
+          <div class="android-data-actions-mount" id="androidDataActionsMount"></div>
+        </aside>
+      </section>
+
+      <nav class="android-app-nav" aria-label="主要页面">
+        <button class="nav-item android-app-nav-item" type="button" data-view-target="reminders" data-view-label="待办">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11.5 11 13.5 15.5 9M12 3.75a8.25 8.25 0 1 1 0 16.5 8.25 8.25 0 0 1 0-16.5Z"/></svg>
+          <span>待办</span>
+        </button>
+        <button class="nav-item android-app-nav-item active" type="button" data-view-target="ledger" data-view-label="项目">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.75 6.75h6l1.5 2h9v9.5a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2V6.75Z"/><path d="M3.75 9h16.5"/></svg>
+          <span>项目</span>
+        </button>
+        <button class="nav-item android-app-nav-item" type="button" data-view-target="payment-receipts" data-view-label="缴款">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.75h12v16.5l-2.25-1.5-1.88 1.5L12 18.75l-1.87 1.5-1.88-1.5L6 20.25V3.75Z"/><path d="M9 8h6M9 12h6"/></svg>
+          <span>缴款</span>
+        </button>
+        <button class="nav-item android-app-nav-item" type="button" data-view-target="secondary-trading" data-view-label="二级">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7.5 7.5 3-3m-3 3 3 3M7.5 7.5h9a3 3 0 0 1 3 3M16.5 16.5l-3 3m3-3-3-3m3 3h-9a3 3 0 0 1-3-3"/></svg>
+          <span>二级</span>
+        </button>
+        <button class="nav-item android-app-nav-item" type="button" data-view-target="generator" data-view-label="新增">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="9"/></svg>
+          <span>新增</span>
+        </button>
+      </nav>
     </main>
   </div>
 
@@ -1020,6 +1067,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260725-secondary-clean-interface"></script>
+  <script type="module" src="./app.js?v=20260726-android-app-shell"></script>
 </body>
 </html>

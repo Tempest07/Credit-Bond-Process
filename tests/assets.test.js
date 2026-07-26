@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260725-secondary-clean-interface";
+const VERSION = "20260726-android-app-shell";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.8">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.9">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -281,6 +281,36 @@ test("uses single-pane project navigation on compact screens", async () => {
   assert.match(styles, /\.view\.active\s*\{[^}]*animation:\s*workspaceSurfaceIn \.28s ease backwards;/);
 });
 
+test("uses a single immersive Android app shell without the mobile sidebar gap", async () => {
+  const [html, shellMode, app, styles, mainActivity] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app-shell-mode.js", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+    readFile(new URL("../android/app/src/main/java/com/tempest07/bondcentre/MainActivity.java", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /viewport-fit=cover/);
+  assert.match(html, /app-shell-mode\.js\?v=20260726-android-app-shell/);
+  assert.match(shellMode, /navigator\.userAgent\.includes\("Tempest07Android\/"\)/);
+  assert.match(shellMode, /get\("app-shell"\) === "android"/);
+  assert.match(shellMode, /classList\.add\("android-app-preview"\)/);
+  assert.match(html, /id="androidMoreButton"/);
+  assert.match(html, /id="androidMorePanel"/);
+  assert.match(html, /class="android-app-nav"/);
+  assert.match(app, /function initializeAndroidAppShell/);
+  assert.match(app, /screenshotMount\.append\(screenshotTool\)/);
+  assert.match(app, /dataActionsMount\.append\(dataActions\)/);
+  assert.match(app, /item\.dataset\.viewTarget === viewName/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.sidebar\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(styles, /html\.android-app \.sidebar\s*\{\s*display:\s*none;/);
+  assert.match(styles, /html\.android-app \.android-app-nav\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(styles, /html\.android-app \.view\[data-view="ledger"\] > \.ledger-mobile-nav\s*\{[^}]*position:\s*sticky;/s);
+  assert.match(mainActivity, /setContentView\(webView\)/);
+  assert.match(mainActivity, /WindowInsets\.Type\.statusBars\(\)/);
+  assert.doesNotMatch(mainActivity, /LinearLayout|android\.widget\.Button|webView\.reload/);
+});
+
 test("ships liquid selection motion with accessible fallback", async () => {
   const [html, app, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
@@ -373,8 +403,8 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(rootBuildGradle, /com\.android\.application" version "8\.6\.1"/);
   assert.match(buildGradle, /namespace "com\.tempest07\.bondcentre"/);
   assert.match(buildGradle, /applicationId "com\.tempest07\.bondcentre"/);
-  assert.match(buildGradle, /versionCode 2/);
-  assert.match(buildGradle, /versionName "0\.2\.0"/);
+  assert.match(buildGradle, /versionCode 3/);
+  assert.match(buildGradle, /versionName "0\.3\.0"/);
   assert.match(buildGradle, /androidx\.work:work-runtime:2\.11\.2/);
   assert.match(gradleProperties, /android\.useAndroidX=true/);
   assert.match(mainActivity, /https:\/\/tempest07\.com\/bond-centre\//);
@@ -393,9 +423,14 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(syncWorker, /ExistingPeriodicWorkPolicy\.UPDATE/);
   assert.match(syncWorker, /NetworkType\.CONNECTED/);
   assert.match(reminderApi, /buildUnifiedReminders/);
-  const nativeRoutes = [...mainActivity.matchAll(/navButton\("[^"]+", "([^"]+)"\)/g)].map((match) => match[1]);
-  assert.deepEqual(nativeRoutes, ["reminders", "ledger", "payment-receipts", "secondary-trading", "generator"]);
-  nativeRoutes.forEach((route) => assert.match(html, new RegExp(`data-view="${route}"`)));
+  assert.match(mainActivity, /controller\.hide\(WindowInsets\.Type\.statusBars\(\)\)/);
+  assert.match(mainActivity, /BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE/);
+  assert.doesNotMatch(mainActivity, /navButton|webView\.reload|Tempest07 Bond/);
+  ["reminders", "ledger", "payment-receipts", "secondary-trading", "generator"]
+    .forEach((route) => assert.match(html, new RegExp(`android-app-nav-item[^>]+data-view-target="${route}"`)));
+  assert.match(html, /app-shell-mode\.js\?v=20260726-android-app-shell/);
+  assert.match(html, /id="androidMorePanel"/);
+  assert.match(html, /viewport-fit=cover/);
   assert.match(readme, /WorkManager/);
   assert.match(workflow, /Android Debug APK/);
   assert.match(workflow, /codex\/android-\*/);

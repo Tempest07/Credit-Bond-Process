@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260725-secondary-clean-interface";
+} from "./core.js?v=20260726-android-app-shell";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260725-secondary-clean-interface";
+} from "./lifecycle.js?v=20260726-android-app-shell";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260725-secondary-clean-interface";
+} from "./history-parser.js?v=20260726-android-app-shell";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260725-secondary-clean-interface";
+} from "./protocol-transfer.js?v=20260726-android-app-shell";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260725-secondary-clean-interface";
+} from "./reminders.js?v=20260726-android-app-shell";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +87,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260725-secondary-clean-interface";
+} from "./secondary-inventory.js?v=20260726-android-app-shell";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260725-secondary-clean-interface";
+} from "./trade-record-converter.js?v=20260726-android-app-shell";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260725-secondary-clean-interface";
+} from "./trade-record-grid.js?v=20260726-android-app-shell";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260725-secondary-clean-interface";
-import { initializeDatePickers } from "./date-picker.js?v=20260725-secondary-clean-interface";
+} from "./trade-record-ledger.js?v=20260726-android-app-shell";
+import { initializeDatePickers } from "./date-picker.js?v=20260726-android-app-shell";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,22 +117,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260725-secondary-clean-interface";
+} from "./project-screenshot-ocr.js?v=20260726-android-app-shell";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260725-secondary-clean-interface";
+} from "./project-screenshot-layout.js?v=20260726-android-app-shell";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260725-secondary-clean-interface";
+} from "./project-screenshot-image.js?v=20260726-android-app-shell";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260725-secondary-clean-interface";
+} from "./payment-receipts.js?v=20260726-android-app-shell";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -326,6 +326,7 @@ if (location.hostname === "credit-bond-process.pages.dev") {
 initialize();
 
 async function initialize() {
+  initializeAndroidAppShell();
   bindPlaceholderSelection();
   bindNavigation();
   bindRouteHashNavigation();
@@ -357,6 +358,50 @@ async function initialize() {
   applyRouteFromHash();
   await Promise.all([loadCloudState(), loadPolicyCurve()]);
   await loadPaymentReceipts({ silent: true });
+}
+
+function initializeAndroidAppShell() {
+  const root = document.documentElement;
+  const isAndroidApp = root.classList.contains("android-app")
+    || navigator.userAgent.includes("Tempest07Android/");
+  if (!isAndroidApp) return;
+
+  root.classList.add("android-app");
+  const screenshotMount = $("#androidScreenshotMount");
+  const screenshotTool = $("#projectScreenshotTool");
+  const dataActionsMount = $("#androidDataActionsMount");
+  const dataActions = $(".top-actions");
+  if (screenshotMount && screenshotTool) screenshotMount.append(screenshotTool);
+  if (dataActionsMount && dataActions) dataActionsMount.append(dataActions);
+
+  const panel = $("#androidMorePanel");
+  const trigger = $("#androidMoreButton");
+  const closeButton = $("#androidMoreCloseButton");
+  const closePanel = ({ restoreFocus = true } = {}) => {
+    if (!panel || panel.hidden) return;
+    panel.hidden = true;
+    document.body.classList.remove("android-more-open");
+    trigger?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger?.focus({ preventScroll: true });
+  };
+  const openPanel = () => {
+    if (!panel) return;
+    panel.hidden = false;
+    document.body.classList.add("android-more-open");
+    trigger?.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => closeButton?.focus({ preventScroll: true }));
+  };
+
+  trigger?.addEventListener("click", openPanel);
+  $$("[data-close-android-more]").forEach((button) => {
+    button.addEventListener("click", () => closePanel());
+  });
+  panel?.querySelectorAll("[data-view-target]").forEach((button) => {
+    button.addEventListener("click", () => closePanel({ restoreFocus: false }));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && panel && !panel.hidden) closePanel();
+  });
 }
 
 function bindNavigation() {
@@ -1697,10 +1742,18 @@ function applyRouteFocus(route = {}) {
 }
 
 function switchView(viewName, options = {}) {
-  const button = $(`.nav-item[data-view-target="${viewName}"]`);
-  $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
+  const buttons = $$(`.nav-item[data-view-target="${viewName}"]`);
+  const button = buttons[0];
+  $$(".nav-item").forEach((item) => {
+    const active = item.dataset.viewTarget === viewName;
+    item.classList.toggle("active", active);
+    if (item.classList.contains("android-app-nav-item")) {
+      if (active) item.setAttribute("aria-current", "page");
+      else item.removeAttribute("aria-current");
+    }
+  });
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
-  if (button) $("#pageTitle").textContent = button.textContent;
+  if (button) $("#pageTitle").textContent = button.dataset.viewLabel || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
   if (viewName === "payment-receipts") renderPaymentReceiptArchive();
   if (viewName === "ledger") syncLedgerMobilePane();

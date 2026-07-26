@@ -9,7 +9,9 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.view.Gravity;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -18,9 +20,6 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import java.util.Locale;
 
@@ -40,7 +39,10 @@ public class MainActivity extends Activity {
         requestNotificationPermissionIfNeeded();
         ReminderSyncWorker.schedulePeriodicSync(this);
         ReminderSyncWorker.requestOneShotSync(this);
-        buildLayout();
+        hideStatusBar();
+        webView = new WebView(this);
+        webView.setBackgroundColor(Color.rgb(244, 246, 251));
+        setContentView(webView);
         configureWebView();
         loadFromIntent(getIntent(), BASE_URL + "#reminders");
     }
@@ -52,73 +54,20 @@ public class MainActivity extends Activity {
         loadFromIntent(intent, BASE_URL + "#reminders");
     }
 
-    private void buildLayout() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(246, 247, 251));
-
-        LinearLayout topbar = new LinearLayout(this);
-        topbar.setOrientation(LinearLayout.HORIZONTAL);
-        topbar.setGravity(Gravity.CENTER_VERTICAL);
-        topbar.setPadding(dp(14), dp(8), dp(10), dp(8));
-        topbar.setBackgroundColor(Color.rgb(16, 24, 47));
-
-        TextView title = new TextView(this);
-        title.setText("Tempest07 Bond");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(17);
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        topbar.addView(title, new LinearLayout.LayoutParams(0, dp(42), 1f));
-
-        Button refresh = topButton("刷新");
-        refresh.setOnClickListener(view -> webView.reload());
-        topbar.addView(refresh, new LinearLayout.LayoutParams(dp(72), dp(38)));
-        root.addView(topbar, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(58)
-        ));
-
-        webView = new WebView(this);
-        root.addView(webView, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            0,
-            1f
-        ));
-
-        LinearLayout bottomNav = new LinearLayout(this);
-        bottomNav.setOrientation(LinearLayout.HORIZONTAL);
-        bottomNav.setPadding(dp(8), dp(6), dp(8), dp(6));
-        bottomNav.setBackgroundColor(Color.WHITE);
-        bottomNav.addView(navButton("待办", "reminders"));
-        bottomNav.addView(navButton("项目", "ledger"));
-        bottomNav.addView(navButton("缴款", "payment-receipts"));
-        bottomNav.addView(navButton("二级", "secondary-trading"));
-        bottomNav.addView(navButton("新增", "generator"));
-        root.addView(bottomNav, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(60)
-        ));
-
-        setContentView(root);
-    }
-
-    private Button topButton(String label) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        button.setTextSize(13);
-        return button;
-    }
-
-    private Button navButton(String label, String route) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        button.setTextSize(12);
-        button.setTextColor(Color.rgb(16, 24, 47));
-        button.setOnClickListener(view -> openRoute(route));
-        button.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 1f));
-        return button;
+    private void hideStatusBar() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller == null) return;
+            controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsets.Type.statusBars());
+            return;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(
+            View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        );
     }
 
     private void configureWebView() {
@@ -199,10 +148,6 @@ public class MainActivity extends Activity {
             || host.equals("credit-bond-process.pages.dev");
     }
 
-    private void openRoute(String route) {
-        webView.loadUrl(BASE_URL + "#" + route);
-    }
-
     private void loadFromIntent(Intent intent, String fallbackUrl) {
         String url = intent == null ? "" : intent.getStringExtra("url");
         Uri data = intent == null ? null : intent.getData();
@@ -224,6 +169,18 @@ public class MainActivity extends Activity {
             return;
         }
         super.onBackPressed();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        hideStatusBar();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideStatusBar();
     }
 
     @Override
@@ -254,10 +211,6 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
         requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, NOTIFICATION_PERMISSION_REQUEST);
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     public class AndroidBridge {

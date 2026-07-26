@@ -6,7 +6,9 @@ Android shell for the Tempest07 Bond Centre workbench.
 
 - Opens `https://tempest07.com/bond-centre/` inside an Android WebView.
 - Keeps the Gateway login flow inside the app for `tempest07.com`.
-- Provides native quick tabs for Reminders, Ledger, Payment Receipts, Secondary Trading, and New Project.
+- Uses a full-screen WebView shell without browser-style title, refresh, or duplicate native navigation bars.
+- Hides the Android status bar while keeping the system navigation gesture available; a top-edge swipe can reveal the status bar temporarily.
+- Activates the web workbench's Android layout: compact page title, one icon navigation dock, and a More sheet for screenshot import, database, DM, rules, and data actions.
 - Supports file upload from WebView forms.
 - Receives the web app's unified reminders through `Tempest07Android.syncReminders(...)`.
 - Posts local Android notifications for immediate reminders and schedules simple local alarms for dated reminders.
