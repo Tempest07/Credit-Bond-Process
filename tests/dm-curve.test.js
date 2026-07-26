@@ -5,7 +5,7 @@ import { onRequestGet, __test__ as curveTest } from "../functions/api/dm/curve.j
 
 const CURVE_NAME = "中债国开债收益率曲线";
 
-test("DM policy-bank curve batches and returns the latest same-date 0.1Y to 1Y nodes", async () => {
+test("DM policy-bank curve batches and returns the latest same-date 0.1Y to 5Y nodes", async () => {
   const calls = [];
   const response = await onRequestGet(curveContext({
     url: "http://127.0.0.1:8788/api/dm/curve?curve=cdb&asOf=2026-07-14",
@@ -35,6 +35,8 @@ test("DM policy-bank curve batches and returns the latest same-date 0.1Y to 1Y n
       return [
         curveRow({ term: 0.9, rate: 1.46, date: "2026-07-13" }),
         curveRow({ term: 1, rate: 1.48, date: "2026-07-13", camel: true }),
+        curveRow({ term: 3, rate: 1.57, date: "2026-07-13" }),
+        curveRow({ term: 5, rate: 1.66, date: "2026-07-13" }),
       ];
     },
   }));
@@ -62,6 +64,8 @@ test("DM policy-bank curve batches and returns the latest same-date 0.1Y to 1Y n
     ["0.8Y", 1.44],
     ["0.9Y", 1.46],
     ["1Y", 1.48],
+    ["3Y", 1.57],
+    ["5Y", 1.66],
   ]);
   assert.equal(calls.length, 3);
   assert.ok(calls.every((call) => call.path === "/dm-quant-func-service/api/v1/bond/yield-curve/data"));
@@ -69,7 +73,7 @@ test("DM policy-bank curve batches and returns the latest same-date 0.1Y to 1Y n
   assert.deepEqual(calls.map((call) => call.request.curveTermList), [
     ["0.1", "0.2", "0.25", "0.3", "0.4"],
     ["0.5", "0.6", "0.7", "0.75", "0.8"],
-    ["0.9", "1"],
+    ["0.9", "1", "3", "5"],
   ]);
   assert.equal(calls[0].request.curveName, CURVE_NAME);
   assert.equal(calls[0].request.dataSource, "18");
@@ -93,7 +97,7 @@ test("DM policy-bank curve interpolates within current anchors but never extrapo
   assert.equal(snapshot.nodes.find((node) => node.tenor === "0.3Y").yieldPct, 1.318);
   assert.equal(snapshot.nodes.find((node) => node.tenor === "0.3Y").method, "derived-linear");
   assert.equal(snapshot.nodes.find((node) => node.tenor === "0.75Y").yieldPct, null);
-  assert.deepEqual(snapshot.missingTerms, ["0.1Y", "0.2Y", "0.75Y"]);
+  assert.deepEqual(snapshot.missingTerms, ["0.1Y", "0.2Y", "0.75Y", "3Y", "5Y"]);
   assert.deepEqual(snapshot.derivedTerms, ["0.3Y", "0.4Y", "0.6Y", "0.7Y", "0.8Y", "0.9Y"]);
 });
 

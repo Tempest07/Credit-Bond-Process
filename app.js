@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260726-secondary-excel-columns";
+} from "./core.js?v=20260726-cdb-curve-5y";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260726-secondary-excel-columns";
+} from "./lifecycle.js?v=20260726-cdb-curve-5y";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260726-secondary-excel-columns";
+} from "./history-parser.js?v=20260726-cdb-curve-5y";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260726-secondary-excel-columns";
+} from "./protocol-transfer.js?v=20260726-cdb-curve-5y";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260726-secondary-excel-columns";
+} from "./reminders.js?v=20260726-cdb-curve-5y";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +87,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260726-secondary-excel-columns";
+} from "./secondary-inventory.js?v=20260726-cdb-curve-5y";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260726-secondary-excel-columns";
+} from "./trade-record-converter.js?v=20260726-cdb-curve-5y";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260726-secondary-excel-columns";
+} from "./trade-record-grid.js?v=20260726-cdb-curve-5y";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260726-secondary-excel-columns";
-import { initializeDatePickers } from "./date-picker.js?v=20260726-secondary-excel-columns";
+} from "./trade-record-ledger.js?v=20260726-cdb-curve-5y";
+import { initializeDatePickers } from "./date-picker.js?v=20260726-cdb-curve-5y";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,28 +117,28 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260726-secondary-excel-columns";
+} from "./project-screenshot-ocr.js?v=20260726-cdb-curve-5y";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260726-secondary-excel-columns";
+} from "./project-screenshot-layout.js?v=20260726-cdb-curve-5y";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260726-secondary-excel-columns";
+} from "./project-screenshot-image.js?v=20260726-cdb-curve-5y";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260726-secondary-excel-columns";
+} from "./payment-receipts.js?v=20260726-cdb-curve-5y";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
-const POLICY_CURVE_TERMS = ["0.1Y", "0.2Y", "0.25Y", "0.3Y", "0.4Y", "0.5Y", "0.6Y", "0.7Y", "0.75Y", "0.8Y", "0.9Y", "1Y"];
-const POLICY_CURVE_KEY_TERMS = new Set(["0.1Y", "0.25Y", "0.3Y", "0.5Y", "0.75Y", "1Y"]);
+const POLICY_CURVE_TERMS = ["0.1Y", "0.2Y", "0.25Y", "0.3Y", "0.4Y", "0.5Y", "0.6Y", "0.7Y", "0.75Y", "0.8Y", "0.9Y", "1Y", "3Y", "5Y"];
+const POLICY_CURVE_KEY_TERMS = new Set(["0.1Y", "0.25Y", "0.3Y", "0.5Y", "0.75Y", "1Y", "3Y", "5Y"]);
 const API_URL = "./api/state";
 const PAYMENT_RECEIPTS_URL = "./api/payment-receipts";
 const PAYMENT_RECEIPT_COVERAGE_URL = "./api/payment-receipt-coverage";

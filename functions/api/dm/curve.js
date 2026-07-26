@@ -34,6 +34,8 @@ const CURVES = {
       { termYears: 0.8, tenor: "0.8Y", allowInterpolation: true },
       { termYears: 0.9, tenor: "0.9Y", allowInterpolation: true },
       { termYears: 1, tenor: "1Y" },
+      { termYears: 3, tenor: "3Y" },
+      { termYears: 5, tenor: "5Y" },
     ],
   },
 };

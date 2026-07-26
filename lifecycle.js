@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260726-secondary-excel-columns";
+import { parseUnderwriterNames } from "./core.js?v=20260726-cdb-curve-5y";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

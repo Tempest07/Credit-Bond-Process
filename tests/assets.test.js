@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260726-secondary-excel-columns";
+const VERSION = "20260726-cdb-curve-5y";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.9">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.10">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -294,7 +294,7 @@ test("uses a single crash-safe immersive Android app shell without the mobile si
   ]);
 
   assert.match(html, /viewport-fit=cover/);
-  assert.match(html, /app-shell-mode\.js\?v=20260726-android-app-shell/);
+  assert.match(html, new RegExp(`app-shell-mode\\.js\\?v=${VERSION}`));
   assert.match(shellMode, /navigator\.userAgent\.includes\("Tempest07Android\/"\)/);
   assert.match(shellMode, /get\("app-shell"\) === "android"/);
   assert.match(shellMode, /classList\.add\("android-app-preview"\)/);
@@ -356,16 +356,17 @@ test("shows the compact DM policy-bank curve in the project command corner", asy
   assert.match(html, /class="ledger-command-bottom"[\s\S]+id="policyCurveCard"/);
   assert.match(html, /id="policyCurvePoints"/);
   assert.match(html, /id="policyCurveUpdatedAt"/);
-  assert.match(html, /0\.1–1年国开债曲线/);
+  assert.match(html, /id="policyCurveTitle">国开债曲线</);
   assert.match(app, /DM_POLICY_CURVE_URL/);
-  assert.match(app, /\["0\.1Y", "0\.2Y", "0\.25Y", "0\.3Y"[^\]]+"1Y"\]/);
-  assert.match(app, /POLICY_CURVE_KEY_TERMS = new Set\(\["0\.1Y", "0\.25Y", "0\.3Y", "0\.5Y", "0\.75Y", "1Y"\]\)/);
+  assert.match(app, /\["0\.1Y", "0\.2Y", "0\.25Y", "0\.3Y"[^\]]+"1Y", "3Y", "5Y"\]/);
+  assert.match(app, /POLICY_CURVE_KEY_TERMS = new Set\(\["0\.1Y", "0\.25Y", "0\.3Y", "0\.5Y", "0\.75Y", "1Y", "3Y", "5Y"\]\)/);
+  assert.match(styles, /\.policy-curve-points\s*\{[^}]*grid-template-columns:\s*repeat\(7,/s);
   assert.match(app, /node\?\.method === "derived-linear"/);
   assert.match(app, /loadPolicyCurve\(\{ refresh: true \}\)/);
   assert.match(styles, /\.ledger-command-bottom\s*\{[^}]*grid-template-columns:[^}]*align-items:\s*stretch;/s);
   assert.match(styles, /\.ledger-filter-bar\s*\{[^}]*display:\s*grid;[^}]*align-items:\s*center;/s);
   assert.match(styles, /\.policy-curve-card\s*\{[^}]*grid-template-columns:\s*minmax\(142px, auto\)\s+minmax\(0, 1fr\)/s);
-  assert.match(styles, /\.policy-curve-points\s*\{[^}]*grid-template-columns:\s*repeat\(6,/s);
+  assert.match(styles, /\.policy-curve-points\s*\{[^}]*grid-template-columns:\s*repeat\(7,/s);
   assert.match(styles, /\.policy-curve-point\.is-key\s*\{/);
   assert.match(styles, /@media \(max-width: 1380px\)[\s\S]+\.ledger-command-bottom\s*\{\s*grid-template-columns:\s*1fr;/);
   assert.match(styles, /@media \(max-width: 1050px\)[\s\S]+\.ledger-command-bottom\s*\{\s*grid-template-columns:\s*1fr;/);
@@ -438,7 +439,7 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.doesNotMatch(mainActivity, /navButton|webView\.reload|Tempest07 Bond/);
   ["reminders", "ledger", "payment-receipts", "secondary-trading", "generator"]
     .forEach((route) => assert.match(html, new RegExp(`android-app-nav-item[^>]+data-view-target="${route}"`)));
-  assert.match(html, /app-shell-mode\.js\?v=20260726-android-app-shell/);
+  assert.match(html, new RegExp(`app-shell-mode\\.js\\?v=${VERSION}`));
   assert.match(html, /id="androidMorePanel"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(readme, /WorkManager/);

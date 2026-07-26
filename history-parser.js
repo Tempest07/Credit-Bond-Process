@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260726-secondary-excel-columns";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260726-cdb-curve-5y";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
