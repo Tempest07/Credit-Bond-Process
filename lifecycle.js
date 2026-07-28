@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260726-cdb-curve-5y";
+import { parseUnderwriterNames } from "./core.js?v=20260728-auth-refresh";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

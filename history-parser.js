@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260726-cdb-curve-5y";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260728-auth-refresh";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

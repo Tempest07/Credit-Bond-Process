@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260726-cdb-curve-5y";
+const VERSION = "20260728-auth-refresh";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.1\.10">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.2\.2\.1">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -45,6 +45,16 @@ test("versions all first-party browser modules together", async () => {
   assert.match(lifecycle, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+});
+
+test("starts the application only after module constants are initialized", async () => {
+  const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
+  const secondaryColumnClasses = app.indexOf("const SECONDARY_PENDING_COLUMN_CLASSES");
+  const initializeCall = app.lastIndexOf("void initialize().catch");
+
+  assert.ok(secondaryColumnClasses >= 0);
+  assert.ok(initializeCall > secondaryColumnClasses);
+  assert.equal(app.slice(0, secondaryColumnClasses).includes("initialize();"), false);
 });
 
 test("ships tranche prepayment entry with a mobile-safe three-digit input", async () => {

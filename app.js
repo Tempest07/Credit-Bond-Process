@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260726-cdb-curve-5y";
+} from "./core.js?v=20260728-auth-refresh";
 import {
   FTP_TENORS,
   applyGuidancePricing,
@@ -36,13 +36,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260726-cdb-curve-5y";
+} from "./lifecycle.js?v=20260728-auth-refresh";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260726-cdb-curve-5y";
+} from "./history-parser.js?v=20260728-auth-refresh";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +55,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260726-cdb-curve-5y";
+} from "./protocol-transfer.js?v=20260728-auth-refresh";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260726-cdb-curve-5y";
+} from "./reminders.js?v=20260728-auth-refresh";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +87,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260726-cdb-curve-5y";
+} from "./secondary-inventory.js?v=20260728-auth-refresh";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260726-cdb-curve-5y";
+} from "./trade-record-converter.js?v=20260728-auth-refresh";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +102,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260726-cdb-curve-5y";
+} from "./trade-record-grid.js?v=20260728-auth-refresh";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260726-cdb-curve-5y";
-import { initializeDatePickers } from "./date-picker.js?v=20260726-cdb-curve-5y";
+} from "./trade-record-ledger.js?v=20260728-auth-refresh";
+import { initializeDatePickers } from "./date-picker.js?v=20260728-auth-refresh";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,22 +117,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260726-cdb-curve-5y";
+} from "./project-screenshot-ocr.js?v=20260728-auth-refresh";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260726-cdb-curve-5y";
+} from "./project-screenshot-layout.js?v=20260728-auth-refresh";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260726-cdb-curve-5y";
+} from "./project-screenshot-image.js?v=20260728-auth-refresh";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260726-cdb-curve-5y";
+} from "./payment-receipts.js?v=20260728-auth-refresh";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -322,8 +322,6 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 if (location.hostname === "credit-bond-process.pages.dev") {
   location.replace(`https://tempest07.com/bond-centre/${location.search}${location.hash}`);
 }
-
-initialize();
 
 async function initialize() {
   initializeAndroidAppShell();
@@ -10956,3 +10954,13 @@ function escapeHtml(value = "") {
 function escapeAttribute(value = "") {
   return escapeHtml(value).replace(/`/g, "&#096;");
 }
+
+void initialize().catch((error) => {
+  console.error("Bond Centre initialization failed", error);
+  setSyncStatus("加载失败", "请刷新页面重试");
+  setCloudGate(true, {
+    state: "error",
+    title: "页面加载失败",
+    detail: "请刷新页面重试。",
+  });
+});

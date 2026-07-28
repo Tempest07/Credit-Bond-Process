@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260726-cdb-curve-5y";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260726-cdb-curve-5y";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260728-auth-refresh";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260728-auth-refresh";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";
