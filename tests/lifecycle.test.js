@@ -589,6 +589,100 @@ test("applies bracketed result advertisements to update award status", () => {
   assert.equal(project.tranches[0].paymentDate, "2026-06-18");
 });
 
+test("parses comma-separated dual-tranche headers and cleans reallocation separators", () => {
+  const ad = `【26越租G1，524935.SZ】
+---全部回拨至26越租G2---
+
+【26越租G2，524936.SZ】
+发行规模：10亿元
+债券期限：5年期
+票面利率：1.99%
+全场倍数：2.16倍
+缴款日期：8月5日`;
+  const parsed = parseIssuanceAdvertisement(ad, new Date("2026-08-03T09:00:00+08:00"));
+
+  assert.equal(parsed.items.length, 2);
+  assert.equal(parsed.items[0].shortName, "26越租G1");
+  assert.equal(parsed.items[0].securityCode, "524935.SZ");
+  assert.equal(parsed.items[0].allocationNote, "全部回拨至26越租G2");
+  assert.equal(parsed.items[1].shortName, "26越租G2");
+  assert.equal(parsed.items[1].securityCode, "524936.SZ");
+  assert.equal(parsed.items[1].issueScale, 10);
+  assert.equal(parsed.items[1].durationText, "5年期");
+  assert.equal(parsed.items[1].couponRate, 1.99);
+  assert.equal(parsed.items[1].fullMarketMultiple, 2.16);
+  assert.equal(parsed.items[1].paymentDate, "2026-08-05");
+  assert.equal(parsed.items[1].allocationNote, "");
+});
+
+test("reapplying dual-tranche results clears stale reallocation and issue fields", () => {
+  const ad = `【26越租G1，524935.SZ】
+---全部回拨至26越租G2---
+
+【26越租G2，524936.SZ】
+发行规模：10亿元
+债券期限：5年期
+票面利率：1.99%
+全场倍数：2.16倍
+缴款日期：8月5日`;
+  const staleAllocationNote = "全部回拨至26越租G2---";
+  const polluted = normalizeProjectRecord({
+    shortName: "26越租G1/G2",
+    tranches: [
+      {
+        shortName: "26越租G1",
+        durationText: "3年期",
+        securityCode: "524936.SZ",
+        issueScale: 10,
+        fullMarketMultiple: 2.16,
+        marginalMultiple: 1.1,
+        winningRate: 1.99,
+        winningAmountWan: 1000,
+        revenueBp: 4,
+        paymentDate: "2026-08-05",
+        startDate: "2026-08-04",
+        prepaymentNumber: "W2026080300001",
+        prepaymentRecordedAt: "2026-08-03T09:00:00.000Z",
+        paymentCompleted: true,
+        allocationNote: staleAllocationNote,
+      },
+      {
+        shortName: "26越租G2",
+        durationText: "5年期",
+        allocationNote: staleAllocationNote,
+      },
+    ],
+  });
+  const repaired = applyIssuanceAdvertisement(polluted, ad, new Date("2026-08-03T09:00:00+08:00"));
+
+  assert.equal(repaired.tranches[0].securityCode, "524935.SZ");
+  assert.equal(repaired.tranches[0].resultStatus, "未中标");
+  assert.equal(repaired.tranches[0].issueScale, null);
+  assert.equal(repaired.tranches[0].fullMarketMultiple, null);
+  assert.equal(repaired.tranches[0].marginalMultiple, null);
+  assert.equal(repaired.tranches[0].winningRate, null);
+  assert.equal(repaired.tranches[0].winningAmountWan, 0);
+  assert.equal(repaired.tranches[0].revenueBp, null);
+  assert.equal(repaired.tranches[0].paymentDate, "");
+  assert.equal(repaired.tranches[0].startDate, "");
+  assert.equal(repaired.tranches[0].prepaymentNumber, "");
+  assert.equal(repaired.tranches[0].prepaymentRecordedAt, "");
+  assert.equal(repaired.tranches[0].paymentCompleted, false);
+  assert.equal(repaired.tranches[0].allocationNote, "全部回拨至26越租G2");
+
+  assert.equal(repaired.tranches[1].securityCode, "524936.SZ");
+  assert.equal(repaired.tranches[1].durationText, "5年期");
+  assert.equal(repaired.tranches[1].issueScale, 10);
+  assert.equal(repaired.tranches[1].winningRate, 1.99);
+  assert.equal(repaired.tranches[1].fullMarketMultiple, 2.16);
+  assert.equal(repaired.tranches[1].paymentDate, "2026-08-05");
+  assert.equal(repaired.tranches[1].allocationNote, "");
+
+  const reapplied = applyIssuanceAdvertisement(repaired, ad, new Date("2026-08-03T09:00:00+08:00"));
+  assert.equal(reapplied.tranches[0].allocationNote, "全部回拨至26越租G2");
+  assert.equal(reapplied.tranches[1].allocationNote, "");
+});
+
 test("applies advertisements and builds own and outsourced award report", () => {
   const ad = "【发行结果】26测试SCP001，代码：012681422，期限179天，规模10亿，票面1.45%，11日缴款";
   const project = applyIssuanceAdvertisement(normalizeProjectRecord({

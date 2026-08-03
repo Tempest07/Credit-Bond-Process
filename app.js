@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260803-bid-rounds";
+} from "./core.js?v=20260803-result-parser";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -37,13 +37,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260803-bid-rounds";
+} from "./lifecycle.js?v=20260803-result-parser";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260803-bid-rounds";
+} from "./history-parser.js?v=20260803-result-parser";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -56,12 +56,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260803-bid-rounds";
+} from "./protocol-transfer.js?v=20260803-result-parser";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260803-bid-rounds";
+} from "./reminders.js?v=20260803-result-parser";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -88,11 +88,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260803-bid-rounds";
+} from "./secondary-inventory.js?v=20260803-result-parser";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260803-bid-rounds";
+} from "./trade-record-converter.js?v=20260803-result-parser";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -103,13 +103,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260803-bid-rounds";
+} from "./trade-record-grid.js?v=20260803-result-parser";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260803-bid-rounds";
-import { initializeDatePickers } from "./date-picker.js?v=20260803-bid-rounds";
+} from "./trade-record-ledger.js?v=20260803-result-parser";
+import { initializeDatePickers } from "./date-picker.js?v=20260803-result-parser";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -118,22 +118,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260803-bid-rounds";
+} from "./project-screenshot-ocr.js?v=20260803-result-parser";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260803-bid-rounds";
+} from "./project-screenshot-layout.js?v=20260803-result-parser";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260803-bid-rounds";
+} from "./project-screenshot-image.js?v=20260803-result-parser";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260803-bid-rounds";
+} from "./payment-receipts.js?v=20260803-result-parser";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -8430,14 +8430,21 @@ function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertis
     const hasIssueScale = Number.isFinite(numberOrNull(item?.issueScale));
     const hasPaymentDate = valueHasContent(item?.paymentDate);
     const hasStartDate = valueHasContent(item?.startDate);
+    const fullyReallocated = /全部回拨/.test(item?.allocationNote || "");
 
-    marks[`${base}.resultStatus`] = tranche.resultStatus && tranche.resultStatus !== "待出结果"
+    marks[`${base}.resultStatus`] = fullyReallocated
+      ? recognitionMark("success", "已识别为全部回拨，本品种未发行")
+      : tranche.resultStatus && tranche.resultStatus !== "待出结果"
       ? recognitionMark("success", "截标结果已按票面和标位推算")
       : recognitionMark("attention", "截标结果需要复核或补充标位");
-    marks[`${base}.winningRate`] = hasCoupon
+    marks[`${base}.winningRate`] = fullyReallocated
+      ? recognitionMark("success", "本品种全部回拨，无票面利率")
+      : hasCoupon
       ? recognitionMark("success", "票面/中标利率已识别")
       : recognitionMark("error", "票面/中标利率未识别，请补充");
-    marks[`${base}.winningAmountWan`] = Number.isFinite(numberOrNull(tranche.winningAmountWan))
+    marks[`${base}.winningAmountWan`] = fullyReallocated
+      ? recognitionMark("success", "本品种全部回拨，中标量为 0")
+      : Number.isFinite(numberOrNull(tranche.winningAmountWan))
       ? recognitionMark("success", "表内中标量已自动推算")
       : recognitionMark("attention", "表内中标量需复核或补充投标标位");
     marks[`${base}.pricingMode`] = valueHasContent(tranche.pricingMode)
@@ -8457,10 +8464,14 @@ function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertis
     marks[`${base}.securityCode`] = valueHasContent(item?.securityCode)
       ? recognitionMark("success", "债券代码已识别")
       : recognitionMark("attention", "债券代码未识别，必要时补充");
-    marks[`${base}.issueScale`] = hasIssueScale
+    marks[`${base}.issueScale`] = fullyReallocated
+      ? recognitionMark("success", "本品种全部回拨，无实际发行规模")
+      : hasIssueScale
       ? recognitionMark("success", "发行规模已识别")
       : recognitionMark("error", "发行规模未识别，请补充");
-    marks[`${base}.fullMarketMultiple`] = Number.isFinite(numberOrNull(item?.fullMarketMultiple))
+    marks[`${base}.fullMarketMultiple`] = fullyReallocated
+      ? recognitionMark("success", "本品种全部回拨，无全场倍数")
+      : Number.isFinite(numberOrNull(item?.fullMarketMultiple))
       ? recognitionMark("success", "全场倍数已识别")
       : recognitionMark("attention", "全场倍数未披露或未识别");
     if (Number.isFinite(numberOrNull(item?.marginalMultiple))) {
@@ -8468,10 +8479,14 @@ function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertis
     } else if (hasMarginalBidForRecognition(tranche)) {
       marks[`${base}.marginalMultiple`] = recognitionMark("attention", "标位在边际上，未识别边际倍数时按全中处理，请复核");
     }
-    marks[`${base}.startDate`] = hasStartDate
+    marks[`${base}.startDate`] = fullyReallocated
+      ? recognitionMark("success", "本品种全部回拨，无需起息")
+      : hasStartDate
       ? recognitionMark("success", "起息日期已识别")
       : recognitionMark("attention", "起息日期未识别，必要时补充");
-    marks[`${base}.paymentDate`] = hasPaymentDate
+    marks[`${base}.paymentDate`] = fullyReallocated
+      ? recognitionMark("success", "本品种全部回拨，无需缴款")
+      : hasPaymentDate
       ? recognitionMark("success", "缴款日期已识别")
       : valueHasContent(tranche.paymentDate)
         ? recognitionMark("attention", "缴款日期为系统推导，请复核")
@@ -8519,16 +8534,44 @@ function applyResultRecognitionMarks(record) {
 }
 
 function matchAdvertisementItemForRecognition(tranche, index, items) {
-  const shortName = stripTrancheSuffixForRecognition(tranche.shortName);
-  return items.find((item) =>
+  const trancheShortName = resultRecognitionShortNameKey(tranche.shortName);
+  const exact = items.find((item) => item?.shortName && resultRecognitionShortNameKey(item.shortName) === trancheShortName);
+  if (exact) return exact;
+
+  const securityCode = String(tranche.securityCode || "").trim().toUpperCase();
+  const codeMatch = securityCode
+    ? items.find((item) => String(item?.securityCode || "").trim().toUpperCase() === securityCode)
+    : null;
+  if (codeMatch) return codeMatch;
+
+  const baseShortName = resultRecognitionShortNameKey(stripTrancheSuffixForRecognition(tranche.shortName));
+  const duration = resultRecognitionDurationKey(tranche.durationText);
+  const baseMatches = items.filter((item) =>
     item?.shortName
-    && (
-      item.shortName === tranche.shortName
-      || stripTrancheSuffixForRecognition(item.shortName) === shortName
-      || tranche.shortName?.includes(item.shortName)
-      || item.shortName?.includes(tranche.shortName)
-    )
-  ) || items[index] || {};
+    && resultRecognitionShortNameKey(stripTrancheSuffixForRecognition(item.shortName)) === baseShortName
+  );
+  const durationMatch = duration
+    ? baseMatches.find((item) => resultRecognitionDurationKey(item.durationText) === duration)
+    : null;
+  if (durationMatch) return durationMatch;
+
+  const positional = items[index];
+  if (!positional?.shortName || resultRecognitionShortNameKey(positional.shortName) === trancheShortName) {
+    return positional || {};
+  }
+  return {};
+}
+
+function resultRecognitionShortNameKey(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/[，,；;].*$/, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function resultRecognitionDurationKey(value = "") {
+  return String(value || "").replace(/\s+/g, "").replace(/期$/, "").toUpperCase();
 }
 
 function stripTrancheSuffixForRecognition(value = "") {

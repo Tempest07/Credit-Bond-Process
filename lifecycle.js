@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260803-bid-rounds";
+import { parseUnderwriterNames } from "./core.js?v=20260803-result-parser";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -432,17 +432,27 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
   if (!next.issuerName && parsed.issuerName) next.issuerName = parsed.issuerName;
   next.tranches = next.tranches.map((tranche, index) => {
     const match = findAdvertisementMatch(next.tranches, tranche, index, parsed.items);
+    const matched = Object.keys(match).length > 0;
+    const fullyReallocated = /全部回拨/.test(match.allocationNote || "");
+    const allocationNote = matched
+      ? (match.allocationNote || (/全部回拨/.test(tranche.allocationNote) ? "" : tranche.allocationNote))
+      : tranche.allocationNote;
     const awarded = applyAutoAward(normalizeTranche({
       ...tranche,
       securityCode: match.securityCode || tranche.securityCode,
       durationText: match.durationText || tranche.durationText,
-      issueScale: match.issueScale ?? tranche.issueScale,
-      fullMarketMultiple: match.fullMarketMultiple ?? tranche.fullMarketMultiple,
-      marginalMultiple: match.marginalMultiple ?? tranche.marginalMultiple,
-      winningRate: match.couponRate ?? tranche.winningRate,
-      paymentDate: match.paymentDate || tranche.paymentDate,
-      startDate: match.startDate || tranche.startDate,
-      allocationNote: match.allocationNote || tranche.allocationNote,
+      issueScale: fullyReallocated ? null : match.issueScale ?? tranche.issueScale,
+      fullMarketMultiple: fullyReallocated ? null : match.fullMarketMultiple ?? tranche.fullMarketMultiple,
+      marginalMultiple: fullyReallocated ? null : match.marginalMultiple ?? tranche.marginalMultiple,
+      winningRate: fullyReallocated ? null : match.couponRate ?? tranche.winningRate,
+      winningAmountWan: fullyReallocated ? 0 : tranche.winningAmountWan,
+      revenueBp: fullyReallocated ? null : tranche.revenueBp,
+      paymentDate: fullyReallocated ? "" : match.paymentDate || tranche.paymentDate,
+      startDate: fullyReallocated ? "" : match.startDate || tranche.startDate,
+      prepaymentNumber: fullyReallocated ? "" : tranche.prepaymentNumber,
+      prepaymentRecordedAt: fullyReallocated ? "" : tranche.prepaymentRecordedAt,
+      paymentCompleted: fullyReallocated ? false : tranche.paymentCompleted,
+      allocationNote,
     }), next);
     if (!awarded.paymentDate && isWinningTranche(awarded)) {
       awarded.paymentDate = inferDefaultPaymentDate(next, referenceDate);
@@ -850,12 +860,20 @@ function hasAnyBidLevelValue(level = {}) {
 }
 
 function findAdvertisementMatch(tranches, tranche, index, items = []) {
-  const exact = items.find((item) => item.shortName && item.shortName === tranche.shortName);
+  const trancheShortName = advertisementShortNameKey(tranche.shortName);
+  const exact = items.find((item) => item.shortName && advertisementShortNameKey(item.shortName) === trancheShortName);
   if (exact) return exact;
+
+  const trancheSecurityCode = String(tranche.securityCode || "").trim().toUpperCase();
+  const codeMatch = trancheSecurityCode
+    ? items.find((item) => String(item.securityCode || "").trim().toUpperCase() === trancheSecurityCode)
+    : null;
+  if (codeMatch) return codeMatch;
 
   const single = items.length === 1 ? items[0] : null;
   if (single) {
-    const shortNameMatches = !single.shortName || single.shortName === stripVarietySuffix(tranche.shortName);
+    const singleShortName = advertisementShortNameKey(single.shortName);
+    const shortNameMatches = !singleShortName || singleShortName === advertisementShortNameKey(stripVarietySuffix(tranche.shortName));
     const singleDuration = durationMatchKey(single.durationText);
     if (singleDuration) {
       if (shortNameMatches && singleDuration === durationMatchKey(tranche.durationText)) return single;
@@ -864,7 +882,18 @@ function findAdvertisementMatch(tranches, tranche, index, items = []) {
     if (tranches.length === 1 && shortNameMatches) return single;
   }
 
-  return items[index] || {};
+  const positional = items[index];
+  if (!positional) return {};
+  const positionalShortName = advertisementShortNameKey(positional.shortName);
+  return !positionalShortName || positionalShortName === trancheShortName ? positional : {};
+}
+
+function advertisementShortNameKey(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/[，,；;].*$/, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
 }
 
 function stripVarietySuffix(shortName) {
@@ -876,10 +905,10 @@ function durationMatchKey(value) {
 }
 
 function parseAdvertisementBlock(block, headerText, referenceDate) {
-  const headerParts = headerText.trim().split(/\s+/);
+  const headerParts = headerText.trim().split(/[，,；;\s]+/).filter(Boolean);
   const labeledShortName = block.match(/简称(?:代码)?[：:\s]*([^\s（(，,]+)/)?.[1] || "";
   const bodyShortName = extractAdvertisementShortName(headerText, block);
-  const shortName = headerParts.find((part) => /^\d{2}\S+/.test(part)) || labeledShortName || bodyShortName;
+  const shortName = headerParts.find((part) => /^\d{2}\S+/.test(part) && !isAdvertisementSecurityCode(part)) || labeledShortName || bodyShortName;
   const securityCode = headerParts.find((part) => /^[A-Z]?\d{6,9}(?:\.[A-Z]{2})?$/.test(part))
     || extractAdvertisementSecurityCode(headerText)
     || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
@@ -897,7 +926,7 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
   const durationText = block.match(/(?:债券)?期限[】：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:【|规模|发行规模|票面|利率|全场倍数|缴款|$))/)?.[1]?.trim()
     || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
     || "";
-  const allocationNote = block.includes("全部回拨") ? block.match(/全部回拨至[^\n，,]*/)?.[0] || "全部回拨" : "";
+  const allocationNote = extractAllocationNote(block);
   return {
     shortName,
     securityCode,
@@ -910,6 +939,16 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     startDate: parseLabeledDate(block, "起息", referenceDate),
     allocationNote,
   };
+}
+
+function extractAllocationNote(block = "") {
+  if (!String(block).includes("全部回拨")) return "";
+  const note = String(block).match(/全部回拨(?:至[^\n，,]*)?/)?.[0] || "全部回拨";
+  return note.replace(/[-—–_=\s]+$/g, "").trim();
+}
+
+function isAdvertisementSecurityCode(value = "") {
+  return /^[A-Z]?\d{6,9}(?:\.[A-Z]{2})?$/i.test(String(value || "").trim());
 }
 
 function extractAdvertisementShortName(headerText, block) {
@@ -941,7 +980,7 @@ function inferUnlabeledCouponRate(block = "") {
 }
 
 function extractAdvertisementSecurityCode(headerText) {
-  return headerText.match(/(?:^|[-_\s])([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=$|[-_\s])/i)?.[1] || "";
+  return headerText.match(/(?:^|[-_，,；;\s])([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=$|[-_，,；;\s])/i)?.[1] || "";
 }
 
 function applyAutoAward(tranche, project = {}) {
