@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260728-auth-refresh";
+const VERSION = "20260803-bid-rounds";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.2\.2\.1">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.1">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -55,6 +55,23 @@ test("starts the application only after module constants are initialized", async
   assert.ok(secondaryColumnClasses >= 0);
   assert.ok(initializeCall > secondaryColumnClasses);
   assert.equal(app.slice(0, secondaryColumnClasses).includes("initialize();"), false);
+});
+
+test("keeps repeated bid rounds visible and submit-ready in project details", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="projectBidRoundSummary"/);
+  assert.match(html, /id="bidSubmissionHistory"/);
+  assert.match(html, /id="markBidButton"[^>]*>提交第 1 次标</);
+  assert.match(app, /markBidButton"\)\.addEventListener\("click", submitProjectBidRound\)/);
+  assert.match(app, /appendBidSubmission\(readProjectForm\(\)\)/);
+  assert.match(app, /\["未投标", "已投标待结果"\]\.includes\(status\)/);
+  assert.match(styles, /\.bid-submission-row\s*\{/);
+  assert.match(styles, /\.bid-submission-current\s*\{/);
 });
 
 test("ships tranche prepayment entry with a mobile-safe three-digit input", async () => {

@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260728-auth-refresh";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260803-bid-rounds";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="3.2.2">
-  <meta name="application-build-version" content="3.2.2.1">
-  <meta name="application-build" content="20260728-auth-refresh">
+  <meta name="application-version" content="3.3.0">
+  <meta name="application-build-version" content="3.3.0.1">
+  <meta name="application-build" content="20260803-bid-rounds">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260728-auth-refresh"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260728-auth-refresh">
+  <script src="./app-shell-mode.js?v=20260803-bid-rounds"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260803-bid-rounds">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.2.2.1 · 2026-07-28 更新">v3.2.2</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.1 · 2026-08-03 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -399,13 +399,15 @@
               <div class="project-action-bar">
                 <div>
                   <strong>项目行动</strong>
+                  <span id="projectBidRoundSummary">尚无投标记录</span>
                 </div>
                 <div class="project-action-buttons">
                   <button class="button subtle" id="markUnbidButton" type="button">撤回</button>
                   <button class="button subtle danger-button" id="terminateProjectButton" type="button">不投标终止</button>
-                  <button class="button primary" id="markBidButton" type="button">投标</button>
+                  <button class="button primary" id="markBidButton" type="button">提交第 1 次标</button>
                   <button class="button result-action" id="openResultButton" type="button">结果</button>
                 </div>
+                <div class="bid-submission-history" id="bidSubmissionHistory" hidden></div>
               </div>
               <div class="project-summary-grid" id="projectSummary">
                 <div class="project-summary-item"><span>主体</span><strong id="projectSummaryIssuer">待补</strong></div>
@@ -1067,6 +1069,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260728-auth-refresh"></script>
+  <script type="module" src="./app.js?v=20260803-bid-rounds"></script>
 </body>
 </html>

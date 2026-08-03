@@ -17,9 +17,10 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260728-auth-refresh";
+} from "./core.js?v=20260803-bid-rounds";
 import {
   FTP_TENORS,
+  appendBidSubmission,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -36,13 +37,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260728-auth-refresh";
+} from "./lifecycle.js?v=20260803-bid-rounds";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260728-auth-refresh";
+} from "./history-parser.js?v=20260803-bid-rounds";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -55,12 +56,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260728-auth-refresh";
+} from "./protocol-transfer.js?v=20260803-bid-rounds";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260728-auth-refresh";
+} from "./reminders.js?v=20260803-bid-rounds";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -87,11 +88,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260728-auth-refresh";
+} from "./secondary-inventory.js?v=20260803-bid-rounds";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260728-auth-refresh";
+} from "./trade-record-converter.js?v=20260803-bid-rounds";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -102,13 +103,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260728-auth-refresh";
+} from "./trade-record-grid.js?v=20260803-bid-rounds";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260728-auth-refresh";
-import { initializeDatePickers } from "./date-picker.js?v=20260728-auth-refresh";
+} from "./trade-record-ledger.js?v=20260803-bid-rounds";
+import { initializeDatePickers } from "./date-picker.js?v=20260803-bid-rounds";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -117,22 +118,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260728-auth-refresh";
+} from "./project-screenshot-ocr.js?v=20260803-bid-rounds";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260728-auth-refresh";
+} from "./project-screenshot-layout.js?v=20260803-bid-rounds";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260728-auth-refresh";
+} from "./project-screenshot-image.js?v=20260803-bid-rounds";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260728-auth-refresh";
+} from "./payment-receipts.js?v=20260803-bid-rounds";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -4214,7 +4215,7 @@ function bindLedger() {
     button.addEventListener("click", () => applyCutoffAction(button.dataset.cutoffAction));
   });
   $("#markUnbidButton").addEventListener("click", () => setProjectActionStatus("未投标"));
-  $("#markBidButton").addEventListener("click", () => setProjectActionStatus("已投标待结果"));
+  $("#markBidButton").addEventListener("click", submitProjectBidRound);
   $("#terminateProjectButton").addEventListener("click", () => setProjectActionStatus("已结束"));
   $("#openResultButton").addEventListener("click", () => openResultEntryPanel());
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
@@ -8203,7 +8204,8 @@ function fillProjectForm(input) {
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = record.status;
   $("#projectAutosaveStatus").textContent = "已实时保存";
-  updateProjectActionButtons(record.status);
+  updateProjectActionButtons(record);
+  renderBidSubmissionHistory(record);
   renderCutoffHint(record);
   renderTranches(record.tranches);
   void loadProjectPaymentReceipts(record.id);
@@ -8721,7 +8723,9 @@ function saveProjectRecordNow(record) {
     $("#projectStatus").value = normalized.status;
     $("#projectStatusPill").textContent = normalized.status;
     $("#projectAutosaveStatus").textContent = "已实时保存";
-    updateProjectActionButtons(normalized.status);
+    $("#projectBidPosition").value = buildBidPositionText(normalized);
+    updateProjectActionButtons(normalized);
+    renderBidSubmissionHistory(normalized);
   }
   renderUnifiedReminders();
   renderDashboard();
@@ -8749,13 +8753,85 @@ function setProjectActionStatus(status) {
   showToast(messages[status] || "项目状态已更新。");
 }
 
-function updateProjectActionButtons(status) {
+function submitProjectBidRound() {
+  clearTimeout(projectAutoSaveTimer);
+  const result = appendBidSubmission(readProjectForm());
+  if (!result.submission) {
+    showToast(result.issues[0] || "请先补全投标标位。");
+    return;
+  }
+  saveProjectRecordNow(result.project);
+  closeResultEntryPanel();
+  setResultEntryFieldsVisible(false);
+  showToast(`第 ${result.submission.sequence} 次标位已记录，当前有效标已更新。`);
+}
+
+function updateProjectActionButtons(projectOrStatus) {
+  const projectValue = typeof projectOrStatus === "string"
+    ? { status: projectOrStatus, bidSubmissions: [] }
+    : projectOrStatus || {};
+  const status = projectValue.status || "未投标";
+  const bidCount = projectValue.bidSubmissions?.length || 0;
   const resultStatuses = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款"]);
   const hasResult = resultStatuses.has(status);
   $("#markUnbidButton").disabled = status === "未投标" || hasResult;
   $("#terminateProjectButton").disabled = status !== "未投标";
-  $("#markBidButton").disabled = status !== "未投标";
+  $("#markBidButton").disabled = !["未投标", "已投标待结果"].includes(status);
+  $("#markBidButton").textContent = `提交第 ${bidCount + 1} 次标`;
   $("#openResultButton").disabled = status === "未投标" || status === "已结束";
+}
+
+function renderBidSubmissionHistory(projectValue) {
+  const history = $("#bidSubmissionHistory");
+  const summary = $("#projectBidRoundSummary");
+  const submissions = projectValue.bidSubmissions || [];
+  if (!submissions.length) {
+    summary.textContent = "尚无投标记录";
+    history.hidden = true;
+    history.innerHTML = "";
+    return;
+  }
+
+  const latest = submissions[submissions.length - 1];
+  summary.textContent = `已提交 ${submissions.length} 次 · 当前有效：第 ${latest.sequence} 次`;
+  history.hidden = false;
+  history.innerHTML = [...submissions].reverse().map((submission) => {
+    const isLatest = submission.id === latest.id;
+    const actions = [...new Set((submission.tranches || []).map((tranche) => tranche.bidAction).filter(Boolean))].join(" / ");
+    const positions = (submission.tranches || []).flatMap((tranche) => bidSubmissionPositionLabels(tranche)).join("；");
+    return `
+      <div class="bid-submission-row ${isLatest ? "is-current" : ""}">
+        <strong>第 ${submission.sequence} 次</strong>
+        <time>${escapeHtml(formatBidSubmissionTime(submission.submittedAt))}</time>
+        <span class="bid-submission-action">${escapeHtml(actions || "投标")}</span>
+        <span class="bid-submission-positions">${escapeHtml(positions || "标位待补")}</span>
+        ${isLatest ? '<span class="bid-submission-current">当前有效</span>' : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+function bidSubmissionPositionLabels(tranche = {}) {
+  const name = tranche.shortName || "品种";
+  const own = (tranche.bidLevels || []).map((level) =>
+    `${name} ${formatNumber(level.bidRate)}%投${formatNumber(level.bidAmount)}亿`,
+  );
+  const outsourced = (tranche.outsourcedBids || []).map((bid) =>
+    `${bid.managerName || "委外"} ${formatNumber(bid.bidRate)}%投${formatNumber(bid.bidAmount)}亿`,
+  );
+  return [...own, ...outsourced];
+}
+
+function formatBidSubmissionTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未记录";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function openResultEntryPanel(shouldFocus = true) {

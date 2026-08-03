@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260728-auth-refresh";
+import { parseUnderwriterNames } from "./core.js?v=20260803-bid-rounds";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -110,6 +110,9 @@ export function normalizeProjectRecord(input = {}) {
     tranches: Array.isArray(input.tranches) && input.tranches.length
       ? input.tranches.map(normalizeTranche)
       : [normalizeTranche({ shortName: input.shortName })],
+    bidSubmissions: Array.isArray(input.bidSubmissions)
+      ? input.bidSubmissions.map(normalizeBidSubmission)
+      : [],
     resultAdvertisement: String(input.resultAdvertisement || "").trim(),
     resultConfirmed: Boolean(input.resultConfirmed || ["部分中标", "已中标", "未中标", "待缴款", "已缴款"].includes(status)),
     comprehensivePricing: Boolean(input.comprehensivePricing),
@@ -122,6 +125,17 @@ export function normalizeProjectRecord(input = {}) {
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
+  if (!normalized.bidSubmissions.length && status === "已投标待结果") {
+    const legacyTranches = snapshotBidSubmissionTranches(normalized, false);
+    if (legacyTranches.length) {
+      normalized.bidSubmissions = [normalizeBidSubmission({
+        id: `legacy-${normalized.id}`,
+        sequence: 1,
+        submittedAt: input.updatedAt || input.createdAt || "",
+        tranches: legacyTranches,
+      })];
+    }
+  }
   return fillMissingDefaultPaymentDates(normalized);
 }
 
@@ -292,6 +306,71 @@ export function buildBidPositionText(project) {
     }
   }
   return lines.filter(Boolean).join("\n");
+}
+
+export function resolveBidAction(project = {}, tranche = {}, hasPreviousSubmission = false) {
+  if (BID_ACTIONS.has(tranche.bidAction)) return tranche.bidAction;
+  if (hasPreviousSubmission) return "改标";
+  const hasOutsourcedBid = (tranche.outsourcedBids || []).some(hasCompleteOutsourcedBid);
+  if (hasOutsourcedBid || (project.venue === "银行间" && project.sponsorStatus === "非我行主承")) {
+    return "参团+投标";
+  }
+  return "投标";
+}
+
+export function validateBidSubmission(input = {}) {
+  const project = normalizeProjectRecord(input);
+  const issues = [];
+  let completePositionCount = 0;
+
+  project.tranches.forEach((tranche, trancheIndex) => {
+    const name = tranche.shortName || `品种${trancheIndex + 1}`;
+    (tranche.bidLevels || []).forEach((level, levelIndex) => {
+      const hasRate = Number.isFinite(numberOrNull(level.bidRate));
+      const amount = numberOrNull(level.bidAmount);
+      const hasAmount = Number.isFinite(amount) && amount > 0;
+      if (hasRate && hasAmount) completePositionCount += 1;
+      else if (hasRate || Number.isFinite(amount)) issues.push(`${name}表内标位${levelIndex + 1}的利率或金额未填完整。`);
+    });
+    (tranche.outsourcedBids || []).forEach((bid, bidIndex) => {
+      const managerName = String(bid.managerName || "").trim();
+      const hasRate = Number.isFinite(numberOrNull(bid.bidRate));
+      const amount = numberOrNull(bid.bidAmount);
+      const hasAmount = Number.isFinite(amount) && amount > 0;
+      const hasAnyValue = Boolean(managerName) || hasRate || Number.isFinite(amount);
+      if (managerName && hasRate && hasAmount) completePositionCount += 1;
+      else if (hasAnyValue) issues.push(`${name}委外标位${bidIndex + 1}的机构、利率或金额未填完整。`);
+    });
+  });
+
+  if (!completePositionCount && !issues.length) issues.push("请先填写至少一个完整标位。");
+  return { valid: issues.length === 0, issues, completePositionCount };
+}
+
+export function appendBidSubmission(input = {}, submittedAt = new Date().toISOString()) {
+  const project = normalizeProjectRecord(input);
+  const validation = validateBidSubmission(project);
+  if (!validation.valid) return { project, submission: null, issues: validation.issues };
+
+  const previousSubmissions = project.bidSubmissions || [];
+  const hasPreviousSubmission = previousSubmissions.length > 0;
+  const tranches = snapshotBidSubmissionTranches(project, hasPreviousSubmission);
+  const submission = normalizeBidSubmission({
+    id: crypto.randomUUID(),
+    sequence: previousSubmissions.length + 1,
+    submittedAt,
+    tranches,
+  });
+  return {
+    project: normalizeProjectRecord({
+      ...project,
+      status: "已投标待结果",
+      resultConfirmed: false,
+      bidSubmissions: [...previousSubmissions, submission],
+    }),
+    submission,
+    issues: [],
+  };
 }
 
 export function buildAwardResultText(project) {
@@ -640,6 +719,68 @@ function normalizeOutsourcedBid(input = {}) {
   };
 }
 
+function normalizeBidSubmission(input = {}, index = 0) {
+  const sequence = Number.parseInt(input.sequence, 10);
+  return {
+    id: input.id || crypto.randomUUID(),
+    sequence: Number.isInteger(sequence) && sequence > 0 ? sequence : index + 1,
+    submittedAt: String(input.submittedAt || "").trim(),
+    tranches: Array.isArray(input.tranches) ? input.tranches.map(normalizeBidSubmissionTranche) : [],
+  };
+}
+
+function normalizeBidSubmissionTranche(input = {}) {
+  return {
+    trancheId: String(input.trancheId || input.id || "").trim(),
+    shortName: String(input.shortName || "").trim(),
+    durationText: String(input.durationText || "").trim(),
+    suggestedRatio: numberOrNull(input.suggestedRatio),
+    bidAction: BID_ACTIONS.has(input.bidAction) ? input.bidAction : "投标",
+    bidLevels: Array.isArray(input.bidLevels)
+      ? input.bidLevels.map(normalizeBidLevel).filter(hasCompleteBidLevel)
+      : [],
+    outsourcedBids: Array.isArray(input.outsourcedBids)
+      ? input.outsourcedBids.map(normalizeOutsourcedBid).filter(hasCompleteOutsourcedBid)
+      : [],
+  };
+}
+
+function snapshotBidLevel(input = {}) {
+  return {
+    id: input.id || crypto.randomUUID(),
+    bidRate: numberOrNull(input.bidRate),
+    bidAmount: numberOrNull(input.bidAmount),
+  };
+}
+
+function snapshotOutsourcedBid(input = {}) {
+  return {
+    id: input.id || crypto.randomUUID(),
+    managerName: String(input.managerName || "").trim(),
+    bidRate: numberOrNull(input.bidRate),
+    bidAmount: numberOrNull(input.bidAmount),
+  };
+}
+
+function snapshotBidSubmissionTranches(project = {}, hasPreviousSubmission = false) {
+  return (project.tranches || []).flatMap((tranche) => {
+    const bidLevels = ownBidLevels(tranche).map(snapshotBidLevel);
+    const outsourcedBids = (tranche.outsourcedBids || [])
+      .filter(hasCompleteOutsourcedBid)
+      .map(snapshotOutsourcedBid);
+    if (!bidLevels.length && !outsourcedBids.length) return [];
+    return [{
+      trancheId: tranche.id,
+      shortName: tranche.shortName,
+      durationText: tranche.durationText,
+      suggestedRatio: tranche.suggestedRatio,
+      bidAction: resolveBidAction(project, tranche, hasPreviousSubmission),
+      bidLevels,
+      outsourcedBids,
+    }];
+  });
+}
+
 function formatBidLine(project, tranche, participation, dual) {
   const isOutsourced = Boolean(participation);
   const bidLevels = isOutsourced ? [participation].filter(hasCompleteBidLevel) : ownBidLevels(tranche);
@@ -665,11 +806,7 @@ function formatBidPrefix(project, tranche, participation) {
   if (participation) {
     return `【委外投标${participation.managerName ? `：${participation.managerName}` : ""}】`;
   }
-  const action = BID_ACTIONS.has(tranche.bidAction)
-    ? tranche.bidAction
-    : project.venue === "银行间" && project.sponsorStatus === "非我行主承"
-      ? "参团+投标"
-      : "投标";
+  const action = resolveBidAction(project, tranche, Boolean(project.bidSubmissions?.length));
   return `【${action}】`;
 }
 
@@ -702,6 +839,10 @@ function hasCompleteBidLevel(level = {}) {
   const rate = numberOrNull(level.bidRate);
   const amount = numberOrNull(level.bidAmount);
   return Number.isFinite(rate) && Number.isFinite(amount) && amount > 0;
+}
+
+function hasCompleteOutsourcedBid(bid = {}) {
+  return Boolean(String(bid.managerName || "").trim()) && hasCompleteBidLevel(bid);
 }
 
 function hasAnyBidLevelValue(level = {}) {

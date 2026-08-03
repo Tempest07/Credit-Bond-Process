@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  appendBidSubmission,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -17,6 +18,7 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
+  validateBidSubmission,
 } from "../lifecycle.js";
 
 test("creates a project ledger record with one tranche per bond variety", () => {
@@ -368,6 +370,84 @@ test("builds own and outsourced bid positions for interbank, exchange and dual p
     buildBidPositionText(dualWithDmTenor),
     "【投标】26工投K4，5年期，2.25%投2亿，不超5年期的20%\n【投标】26工投K5，10年期，2.75%投2亿，不超10年期的20%",
   );
+});
+
+test("records repeated bid submissions and makes the latest round effective", () => {
+  const draft = normalizeProjectRecord({
+    shortName: "26测试MTN001",
+    venue: "银行间",
+    sponsorStatus: "牵头",
+    tranches: [{
+      shortName: "26测试MTN001",
+      suggestedRatio: 20,
+      bidLevels: [{ bidRate: 1.65, bidAmount: 2 }],
+    }],
+  });
+
+  const first = appendBidSubmission(draft, "2026-08-03T09:30:00.000Z");
+  assert.equal(first.issues.length, 0);
+  assert.equal(first.submission.sequence, 1);
+  assert.equal(first.submission.tranches[0].bidAction, "投标");
+  assert.equal(first.project.status, "已投标待结果");
+  assert.equal(first.project.bidSubmissions.length, 1);
+
+  const revisedDraft = normalizeProjectRecord({
+    ...first.project,
+    tranches: [{
+      ...first.project.tranches[0],
+      bidLevels: [{ bidRate: 1.68, bidAmount: 2.5 }],
+    }],
+  });
+  const second = appendBidSubmission(revisedDraft, "2026-08-03T09:42:00.000Z");
+
+  assert.equal(second.submission.sequence, 2);
+  assert.equal(second.submission.tranches[0].bidAction, "改标");
+  assert.equal(second.project.bidSubmissions.length, 2);
+  assert.equal(second.project.bidSubmissions[0].tranches[0].bidLevels[0].bidRate, 1.65);
+  assert.equal(second.project.bidSubmissions[1].tranches[0].bidLevels[0].bidRate, 1.68);
+  assert.equal(second.project.bidSubmissions[1].id, second.submission.id);
+});
+
+test("respects manual bid actions and rejects incomplete bid rounds", () => {
+  const explicit = appendBidSubmission(normalizeProjectRecord({
+    shortName: "26测试01",
+    tranches: [{
+      shortName: "26测试01",
+      bidAction: "改标",
+      bidLevels: [{ bidRate: 1.72, bidAmount: 1 }],
+    }],
+  }));
+  assert.equal(explicit.submission.tranches[0].bidAction, "改标");
+
+  const incomplete = normalizeProjectRecord({
+    shortName: "26测试02",
+    tranches: [{ shortName: "26测试02", bidLevels: [{ bidRate: 1.8, bidAmount: null }] }],
+  });
+  assert.equal(validateBidSubmission(incomplete).valid, false);
+  const rejected = appendBidSubmission(incomplete);
+  assert.equal(rejected.submission, null);
+  assert.equal(rejected.project.bidSubmissions.length, 0);
+  assert.ok(rejected.issues.some((issue) => /利率或金额未填完整/.test(issue)));
+});
+
+test("migrates a legacy awaiting-result position before recording its next revision", () => {
+  const legacy = normalizeProjectRecord({
+    id: "legacy-project",
+    shortName: "26存量MTN001",
+    status: "已投标待结果",
+    updatedAt: "2026-08-02T08:00:00.000Z",
+    tranches: [{ shortName: "26存量MTN001", bidRate: 1.7, bidAmount: 2 }],
+  });
+
+  assert.equal(legacy.bidSubmissions.length, 1);
+  assert.equal(legacy.bidSubmissions[0].id, "legacy-legacy-project");
+  assert.equal(legacy.bidSubmissions[0].sequence, 1);
+  const revised = appendBidSubmission({
+    ...legacy,
+    tranches: [{ ...legacy.tranches[0], bidLevels: [{ bidRate: 1.72, bidAmount: 2 }] }],
+  }, "2026-08-03T09:00:00.000Z");
+  assert.equal(revised.submission.sequence, 2);
+  assert.equal(revised.submission.tranches[0].bidAction, "改标");
 });
 
 test("builds and preserves tranche prepayment numbers without completing payment", () => {
