@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260803-result-parser";
+} from "./core.js?v=20260805-project-card";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -37,13 +37,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260803-result-parser";
+} from "./lifecycle.js?v=20260805-project-card";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260803-result-parser";
+} from "./history-parser.js?v=20260805-project-card";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -56,12 +56,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260803-result-parser";
+} from "./protocol-transfer.js?v=20260805-project-card";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260803-result-parser";
+} from "./reminders.js?v=20260805-project-card";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -88,11 +88,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260803-result-parser";
+} from "./secondary-inventory.js?v=20260805-project-card";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260803-result-parser";
+} from "./trade-record-converter.js?v=20260805-project-card";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -103,13 +103,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260803-result-parser";
+} from "./trade-record-grid.js?v=20260805-project-card";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260803-result-parser";
-import { initializeDatePickers } from "./date-picker.js?v=20260803-result-parser";
+} from "./trade-record-ledger.js?v=20260805-project-card";
+import { initializeDatePickers } from "./date-picker.js?v=20260805-project-card";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -118,22 +118,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260803-result-parser";
+} from "./project-screenshot-ocr.js?v=20260805-project-card";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260803-result-parser";
+} from "./project-screenshot-layout.js?v=20260805-project-card";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260803-result-parser";
+} from "./project-screenshot-image.js?v=20260805-project-card";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260803-result-parser";
+} from "./payment-receipts.js?v=20260805-project-card";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -8145,7 +8145,7 @@ function renderProjectList() {
             <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
             ${valuationSummary ? `<span class="project-valuation-badge">${escapeHtml(valuationSummary)}</span>` : ""}
             <span class="project-offering-badge ${projectOfferingBadgeClass(item)}">${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
-            <span>${escapeHtml(formatProjectVenueLead(item))}</span>
+            ${renderProjectVenueLeadFacts(item)}
           </span>
         </button>
       `;
@@ -8961,11 +8961,26 @@ function parseScaleFromSourceText(text = "") {
   return Number.isFinite(total) ? total : null;
 }
 
-function formatProjectVenueLead(projectValue) {
-  return [
-    projectValue.venue,
-    formatProjectLeadForDisplay(projectValue),
-  ].filter(Boolean).join(" · ") || "场所/主承待补";
+function renderProjectVenueLeadFacts(projectValue) {
+  const venue = String(projectValue?.venue || "").trim();
+  const fullLead = formatProjectLeadForDisplay(projectValue);
+  const facts = [];
+  if (venue) {
+    facts.push(`<span class="project-venue-badge">${escapeHtml(venue)}</span>`);
+  }
+  if (fullLead) {
+    facts.push(`<span class="project-lead-badge" title="${escapeAttribute(`主承销商：${fullLead}`)}" aria-label="${escapeAttribute(`主承销商：${fullLead}`)}">主承 · ${escapeHtml(formatProjectLeadSummary(fullLead))}</span>`);
+  }
+  return facts.join("") || '<span class="project-party-pending">场所/主承待补</span>';
+}
+
+function formatProjectLeadSummary(value = "") {
+  const names = String(value || "")
+    .split(/[、，,；;|\n]+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (names.length <= 2) return names.join("、");
+  return `${names[0]}等${names.length}家`;
 }
 
 function formatProjectLeadForDisplay(projectValue) {
