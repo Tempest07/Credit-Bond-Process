@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.3.0">
-  <meta name="application-build-version" content="3.3.0.4">
-  <meta name="application-build" content="20260805-project-card-wrap">
+  <meta name="application-build-version" content="3.3.0.5">
+  <meta name="application-build" content="20260805-smart-cutoff">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260805-project-card-wrap"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260805-project-card-wrap">
+  <script src="./app-shell-mode.js?v=20260805-smart-cutoff"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260805-smart-cutoff">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.4 · 2026-08-05 更新">v3.3.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.5 · 2026-08-05 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -180,6 +180,17 @@
               </label>
               <label id="exchangeIssueNumberField">交易所发行期次<input data-project-field="exchangeIssueNumber" type="number" min="1" step="1" placeholder="例如：第三期填 3"></label>
               <label>牵头主承销商<input data-project-field="leadUnderwriter"></label>
+              <div class="new-project-cutoff span-2">
+                <div class="new-project-cutoff-copy">
+                  <span>默认结标时间</span>
+                  <strong id="newProjectCutoffPreview">智能判断中</strong>
+                </div>
+                <div class="new-project-cutoff-modes" role="group" aria-label="新项目默认结标日期">
+                  <button class="active" type="button" data-new-project-cutoff-mode="auto" aria-pressed="true">智能</button>
+                  <button type="button" data-new-project-cutoff-mode="today" aria-pressed="false">今天</button>
+                  <button type="button" data-new-project-cutoff-mode="next-business-day" aria-pressed="false">下一工作日</button>
+                </div>
+              </div>
               <label class="span-2">匹配主体
                 <select id="issuerSelect"><option value="">未匹配主体</option></select>
               </label>
@@ -947,7 +958,7 @@
           <article class="rule-card"><span>交易所债券</span><h2>发行方式与期次需确认</h2><p>简称尾号不等于发行期次。简表需注明公开/非公开及“第几期”，也可在结构化字段中手工确认。</p></article>
           <article class="rule-card"><span>双品种互拨</span><h2>一条意见分别列示</h2><p>自动合并 A/B 或相邻交易所简称，规模按合计、期限按双向互拨表述，询价和比例按两个期限分别列示。</p></article>
           <article class="rule-card"><span>投标利率</span><h2>默认取市场估值</h2><p>自动生成时优先使用项目简表中的市场估值；未识别估值时保留【待填写】。</p></article>
-          <article class="rule-card"><span>截标时间</span><h2>按场所自动建议</h2><p>新项目默认采用下一工作日；银行间默认18:00，交易所默认19:00，简表明确写有截标时间时优先采用简表内容。</p></article>
+          <article class="rule-card"><span>截标时间</span><h2>按录入时点智能建议</h2><p>默认截标时点前新增采用当天，时点后采用下一工作日；银行间默认18:00，交易所默认19:00，简表或 DM 有明确簿记日期时优先采用原日期。</p></article>
           <article class="rule-card"><span>民企与延期</span><h2>民企时间需要确认</h2><p>民企银行间项目默认标记为截标时间待确认；快捷延期会保存原时间与调整记录。</p></article>
         </div>
         <section class="panel word-note">
@@ -1069,6 +1080,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260805-project-card-wrap"></script>
+  <script type="module" src="./app.js?v=20260805-smart-cutoff"></script>
 </body>
 </html>

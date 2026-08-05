@@ -246,12 +246,12 @@ test("calculates dashboard counts including payment reminders", () => {
 test("suggests cutoff times by venue and flags private interbank issuers", () => {
   const reference = new Date("2026-06-11T09:00:00");
   assert.deepEqual(suggestProjectCutoff({ venue: "银行间", sourceText: "" }, { enterpriseType: "地方国企" }, reference), {
-    cutoffAt: "2026-06-12T18:00",
+    cutoffAt: "2026-06-11T18:00",
     cutoffTimeConfirmed: true,
     cutoffSource: "银行间默认18:00",
   });
   assert.deepEqual(suggestProjectCutoff({ venue: "上交所", sourceText: "" }, null, reference), {
-    cutoffAt: "2026-06-12T19:00",
+    cutoffAt: "2026-06-11T19:00",
     cutoffTimeConfirmed: true,
     cutoffSource: "交易所默认19:00",
   });
@@ -263,8 +263,44 @@ test("suggests cutoff times by venue and flags private interbank issuers", () =>
     suggestProjectCutoff({ venue: "银行间", sourceText: "6月15日18:30截标" }, null, reference).cutoffAt,
     "2026-06-15T18:30",
   );
+  assert.deepEqual(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "", subscribeDate: "2026-06-16" }, null, reference),
+    {
+      cutoffAt: "2026-06-16T18:00",
+      cutoffTimeConfirmed: true,
+      cutoffSource: "簿记日期",
+    },
+  );
   assert.equal(
     suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, new Date("2026-06-12T09:00:00")).cutoffAt,
+    "2026-06-12T18:00",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, new Date("2026-06-12T18:01:00")).cutoffAt,
+    "2026-06-15T18:00",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "上交所", sourceText: "" }, null, new Date("2026-06-12T18:01:00")).cutoffAt,
+    "2026-06-12T19:00",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "18:30截标" }, null, new Date("2026-06-12T09:00:00")).cutoffAt,
+    "2026-06-12T18:30",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, reference, { dayMode: "next-business-day" }).cutoffAt,
+    "2026-06-12T18:00",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "6月15日18:30截标" }, null, reference, { dayMode: "today" }).cutoffAt,
+    "2026-06-11T18:00",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, new Date("2026-06-11T20:00:00"), { dayMode: "today" }).cutoffAt,
+    "2026-06-11T18:00",
+  );
+  assert.equal(
+    suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, new Date("2026-06-13T09:00:00")).cutoffAt,
     "2026-06-15T18:00",
   );
 });
@@ -284,6 +320,20 @@ test("records cutoff changes and confirmation state", () => {
     reason: "延期60分钟",
     changedAt: updated.cutoffHistory[0].changedAt,
   });
+});
+
+test("applies the selected cutoff day when creating a new project", () => {
+  const record = createProjectRecord({
+    shortName: "26测试SCP001",
+    venue: "银行间",
+    sourceText: "",
+  }, null, { opinion: "ok" }, {
+    referenceDate: new Date("2026-06-11T09:00:00"),
+    cutoffDayMode: "next-business-day",
+  });
+
+  assert.equal(record.cutoffAt, "2026-06-12T18:00");
+  assert.equal(record.cutoffSource, "新增时选择下一工作日");
 });
 
 test("builds own and outsourced bid positions for interbank, exchange and dual projects", () => {

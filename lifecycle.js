@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260805-project-card-wrap";
+import { parseUnderwriterNames } from "./core.js?v=20260805-smart-cutoff";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -38,7 +38,9 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
         cutoffTimeConfirmed: input.cutoffTimeConfirmed,
         cutoffSource: input.cutoffSource,
       }
-    : suggestProjectCutoff(project, issuer);
+    : suggestProjectCutoff(project, issuer, input.referenceDate || new Date(), {
+        dayMode: input.cutoffDayMode,
+      });
   return normalizeProjectRecord({
     id: input.id || crypto.randomUUID(),
     status: input.status || "未投标",
@@ -249,25 +251,47 @@ function fillMissingDefaultPaymentDates(project) {
   return changed ? { ...project, tranches } : project;
 }
 
-export function suggestProjectCutoff(project = {}, issuer = null, referenceDate = new Date()) {
+export function suggestProjectCutoff(project = {}, issuer = null, referenceDate = new Date(), options = {}) {
   const venue = String(project.venue || "");
   const defaultTime = EXCHANGE_VENUES.has(venue) ? "19:00" : "18:00";
-  const explicit = parseExplicitCutoff(project.sourceText || "", referenceDate, defaultTime);
-  if (explicit) {
-    return {
-      cutoffAt: explicit,
-      cutoffTimeConfirmed: true,
-      cutoffSource: "项目简表",
-    };
+  const dayMode = ["today", "next-business-day"].includes(options.dayMode) ? options.dayMode : "auto";
+  if (dayMode === "auto") {
+    const explicit = parseExplicitCutoff(project.sourceText || "", referenceDate, defaultTime);
+    if (explicit) {
+      return {
+        cutoffAt: explicit,
+        cutoffTimeConfirmed: true,
+        cutoffSource: "项目简表",
+      };
+    }
+
+    const structuredDate = normalizeCutoffDate(
+      project.subscribeDate || project.bookDate || project.absInfo?.bookDate,
+    );
+    if (structuredDate) {
+      return {
+        cutoffAt: `${structuredDate}T${defaultTime}`,
+        cutoffTimeConfirmed: true,
+        cutoffSource: "簿记日期",
+      };
+    }
   }
 
-  const date = nextBusinessDay(referenceDate);
+  const date = smartCutoffDate(referenceDate, defaultTime, dayMode);
   const isPrivateInterbank = venue === "银行间" && issuer?.enterpriseType === "民营企业";
   const venueKnown = venue === "银行间" || EXCHANGE_VENUES.has(venue);
   return {
     cutoffAt: `${localDate(date)}T${defaultTime}`,
     cutoffTimeConfirmed: venueKnown && !isPrivateInterbank,
-    cutoffSource: EXCHANGE_VENUES.has(venue) ? "交易所默认19:00" : venue === "银行间" ? "银行间默认18:00" : "默认18:00，场所待确认",
+    cutoffSource: dayMode === "today"
+      ? "新增时选择今天"
+      : dayMode === "next-business-day"
+        ? "新增时选择下一工作日"
+        : EXCHANGE_VENUES.has(venue)
+          ? "交易所默认19:00"
+          : venue === "银行间"
+            ? "银行间默认18:00"
+            : "默认18:00，场所待确认",
   };
 }
 
@@ -1186,7 +1210,30 @@ function parseExplicitCutoff(text, referenceDate, defaultTime) {
     if (["明天", "明日"].includes(relative)) date.setDate(date.getDate() + 1);
     return `${localDate(date)}T${time}`;
   }
-  return timeMatch ? `${localDate(nextBusinessDay(referenceDate))}T${time}` : "";
+  return timeMatch ? `${localDate(smartCutoffDate(referenceDate, time))}T${time}` : "";
+}
+
+function smartCutoffDate(referenceDate, cutoffTime, dayMode = "auto") {
+  const reference = new Date(referenceDate);
+  if (dayMode === "today") return reference;
+  if (dayMode === "next-business-day") return nextBusinessDay(reference);
+  if ([0, 6].includes(reference.getDay())) return nextBusinessDay(reference);
+
+  const [hours, minutes] = String(cutoffTime || "18:00").split(":").map(Number);
+  const cutoff = new Date(reference);
+  cutoff.setHours(Number.isFinite(hours) ? hours : 18, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  return reference < cutoff ? reference : nextBusinessDay(reference);
+}
+
+function normalizeCutoffDate(value = "") {
+  const match = String(value || "").trim().match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return "";
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function nextBusinessDay(referenceDate) {

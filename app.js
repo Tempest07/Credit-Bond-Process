@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260805-project-card-wrap";
+} from "./core.js?v=20260805-smart-cutoff";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -37,13 +37,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260805-project-card-wrap";
+} from "./lifecycle.js?v=20260805-smart-cutoff";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260805-project-card-wrap";
+} from "./history-parser.js?v=20260805-smart-cutoff";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -56,12 +56,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260805-project-card-wrap";
+} from "./protocol-transfer.js?v=20260805-smart-cutoff";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260805-project-card-wrap";
+} from "./reminders.js?v=20260805-smart-cutoff";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -88,11 +88,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260805-project-card-wrap";
+} from "./secondary-inventory.js?v=20260805-smart-cutoff";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260805-project-card-wrap";
+} from "./trade-record-converter.js?v=20260805-smart-cutoff";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -103,13 +103,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260805-project-card-wrap";
+} from "./trade-record-grid.js?v=20260805-smart-cutoff";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260805-project-card-wrap";
-import { initializeDatePickers } from "./date-picker.js?v=20260805-project-card-wrap";
+} from "./trade-record-ledger.js?v=20260805-smart-cutoff";
+import { initializeDatePickers } from "./date-picker.js?v=20260805-smart-cutoff";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -118,26 +118,27 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260805-project-card-wrap";
+} from "./project-screenshot-ocr.js?v=20260805-smart-cutoff";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260805-project-card-wrap";
+} from "./project-screenshot-layout.js?v=20260805-smart-cutoff";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260805-project-card-wrap";
+} from "./project-screenshot-image.js?v=20260805-smart-cutoff";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260805-project-card-wrap";
+} from "./payment-receipts.js?v=20260805-smart-cutoff";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
+const NEW_PROJECT_CUTOFF_MODES = new Set(["auto", "today", "next-business-day"]);
 const POLICY_CURVE_TERMS = ["0.1Y", "0.2Y", "0.25Y", "0.3Y", "0.4Y", "0.5Y", "0.6Y", "0.7Y", "0.75Y", "0.8Y", "0.9Y", "1Y", "3Y", "5Y"];
 const POLICY_CURVE_KEY_TERMS = new Set(["0.1Y", "0.25Y", "0.3Y", "0.5Y", "0.75Y", "1Y", "3Y", "5Y"]);
 const API_URL = "./api/state";
@@ -222,6 +223,7 @@ const SAMPLE_ISSUER = {
 
 let state = loadLocalState();
 let project = parseProjectBrief("");
+let newProjectCutoffMode = "auto";
 let selectedIssuerId = "";
 let cloudAvailable = false;
 let currentGatewayUser = null;
@@ -3726,6 +3728,9 @@ function bindGenerator() {
     const id = event.target.value;
     if (id) restoreProjectDmHistoryItem(id);
   });
+  $$('[data-new-project-cutoff-mode]').forEach((button) => {
+    button.addEventListener("click", () => setNewProjectCutoffMode(button.dataset.newProjectCutoffMode));
+  });
   $("#projectDmSeedInput").addEventListener("input", () => {
     project.shortName = $("#projectDmSeedInput").value.trim();
     $('[data-project-field="shortName"]').value = project.shortName;
@@ -4103,7 +4108,10 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
     ...projectValue,
     leadUnderwriter: projectValue.sponsorStatus === "牵头" ? "兴业银行" : projectValue.leadUnderwriter,
     suggestedRatios,
-  }, issuer, generated, { id: existing?.id });
+  }, issuer, generated, {
+    id: existing?.id,
+    cutoffDayMode: newProjectCutoffMode,
+  });
   return existing
     ? normalizeProjectRecord({
         ...created,
@@ -4533,6 +4541,7 @@ function projectPatchFromDmLookup(payload) {
   assignProjectDmValueWithSource(patch, sourceMap, "societyCode", normalized.societyCode);
   assignProjectDmValueWithSource(patch, sourceMap, "durationText", normalizeDmTenor(normalized.durationText));
   assignProjectDmValueWithSource(patch, sourceMap, "issueScale", normalized.issueScaleYi);
+  assignProjectDmValueWithSource(patch, sourceMap, "subscribeDate", normalized.subscribeDate || issueGroup?.subscribeDate);
   assignProjectDmValueWithSource(patch, sourceMap, "venue", normalized.venue);
   assignProjectDmValueWithSource(patch, sourceMap, "offeringType", normalized.offeringType);
   assignProjectDmValueWithSource(patch, sourceMap, "leadUnderwriter", normalized.leadUnderwriter);
@@ -5308,6 +5317,7 @@ function fillProjectFields() {
   ensureInquiryRangeCapacity(project);
   renderTrancheInquiryFields();
   syncProjectConditionalFields();
+  renderNewProjectCutoffControl(state.issuers.find((item) => item.id === selectedIssuerId) || null);
   applyProjectRecognitionMarks();
 }
 
@@ -5601,6 +5611,7 @@ function commonFieldMismatchWarning(projectValue, field) {
 
 function regenerate() {
   const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
+  renderNewProjectCutoffControl(issuer);
   const normalizedFullName = normalizeBondFullNameForProject(project.fullName, project);
   if (project.fullName && normalizedFullName && normalizedFullName !== project.fullName) {
     project.fullName = normalizedFullName;
@@ -5629,6 +5640,42 @@ function regenerate() {
   scheduleDmValuationAssist(project, issuer);
   renderWarnings(generated.warnings);
   renderRuleTrace(generated, issuer);
+}
+
+function setNewProjectCutoffMode(mode) {
+  if (!NEW_PROJECT_CUTOFF_MODES.has(mode)) return;
+  newProjectCutoffMode = mode;
+  const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
+  renderNewProjectCutoffControl(issuer);
+}
+
+function renderNewProjectCutoffControl(issuer = null, referenceDate = new Date()) {
+  const preview = $("#newProjectCutoffPreview");
+  if (!preview) return;
+  const suggestion = suggestProjectCutoff(project, issuer, referenceDate, { dayMode: newProjectCutoffMode });
+  const date = suggestion.cutoffAt?.slice(0, 10) || "";
+  const time = suggestion.cutoffAt?.slice(11, 16) || "";
+  const today = localDate(referenceDate);
+  const dayLabel = date === today
+    ? "今天"
+    : /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`
+      : "日期待确认";
+  const sourcePrefix = suggestion.cutoffSource === "项目简表"
+    ? "简表"
+    : suggestion.cutoffSource === "簿记日期"
+      ? "簿记日"
+      : newProjectCutoffMode === "auto"
+        ? "智能"
+        : newProjectCutoffMode === "today"
+          ? "已选今天"
+          : "已选下一工作日";
+  preview.textContent = `${sourcePrefix} · ${dayLabel}${time ? ` ${time}` : ""}`;
+  $$('[data-new-project-cutoff-mode]').forEach((button) => {
+    const active = button.dataset.newProjectCutoffMode === newProjectCutoffMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function scheduleDmValuationAssist(projectValue, issuer) {

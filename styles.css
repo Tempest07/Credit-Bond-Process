@@ -261,6 +261,13 @@ label[data-recognition-source="wind"]::after {
 .field-grid label { display: grid; min-width: 0; max-width: 100%; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .field-grid input, .field-grid select, .field-grid textarea, .search-input { min-height: 38px; padding: 8px 10px; font-size: 12px; }
 .field-grid select, .field-grid input { overflow: hidden; text-overflow: ellipsis; }
+.new-project-cutoff { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 11px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 52%, #fff), #fff); }
+.new-project-cutoff-copy { display: grid; gap: 3px; min-width: 0; }
+.new-project-cutoff-copy span { color: var(--muted); font-size: 11px; font-weight: 800; }
+.new-project-cutoff-copy strong { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.new-project-cutoff-modes { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid rgba(210,217,232,.88); border-radius: 10px; background: rgba(247,249,253,.9); }
+.new-project-cutoff-modes button { min-height: 34px; padding: 0 11px; border: 1px solid transparent; border-radius: 7px; color: #657187; background: transparent; font: inherit; font-size: 11px; font-weight: 850; cursor: pointer; white-space: nowrap; }
+.new-project-cutoff-modes button.active { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); color: var(--accent); background: #fff; box-shadow: 0 5px 14px rgba(74,88,210,.12); }
 .span-2 { grid-column: span 2; }
 .checkbox-label { display: flex !important; align-items: center; gap: 8px !important; padding-top: 22px; }
 .checkbox-label input { width: 16px; min-height: 16px; }
@@ -1387,6 +1394,11 @@ label[data-recognition-source="wind"]::after {
 }
 
 @media (max-width: 760px) {
+  .new-project-cutoff { align-items: stretch; flex-direction: column; }
+  .new-project-cutoff-copy span { font-size: 12px; }
+  .new-project-cutoff-copy strong { font-size: 14px; }
+  .new-project-cutoff-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .new-project-cutoff-modes button { min-height: 42px; padding: 0 7px; font-size: 12px; }
   .project-item-facts span { min-height: 26px; padding: 4px 8px; font-size: 11px; }
   .project-screenshot-copy-box { font-size: 16px; }
   .project-screenshot-correction input, .project-screenshot-correction select { min-height: 44px; font-size: 16px; }

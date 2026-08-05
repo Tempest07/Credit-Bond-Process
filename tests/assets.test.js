@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260805-project-card-wrap";
+const VERSION = "20260805-smart-cutoff";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.4">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.5">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -174,6 +174,24 @@ test("wraps complete venue and lead-underwriter details on project cards", async
   assert.doesNotMatch(app, /project-venue-badge|project-lead-badge/);
   assert.match(styles, /\.project-item-facts \.project-party-badge\s*\{[^}]*flex:\s*1 1 100%;[^}]*width:\s*100%;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*line-height:\s*1\.45;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-item-facts span\s*\{[^}]*min-height:\s*26px;[^}]*font-size:\s*11px;/s);
+});
+
+test("lets new projects choose a smart, same-day or next-business-day cutoff", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="newProjectCutoffPreview"/);
+  assert.match(html, /data-new-project-cutoff-mode="auto"/);
+  assert.match(html, /data-new-project-cutoff-mode="today"/);
+  assert.match(html, /data-new-project-cutoff-mode="next-business-day"/);
+  assert.match(app, /cutoffDayMode:\s*newProjectCutoffMode/);
+  assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "subscribeDate", normalized\.subscribeDate \|\| issueGroup\?\.subscribeDate\)/);
+  assert.match(app, /suggestProjectCutoff\(project, issuer, referenceDate, \{ dayMode: newProjectCutoffMode \}\)/);
+  assert.match(styles, /\.new-project-cutoff-modes button\.active\s*\{/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.new-project-cutoff-modes\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
 });
 
 test("keeps protocol transfer hover borders clear of the scroll viewport", async () => {
