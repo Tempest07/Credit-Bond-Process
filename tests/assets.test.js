@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260805-smart-cutoff";
+const VERSION = "20260805-cancelled-reissue";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.5">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.6">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -132,6 +132,14 @@ test("maps DM V2.5 ratings into the new-project fields", async () => {
   assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "hiddenRating", normalized\.impliedRating, normalizedProjectFieldSource\(normalized, "impliedRating"\)\)/);
   assert.match(app, /patch\.hiddenRatingSource = normalized\.ratingSource\?\.impliedRating \|\| "dm"/);
   assert.match(app, /patch\.hiddenRatingAsOf = normalized\.impliedRatingAsOf/);
+});
+
+test("excludes cancelled DM records without shifting inquiry ranges between varieties", async () => {
+  const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
+
+  assert.match(app, /const unusableStatuses = new Set\(\["reallocated", "cancelled", "failed"\]\)/);
+  assert.match(app, /patch\.inquiryRanges = ranges;/);
+  assert.doesNotMatch(app, /const completeRanges = ranges\.filter/);
 });
 
 test("lets every project list set the page height without internal scrolling", async () => {

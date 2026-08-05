@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260805-smart-cutoff";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260805-cancelled-reissue";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

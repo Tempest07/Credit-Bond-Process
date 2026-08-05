@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260805-smart-cutoff";
+import { parseUnderwriterNames } from "./core.js?v=20260805-cancelled-reissue";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

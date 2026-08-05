@@ -10,6 +10,8 @@ const COMPANY_RATING_PATH = "/dm-quant-func-service/api/v1/company/rating/data";
 const BOND_RATING_PATH = "/dm-quant-func-service/api/v1/bond/rating/data";
 const IMPLIED_RATING_PATH = "/dm-quant-func-service/api/v1/bond/analysis/implied-rating";
 const DEFAULT_RATE_PATH = "/dm-quant-func-service/api/v1/bond/default-rate/data";
+const CANCELLED_ISSUE_PATTERN = /(?:取消发行|发行取消|终止发行|发行终止|发行失败|流标|cancel(?:led|ed)?|withdrawn)/i;
+const CANCELLED_ISSUE_LABEL_PATTERN = /[（(]?\s*(?:取消发行|发行取消|终止发行|发行终止|发行失败|流标|cancel(?:led|ed)?|withdrawn)\s*[）)]?/gi;
 
 const SBOX = [
   0xd6, 0x90, 0xe9, 0xfe, 0xcc, 0xe1, 0x3d, 0xb7, 0x16, 0xb6, 0x14, 0xc2, 0x28, 0xfb, 0x2c, 0x05,
@@ -1815,7 +1817,7 @@ function specificShortNameFamilyMatches(entryFamily, targetFamilies = []) {
 }
 
 function issueGroupFromProject(project, entries, targets, score) {
-  const finalEntries = sortIssueEntries(entries).map((entry) => ({
+  const finalEntries = sortIssueEntries(collapseCancelledReissueEntries(entries)).map((entry) => ({
     ...entry,
     isQueriedInput: entryMatchesTargets(entry, targets.inputNames, targets.inputSecurityIds),
     isDmMatched: entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds),
@@ -1879,7 +1881,9 @@ function buildIssueGroupFromDmRows(normalized, query, primary, basic) {
     if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
     return true;
   });
-  const entries = sortIssueEntries(uniqueIssueEntries(candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId)))
+  const entries = sortIssueEntries(uniqueIssueEntries(collapseCancelledReissueEntries(
+    candidates.map(dmRowIssueEntry).filter((entry) => entry.shortName || entry.securityId),
+  )))
     .map((entry) => entryMatchesTargets(entry, targets.normalizedNames, targets.normalizedSecurityIds) && normalized?.durationText
       ? { ...entry, durationText: normalized.durationText }
       : entry);
@@ -1930,6 +1934,7 @@ function dmRowIssueEntry(row) {
     expectedMaturityDate: pickAbsExpectedMaturityDate(row),
     debtRating: pickAbsDebtRating(row),
     debtRatingAgency: pickAbsDebtRatingAgency(row),
+    isCancelledIssue: isExplicitlyCancelledIssueRow(row),
   };
 }
 
@@ -2126,6 +2131,19 @@ function uniqueIssueEntries(entries) {
   return result;
 }
 
+function collapseCancelledReissueEntries(entries = []) {
+  const activeIdentities = new Set(entries
+    .filter((entry) => !isExplicitlyCancelledIssueEntry(entry))
+    .map(issueEntryEconomicIdentity)
+    .filter(Boolean));
+  if (!activeIdentities.size) return entries;
+  return entries.filter((entry) => !isExplicitlyCancelledIssueEntry(entry) || !activeIdentities.has(issueEntryEconomicIdentity(entry)));
+}
+
+function issueEntryEconomicIdentity(entry = {}) {
+  return normalizeLookupName(stripIssueCancellationMarker(entry.shortName));
+}
+
 function sortIssueEntries(entries) {
   return [...(entries || [])].sort(compareIssueEntries);
 }
@@ -2252,6 +2270,7 @@ function shouldExposeIssueGroup(group, query, normalized) {
 }
 
 function inferIssueTrancheStatus(entry, { groupHasIssued, projectResultConfirmed }) {
+  if (isExplicitlyCancelledIssueEntry(entry)) return "cancelled";
   if (entryHasIssuedFields(entry)) return "issued";
   if (groupHasIssued && projectResultConfirmed) return "reallocated";
   return "unknown";
@@ -2266,6 +2285,7 @@ function entryHasIssuedFields(entry) {
 }
 
 function issueTrancheStatusReason(status, targetShortName = "") {
+  if (status === "cancelled") return "DM 已明确标记为取消发行，不作为当前有效品种";
   if (status === "issued") return "已取得发行结果字段";
   if (status === "reallocated" && targetShortName) return `本期债券已全部回拨至${targetShortName}`;
   if (status === "reallocated") return "同组其他期限已有发行结果，本期限未见发行结果，可能全额回拨或未发行";
@@ -2478,11 +2498,52 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
 
 function bestPrimaryRow(primary, shortName, securityId, fullName) {
   const rows = primary?.rows || [];
-  return rows.find((row) => rowMatchesSecurityId(row, securityId))
+  const matched = rows.find((row) => rowMatchesSecurityId(row, securityId))
     || rows.find((row) => rowMatchesShortName(row, shortName))
     || rows.find((row) => rowMatchesFullName(row, fullName))
     || rows[0]
     || {};
+  return preferActiveReissueRow(matched, rows, { shortName, securityId, fullName });
+}
+
+function preferActiveReissueRow(matched, rows = [], query = {}) {
+  if (!isExplicitlyCancelledIssueRow(matched)) return matched;
+  if (query.securityId || queryExplicitlyTargetsOnlyCancelledIssue(query)) return matched;
+  const cancelledIdentities = new Set(rowShortNames(matched)
+    .flatMap((name) => splitCombinedShortNames(name))
+    .map(stripIssueCancellationMarker)
+    .map(normalizeLookupName)
+    .filter(Boolean));
+  if (!cancelledIdentities.size) return matched;
+  return rows.find((row) => !isExplicitlyCancelledIssueRow(row)
+    && rowShortNames(row).some((name) => cancelledIdentities.has(normalizeLookupName(stripIssueCancellationMarker(name))))) || matched;
+}
+
+function queryExplicitlyTargetsOnlyCancelledIssue(query = {}) {
+  const names = splitCombinedShortNames(query.shortName || query.fullName || "");
+  return Boolean(names.length && names.every((name) => CANCELLED_ISSUE_PATTERN.test(name)));
+}
+
+function isExplicitlyCancelledIssueRow(row = {}) {
+  const evidence = [
+    ...rowShortNames(row),
+    ...rowFullNames(row),
+    pickFirstString(row, ["issue_status_desc", "issueStatusDesc", "issue_status", "issueStatus"]),
+    pickFirstString(row, ["issuance_status_desc", "issuanceStatusDesc", "issuance_status", "issuanceStatus"]),
+  ].filter(Boolean).join(" ");
+  return CANCELLED_ISSUE_PATTERN.test(evidence);
+}
+
+function isExplicitlyCancelledIssueEntry(entry = {}) {
+  return Boolean(entry.isCancelledIssue || CANCELLED_ISSUE_PATTERN.test([
+    entry.shortName,
+    entry.fullName,
+    entry.issueStatus,
+  ].filter(Boolean).join(" ")));
+}
+
+function stripIssueCancellationMarker(value = "") {
+  return String(value || "").replace(CANCELLED_ISSUE_LABEL_PATTERN, "").replace(/\s+/g, "").trim();
 }
 
 function primaryRowMatchesQuery(row, { shortName, securityId, fullName }) {

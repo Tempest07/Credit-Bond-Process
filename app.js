@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260805-smart-cutoff";
+} from "./core.js?v=20260805-cancelled-reissue";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -37,13 +37,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260805-smart-cutoff";
+} from "./lifecycle.js?v=20260805-cancelled-reissue";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260805-smart-cutoff";
+} from "./history-parser.js?v=20260805-cancelled-reissue";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -56,12 +56,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260805-smart-cutoff";
+} from "./protocol-transfer.js?v=20260805-cancelled-reissue";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260805-smart-cutoff";
+} from "./reminders.js?v=20260805-cancelled-reissue";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -88,11 +88,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260805-smart-cutoff";
+} from "./secondary-inventory.js?v=20260805-cancelled-reissue";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260805-smart-cutoff";
+} from "./trade-record-converter.js?v=20260805-cancelled-reissue";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -103,13 +103,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260805-smart-cutoff";
+} from "./trade-record-grid.js?v=20260805-cancelled-reissue";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260805-smart-cutoff";
-import { initializeDatePickers } from "./date-picker.js?v=20260805-smart-cutoff";
+} from "./trade-record-ledger.js?v=20260805-cancelled-reissue";
+import { initializeDatePickers } from "./date-picker.js?v=20260805-cancelled-reissue";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -118,22 +118,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260805-smart-cutoff";
+} from "./project-screenshot-ocr.js?v=20260805-cancelled-reissue";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260805-smart-cutoff";
+} from "./project-screenshot-layout.js?v=20260805-cancelled-reissue";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260805-smart-cutoff";
+} from "./project-screenshot-image.js?v=20260805-cancelled-reissue";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260805-smart-cutoff";
+} from "./payment-receipts.js?v=20260805-cancelled-reissue";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -4519,16 +4519,17 @@ function projectPatchFromDmLookup(payload) {
       patch.issueScale = scale;
       markSource("issueScale", groupSource);
     }
-    const completeRanges = ranges.filter((range) => Number.isFinite(range.low) && Number.isFinite(range.high));
-    if (completeRanges.length) {
-      patch.inquiryRanges = completeRanges;
-      patch.inquiryLow = completeRanges[0].low;
-      patch.inquiryHigh = completeRanges[0].high;
-      patch.inquiryLow2 = completeRanges[1]?.low ?? null;
-      patch.inquiryHigh2 = completeRanges[1]?.high ?? null;
+    const hasCompleteRange = ranges.some((range) => Number.isFinite(range.low) && Number.isFinite(range.high));
+    if (hasCompleteRange) {
+      patch.inquiryRanges = ranges;
+      patch.inquiryLow = ranges[0]?.low ?? null;
+      patch.inquiryHigh = ranges[0]?.high ?? null;
+      patch.inquiryLow2 = ranges[1]?.low ?? null;
+      patch.inquiryHigh2 = ranges[1]?.high ?? null;
       markSource("inquiryLow", groupSource);
       markSource("inquiryHigh", groupSource);
-      completeRanges.forEach((range, index) => {
+      ranges.forEach((range, index) => {
+        if (!Number.isFinite(range.low) || !Number.isFinite(range.high)) return;
         markSource(`inquiryRanges.${index}.low`, groupSource);
         markSource(`inquiryRanges.${index}.high`, groupSource);
       });
@@ -4777,8 +4778,10 @@ function normalizeSourceComparable(value) {
 function projectDmUsableTranches(issueGroup) {
   const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
   if (!tranches.length) return [];
-  const usable = tranches.filter((tranche) => tranche.status !== "reallocated");
-  return sortProjectDmTranches(usable.length ? usable : tranches);
+  const unusableStatuses = new Set(["reallocated", "cancelled", "failed"]);
+  const usable = tranches.filter((tranche) => !unusableStatuses.has(tranche.status));
+  const fallback = tranches.filter((tranche) => !["cancelled", "failed"].includes(tranche.status));
+  return sortProjectDmTranches(usable.length ? usable : fallback);
 }
 
 function sortProjectDmTranches(tranches) {
@@ -10070,11 +10073,13 @@ function renderDmIssueGroup(issueGroup) {
   const abs = /^(ABS|ABN)$/i.test(String(issueGroup.instrumentType || ""));
   const confirmedReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && (tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId)).length;
   const uncertainReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && !tranche.reallocationTargetShortName && !tranche.reallocationTargetSecurityId).length;
+  const cancelledCount = tranches.filter((tranche) => ["cancelled", "failed"].includes(tranche.status)).length;
   summary.textContent = [
     `${tranches.length} 个${abs ? "分档" : "期限"}`,
     sourceLabel,
     confirmedReallocatedCount ? `${confirmedReallocatedCount} 个已回拨` : "",
     uncertainReallocatedCount ? `${uncertainReallocatedCount} 个待确认回拨` : "",
+    cancelledCount ? `${cancelledCount} 个已取消` : "",
   ].filter(Boolean).join(" · ");
   output.innerHTML = tranches.map((tranche) => {
     const status = dmIssueTrancheStatusMeta(tranche);
@@ -10093,7 +10098,7 @@ function renderDmIssueGroup(issueGroup) {
       tranche.securityId ? `代码 ${tranche.securityId}` : "",
     ].filter(Boolean);
     return `
-      <article class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${tranche.status === "reallocated" ? "attention" : ""}" role="button" tabindex="0" data-dm-issue-query="${escapeAttribute(queryValue)}" aria-label="查询 ${escapeAttribute(queryValue || "该品种")}">
+      <article class="dm-issue-tranche ${tranche.isQueriedInput ? "queried" : ""} ${["reallocated", "cancelled", "failed"].includes(tranche.status) ? "attention" : ""}" role="button" tabindex="0" data-dm-issue-query="${escapeAttribute(queryValue)}" aria-label="查询 ${escapeAttribute(queryValue || "该品种")}">
         <div class="dm-issue-tranche-head">
           <strong>${escapeHtml(tranche.shortName || "未命名品种")}</strong>
           <span class="status-badge ${status.className}">${escapeHtml(status.label)}</span>
@@ -10127,6 +10132,7 @@ function renderDmReallocationReason(tranche) {
 function dmIssueTrancheStatusMeta(trancheOrStatus) {
   const status = typeof trancheOrStatus === "string" ? trancheOrStatus : trancheOrStatus?.status;
   if (status === "issued") return { label: "已发行", className: "" };
+  if (["cancelled", "failed"].includes(status)) return { label: "已取消", className: "warning" };
   if (status === "reallocated") {
     return {
       label: (trancheOrStatus?.reallocationTargetShortName || trancheOrStatus?.reallocationTargetSecurityId) ? "已回拨" : "待确认回拨",

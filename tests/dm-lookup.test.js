@@ -2136,6 +2136,73 @@ test("DM lookup does not build a cross-issuer group from a bare same serial matc
   }
 });
 
+test("DM lookup collapses a cancelled record into the active reissue", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const query = "26南海控股MTN002";
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [];
+    } else if (url.includes("/bond/primary/data")) {
+      data = {
+        list: [
+          {
+            security_id: "102682991.IB",
+            sec_short_name: "26南海控股MTN002(取消发行)",
+            issuer_full_name: "广东南海控股集团有限公司",
+            bond_issue_tenor: "5Y",
+            plan_issue_amount: 200000,
+            subscribe_rate: "1.500000 ~ 2.100000",
+            subscribe_date: "2026-08-05",
+            issue_status_desc: "取消发行",
+          },
+          {
+            security_id: "102682992.IB",
+            sec_short_name: "26南海控股MTN002",
+            issuer_full_name: "广东南海控股集团有限公司",
+            bond_issue_tenor: "5Y",
+            plan_issue_amount: 200000,
+            subscribe_rate: "1.700000 ~ 2.300000",
+            subscribe_date: "2026-08-05",
+            issue_status_desc: "待发行",
+          },
+        ],
+      };
+    } else if (url.includes("/company/basic-info/info")) {
+      assert.deepEqual(request.comFullNameList, ["广东南海控股集团有限公司"]);
+      data = [{ com_full_name: "广东南海控股集团有限公司" }];
+    } else if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      data = { list: [] };
+    } else {
+      data = [];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request(`http://127.0.0.1:8788/api/dm/lookup?shortName=${encodeURIComponent(query)}`, {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.normalized.shortName, "26南海控股MTN002");
+    assert.equal(payload.normalized.securityId, "102682992.IB");
+    assert.equal(payload.normalized.inquiryRange, "1.7-2.3");
+    assert.equal(payload.normalized.subscribeDate, "2026-08-05");
+    assert.equal(payload.issueGroup, null);
+    assert.equal(payload.diagnostic.issueGroup.found, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup marks a queried cancelled tranche from D1 issue group", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
