@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260805-project-card";
+import { parseUnderwriterNames } from "./core.js?v=20260805-project-card-wrap";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

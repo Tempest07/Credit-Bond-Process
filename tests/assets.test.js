@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260805-project-card";
+const VERSION = "20260805-project-card-wrap";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.3">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.4">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -162,19 +162,17 @@ test("places the optional valuation badge between inquiry and offering facts", a
   assert.match(styles, /\.project-item-facts \.project-valuation-badge\s*\{[^}]*color:\s*#087f8d;[^}]*background:\s*linear-gradient/s);
 });
 
-test("keeps long lead-underwriter lists compact on project cards", async () => {
+test("wraps complete venue and lead-underwriter details on project cards", async () => {
   const [app, styles] = await Promise.all([
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(app, /\$\{renderProjectVenueLeadFacts\(item\)\}/);
-  assert.match(app, /function formatProjectLeadSummary\(value = ""\)/);
-  assert.match(app, /return `\$\{names\[0\]\}等\$\{names\.length\}家`/);
-  assert.match(app, /class="project-venue-badge"/);
-  assert.match(app, /class="project-lead-badge"[^>]*title=/);
-  assert.doesNotMatch(app, /<span>\$\{escapeHtml\(formatProjectVenueLead\(item\)\)\}<\/span>/);
-  assert.match(styles, /\.project-item-facts \.project-lead-badge\s*\{[^}]*max-width:\s*min\(100%, 210px\);[^}]*justify-content:\s*flex-start;/s);
+  assert.match(app, /class="project-party-badge">\$\{escapeHtml\(formatProjectVenueLead\(item\)\)\}<\/span>/);
+  assert.match(app, /function formatProjectVenueLead\(projectValue\)/);
+  assert.doesNotMatch(app, /formatProjectLeadSummary|等\$\{names\.length\}家/);
+  assert.doesNotMatch(app, /project-venue-badge|project-lead-badge/);
+  assert.match(styles, /\.project-item-facts \.project-party-badge\s*\{[^}]*flex:\s*1 1 100%;[^}]*width:\s*100%;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*line-height:\s*1\.45;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-item-facts span\s*\{[^}]*min-height:\s*26px;[^}]*font-size:\s*11px;/s);
 });
 
