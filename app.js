@@ -17,7 +17,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260805-cancelled-reissue";
+} from "./core.js?v=20260806-dual-results";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -37,13 +37,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260805-cancelled-reissue";
+} from "./lifecycle.js?v=20260806-dual-results";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260805-cancelled-reissue";
+} from "./history-parser.js?v=20260806-dual-results";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -56,12 +56,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260805-cancelled-reissue";
+} from "./protocol-transfer.js?v=20260806-dual-results";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260805-cancelled-reissue";
+} from "./reminders.js?v=20260806-dual-results";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -88,11 +88,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260805-cancelled-reissue";
+} from "./secondary-inventory.js?v=20260806-dual-results";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260805-cancelled-reissue";
+} from "./trade-record-converter.js?v=20260806-dual-results";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -103,13 +103,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260805-cancelled-reissue";
+} from "./trade-record-grid.js?v=20260806-dual-results";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260805-cancelled-reissue";
-import { initializeDatePickers } from "./date-picker.js?v=20260805-cancelled-reissue";
+} from "./trade-record-ledger.js?v=20260806-dual-results";
+import { initializeDatePickers } from "./date-picker.js?v=20260806-dual-results";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -118,22 +118,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260805-cancelled-reissue";
+} from "./project-screenshot-ocr.js?v=20260806-dual-results";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260805-cancelled-reissue";
+} from "./project-screenshot-layout.js?v=20260806-dual-results";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260805-cancelled-reissue";
+} from "./project-screenshot-image.js?v=20260806-dual-results";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260805-cancelled-reissue";
+} from "./payment-receipts.js?v=20260806-dual-results";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";

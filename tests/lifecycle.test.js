@@ -601,6 +601,44 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(numberedDual.items[1].shortName, "26越秀交通MTN003B");
   assert.equal(numberedDual.items[1].issueScale, 3);
 
+  const unnumberedDual = parseIssuanceAdvertisement(`26越秀租赁MTN001A(绿色)，102682949，最终结果1.7%，全场3.1倍，边际倍数1；
+26越秀租赁MTN001B(绿色)，102682950，最终结果2.46%，全场1.47倍，边际倍数1.4，
+明日配售缴款，感谢金主们的支持！`, new Date("2026-08-04T09:00:00+08:00"));
+  assert.equal(unnumberedDual.items.length, 2);
+  assert.deepEqual(unnumberedDual.items[0], {
+    shortName: "26越秀租赁MTN001A",
+    securityCode: "102682949",
+    issueScale: null,
+    fullMarketMultiple: 3.1,
+    marginalMultiple: 1,
+    couponRate: 1.7,
+    durationText: "",
+    paymentDate: "",
+    startDate: "",
+    allocationNote: "",
+  });
+  assert.deepEqual(unnumberedDual.items[1], {
+    shortName: "26越秀租赁MTN001B",
+    securityCode: "102682950",
+    issueScale: null,
+    fullMarketMultiple: 1.47,
+    marginalMultiple: 1.4,
+    couponRate: 2.46,
+    durationText: "",
+    paymentDate: "2026-08-05",
+    startDate: "",
+    allocationNote: "",
+  });
+
+  const compactDual = parseIssuanceAdvertisement(
+    "26越秀租赁MTN001A(绿色),102682949,最终结果1.7%,全场3.1倍,边际倍数1; 26越秀租赁MTN001B(绿色),102682950,最终结果2.46%,全场1.47倍,边际倍数1.4",
+    new Date("2026-08-04T09:00:00+08:00"),
+  );
+  assert.equal(compactDual.items.length, 2);
+  assert.equal(compactDual.items[0].securityCode, "102682949");
+  assert.equal(compactDual.items[1].securityCode, "102682950");
+  assert.equal(compactDual.items[1].couponRate, 2.46);
+
   const bracketed = parseIssuanceAdvertisement(`【结果-26珠城轨MTN002-F102682259-万一团费】
 【规模】5亿元
 【期限】10年
@@ -637,6 +675,33 @@ test("applies bracketed result advertisements to update award status", () => {
   assert.equal(project.tranches[0].securityCode, "F102682259");
   assert.equal(project.tranches[0].issueScale, 5);
   assert.equal(project.tranches[0].paymentDate, "2026-06-18");
+});
+
+test("applies unnumbered dual-tranche results with display labels to both varieties", () => {
+  const ad = `26越秀租赁MTN001A(绿色)，102682949，最终结果1.7%，全场3.1倍，边际倍数1；
+26越秀租赁MTN001B(绿色)，102682950，最终结果2.46%，全场1.47倍，边际倍数1.4，
+明日配售缴款，感谢金主们的支持！`;
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26越秀租赁MTN001A/B(绿色)",
+    venue: "银行间",
+    cutoffAt: "2026-08-04T18:00",
+    tranches: [
+      { shortName: "26越秀租赁MTN001A(绿色)", bidRate: 1.7, bidAmount: 0.7 },
+      { shortName: "26越秀租赁MTN001B(绿色)", bidRate: 2.42, bidAmount: 1.2 },
+    ],
+  }), ad, new Date("2026-08-04T09:00:00+08:00"));
+
+  assert.equal(project.tranches[0].securityCode, "102682949");
+  assert.equal(project.tranches[0].winningRate, 1.7);
+  assert.equal(project.tranches[0].fullMarketMultiple, 3.1);
+  assert.equal(project.tranches[0].marginalMultiple, 1);
+  assert.equal(project.tranches[0].resultStatus, "中标");
+  assert.equal(project.tranches[1].securityCode, "102682950");
+  assert.equal(project.tranches[1].winningRate, 2.46);
+  assert.equal(project.tranches[1].fullMarketMultiple, 1.47);
+  assert.equal(project.tranches[1].marginalMultiple, 1.4);
+  assert.equal(project.tranches[1].paymentDate, "2026-08-05");
+  assert.equal(project.tranches[1].resultStatus, "中标");
 });
 
 test("parses comma-separated dual-tranche headers and cleans reallocation separators", () => {

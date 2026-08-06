@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260805-cancelled-reissue";
+import { parseUnderwriterNames } from "./core.js?v=20260806-dual-results";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -507,6 +507,10 @@ function parseAdvertisementBlockItems(block, headerText, referenceDate) {
   if (numberedRows.length > 1) {
     return numberedRows.map((itemBlock) => parseAdvertisementBlock(itemBlock, headerText, referenceDate));
   }
+  const unnumberedRows = splitUnnumberedAdvertisementRows(block);
+  if (unnumberedRows.length > 1) {
+    return unnumberedRows.map((itemBlock) => parseAdvertisementBlock(itemBlock, headerText, referenceDate));
+  }
   return [parseAdvertisementBlock(block, headerText, referenceDate)];
 }
 
@@ -532,6 +536,30 @@ function splitNumberedAdvertisementRows(block) {
     const rowText = rowLines.join("\n").replace(/^(?:\d+[.、．)]|[（(]\d+[）)])\s*/, "");
     return [rowText, ...leadingSharedLines, ...trailingSharedLines].join("\n");
   });
+}
+
+function splitUnnumberedAdvertisementRows(block) {
+  const lines = String(block || "")
+    .replace(/[；;]\s*(?=(?!20\d{2}年)\d{2}[^\n，,；;：:]{2,64}\s*[，,：:])/g, (separator) => `${separator}\n`)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rowIndexes = [];
+  lines.forEach((line, index) => {
+    if (isUnnumberedAdvertisementRowStart(line)) rowIndexes.push(index);
+  });
+  if (rowIndexes.length <= 1) return [];
+
+  return rowIndexes.map((lineIndex, index) => {
+    const nextIndex = rowIndexes[index + 1] ?? lines.length;
+    return lines.slice(lineIndex, nextIndex).join("\n");
+  });
+}
+
+function isUnnumberedAdvertisementRowStart(line = "") {
+  const text = String(line || "").trim();
+  if (!/^(?!20\d{2}年)\d{2}[^\s，,；;：:\n]{2,64}\s*[，,：:]/.test(text)) return false;
+  return /(?:最终结果|发行结果|发行规模|票面(?:利率)?|全场(?:倍数)?|边际(?:倍数)?|全部回拨|[，,]\s*[A-Z]?\d{6,9}(?:\.[A-Z]{2})?)/i.test(text);
 }
 
 function isAdvertisementBlockHeader(value = "") {
@@ -916,6 +944,7 @@ function advertisementShortNameKey(value = "") {
   return String(value || "")
     .trim()
     .replace(/[，,；;].*$/, "")
+    .replace(/[（(][^）)]{1,30}[）)]$/, "")
     .replace(/\s+/g, "")
     .toUpperCase();
 }
@@ -937,12 +966,13 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     || extractAdvertisementSecurityCode(headerText)
     || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
     || block.match(/代码[：:]\s*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
+    || block.match(/(?:^|\n)\s*(?!20\d{2}年)\d{2}[^\n，,；;：:]{2,64}[，,]\s*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=\s*[，,；;\n]|$)/i)?.[1]
     || "";
   const issueScale = numberFrom(block, /(?:发行)?规模(?:调整为|调整至|为|[】：:，,\s])*(?:不超过|约|合计)?\s*(\d+(?:\.\d+)?)\s*亿/)
     ?? numberFrom(block, /(?:^|[，,\s])(\d+(?:\.\d+)?)\s*亿(?:元)?(?=[，,\s]|$)/);
   const fullMarketMultiple = numberFrom(block, /全场倍数[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/)
     ?? numberFrom(block, /全场[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
-  const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*倍/);
+  const marginalMultiple = numberFrom(block, /(?:边际倍数|边际)[：:，,\s]*(\d+(?:\.\d+)?)\s*(?:倍|(?=[，,；;。\n]|$))/);
   const couponRate = numberFrom(block, /(?:票面利率|票面)[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
     ?? numberFrom(block, /(?:边际利率|边际)[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
     ?? numberFrom(block, /(?:^|[\n【\s])利率[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
@@ -1143,7 +1173,7 @@ function parseIssuerName(text) {
 function parseLabeledDate(text, label, referenceDate) {
   const line = text.match(new RegExp(`${label}(?:日期)?[：:\\s]*([^\\n，,]+)`))?.[1] || "";
   const relative = line.match(/(今天|今日|明天|明日)/)?.[1]
-    || text.match(new RegExp(`(今天|今日|明天|明日)${label}`))?.[1]
+    || text.match(new RegExp(`(今天|今日|明天|明日)(?:配售)?${label}`))?.[1]
     || text.match(new RegExp(`${label}(?:日期)?[：:\\s]*(今天|今日|明天|明日)`))?.[1];
   if (relative) return inferRelativeDate(relative, referenceDate);
   const iso = line.match(/(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/);
