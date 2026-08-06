@@ -686,8 +686,22 @@ test("applies unnumbered dual-tranche results with display labels to both variet
     venue: "银行间",
     cutoffAt: "2026-08-04T18:00",
     tranches: [
-      { shortName: "26越秀租赁MTN001A(绿色)", bidRate: 1.7, bidAmount: 0.7 },
-      { shortName: "26越秀租赁MTN001B(绿色)", bidRate: 2.42, bidAmount: 1.2 },
+      {
+        shortName: "26越秀租赁MTN001A(绿色)",
+        bidRate: 1.7,
+        bidAmount: 0.7,
+        pricingMode: "综合定价",
+        pricingRate: 1.82,
+        revenueBp: -5,
+      },
+      {
+        shortName: "26越秀租赁MTN001B(绿色)",
+        bidRate: 2.42,
+        bidAmount: 1.2,
+        pricingMode: "综合定价",
+        pricingRate: 2.52,
+        revenueBp: 50,
+      },
     ],
   }), ad, new Date("2026-08-04T09:00:00+08:00"));
 
@@ -702,6 +716,10 @@ test("applies unnumbered dual-tranche results with display labels to both variet
   assert.equal(project.tranches[1].marginalMultiple, 1.4);
   assert.equal(project.tranches[1].paymentDate, "2026-08-05");
   assert.equal(project.tranches[1].resultStatus, "中标");
+  assert.equal(
+    buildAwardResultText(project),
+    `${ad}\n\n表内中标001A 7000万，综合定价至1.82%，营收-5BP\n表内中标001B 1.2亿，综合定价至2.52%，营收50BP`,
+  );
 });
 
 test("parses comma-separated dual-tranche headers and cleans reallocation separators", () => {

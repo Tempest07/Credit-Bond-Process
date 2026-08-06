@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260806-dual-results";
+import { parseUnderwriterNames } from "./core.js?v=20260806-award-varieties";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -426,7 +426,7 @@ function formatAwardVarietyLabel(tranche, tranches = []) {
 }
 
 function extractAwardVarietyLabel(shortName, tranches = []) {
-  const value = String(shortName || "").trim().toUpperCase();
+  const value = normalizeAwardShortName(shortName);
   if (!value) return "";
   const scienceTech = value.match(/K\d+$/);
   if (scienceTech) return scienceTech[0];
@@ -437,7 +437,7 @@ function extractAwardVarietyLabel(shortName, tranches = []) {
   const serial = value.match(/(\d{2,})$/)?.[1];
   if (serial) {
     const hasLetterVariant = tranches.some((item) => {
-      const sibling = String(item?.shortName || "").trim().toUpperCase();
+      const sibling = normalizeAwardShortName(item?.shortName);
       return sibling !== value && new RegExp(`${serial}[A-Z]$`).test(sibling);
     });
     return hasLetterVariant ? "" : serial;
@@ -445,6 +445,14 @@ function extractAwardVarietyLabel(shortName, tranches = []) {
 
   const letter = value.match(/[A-Z]$/);
   return letter ? letter[0] : "";
+}
+
+function normalizeAwardShortName(shortName = "") {
+  return String(shortName || "")
+    .trim()
+    .replace(/[（(][^）)]{1,30}[）)]$/, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
 }
 
 export function applyIssuanceAdvertisement(project, advertisement, referenceDate = new Date()) {
