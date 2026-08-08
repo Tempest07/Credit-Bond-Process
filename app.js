@@ -14,11 +14,12 @@ import {
   normalizeBondFullNameForProject,
   normalizeGuaranteeInfo,
   normalizeIssuer,
+  normalizeRatingAgency,
   parseProjectBrief,
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260808-project-guarantors";
+} from "./core.js?v=20260808-rating-agency-default-guarantee";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -38,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260808-project-guarantors";
+} from "./lifecycle.js?v=20260808-rating-agency-default-guarantee";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260808-project-guarantors";
+} from "./history-parser.js?v=20260808-rating-agency-default-guarantee";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -57,12 +58,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260808-project-guarantors";
+} from "./protocol-transfer.js?v=20260808-rating-agency-default-guarantee";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260808-project-guarantors";
+} from "./reminders.js?v=20260808-rating-agency-default-guarantee";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -89,11 +90,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260808-project-guarantors";
+} from "./secondary-inventory.js?v=20260808-rating-agency-default-guarantee";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260808-project-guarantors";
+} from "./trade-record-converter.js?v=20260808-rating-agency-default-guarantee";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -104,13 +105,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260808-project-guarantors";
+} from "./trade-record-grid.js?v=20260808-rating-agency-default-guarantee";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260808-project-guarantors";
-import { initializeDatePickers } from "./date-picker.js?v=20260808-project-guarantors";
+} from "./trade-record-ledger.js?v=20260808-rating-agency-default-guarantee";
+import { initializeDatePickers } from "./date-picker.js?v=20260808-rating-agency-default-guarantee";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -119,22 +120,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260808-project-guarantors";
+} from "./project-screenshot-ocr.js?v=20260808-rating-agency-default-guarantee";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260808-project-guarantors";
+} from "./project-screenshot-layout.js?v=20260808-rating-agency-default-guarantee";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260808-project-guarantors";
+} from "./project-screenshot-image.js?v=20260808-rating-agency-default-guarantee";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260808-project-guarantors";
+} from "./payment-receipts.js?v=20260808-rating-agency-default-guarantee";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -3809,6 +3810,15 @@ function bindGenerator() {
       regenerate();
       scheduleProjectDmHistorySave();
     });
+    input.addEventListener("change", () => {
+      if (input.dataset.projectField !== "ratingAgency") return;
+      project.ratingAgency = normalizeRatingAgency(input.value);
+      input.value = project.ratingAgency;
+      project.sourceText = buildDmProjectSourceText(project);
+      $("#briefInput").value = project.sourceText;
+      regenerate();
+      scheduleProjectDmHistorySave();
+    });
   });
   $("#projectGuaranteeMethod")?.addEventListener("input", (event) => {
     clearRecognitionForInput(event.currentTarget);
@@ -3830,6 +3840,16 @@ function bindGenerator() {
     if (!info.guarantors[index]) return;
     info.guarantors[index][field] = field === "subjectRating" ? input.value.trim().toUpperCase() : input.value.trim();
     info.guarantors[index].source = "manual";
+    syncProjectGuaranteeDraft();
+  });
+  $("#projectGuarantorRows")?.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-guarantor-index][data-guarantor-field='ratingAgency']");
+    if (!input) return;
+    const info = ensureProjectGuaranteeInfo(project);
+    const guarantor = info.guarantors[Number(input.dataset.guarantorIndex)];
+    if (!guarantor) return;
+    guarantor.ratingAgency = normalizeRatingAgency(input.value);
+    input.value = guarantor.ratingAgency;
     syncProjectGuaranteeDraft();
   });
   $("#projectGuarantorRows")?.addEventListener("click", (event) => {
@@ -5397,6 +5417,10 @@ function ensureProjectGuaranteeInfo(projectValue) {
   current.rawText = String(current.rawText || "").trim();
   current.source = String(current.source || "").trim();
   if (!Array.isArray(current.guarantors)) current.guarantors = [];
+  current.guarantors.forEach((guarantor) => {
+    guarantor.ratingAgency = normalizeRatingAgency(guarantor.ratingAgency);
+  });
+  if (current.guarantors.length && !current.method) current.method = "不可撤销连带责任保证担保";
   return current;
 }
 
@@ -5425,6 +5449,7 @@ function syncProjectGuaranteeDraft() {
 function fillProjectFields() {
   ensureAbsInfo(project);
   ensureProjectGuaranteeInfo(project);
+  project.ratingAgency = normalizeRatingAgency(project.ratingAgency);
   $$("[data-project-field]").forEach((input) => {
     const field = input.dataset.projectField;
     input.value = project[field] ?? "";

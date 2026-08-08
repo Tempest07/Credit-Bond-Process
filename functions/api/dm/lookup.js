@@ -13,6 +13,15 @@ const DEFAULT_RATE_PATH = "/dm-quant-func-service/api/v1/bond/default-rate/data"
 const CANCELLED_ISSUE_PATTERN = /(?:取消发行|发行取消|终止发行|发行终止|发行失败|流标|cancel(?:led|ed)?|withdrawn)/i;
 const CANCELLED_ISSUE_LABEL_PATTERN = /[（(]?\s*(?:取消发行|发行取消|终止发行|发行终止|发行失败|流标|cancel(?:led|ed)?|withdrawn)\s*[）)]?/gi;
 
+function normalizeRatingAgencyName(value = "") {
+  const text = String(value || "").trim();
+  const compact = text.replace(/\s+/g, "");
+  if (/中诚信国际|中诚信.*评级/u.test(compact)) return "中诚信国际";
+  if (/联合资信/u.test(compact)) return "联合资信";
+  if (/大公国际/u.test(compact)) return "大公国际";
+  return text;
+}
+
 const SBOX = [
   0xd6, 0x90, 0xe9, 0xfe, 0xcc, 0xe1, 0x3d, 0xb7, 0x16, 0xb6, 0x14, 0xc2, 0x28, 0xfb, 0x2c, 0x05,
   0x2b, 0x67, 0x9a, 0x76, 0x2a, 0xbe, 0x04, 0xc3, 0xaa, 0x44, 0x13, 0x26, 0x49, 0x86, 0x06, 0x99,
@@ -589,7 +598,7 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
     issueStartDate: pickFirstDateString(primaryRow, ["issue_start_date", "issueStartDate"]) || pickFirstDateString(basicRow, ["iss_start_date", "issStartDate"]),
     issueEndDate: pickFirstDateString(primaryRow, ["issue_end_date", "issueEndDate"]) || pickFirstDateString(basicRow, ["iss_end_date", "issEndDate"]),
     subjectRating: pickRatingLike([basicRow, primaryRow, companyRow], "subject"),
-    ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
+    ratingAgency: normalizeRatingAgencyName(pickRatingLike([basicRow, primaryRow, companyRow], "agency")),
     impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
     guaranteeInfo,
     absInfo,
@@ -795,8 +804,8 @@ function pickAbsDebtRatingAgency(row = {}) {
     "agency_name", "agencyName",
   ]);
   const parsed = parseRatingWithAgency(direct);
-  if (parsed.agency) return parsed.agency;
-  return direct && !ratingValuePattern().test(direct) ? direct : "";
+  if (parsed.agency) return normalizeRatingAgencyName(parsed.agency);
+  return direct && !ratingValuePattern().test(direct) ? normalizeRatingAgencyName(direct) : "";
 }
 
 function resolveDmDurationText(primaryRow, basicRow) {
@@ -1298,7 +1307,7 @@ function externalDmRating(row, { requireInstitution = false } = {}) {
   if (!row) return null;
   const ratingText = pickFirstString(row, ["rating"]);
   const rating = parseRatingWithAgency(ratingText).rating;
-  const institution = pickFirstString(row, ["rating_institution_short_name", "ratingInstitutionShortName"]);
+  const institution = normalizeRatingAgencyName(pickFirstString(row, ["rating_institution_short_name", "ratingInstitutionShortName"]));
   const dataSource = pickFirstString(row, ["data_source", "dataSource"]);
   if (!rating || requireInstitution && !institution) return null;
   if (/(?:^|[^A-Z])PCA(?:[^A-Z]|$)|YY|评分|score/i.test(`${dataSource} ${institution}`)) return null;
@@ -1373,7 +1382,7 @@ function applyRatingCandidate(values, matches, item, source, { includeImplied = 
     matches.ratingAgency = { source, path, value: valueText };
   }
   if (!values.ratingAgency && ratingKeyMatches(keyText, "agency") && !ratingValuePattern().test(valueText)) {
-    values.ratingAgency = valueText;
+    values.ratingAgency = normalizeRatingAgencyName(valueText);
     matches.ratingAgency = { source, path, value: valueText };
   }
   if (includeImplied && !values.impliedRating && ratingWithAgency.rating && ratingKeyMatches(keyText, "implied")) {
@@ -1421,7 +1430,7 @@ function parseRatingWithAgency(value) {
   const match = text.match(/(?:^|[^A-Z0-9])(AAA|AA\+|AA\(2\)|AA-|AA|A\+|A-|A|BBB\+|BBB-|BBB|BB\+|BB-|BB|B\+|B-|B)(?:\s*[\(（]\s*([^)）]+?)\s*[\)）])?/i);
   return {
     rating: match?.[1]?.toUpperCase() || "",
-    agency: match?.[2]?.trim() || "",
+    agency: normalizeRatingAgencyName(match?.[2]?.trim() || ""),
   };
 }
 
@@ -1589,7 +1598,7 @@ function matchProjectForRating(normalized, projects) {
   if (!best?.project || best.score < 80) return null;
   return {
     subjectRating: best.ratingFields.subjectRating || "",
-    ratingAgency: best.ratingFields.ratingAgency || "",
+    ratingAgency: normalizeRatingAgencyName(best.ratingFields.ratingAgency),
     hiddenRating: best.ratingFields.hiddenRating || "",
     legalName: best.project.issuerName || "",
     matchedBy: best.project.shortName || "",
@@ -1606,7 +1615,7 @@ function projectRatingFields(project) {
   const parsed = parseProjectRatingText(`${project?.sourceText || ""}\n${project?.opinion || ""}\n${project?.notes || ""}`);
   return {
     subjectRating: String(project?.subjectRating || parsed.subjectRating || "").trim().toUpperCase(),
-    ratingAgency: String(project?.ratingAgency || parsed.ratingAgency || "").trim(),
+    ratingAgency: normalizeRatingAgencyName(project?.ratingAgency || parsed.ratingAgency),
     hiddenRating: String(project?.hiddenRating || project?.impliedRating || parsed.hiddenRating || "").trim().toUpperCase(),
   };
 }
@@ -1618,7 +1627,7 @@ function parseProjectRatingText(text = "") {
   if (compact) {
     return {
       subjectRating: compact[1].toUpperCase(),
-      ratingAgency: compact[2].trim(),
+      ratingAgency: normalizeRatingAgencyName(compact[2]),
       hiddenRating: compact[3].toUpperCase(),
     };
   }
@@ -1627,7 +1636,7 @@ function parseProjectRatingText(text = "") {
   const hidden = value.match(new RegExp(`(?:隐含|市场隐含评级)(?:评级)?(?:为|[:：\\s])*${ratingPattern}`, "i"));
   return {
     subjectRating: subject?.[1]?.toUpperCase() || "",
-    ratingAgency: subject?.[2]?.trim() || agency?.[1]?.trim() || "",
+    ratingAgency: normalizeRatingAgencyName(subject?.[2]?.trim() || agency?.[1]?.trim() || ""),
     hiddenRating: hidden?.[1]?.toUpperCase() || "",
   };
 }
@@ -1738,7 +1747,7 @@ function applyIssuerRatingFallback(normalized, issuer) {
     ratingSource.subjectRating = "issuer-db";
   }
   if (!next.ratingAgency && issuer.ratingAgency) {
-    next.ratingAgency = String(issuer.ratingAgency).trim();
+    next.ratingAgency = normalizeRatingAgencyName(issuer.ratingAgency);
     ratingSource.ratingAgency = "issuer-db";
   }
   if (!next.impliedRating && issuer.hiddenRating) {
@@ -1966,7 +1975,7 @@ function normalizeDmGuaranteeInfo({ primaryRows = [], basicRows = [] } = {}) {
     source: primaryKeys.has(normalizeIssuerMatchText(name)) ? "dm-primary" : "dm-basic",
   }));
   return {
-    method: "",
+    method: guarantors.length ? "不可撤销连带责任保证担保" : "",
     guarantors,
     rawText: uniqueStrings([
       ...primaryRows.map((row) => pickFirstString(row, ["gura_name", "guraName"])),
@@ -2422,7 +2431,7 @@ function cleanIssueTranche(tranche) {
     sharePct: numberOrNull(tranche.sharePct),
     expectedMaturityDate: tranche.expectedMaturityDate || "",
     debtRating: tranche.debtRating || "",
-    debtRatingAgency: tranche.debtRatingAgency || "",
+    debtRatingAgency: normalizeRatingAgencyName(tranche.debtRatingAgency),
     status: tranche.status || "unknown",
     statusReason: tranche.statusReason || "",
     reallocationTargetShortName: tranche.reallocationTargetShortName || "",

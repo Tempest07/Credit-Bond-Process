@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260808-project-guarantors";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260808-rating-agency-default-guarantee";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

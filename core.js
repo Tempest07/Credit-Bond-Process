@@ -39,11 +39,22 @@ export function normalizeText(value = "") {
     .trim();
 }
 
+export function normalizeRatingAgency(value = "") {
+  const text = String(value || "").trim();
+  const compact = text.replace(/\s+/g, "");
+  if (/中诚信国际|中诚信.*评级/u.test(compact)) return "中诚信国际";
+  if (/联合资信/u.test(compact)) return "联合资信";
+  if (/大公国际/u.test(compact)) return "大公国际";
+  return text;
+}
+
 export function normalizeGuaranteeInfo(input = {}) {
   const source = typeof input === "string" ? { guarantors: input } : (input || {});
+  const guarantors = normalizeGuarantors(source.guarantors || source.guaranteeParties || source.names || []);
   return {
-    method: normalizeGuaranteeMethod(source.method || source.guaranteeType || source.type || ""),
-    guarantors: normalizeGuarantors(source.guarantors || source.guaranteeParties || source.names || []),
+    method: normalizeGuaranteeMethod(source.method || source.guaranteeType || source.type || "")
+      || (guarantors.length ? "不可撤销连带责任保证担保" : ""),
+    guarantors,
     rawText: String(source.rawText || "").trim(),
     source: String(source.source || "").trim(),
   };
@@ -57,7 +68,7 @@ export function normalizeGuarantors(input = []) {
     const parsed = typeof item === "string" ? parseGuarantorEntry(item) : {
       name: String(item?.name || item?.guarantorName || item?.guaranteeParty || "").trim(),
       subjectRating: String(item?.subjectRating || item?.rating || item?.guarantorRating || "").trim().toUpperCase(),
-      ratingAgency: String(item?.ratingAgency || item?.agency || item?.guarantorRatingAgency || "").trim(),
+      ratingAgency: normalizeRatingAgency(item?.ratingAgency || item?.agency || item?.guarantorRatingAgency || ""),
       source: String(item?.source || "").trim(),
       ratingSource: String(item?.ratingSource || "").trim(),
       ratingAsOf: String(item?.ratingAsOf || "").trim(),
@@ -90,7 +101,7 @@ function parseGuarantorEntry(value = "") {
   return {
     name: match[1].trim(),
     subjectRating: isRating ? first.toUpperCase() : "",
-    ratingAgency: isRating ? details.slice(1).join("，") : details.join("，"),
+    ratingAgency: normalizeRatingAgency(isRating ? details.slice(1).join("，") : details.join("，")),
     source: "",
   };
 }
@@ -253,6 +264,8 @@ export function replaceProjectWithDmLookup(currentProject = {}, dmPatch = {}) {
     ...dmPatch,
     warnings: [...(dmPatch.warnings || [])],
   };
+  next.ratingAgency = normalizeRatingAgency(next.ratingAgency);
+  next.guaranteeInfo = normalizeGuaranteeInfo(next.guaranteeInfo);
   const issueNames = [...new Set(
     (Array.isArray(dmPatch.shortNames) && dmPatch.shortNames.length
       ? dmPatch.shortNames
@@ -444,7 +457,7 @@ function normalizeAbsTranche(input = {}) {
     expectedMaturityDate: formatAbsDate(input.expectedMaturityDate || ""),
     expectedTerm: String(input.expectedTerm || input.tenor || "").trim(),
     debtRating: String(input.debtRating || "").trim().toUpperCase(),
-    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
+    debtRatingAgency: normalizeRatingAgency(input.debtRatingAgency),
     inquiryLow: numberOrNull(input.inquiryLow),
     inquiryHigh: numberOrNull(input.inquiryHigh),
     selected: Boolean(input.selected),
@@ -580,7 +593,7 @@ function parseStructuredProjectAdvertisement(lines, result) {
   const rating = parseRatingValue(readStructuredField(lines, ["主体评级", "评级", "主体/债项评级"]));
   if (rating.rating) {
     result.subjectRating = rating.rating;
-    result.ratingAgency = rating.agency;
+    result.ratingAgency = normalizeRatingAgency(rating.agency);
   }
 
   const hiddenRating = parseRatingValue(readStructuredField(lines, ["隐含评级", "隐含"])).rating;
@@ -754,7 +767,7 @@ function parseSecondLine(line, result) {
   const rating = ratingSegment.match(/([A-Z]+[+-]?)(?:\(([^)]+)\))?/i);
   if (rating) {
     result.subjectRating = rating[1].toUpperCase();
-    result.ratingAgency = rating[2] || "";
+    result.ratingAgency = normalizeRatingAgency(rating[2] || "");
   }
 }
 
@@ -1066,8 +1079,9 @@ export function generateOpinion(project, issuer) {
     || buildBondFullName(project.shortName, issuer?.legalName, project);
   const branch = project.branch || issuer?.linkedBranch || issuer?.defaultBranch || "【待补充联动分行】";
   const underwriter = buildUnderwriter(project);
+  const ratingAgency = normalizeRatingAgency(project.ratingAgency);
   const rating = project.subjectRating
-    ? `${project.subjectRating}${project.ratingAgency ? `(${project.ratingAgency})` : ""}`
+    ? `${project.subjectRating}${ratingAgency ? `(${ratingAgency})` : ""}`
     : "【待补充主体评级】";
   const dualTranche = isDualTranche(project);
   const issueScale = Number.isFinite(project.issueScale)
@@ -1378,10 +1392,14 @@ export function applyIssuerCommonFields(project, issuer) {
     hiddenRating: project.hiddenRating || "",
   };
   if (!issuer) {
+    const normalizedSourceCommonFields = {
+      ...sourceCommonFields,
+      ratingAgency: normalizeRatingAgency(sourceCommonFields.ratingAgency),
+    };
     return {
       ...project,
-      ...sourceCommonFields,
-      sourceCommonFields,
+      ...normalizedSourceCommonFields,
+      sourceCommonFields: normalizedSourceCommonFields,
       warnings: (project.warnings || []).filter((warning) => !warning.startsWith("主体库要素")),
     };
   }
@@ -1393,7 +1411,7 @@ export function applyIssuerCommonFields(project, issuer) {
 
   applyIssuerCommonField(next, { branch: issuer.linkedBranch || issuer.defaultBranch }, "branch", "联动分行", normalizeBranchName);
   applyIssuerCommonField(next, issuer, "subjectRating", "主体评级", normalizeRatingValue);
-  applyIssuerCommonField(next, issuer, "ratingAgency", "评级机构", normalizeTextValue);
+  applyIssuerCommonField(next, issuer, "ratingAgency", "评级机构", normalizeRatingAgency);
   if (next.hiddenRatingSource === "wind-analytics" && String(next.hiddenRating || "").trim()) {
     const windRating = normalizeRatingValue(next.hiddenRating);
     const issuerRating = normalizeRatingValue(issuer.hiddenRating);
@@ -1422,10 +1440,6 @@ function normalizeRatingValue(value = "") {
   return String(value || "").trim().toUpperCase();
 }
 
-function normalizeTextValue(value = "") {
-  return String(value || "").trim();
-}
-
 export function normalizeIssuer(input) {
   const linkedBranch = normalizeBranchName(input.linkedBranch || input.defaultBranch || input.branch || "");
   const issuer = {
@@ -1436,7 +1450,7 @@ export function normalizeIssuer(input) {
     defaultBranch: linkedBranch,
     enterpriseType: ["央企", "地方国企", "民营企业", "其他"].includes(input.enterpriseType) ? input.enterpriseType : "",
     subjectRating: String(input.subjectRating || "").trim().toUpperCase(),
-    ratingAgency: String(input.ratingAgency || "").trim(),
+    ratingAgency: normalizeRatingAgency(input.ratingAgency),
     hiddenRating: String(input.hiddenRating || "").trim().toUpperCase(),
     isRealEstate: Boolean(input.isRealEstate),
     credit: {

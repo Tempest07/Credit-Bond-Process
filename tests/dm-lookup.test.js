@@ -2235,8 +2235,8 @@ test("DM lookup reads documented guarantor fields and enriches guarantor ratings
       const names = request.comChiNameList || [];
       data = names.includes("广州越秀集团股份有限公司")
         ? [
-            { com_chi_name: "广州越秀集团股份有限公司", rating_date: "2026-08-01", rating: "AAA", rating_institution_short_name: "中诚信国际", data_source: "中诚信国际" },
-            { com_chi_name: "广州越秀资本控股集团股份有限公司", rating_date: "2026-08-01", rating: "AAA", rating_institution_short_name: "中诚信国际", data_source: "中诚信国际" },
+            { com_chi_name: "广州越秀集团股份有限公司", rating_date: "2026-08-01", rating: "AAA", rating_institution_short_name: "中诚信评级", data_source: "中诚信评级" },
+            { com_chi_name: "广州越秀资本控股集团股份有限公司", rating_date: "2026-08-01", rating: "AAA", rating_institution_short_name: "联合资信评估股份有限公司", data_source: "联合资信评估股份有限公司" },
           ]
         : [];
     } else if (String(url).includes("/bond/basic-info/outstanding-bonds")) {
@@ -2257,14 +2257,14 @@ test("DM lookup reads documented guarantor fields and enriches guarantor ratings
     const payload = await response.json();
     assert.equal(payload.ok, true);
     assert.equal(payload.normalized.guaranteeInfo.source, "dm-primary");
-    assert.equal(payload.normalized.guaranteeInfo.method, "");
+    assert.equal(payload.normalized.guaranteeInfo.method, "不可撤销连带责任保证担保");
     assert.deepEqual(payload.normalized.guaranteeInfo.guarantors.map((item) => ({
       name: item.name,
       subjectRating: item.subjectRating,
       ratingAgency: item.ratingAgency,
     })), [
       { name: "广州越秀集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际" },
-      { name: "广州越秀资本控股集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际" },
+      { name: "广州越秀资本控股集团股份有限公司", subjectRating: "AAA", ratingAgency: "联合资信" },
     ]);
     assert.equal(payload.diagnostic.guarantee.conflict, false);
     assert.equal(payload.diagnostic.guarantee.ratedGuarantorCount, 2);

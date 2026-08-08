@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, parseUnderwriterNames } from "./core.js?v=20260808-project-guarantors";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260808-rating-agency-default-guarantee";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -49,7 +49,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     issuerId: issuer?.id || "",
     issuerName: issuer?.legalName || project.issuerName || "",
     subjectRating: project.subjectRating || issuer?.subjectRating || "",
-    ratingAgency: project.ratingAgency || issuer?.ratingAgency || "",
+    ratingAgency: normalizeRatingAgency(project.ratingAgency || issuer?.ratingAgency),
     hiddenRating: project.hiddenRating || issuer?.hiddenRating || "",
     hiddenRatingSource: project.hiddenRatingSource || "",
     hiddenRatingAsOf: project.hiddenRatingAsOf || "",
@@ -92,7 +92,7 @@ export function normalizeProjectRecord(input = {}) {
     issuerId: String(input.issuerId || "").trim(),
     issuerName: String(input.issuerName || "").trim(),
     subjectRating: String(input.subjectRating || "").trim().toUpperCase(),
-    ratingAgency: String(input.ratingAgency || "").trim(),
+    ratingAgency: normalizeRatingAgency(input.ratingAgency),
     hiddenRating: String(input.hiddenRating || "").trim().toUpperCase(),
     hiddenRatingSource: String(input.hiddenRatingSource || "").trim(),
     hiddenRatingAsOf: String(input.hiddenRatingAsOf || "").trim(),
@@ -619,7 +619,7 @@ function normalizeAbsLayer(input = {}) {
     expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
     expectedTerm: String(input.expectedTerm || input.tenor || input.durationText || "").trim(),
     debtRating: String(input.debtRating || "").trim().toUpperCase(),
-    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
+    debtRatingAgency: normalizeRatingAgency(input.debtRatingAgency),
     inquiryLow: numberOrNull(input.inquiryLow),
     inquiryHigh: numberOrNull(input.inquiryHigh),
     selected: Boolean(input.selected),
@@ -732,7 +732,7 @@ function normalizeTranche(input = {}) {
     sharePct: numberOrNull(input.sharePct),
     expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
     debtRating: String(input.debtRating || "").trim().toUpperCase(),
-    debtRatingAgency: String(input.debtRatingAgency || "").trim(),
+    debtRatingAgency: normalizeRatingAgency(input.debtRatingAgency),
     fullMarketMultiple: numberOrNull(input.fullMarketMultiple),
     marginalMultiple: numberOrNull(input.marginalMultiple),
     paymentDate: String(input.paymentDate || "").trim(),

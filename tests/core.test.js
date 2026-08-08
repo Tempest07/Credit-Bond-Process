@@ -11,11 +11,29 @@ import {
   generateOpinion,
   formatProjectValuationSummary,
   mergeImportedIssuers,
+  normalizeGuaranteeInfo,
   normalizeIssuer,
+  normalizeRatingAgency,
   parseProjectBrief,
   replaceProjectWithDmLookup,
   splitProjectBriefs,
 } from "../core.js";
+
+test("normalizes rating agency names to desk display conventions", () => {
+  assert.equal(normalizeRatingAgency("中诚信评级"), "中诚信国际");
+  assert.equal(normalizeRatingAgency("中诚信国际信用评级有限责任公司"), "中诚信国际");
+  assert.equal(normalizeRatingAgency("联合资信评估股份有限公司"), "联合资信");
+  assert.equal(normalizeRatingAgency("大公国际资信评估有限公司"), "大公国际");
+  assert.equal(normalizeRatingAgency("其他评级机构"), "其他评级机构");
+});
+
+test("defaults guarantor arrangements to irrevocable joint-liability guarantee", () => {
+  const defaulted = normalizeGuaranteeInfo({ guarantors: [{ name: "测试担保人", ratingAgency: "大公国际资信评估有限公司" }] });
+  assert.equal(defaulted.method, "不可撤销连带责任保证担保");
+  assert.equal(defaulted.guarantors[0].ratingAgency, "大公国际");
+  assert.equal(normalizeGuaranteeInfo({ method: "差额补足", guarantors: [{ name: "测试担保人" }] }).method, "差额补足");
+  assert.equal(normalizeGuaranteeInfo().method, "");
+});
 
 test("formats stored project valuations for compact ledger cards", () => {
   assert.equal(
@@ -212,19 +230,19 @@ test("parses multiple guarantors and writes them into the flow opinion", () => {
   const parsed = parseProjectBrief(`【26广越G2】
 债券名称：广州越秀产业投资有限公司2026年面向专业投资者公开发行公司债券(第二期)
 发行人：广州越秀产业投资有限公司
-主体评级：AA+(中诚信国际)
+主体评级：AA+(中诚信评级)
 发行场所：深交所
 发行规模：5亿
 发行期限：5年
 询价区间：1.4%-2.4%
 主承销商：中信证券
 联动分行：广州分行
-担保人：广州越秀集团股份有限公司(AAA，中诚信国际)；广州越秀资本控股集团股份有限公司(AAA，中诚信国际)
+担保人：广州越秀集团股份有限公司(AAA，联合资信评估股份有限公司)；广州越秀资本控股集团股份有限公司(AAA，大公国际资信评估有限公司)
 担保方式：不可撤销连带责任保证担保`);
 
   assert.deepEqual(parsed.guaranteeInfo.guarantors, [
-    { name: "广州越秀集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际", source: "" },
-    { name: "广州越秀资本控股集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际", source: "" },
+    { name: "广州越秀集团股份有限公司", subjectRating: "AAA", ratingAgency: "联合资信", source: "" },
+    { name: "广州越秀资本控股集团股份有限公司", subjectRating: "AAA", ratingAgency: "大公国际", source: "" },
   ]);
   assert.equal(parsed.guaranteeInfo.method, "不可撤销连带责任保证担保");
   const sentenceParsed = parseProjectBrief("担保信息：由广州越秀集团股份有限公司(AAA，中诚信国际)和广州越秀资本控股集团股份有限公司(AAA，中诚信国际)提供不可撤销连带责任保证担保。");
@@ -248,7 +266,7 @@ test("parses multiple guarantors and writes them into the flow opinion", () => {
       investmentTermText: "3年",
     },
   });
-  assert.match(generated.opinion, /主体信用评级为AA\+\(中诚信国际\)，由广州越秀集团股份有限公司\(AAA，中诚信国际\)和广州越秀资本控股集团股份有限公司\(AAA，中诚信国际\)提供不可撤销连带责任保证担保，主承销商为中信证券，预计利率区间为1\.4%-2\.4%。/);
+  assert.match(generated.opinion, /主体信用评级为AA\+\(中诚信国际\)，由广州越秀集团股份有限公司\(AAA，联合资信\)和广州越秀资本控股集团股份有限公司\(AAA，大公国际\)提供不可撤销连带责任保证担保，主承销商为中信证券，预计利率区间为1\.4%-2\.4%。/);
   assert.equal(generated.warnings.some((warning) => warning.includes("担保方式")), false);
 });
 
