@@ -75,14 +75,23 @@ export async function onRequestGet(context) {
       || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
     const company = issuerName ? await lookupCompanyInfo(dm, issuerName) : null;
     const normalized = normalizeDmLookup({ shortName, securityId, fullName, basic, primary, company });
+    const guaranteeDiscovery = dmMatched
+      ? await lookupDmGuarantorRatings(dm, normalized.guaranteeInfo, {
+          asOfDate: endDate || localDate(new Date()),
+        })
+      : { guaranteeInfo: normalized.guaranteeInfo, sources: [], errors: [] };
+    const guaranteeEnrichedNormalized = {
+      ...normalized,
+      guaranteeInfo: guaranteeDiscovery.guaranteeInfo,
+    };
     const windEnabled = windImpliedRatingEnabled(context.env);
     const dmRatingDiscovery = dmMatched
-      ? await lookupDmRatingDiscovery(dm, { normalized, basic, primary, company }, {
+      ? await lookupDmRatingDiscovery(dm, { normalized: guaranteeEnrichedNormalized, basic, primary, company }, {
           includeImplied: true,
           asOfDate: endDate || localDate(new Date()),
         })
       : { values: {}, matches: {}, sources: [], errors: [] };
-    const dmEnrichedNormalized = applyDmRatingDiscovery(normalized, dmRatingDiscovery);
+    const dmEnrichedNormalized = applyDmRatingDiscovery(guaranteeEnrichedNormalized, dmRatingDiscovery);
     const windImpliedRating = dmMatched && windEnabled && !dmEnrichedNormalized.impliedRating
       ? await lookupWindImpliedRating(context.env, {
           securityId: dmEnrichedNormalized.securityId || securityId,
@@ -136,7 +145,7 @@ export async function onRequestGet(context) {
         dmMatched,
         issuerIdentity: issuerIdentityDiagnostic(issuerIdentityFallback),
         rating: ratingDiagnostic(
-          normalized,
+          guaranteeEnrichedNormalized,
           dmRatingDiscovery,
           windImpliedRating,
           issuerRatingFallback,
@@ -144,18 +153,21 @@ export async function onRequestGet(context) {
           Boolean(context.env.DB),
           windEnabled,
         ),
+        guarantee: guaranteeDiagnostic(guaranteeDiscovery),
         issueGroup: issueGroupDiagnostic(issueGroup),
       },
       fieldCandidates: collectFieldCandidates([
         basic.rows,
         primary.rows,
         company?.rows,
+        ...(guaranteeDiscovery.sources || []).map((source) => source.rows),
         ...(dmRatingDiscovery.sources || []).map((source) => source.rows),
       ].filter(Boolean)),
       raw: {
         basicInfo: basic.raw,
         primaryData: primary.raw,
         companyInfo: company?.raw || null,
+        guarantorRatings: Object.fromEntries((guaranteeDiscovery.sources || []).map((source) => [source.name, source.raw])),
         dmRatingDiscovery: Object.fromEntries((dmRatingDiscovery.sources || []).map((source) => [source.name, source.raw])),
         windImpliedRating,
       },
@@ -544,6 +556,7 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
     || pickFirstString(basicRow, ["sec_short_name", "secShortName"])
     || shortName;
   const absInfo = normalizeAbsLookupFields({ primaryRow, basicRow, companyRow, primaryRows: primary?.rows || [], query: { shortName, fullName } });
+  const guaranteeInfo = normalizeDmGuaranteeInfo({ primaryRows: primary?.rows || [], basicRows: basic?.rows || [] });
   const bondTypeDesc = pickFirstString(primaryRow, ["bond_type_desc", "bondTypeDesc"]) || pickFirstString(basicRow, ["bond_type_desc", "bondTypeDesc"]);
   const textForType = [resolvedShortName, fullName, pickFirstString(primaryRow, ["sec_full_name", "secFullName"]), pickFirstString(basicRow, ["sec_full_name", "secFullName"]), bondTypeDesc].join(" ");
   return {
@@ -578,6 +591,7 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
     subjectRating: pickRatingLike([basicRow, primaryRow, companyRow], "subject"),
     ratingAgency: pickRatingLike([basicRow, primaryRow, companyRow], "agency"),
     impliedRating: pickRatingLike([basicRow, primaryRow, companyRow], "implied"),
+    guaranteeInfo,
     absInfo,
     isAbs: Boolean(absInfo || isAbsLookupText(textForType)),
   };
@@ -1935,6 +1949,108 @@ function dmRowIssueEntry(row) {
     debtRating: pickAbsDebtRating(row),
     debtRatingAgency: pickAbsDebtRatingAgency(row),
     isCancelledIssue: isExplicitlyCancelledIssueRow(row),
+  };
+}
+
+function normalizeDmGuaranteeInfo({ primaryRows = [], basicRows = [] } = {}) {
+  const primaryNames = dmGuarantorNames(primaryRows, ["gura_name", "guraName"]);
+  const basicNames = dmGuarantorNames(basicRows, ["guarantor"]);
+  const primaryKeys = new Set(primaryNames.map(normalizeIssuerMatchText));
+  const basicKeys = new Set(basicNames.map(normalizeIssuerMatchText));
+  const conflicts = primaryNames.length && basicNames.length
+    && (primaryKeys.size !== basicKeys.size || [...primaryKeys].some((name) => !basicKeys.has(name)));
+  const guarantors = uniqueStrings([...primaryNames, ...basicNames]).map((name) => ({
+    name,
+    subjectRating: "",
+    ratingAgency: "",
+    source: primaryKeys.has(normalizeIssuerMatchText(name)) ? "dm-primary" : "dm-basic",
+  }));
+  return {
+    method: "",
+    guarantors,
+    rawText: uniqueStrings([
+      ...primaryRows.map((row) => pickFirstString(row, ["gura_name", "guraName"])),
+      ...basicRows.map((row) => pickFirstString(row, ["guarantor"])),
+    ]).join("；"),
+    source: primaryNames.length ? "dm-primary" : basicNames.length ? "dm-basic" : "",
+    conflict: Boolean(conflicts),
+    warnings: conflicts ? ["DM 一级发行数据与债券基本信息的担保人口径不一致，请复核。"] : [],
+  };
+}
+
+function dmGuarantorNames(rows = [], keys = []) {
+  return uniqueStrings(rows.flatMap((row) => splitDmGuarantorNames(pickFirstString(row, keys))));
+}
+
+function splitDmGuarantorNames(value = "") {
+  const text = String(value || "").trim();
+  if (!text || /^(?:无|暂无|不适用|[-—/])$/u.test(text)) return [];
+  return text
+    .split(/\s*[、,，;；\n]+\s*/u)
+    .map((name) => name.replace(/^由\s*/u, "").replace(/\s*提供.*$/u, "").trim())
+    .filter((name) => name && !/^(?:无|暂无|不适用|[-—/])$/u.test(name));
+}
+
+async function lookupDmGuarantorRatings(dm, input = {}, { asOfDate = "" } = {}) {
+  const guaranteeInfo = {
+    method: String(input?.method || "").trim(),
+    guarantors: Array.isArray(input?.guarantors) ? input.guarantors.map((item) => ({ ...item })) : [],
+    rawText: String(input?.rawText || "").trim(),
+    source: String(input?.source || "").trim(),
+    conflict: Boolean(input?.conflict),
+    warnings: Array.isArray(input?.warnings) ? [...input.warnings] : [],
+  };
+  const names = uniqueStrings(guaranteeInfo.guarantors.map((item) => item.name));
+  if (!names.length) return { guaranteeInfo, sources: [], errors: [] };
+
+  const sources = [];
+  const errors = [];
+  for (const [index, batch] of chunk(names, 5).entries()) {
+    const payload = { comChiNameList: batch };
+    try {
+      const raw = await dm.post(COMPANY_RATING_PATH, payload);
+      sources.push({ name: `guarantorCompanyRating${index + 1}`, path: COMPANY_RATING_PATH, raw, rows: rowsFromDm(raw) });
+    } catch (error) {
+      errors.push({
+        source: "guarantorCompanyRating",
+        path: COMPANY_RATING_PATH,
+        payloadKeys: Object.keys(payload),
+        error: dmDedicatedRatingError(error),
+      });
+    }
+  }
+
+  const ratingRows = sources.flatMap((source) => source.rows || []);
+  guaranteeInfo.guarantors = guaranteeInfo.guarantors.map((guarantor) => {
+    const target = normalizeIssuerMatchText(guarantor.name);
+    const row = latestDmRatingRow(ratingRows, asOfDate, (candidate) => {
+      const candidateName = normalizeIssuerMatchText(pickFirstString(candidate, ["com_chi_name", "comChiName"]));
+      return Boolean(target && candidateName && issuerMatchScore(candidateName, target) >= 90)
+        && Boolean(externalDmRating(candidate, { requireInstitution: true }));
+    });
+    const rating = externalDmRating(row, { requireInstitution: true });
+    return rating ? {
+      ...guarantor,
+      subjectRating: rating.rating,
+      ratingAgency: rating.institution,
+      ratingAsOf: rating.date,
+      ratingSource: "dm-company-rating",
+    } : guarantor;
+  });
+  return { guaranteeInfo, sources, errors };
+}
+
+function guaranteeDiagnostic(discovery = {}) {
+  const info = discovery.guaranteeInfo || {};
+  return {
+    source: info.source || "",
+    conflict: Boolean(info.conflict),
+    guarantorCount: Array.isArray(info.guarantors) ? info.guarantors.length : 0,
+    ratedGuarantorCount: Array.isArray(info.guarantors)
+      ? info.guarantors.filter((item) => item.subjectRating && item.ratingAgency).length
+      : 0,
+    warnings: Array.isArray(info.warnings) ? info.warnings : [],
+    errors: Array.isArray(discovery.errors) ? discovery.errors : [],
   };
 }
 

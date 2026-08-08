@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260806-award-varieties";
+const VERSION = "20260808-project-guarantors";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.8">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.9">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -103,6 +103,25 @@ test("hides the project empty state once a project is selected", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
+});
+
+test("ships project guarantor entry, DM mapping and ledger detail display", async () => {
+  const [html, app, styles, dmLookup] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+    readFile(new URL("../functions/api/dm/lookup.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="projectGuaranteePanel"/);
+  assert.match(html, /id="addProjectGuarantorButton"/);
+  assert.match(html, /id="projectSummaryGuarantee"/);
+  assert.match(app, /function renderProjectGuarantorFields\(/);
+  assert.match(app, /patch\.guaranteeInfo/);
+  assert.match(dmLookup, /"gura_name", "guraName"/);
+  assert.match(dmLookup, /"guarantor"/);
+  assert.match(dmLookup, /lookupDmGuarantorRatings/);
+  assert.match(styles, /\.guarantor-row\s*\{/);
 });
 
 test("keeps the desktop sidebar rail continuous and the empty detail state compact", async () => {

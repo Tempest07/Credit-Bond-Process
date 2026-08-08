@@ -12,12 +12,13 @@ import {
   isAbsProject,
   mergeImportedIssuers,
   normalizeBondFullNameForProject,
+  normalizeGuaranteeInfo,
   normalizeIssuer,
   parseProjectBrief,
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260806-award-varieties";
+} from "./core.js?v=20260808-project-guarantors";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -37,13 +38,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260806-award-varieties";
+} from "./lifecycle.js?v=20260808-project-guarantors";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260806-award-varieties";
+} from "./history-parser.js?v=20260808-project-guarantors";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -56,12 +57,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260806-award-varieties";
+} from "./protocol-transfer.js?v=20260808-project-guarantors";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260806-award-varieties";
+} from "./reminders.js?v=20260808-project-guarantors";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -88,11 +89,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260806-award-varieties";
+} from "./secondary-inventory.js?v=20260808-project-guarantors";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260806-award-varieties";
+} from "./trade-record-converter.js?v=20260808-project-guarantors";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -103,13 +104,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260806-award-varieties";
+} from "./trade-record-grid.js?v=20260808-project-guarantors";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260806-award-varieties";
-import { initializeDatePickers } from "./date-picker.js?v=20260806-award-varieties";
+} from "./trade-record-ledger.js?v=20260808-project-guarantors";
+import { initializeDatePickers } from "./date-picker.js?v=20260808-project-guarantors";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -118,22 +119,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260806-award-varieties";
+} from "./project-screenshot-ocr.js?v=20260808-project-guarantors";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260806-award-varieties";
+} from "./project-screenshot-layout.js?v=20260808-project-guarantors";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260806-award-varieties";
+} from "./project-screenshot-image.js?v=20260808-project-guarantors";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260806-award-varieties";
+} from "./payment-receipts.js?v=20260808-project-guarantors";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -3809,6 +3810,37 @@ function bindGenerator() {
       scheduleProjectDmHistorySave();
     });
   });
+  $("#projectGuaranteeMethod")?.addEventListener("input", (event) => {
+    clearRecognitionForInput(event.currentTarget);
+    ensureProjectGuaranteeInfo(project).method = event.currentTarget.value.trim();
+    syncProjectGuaranteeDraft();
+  });
+  $("#addProjectGuarantorButton")?.addEventListener("click", () => {
+    ensureProjectGuaranteeInfo(project).guarantors.push({ name: "", subjectRating: "", ratingAgency: "", source: "manual" });
+    renderProjectGuarantorFields();
+    $("#projectGuarantorRows .guarantor-row:last-child [data-guarantor-field='name']")?.focus();
+  });
+  $("#projectGuarantorRows")?.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-guarantor-index][data-guarantor-field]");
+    if (!input) return;
+    clearRecognitionForInput(input);
+    const index = Number(input.dataset.guarantorIndex);
+    const field = input.dataset.guarantorField;
+    const info = ensureProjectGuaranteeInfo(project);
+    if (!info.guarantors[index]) return;
+    info.guarantors[index][field] = field === "subjectRating" ? input.value.trim().toUpperCase() : input.value.trim();
+    info.guarantors[index].source = "manual";
+    syncProjectGuaranteeDraft();
+  });
+  $("#projectGuarantorRows")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-guarantor]");
+    if (!button) return;
+    const index = Number(button.dataset.removeGuarantor);
+    const info = ensureProjectGuaranteeInfo(project);
+    info.guarantors.splice(index, 1);
+    renderProjectGuarantorFields();
+    syncProjectGuaranteeDraft();
+  });
   $$("[data-abs-field]").forEach((input) => {
     input.addEventListener("input", () => {
       clearRecognitionForInput(input);
@@ -4282,6 +4314,7 @@ function bindLedger() {
       leadUnderwriter: record.leadUnderwriter,
       sponsorStatus: record.sponsorStatus,
       instrumentType: record.instrumentType,
+      guaranteeInfo: record.guaranteeInfo,
       absInfo: record.absInfo,
       issueScale: record.issueScale,
       durationText: recordTranches.length > 1
@@ -4550,6 +4583,28 @@ function projectPatchFromDmLookup(payload) {
   assignProjectDmValueWithSource(patch, sourceMap, "subjectRating", normalized.subjectRating, normalizedProjectFieldSource(normalized, "subjectRating"));
   assignProjectDmValueWithSource(patch, sourceMap, "ratingAgency", normalized.ratingAgency, normalizedProjectFieldSource(normalized, "ratingAgency"));
   assignProjectDmValueWithSource(patch, sourceMap, "hiddenRating", normalized.impliedRating, normalizedProjectFieldSource(normalized, "impliedRating"));
+  const dmGuaranteeInfo = normalizeGuaranteeInfo(normalized.guaranteeInfo);
+  if (dmGuaranteeInfo.guarantors.length) {
+    patch.guaranteeInfo = {
+      ...dmGuaranteeInfo,
+      guarantors: dmGuaranteeInfo.guarantors.map((guarantor) => {
+        const issuer = findIssuer(guarantor.name, state.issuers || []);
+        return {
+          ...guarantor,
+          subjectRating: guarantor.subjectRating || issuer?.subjectRating || "",
+          ratingAgency: guarantor.ratingAgency || issuer?.ratingAgency || "",
+          source: guarantor.source || normalized.guaranteeInfo?.source || "dm",
+        };
+      }),
+    };
+    sourceMap["guarantee.method"] = dmGuaranteeInfo.method ? "dm" : "";
+    patch.guaranteeInfo.guarantors.forEach((guarantor, index) => {
+      sourceMap[`guarantee.guarantors.${index}.name`] = "dm";
+      if (guarantor.subjectRating) sourceMap[`guarantee.guarantors.${index}.subjectRating`] = guarantor.ratingSource === "dm-company-rating" ? "dm" : "cloud";
+      if (guarantor.ratingAgency) sourceMap[`guarantee.guarantors.${index}.ratingAgency`] = guarantor.ratingSource === "dm-company-rating" ? "dm" : "cloud";
+    });
+    warnings.push(...(Array.isArray(normalized.guaranteeInfo?.warnings) ? normalized.guaranteeInfo.warnings : []));
+  }
   if (patch.hiddenRating) {
     patch.hiddenRatingSource = normalized.ratingSource?.impliedRating || "dm";
     patch.hiddenRatingAsOf = normalized.impliedRatingAsOf || payload?.diagnostic?.rating?.windImpliedRating?.asOf || "";
@@ -4703,6 +4758,21 @@ function buildProjectDmRecognitionMarks(patch) {
   for (const [field, label] of dmFields) {
     if (valueHasContent(patch[field])) marks[field] = sourcedRecognitionMark(label, sourceMap[field]);
   }
+  if (patch.guaranteeInfo) {
+    const info = normalizeGuaranteeInfo(patch.guaranteeInfo);
+    if (info.method) marks["guarantee.method"] = sourcedRecognitionMark("担保方式", sourceMap["guarantee.method"] || "dm");
+    info.guarantors.forEach((guarantor, index) => {
+      [
+        ["name", "担保人"],
+        ["subjectRating", "担保人评级"],
+        ["ratingAgency", "担保人评级机构"],
+      ].forEach(([field, label]) => {
+        if (valueHasContent(guarantor[field])) {
+          marks[`guarantee.guarantors.${index}.${field}`] = sourcedRecognitionMark(label, sourceMap[`guarantee.guarantors.${index}.${field}`] || "dm");
+        }
+      });
+    });
+  }
   if (patch.absInfo) {
     const absInfo = normalizeProjectAbsInfo(patch.absInfo);
     const absFields = [
@@ -4793,6 +4863,7 @@ function sortProjectDmTranches(tranches) {
 
 function buildDmProjectSourceText(projectValue) {
   if (isAbsProject(projectValue)) return buildAbsProjectSourceText(projectValue);
+  const guaranteeInfo = normalizeGuaranteeInfo(projectValue.guaranteeInfo);
   const rating = projectValue.subjectRating
     ? `${projectValue.subjectRating}${projectValue.ratingAgency ? `(${projectValue.ratingAgency})` : ""}`
     : "主体评级待补";
@@ -4808,9 +4879,18 @@ function buildDmProjectSourceText(projectValue) {
     `${projectValue.durationText || "期限待补"} ${scale} ${rating}${hidden}`,
     `${inquiry} ${projectValue.venue || "发行场所待补"} ${projectValue.leadUnderwriter || "牵头主承待补"}`,
   ];
+  if (guaranteeInfo.guarantors.length) {
+    lines.push(`担保人：${guaranteeInfo.guarantors.map(formatProjectGuarantor).join("；")}`);
+  }
+  if (guaranteeInfo.method) lines.push(`担保方式：${guaranteeInfo.method}`);
   if (valuationText) lines.push(`${projectValue.shortName || "债券简称待补"} 市场估值约${valuationText}`);
   if (guidanceText) lines.push(`如需综合定价，指导价约${guidanceText}`);
   return lines.join("\n");
+}
+
+function formatProjectGuarantor(guarantor = {}) {
+  const details = [guarantor.subjectRating, guarantor.ratingAgency].filter(Boolean).join("，");
+  return `${guarantor.name || "担保人待补"}${details ? `(${details})` : ""}`;
 }
 
 function buildAbsProjectSourceText(projectValue) {
@@ -5307,13 +5387,50 @@ function focusBriefPlaceholder(direction = "next") {
   input.setSelectionRange(target.index, target.index + target[0].length);
 }
 
+function ensureProjectGuaranteeInfo(projectValue) {
+  const current = projectValue?.guaranteeInfo;
+  if (!current || typeof current !== "object" || Array.isArray(current)) {
+    projectValue.guaranteeInfo = normalizeGuaranteeInfo(current || {});
+    return projectValue.guaranteeInfo;
+  }
+  current.method = String(current.method || "").trim();
+  current.rawText = String(current.rawText || "").trim();
+  current.source = String(current.source || "").trim();
+  if (!Array.isArray(current.guarantors)) current.guarantors = [];
+  return current;
+}
+
+function renderProjectGuarantorFields() {
+  const rows = $("#projectGuarantorRows");
+  if (!rows) return;
+  const info = ensureProjectGuaranteeInfo(project);
+  $("#projectGuaranteeMethod").value = info.method || "";
+  rows.innerHTML = info.guarantors.map((guarantor, index) => `
+    <div class="guarantor-row" data-guarantor-row="${index}">
+      <label>担保人全称<input data-guarantor-index="${index}" data-guarantor-field="name" value="${escapeAttribute(guarantor.name || "")}"></label>
+      <label>主体评级<input data-guarantor-index="${index}" data-guarantor-field="subjectRating" value="${escapeAttribute(guarantor.subjectRating || "")}"></label>
+      <label>评级机构<input data-guarantor-index="${index}" data-guarantor-field="ratingAgency" value="${escapeAttribute(guarantor.ratingAgency || "")}"></label>
+      <button class="text-button guarantor-remove" type="button" data-remove-guarantor="${index}">移除</button>
+    </div>
+  `).join("");
+}
+
+function syncProjectGuaranteeDraft() {
+  project.sourceText = buildDmProjectSourceText(project);
+  $("#briefInput").value = project.sourceText;
+  regenerate();
+  scheduleProjectDmHistorySave();
+}
+
 function fillProjectFields() {
   ensureAbsInfo(project);
+  ensureProjectGuaranteeInfo(project);
   $$("[data-project-field]").forEach((input) => {
     const field = input.dataset.projectField;
     input.value = project[field] ?? "";
   });
   fillAbsFields();
+  renderProjectGuarantorFields();
   if ($("#projectDmSeedInput")) $("#projectDmSeedInput").value = project.shortName || "";
   ensureProjectPricingCapacity(project);
   renderProjectPricingFields();
@@ -5547,6 +5664,22 @@ function buildProjectRecognitionMarks(projectValue, issuer) {
     markAuto("leadUnderwriter", "牵头主承销商");
   }
 
+  const guaranteeInfo = normalizeGuaranteeInfo(projectValue.guaranteeInfo);
+  if (guaranteeInfo.guarantors.length || guaranteeInfo.method) {
+    marks["guarantee.method"] = guaranteeInfo.method
+      ? recognitionMark("success", "担保方式已识别")
+      : recognitionMark("attention", "DM 未提供担保方式，请根据发行文件确认");
+    guaranteeInfo.guarantors.forEach((guarantor, index) => {
+      marks[`guarantee.guarantors.${index}.name`] = recognitionMark("success", "担保人已识别");
+      marks[`guarantee.guarantors.${index}.subjectRating`] = guarantor.subjectRating
+        ? recognitionMark("success", "担保人评级已识别")
+        : recognitionMark("attention", "担保人评级待补充");
+      marks[`guarantee.guarantors.${index}.ratingAgency`] = guarantor.ratingAgency
+        ? recognitionMark("success", "担保人评级机构已识别")
+        : recognitionMark("attention", "担保人评级机构待补充");
+    });
+  }
+
   if (valueHasContent(projectValue.offeringType)) {
     marks.offeringType = recognitionMark("success", "发行方式已识别");
   } else if (isExchangeProject(projectValue)) {
@@ -5593,6 +5726,12 @@ function applyProjectRecognitionMarks() {
     card.querySelectorAll("[data-abs-tranche-field]").forEach((input) => {
       setRecognitionForInput(input, projectRecognitionMarks[`abs.tranches.${index}.${input.dataset.absTrancheField}`]);
     });
+  });
+  const guaranteeMethod = $("#projectGuaranteeMethod");
+  if (guaranteeMethod) setRecognitionForInput(guaranteeMethod, projectRecognitionMarks["guarantee.method"]);
+  $$("[data-guarantor-index][data-guarantor-field]").forEach((input) => {
+    const key = `guarantee.guarantors.${input.dataset.guarantorIndex}.${input.dataset.guarantorField}`;
+    setRecognitionForInput(input, projectRecognitionMarks[key]);
   });
   $$("[data-inquiry-index][data-inquiry-bound]").forEach((input) => {
     const key = `inquiryRanges.${input.dataset.inquiryIndex}.${input.dataset.inquiryBound}`;
@@ -8242,6 +8381,9 @@ function fillProjectForm(input) {
   $("#projectSummarySponsor").textContent = record.sponsorStatus || "身份待补";
   $("#projectSummaryLead").textContent = record.leadUnderwriter || "主承待补";
   $("#projectSummaryInquiry").textContent = formatInquirySummary(record.tranches);
+  const guaranteeSummary = formatProjectGuaranteeSummary(record.guaranteeInfo);
+  $("#projectSummaryGuaranteeItem").hidden = !guaranteeSummary;
+  $("#projectSummaryGuarantee").textContent = guaranteeSummary || "待补";
   $("#projectCutoffAt").value = record.cutoffAt;
   $("#projectCutoffTimeConfirmed").value = record.cutoffTimeConfirmed ? "true" : "false";
   $("#projectCutoffSource").value = record.cutoffSource;
@@ -8261,6 +8403,13 @@ function fillProjectForm(input) {
   void loadProjectPaymentReceipts(record.id);
   applyResultRecognitionMarks(record);
   renderProjectList();
+}
+
+function formatProjectGuaranteeSummary(input = {}) {
+  const info = normalizeGuaranteeInfo(input);
+  if (!info.guarantors.length) return "";
+  const parties = info.guarantors.map(formatProjectGuarantor).join("、");
+  return info.method ? `${parties} · ${info.method}` : parties;
 }
 
 function refillProjectForm(input) {

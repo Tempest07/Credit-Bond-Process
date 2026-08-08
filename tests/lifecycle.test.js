@@ -86,6 +86,26 @@ test("preserves rating fields on project ledger records", () => {
   assert.equal(record.hiddenRatingAsOf, "2026-07-13");
 });
 
+test("preserves project-level guarantors through ledger normalization", () => {
+  const record = createProjectRecord({
+    shortName: "26广越G2",
+    guaranteeInfo: {
+      method: "不可撤销连带责任保证担保",
+      source: "dm-primary",
+      guarantors: [
+        { name: "广州越秀集团股份有限公司", subjectRating: "aaa", ratingAgency: "中诚信国际", source: "dm-primary" },
+        { name: "广州越秀资本控股集团股份有限公司", subjectRating: "aaa", ratingAgency: "中诚信国际", source: "dm-primary" },
+      ],
+    },
+  }, null, { opinion: "含担保流程意见" });
+
+  assert.equal(record.guaranteeInfo.method, "不可撤销连带责任保证担保");
+  assert.equal(record.guaranteeInfo.guarantors.length, 2);
+  assert.deepEqual(record.guaranteeInfo.guarantors.map((item) => item.subjectRating), ["AAA", "AAA"]);
+  const restored = normalizeProjectRecord(JSON.parse(JSON.stringify(record)));
+  assert.deepEqual(restored.guaranteeInfo, record.guaranteeInfo);
+});
+
 test("preserves ABS structured fields on project ledger records", () => {
   const record = createProjectRecord({
     shortName: "26创格2A",

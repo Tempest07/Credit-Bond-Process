@@ -39,6 +39,72 @@ export function normalizeText(value = "") {
     .trim();
 }
 
+export function normalizeGuaranteeInfo(input = {}) {
+  const source = typeof input === "string" ? { guarantors: input } : (input || {});
+  return {
+    method: normalizeGuaranteeMethod(source.method || source.guaranteeType || source.type || ""),
+    guarantors: normalizeGuarantors(source.guarantors || source.guaranteeParties || source.names || []),
+    rawText: String(source.rawText || "").trim(),
+    source: String(source.source || "").trim(),
+  };
+}
+
+export function normalizeGuarantors(input = []) {
+  const items = Array.isArray(input) ? input : parseGuarantorText(input);
+  const result = [];
+  const seen = new Set();
+  for (const item of items) {
+    const parsed = typeof item === "string" ? parseGuarantorEntry(item) : {
+      name: String(item?.name || item?.guarantorName || item?.guaranteeParty || "").trim(),
+      subjectRating: String(item?.subjectRating || item?.rating || item?.guarantorRating || "").trim().toUpperCase(),
+      ratingAgency: String(item?.ratingAgency || item?.agency || item?.guarantorRatingAgency || "").trim(),
+      source: String(item?.source || "").trim(),
+      ratingSource: String(item?.ratingSource || "").trim(),
+      ratingAsOf: String(item?.ratingAsOf || "").trim(),
+    };
+    if (!parsed.name) continue;
+    const key = parsed.name.replace(/[^\p{Letter}\p{Number}]/gu, "").toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(parsed);
+  }
+  return result;
+}
+
+function parseGuarantorText(value = "") {
+  return String(value || "")
+    .replace(/^由\s*/, "")
+    .replace(/\s*提供(?:不可撤销)?(?:连带责任)?保证担保\s*$/u, "")
+    .split(/\s*(?:[；;\n、]|(?<=[）)])和(?=[\p{Script=Han}A-Za-z]))\s*/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseGuarantorEntry(value = "") {
+  const text = String(value || "").trim();
+  const match = text.match(/^(.+?)[（(]((?:[^（）()]|\([^)]*\))*)[）)]$/u);
+  if (!match) return { name: text, subjectRating: "", ratingAgency: "", source: "" };
+  const details = match[2].split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  const first = details[0] || "";
+  const isRating = /^(?:AAA|AA[+\-(]?\d*\)?|A[+\-]?|BBB[+\-]?|BB[+\-]?|B[+\-]?|CCC[+\-]?|CC|C|D)$/i.test(first);
+  return {
+    name: match[1].trim(),
+    subjectRating: isRating ? first.toUpperCase() : "",
+    ratingAgency: isRating ? details.slice(1).join("，") : details.join("，"),
+    source: "",
+  };
+}
+
+function normalizeGuaranteeMethod(value = "") {
+  const text = String(value || "")
+    .trim()
+    .replace(/^提供\s*/, "")
+    .replace(/[。；;，,]+$/u, "");
+  if (!text) return "";
+  if (/保证$/u.test(text) && !/担保$/u.test(text)) return `${text}担保`;
+  return text;
+}
+
 export function durationToDays(value = "") {
   const text = String(value).trim().toUpperCase().replace(/期$/, "");
   let match = text.match(/^(\d+(?:\.\d+)?)\s*(D|天)$/i);
@@ -98,6 +164,7 @@ export function parseProjectBrief(rawText) {
     valuations: [],
     guidancePrice: null,
     guidancePrices: [],
+    guaranteeInfo: normalizeGuaranteeInfo(),
     absInfo: defaultAbsInfo(),
     sourceText: text,
     warnings: [],
@@ -125,6 +192,7 @@ export function parseProjectBrief(rawText) {
   }
   parseOfferingType(text, result);
   result.exchangeIssueNumber = parseExplicitIssueNumber(text);
+  parseGuaranteeFields(lines, result);
   parseAbsProjectFields(text, result);
 
   for (const line of lines) {
@@ -545,6 +613,22 @@ function parseStructuredProjectAdvertisement(lines, result) {
       result.guidancePrice = guidancePrices[0];
     }
   }
+}
+
+function parseGuaranteeFields(lines, result) {
+  const text = (lines || []).join("\n");
+  const namedGuarantors = readStructuredField(lines, ["担保人", "保证人", "担保方", "担保主体", "担保机构"]);
+  const method = readStructuredField(lines, ["担保方式", "保证方式", "担保措施"]);
+  const guaranteeText = readStructuredField(lines, ["担保信息", "保证信息"]);
+  const sentenceMatch = (guaranteeText || text).match(/由\s*(.+?)\s*提供\s*([^，。；;\n]*(?:保证担保|保证|担保))/u);
+  const guarantorText = namedGuarantors || sentenceMatch?.[1] || "";
+  const rawText = guaranteeText || sentenceMatch?.[0] || "";
+  result.guaranteeInfo = normalizeGuaranteeInfo({
+    guarantors: guarantorText,
+    method: method || sentenceMatch?.[2] || "",
+    rawText,
+    source: guarantorText ? "parsed" : "",
+  });
 }
 
 function readStructuredField(lines, labels) {
@@ -1003,10 +1087,11 @@ export function generateOpinion(project, issuer) {
   const approver = determineApprover(project.hiddenRating, suggestion.investmentAmount, Boolean(issuer?.isRealEstate));
   const recommendationAmount = formatRecommendationAmount(suggestion, amount, dualTranche);
   const creditTermCoverageSentence = formatCreditTermCoverageSentence(suggestion, branch);
+  const guaranteeClause = formatGuaranteeClause(project.guaranteeInfo);
 
   const opinion = [
     `${branch}申请与资金营运中心一二级联动投资${fullName || "【待补充债券全称】"}。`,
-    `预计发行规模${issueScale}，发行期限${duration}，主体信用评级为${rating}，主承销商为${underwriter}，预计利率区间为${inquiry}。`,
+    `预计发行规模${issueScale}，发行期限${duration}，主体信用评级为${rating}${guaranteeClause}，主承销商为${underwriter}，预计利率区间为${inquiry}。`,
     `授信方面，${creditSentence}。`,
     dualTranche
       ? `${branch}拟申请投资金额合计不超过${amount}。`
@@ -1026,8 +1111,30 @@ export function generateOpinion(project, issuer) {
   if (bidRateItems.some((item) => !Number.isFinite(bidRateValue(project, item.index)))) {
     warnings.push("未识别市场估值，一级投标利率需手工填写。");
   }
+  const guaranteeInfo = normalizeGuaranteeInfo(project.guaranteeInfo);
+  if (guaranteeInfo.guarantors.length && !guaranteeInfo.method) {
+    warnings.push("已识别担保人，但担保方式无法从 DM 直接确认，请根据发行文件补充。");
+  }
+  for (const guarantor of guaranteeInfo.guarantors) {
+    if (!guarantor.subjectRating || !guarantor.ratingAgency) {
+      warnings.push(`担保人“${guarantor.name}”的主体评级或评级机构未完整识别，请核对。`);
+    }
+  }
 
   return { opinion, suggestion, approver, fullName, warnings };
+}
+
+function formatGuaranteeClause(input = {}) {
+  const info = normalizeGuaranteeInfo(input);
+  if (!info.guarantors.length) return "";
+  const parties = info.guarantors.map((guarantor) => {
+    const rating = [guarantor.subjectRating, guarantor.ratingAgency].filter(Boolean).join("，");
+    return `${guarantor.name}${rating ? `(${rating})` : ""}`;
+  });
+  const joined = parties.length <= 2
+    ? parties.join("和")
+    : `${parties.slice(0, -1).join("、")}和${parties.at(-1)}`;
+  return `，由${joined}提供${info.method || "【待补充担保方式】"}`;
 }
 
 function calculateAbsSuggestion(project, issuer) {

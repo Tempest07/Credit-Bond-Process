@@ -1,4 +1,4 @@
-import { parseUnderwriterNames } from "./core.js?v=20260806-award-varieties";
+import { normalizeGuaranteeInfo, parseUnderwriterNames } from "./core.js?v=20260808-project-guarantors";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -58,6 +58,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     offeringType: project.offeringType || "",
     leadUnderwriter: project.leadUnderwriter || "",
     sponsorStatus: project.sponsorStatus || "",
+    guaranteeInfo: normalizeGuaranteeInfo(project.guaranteeInfo),
     cutoffAt: cutoff.cutoffAt,
     cutoffTimeConfirmed: cutoff.cutoffTimeConfirmed,
     cutoffSource: cutoff.cutoffSource,
@@ -100,6 +101,7 @@ export function normalizeProjectRecord(input = {}) {
     offeringType: ["公募", "私募"].includes(input.offeringType) ? input.offeringType : "",
     leadUnderwriter: String(input.leadUnderwriter || "").trim(),
     sponsorStatus: String(input.sponsorStatus || "").trim(),
+    guaranteeInfo: normalizeGuaranteeInfo(input.guaranteeInfo),
     cutoffAt: String(input.cutoffAt || "").trim(),
     cutoffTimeConfirmed: input.cutoffTimeConfirmed === undefined ? Boolean(input.cutoffAt) : Boolean(input.cutoffTimeConfirmed),
     cutoffSource: String(input.cutoffSource || "").trim(),

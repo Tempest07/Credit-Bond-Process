@@ -208,6 +208,50 @@ test("parses structured project advertisements", () => {
   assert.match(generateOpinion(parsed, null).opinion, /陕西建工控股集团有限公司2026年度第五期短期融资券/);
 });
 
+test("parses multiple guarantors and writes them into the flow opinion", () => {
+  const parsed = parseProjectBrief(`【26广越G2】
+债券名称：广州越秀产业投资有限公司2026年面向专业投资者公开发行公司债券(第二期)
+发行人：广州越秀产业投资有限公司
+主体评级：AA+(中诚信国际)
+发行场所：深交所
+发行规模：5亿
+发行期限：5年
+询价区间：1.4%-2.4%
+主承销商：中信证券
+联动分行：广州分行
+担保人：广州越秀集团股份有限公司(AAA，中诚信国际)；广州越秀资本控股集团股份有限公司(AAA，中诚信国际)
+担保方式：不可撤销连带责任保证担保`);
+
+  assert.deepEqual(parsed.guaranteeInfo.guarantors, [
+    { name: "广州越秀集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际", source: "" },
+    { name: "广州越秀资本控股集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际", source: "" },
+  ]);
+  assert.equal(parsed.guaranteeInfo.method, "不可撤销连带责任保证担保");
+  const sentenceParsed = parseProjectBrief("担保信息：由广州越秀集团股份有限公司(AAA，中诚信国际)和广州越秀资本控股集团股份有限公司(AAA，中诚信国际)提供不可撤销连带责任保证担保。");
+  assert.deepEqual(sentenceParsed.guaranteeInfo.guarantors.map((item) => item.name), [
+    "广州越秀集团股份有限公司",
+    "广州越秀资本控股集团股份有限公司",
+  ]);
+  assert.equal(sentenceParsed.guaranteeInfo.method, "不可撤销连带责任保证担保");
+
+  const generated = generateOpinion({
+    ...parsed,
+    hiddenRating: "AA+",
+    valuation: 1.9,
+  }, {
+    legalName: "广州越秀产业投资有限公司",
+    credit: {
+      approvalLevel: "总行",
+      approvedAmount: 3.24,
+      offeringType: "公募",
+      approvedRatio: 20,
+      investmentTermText: "3年",
+    },
+  });
+  assert.match(generated.opinion, /主体信用评级为AA\+\(中诚信国际\)，由广州越秀集团股份有限公司\(AAA，中诚信国际\)和广州越秀资本控股集团股份有限公司\(AAA，中诚信国际\)提供不可撤销连带责任保证担保，主承销商为中信证券，预计利率区间为1\.4%-2\.4%。/);
+  assert.equal(generated.warnings.some((warning) => warning.includes("担保方式")), false);
+});
+
 test("generates ABS-specific flow opinion with tranches and credit support", () => {
   const generated = generateOpinion({
     shortName: "26创格2A",

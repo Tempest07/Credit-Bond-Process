@@ -2203,6 +2203,76 @@ test("DM lookup collapses a cancelled record into the active reissue", async () 
   }
 });
 
+test("DM lookup reads documented guarantor fields and enriches guarantor ratings", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data = [];
+    if (String(url).includes("/bond/basic-info/info")) {
+      data = [{
+        security_id: "524999.SZ",
+        sec_short_name: "26广越G2",
+        sec_full_name: "广州越秀产业投资有限公司2026年面向专业投资者公开发行公司债券(第二期)",
+        issuer_name: "广州越秀产业投资有限公司",
+        guarantor: "广州越秀集团股份有限公司、广州越秀资本控股集团股份有限公司",
+        bond_matu: "5Y",
+      }];
+    } else if (String(url).includes("/bond/primary/data")) {
+      data = { list: [{
+        security_id: "524999.SZ",
+        sec_short_name: "26广越G2",
+        issuer_full_name: "广州越秀产业投资有限公司",
+        bond_issue_tenor: "5Y",
+        plan_issue_amount: 50000,
+        subscribe_rate: "1.4-2.4",
+        gura_name: "广州越秀集团股份有限公司；广州越秀资本控股集团股份有限公司",
+        unde_name: "中信证券",
+      }] };
+    } else if (String(url).includes("/company/basic-info/info")) {
+      data = [{ com_full_name: "广州越秀产业投资有限公司" }];
+    } else if (String(url).includes("/company/rating/data")) {
+      const names = request.comChiNameList || [];
+      data = names.includes("广州越秀集团股份有限公司")
+        ? [
+            { com_chi_name: "广州越秀集团股份有限公司", rating_date: "2026-08-01", rating: "AAA", rating_institution_short_name: "中诚信国际", data_source: "中诚信国际" },
+            { com_chi_name: "广州越秀资本控股集团股份有限公司", rating_date: "2026-08-01", rating: "AAA", rating_institution_short_name: "中诚信国际", data_source: "中诚信国际" },
+          ]
+        : [];
+    } else if (String(url).includes("/bond/basic-info/outstanding-bonds")) {
+      data = [];
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E5%B9%BF%E8%B6%8AG2", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.normalized.guaranteeInfo.source, "dm-primary");
+    assert.equal(payload.normalized.guaranteeInfo.method, "");
+    assert.deepEqual(payload.normalized.guaranteeInfo.guarantors.map((item) => ({
+      name: item.name,
+      subjectRating: item.subjectRating,
+      ratingAgency: item.ratingAgency,
+    })), [
+      { name: "广州越秀集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际" },
+      { name: "广州越秀资本控股集团股份有限公司", subjectRating: "AAA", ratingAgency: "中诚信国际" },
+    ]);
+    assert.equal(payload.diagnostic.guarantee.conflict, false);
+    assert.equal(payload.diagnostic.guarantee.ratedGuarantorCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM lookup marks a queried cancelled tranche from D1 issue group", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

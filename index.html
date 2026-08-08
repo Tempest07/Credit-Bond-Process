@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.3.0">
-  <meta name="application-build-version" content="3.3.0.8">
-  <meta name="application-build" content="20260806-award-varieties">
+  <meta name="application-build-version" content="3.3.0.9">
+  <meta name="application-build" content="20260808-project-guarantors">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260806-award-varieties"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260806-award-varieties">
+  <script src="./app-shell-mode.js?v=20260808-project-guarantors"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260808-project-guarantors">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.8 · 2026-08-06 更新">v3.3.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.9 · 2026-08-08 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -180,6 +180,14 @@
               </label>
               <label id="exchangeIssueNumberField">交易所发行期次<input data-project-field="exchangeIssueNumber" type="number" min="1" step="1" placeholder="例如：第三期填 3"></label>
               <label>牵头主承销商<input data-project-field="leadUnderwriter"></label>
+              <div class="guarantee-panel span-2" id="projectGuaranteePanel" data-standard-project-field>
+                <div class="guarantee-panel-head">
+                  <strong>担保安排</strong>
+                  <button class="text-button" type="button" id="addProjectGuarantorButton">增加担保人</button>
+                </div>
+                <label class="guarantee-method-field">担保方式<input id="projectGuaranteeMethod" placeholder="如：不可撤销连带责任保证担保"></label>
+                <div class="guarantor-rows" id="projectGuarantorRows"></div>
+              </div>
               <div class="new-project-cutoff span-2">
                 <div class="new-project-cutoff-copy">
                   <span>默认结标时间</span>
@@ -427,6 +435,7 @@
                 <div class="project-summary-item"><span>主承身份</span><strong id="projectSummarySponsor">待补</strong></div>
                 <div class="project-summary-item wide"><span>主承销商</span><strong id="projectSummaryLead">待补</strong></div>
                 <div class="project-summary-item wide"><span>询价区间</span><strong id="projectSummaryInquiry">待补</strong></div>
+                <div class="project-summary-item wide project-summary-guarantee" id="projectSummaryGuaranteeItem" hidden><span>担保安排</span><strong id="projectSummaryGuarantee">待补</strong></div>
               </div>
 
               <div class="field-grid compact-field-grid">
@@ -1080,6 +1089,6 @@
 
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
-  <script type="module" src="./app.js?v=20260806-award-varieties"></script>
+  <script type="module" src="./app.js?v=20260808-project-guarantors"></script>
 </body>
 </html>
