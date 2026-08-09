@@ -292,7 +292,6 @@ function buildDuplicateProtocolTransferRemarks(numberedRecords) {
       record.type,
       parties.buyer,
       parties.seller,
-      record.buyer,
       record.price ?? "",
       record.quantityHands ?? "",
     ]);

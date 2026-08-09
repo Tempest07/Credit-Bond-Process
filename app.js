@@ -19,7 +19,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260809-protocol-step-actions";
+} from "./core.js?v=20260809-protocol-duplicate-remarks";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260809-protocol-step-actions";
+} from "./lifecycle.js?v=20260809-protocol-duplicate-remarks";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260809-protocol-step-actions";
+} from "./history-parser.js?v=20260809-protocol-duplicate-remarks";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -61,23 +61,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260809-protocol-step-actions";
+} from "./protocol-transfer.js?v=20260809-protocol-duplicate-remarks";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260809-protocol-step-actions";
+} from "./protocol-transfer-templates.js?v=20260809-protocol-duplicate-remarks";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260809-protocol-step-actions";
+} from "./protocol-transfer-docx.js?v=20260809-protocol-duplicate-remarks";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260809-protocol-step-actions";
+} from "./reminders.js?v=20260809-protocol-duplicate-remarks";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -104,11 +104,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260809-protocol-step-actions";
+} from "./secondary-inventory.js?v=20260809-protocol-duplicate-remarks";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260809-protocol-step-actions";
+} from "./trade-record-converter.js?v=20260809-protocol-duplicate-remarks";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -119,13 +119,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260809-protocol-step-actions";
+} from "./trade-record-grid.js?v=20260809-protocol-duplicate-remarks";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260809-protocol-step-actions";
-import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-step-actions";
+} from "./trade-record-ledger.js?v=20260809-protocol-duplicate-remarks";
+import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-duplicate-remarks";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -134,22 +134,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260809-protocol-step-actions";
+} from "./project-screenshot-ocr.js?v=20260809-protocol-duplicate-remarks";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260809-protocol-step-actions";
+} from "./project-screenshot-layout.js?v=20260809-protocol-duplicate-remarks";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260809-protocol-step-actions";
+} from "./project-screenshot-image.js?v=20260809-protocol-duplicate-remarks";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260809-protocol-step-actions";
+} from "./payment-receipts.js?v=20260809-protocol-duplicate-remarks";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";

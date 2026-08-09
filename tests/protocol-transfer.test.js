@@ -206,6 +206,40 @@ test("leaves ledger remarks blank unless same-day trades have identical elements
   assert.equal(rows[3][7], "序号2、3是两笔不同的交易");
 });
 
+test("marks identical maker trades as duplicates even when their retained final buyers differ", () => {
+  const rows = buildProtocolTransferLedgerRows([
+    {
+      code: "283351.SH",
+      shortName: "26晋资04",
+      tradeDate: "2026-08-10",
+      buyer: "南方基金",
+      seller: "兴业银行",
+      marketMaker: "中信建投",
+      marketMakerDirection: "buy",
+      price: 99.964,
+      quantityHands: 50000,
+      createdAt: "2026-08-10T10:00:00.000Z",
+    },
+    {
+      code: "283351.SH",
+      shortName: "26晋资04",
+      tradeDate: "2026-08-10",
+      buyer: "易方达基金",
+      seller: "兴业银行",
+      marketMaker: "中信建投",
+      marketMakerDirection: "buy",
+      price: 99.964,
+      quantityHands: 50000,
+      createdAt: "2026-08-10T09:00:00.000Z",
+    },
+  ]);
+
+  assert.equal(rows[1][8], "中信建投");
+  assert.equal(rows[2][8], "中信建投");
+  assert.equal(rows[1][7], "序号1、2是两笔不同的交易");
+  assert.equal(rows[2][7], "序号1、2是两笔不同的交易");
+});
+
 test("advances protocol transfer workflow by action buttons", () => {
   const parsed = parseProtocolTransferText(sample);
   assert.equal(protocolTransferStatus(parsed), "待对手方用印");
