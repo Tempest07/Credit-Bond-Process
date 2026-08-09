@@ -64,6 +64,11 @@ for (const template of BUILTIN_PROTOCOL_TRANSFER_TEMPLATES) {
     assert.equal(metadata.fixedFields.shareholderAccount, expected.shareholderAccount);
     assert.equal(metadata.fixedFields.seatNumber, expected.seatNumber);
     assert.equal(metadata.fixedFields.phone, expected.phone);
+    assert.equal(protocolTransferApplicationFilename({
+      tradeDate: template.sourceSample.applicationDate,
+      shortName: template.sourceSample.shortName,
+      quantityHands: Number(template.sourceSample.quantityHands),
+    }, template), template.sourceFileName);
   });
 }
 
@@ -98,7 +103,22 @@ test("generates a Huachuang application using maker and bank only", async () => 
   assert.match(text, /兴业银行股份有限公司/);
   assert.doesNotMatch(text, /南方基金/);
   assert.doesNotMatch(text, /282305\.SH|26黄投01|100\.066|20000/);
-  assert.match(protocolTransferApplicationFilename(record, template), /20260812_25汉投03_华创证券\.docx$/);
+  assert.equal(
+    protocolTransferApplicationFilename(record, template),
+    "上交所协议转让N0812 兴业华创 25汉投03 3000.docx",
+  );
+});
+
+test("falls back from hands to the archive amount and compacts a new maker name", () => {
+  assert.equal(
+    protocolTransferApplicationFilename({
+      tradeDate: "2026-12-03",
+      shortName: "26测试01",
+      marketMaker: "某某证券有限责任公司",
+      quantityHands: 12345,
+    }, { label: "某某证券" }),
+    "上交所协议转让N1203 兴业某某 26测试01 1234.5.docx",
+  );
 });
 
 test("swaps application directions when the maker sells to the bank", async () => {

@@ -147,10 +147,28 @@ export function extractProtocolTransferTemplateMetadata(xml = "", input = {}) {
 }
 
 export function protocolTransferApplicationFilename(record = {}, template = {}) {
-  const date = normalizeDate(record.tradeDate).replaceAll("-", "") || "待定日期";
+  const date = normalizeDate(record.tradeDate).slice(5).replaceAll("-", "") || "待定日期";
   const bond = sanitizeFilename(record.shortName || record.code || "待定债券");
-  const maker = sanitizeFilename(template.label || record.marketMaker || "做市商");
-  return `上交所协议转让申请单_${date}_${bond}_${maker}.docx`;
+  const maker = protocolTransferMakerFilenameAlias(record, template);
+  const amount = protocolTransferFilenameAmount(record);
+  return `上交所协议转让N${date} 兴业${maker} ${bond} ${amount}.docx`;
+}
+
+function protocolTransferMakerFilenameAlias(record = {}, template = {}) {
+  const archivedAlias = String(template.sourceFileName || "").match(/\s兴业([^\s.]+)\s/)?.[1];
+  const value = archivedAlias || template.label || record.marketMaker || "做市商";
+  return sanitizeFilename(String(value)
+    .replace(/证券股份有限公司|证券有限责任公司|证券有限公司|股份有限公司|有限责任公司|有限公司/g, "")
+    .replace(/证券$/g, "")
+    .trim());
+}
+
+function protocolTransferFilenameAmount(record = {}) {
+  const amount = Number(record.amountTenThousand);
+  if (Number.isFinite(amount) && amount > 0) return sanitizeFilename(String(amount));
+  const hands = Number(record.quantityHands);
+  if (Number.isFinite(hands) && hands > 0) return sanitizeFilename(String(hands / 10));
+  return "待定金额";
 }
 
 function replaceApplicationDate(xml, dateText) {
