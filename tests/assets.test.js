@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260809-protocol-todo-navigation";
+const VERSION = "20260809-protocol-step-actions";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.15">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.16">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -115,6 +115,25 @@ test("keeps the legacy project brief textarea available to code but hidden from 
 
   assert.match(html, /<textarea id="briefInput" hidden><\/textarea>/);
   assert.match(styles, /#briefInput\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
+});
+
+test("renders protocol transfer progress as sequential action buttons", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="protocolTransferStepActions"/);
+  assert.match(html, /data-protocol-form-step="counterparty"/);
+  assert.match(html, /data-protocol-form-step="own"/);
+  assert.match(html, /data-protocol-form-step="submit"/);
+  assert.doesNotMatch(html, /class="checkbox-label"[^>]*><input id="protocolTransfer(?:Counterparty|Own|Exchange)/);
+  assert.match(app, /function handleProtocolTransferFormStep\(/);
+  assert.match(app, /setProtocolTransferStep\(readProtocolTransferForm\(\), step\.key, completing\)/);
+  assert.match(styles, /\.protocol-step-action\.is-current\s*\{/);
+  assert.match(styles, /\.protocol-step-action\.is-complete\s*\{/);
+  assert.match(styles, /\.protocol-step-grid > input\[hidden\]\s*\{[^}]*display:\s*none !important;/s);
 });
 
 test("ships project guarantor entry, DM mapping and ledger detail display", async () => {

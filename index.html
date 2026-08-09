@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.3.0">
-  <meta name="application-build-version" content="3.3.0.15">
-  <meta name="application-build" content="20260809-protocol-todo-navigation">
+  <meta name="application-build-version" content="3.3.0.16">
+  <meta name="application-build" content="20260809-protocol-step-actions">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260809-protocol-todo-navigation"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260809-protocol-todo-navigation">
+  <script src="./app-shell-mode.js?v=20260809-protocol-step-actions"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260809-protocol-step-actions">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.15 · 2026-08-09 更新">v3.3.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.16 · 2026-08-09 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -678,10 +678,22 @@
                 <div class="protocol-template-summary" id="protocolTransferTemplateSummary">最终买方不写入申请单；系统将按做市商匹配归档模板。</div>
               </section>
 
-              <div class="protocol-step-grid">
-                <label class="checkbox-label"><input id="protocolTransferCounterpartySealed" type="checkbox">对手方已用印</label>
-                <label class="checkbox-label"><input id="protocolTransferOwnSealed" type="checkbox">本方已用印</label>
-                <label class="checkbox-label"><input id="protocolTransferExchangeSubmitted" type="checkbox">已递交上交所</label>
+              <div class="protocol-step-grid" id="protocolTransferStepActions" aria-label="协议转让办理进度">
+                <button class="protocol-step-action" type="button" data-protocol-form-step="counterparty" aria-pressed="false">
+                  <span class="protocol-step-index" aria-hidden="true">01</span>
+                  <span data-protocol-step-label>确认对手方用印</span>
+                </button>
+                <button class="protocol-step-action" type="button" data-protocol-form-step="own" aria-pressed="false">
+                  <span class="protocol-step-index" aria-hidden="true">02</span>
+                  <span data-protocol-step-label>确认本方用印</span>
+                </button>
+                <button class="protocol-step-action" type="button" data-protocol-form-step="submit" aria-pressed="false">
+                  <span class="protocol-step-index" aria-hidden="true">03</span>
+                  <span data-protocol-step-label>确认递交上交所</span>
+                </button>
+                <input id="protocolTransferCounterpartySealed" type="checkbox" hidden>
+                <input id="protocolTransferOwnSealed" type="checkbox" hidden>
+                <input id="protocolTransferExchangeSubmitted" type="checkbox" hidden>
               </div>
 
               <div class="form-actions">
@@ -1121,6 +1133,6 @@
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
-  <script type="module" src="./app.js?v=20260809-protocol-todo-navigation"></script>
+  <script type="module" src="./app.js?v=20260809-protocol-step-actions"></script>
 </body>
 </html>

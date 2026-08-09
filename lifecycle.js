@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-todo-navigation";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-step-actions";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

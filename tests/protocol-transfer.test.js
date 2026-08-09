@@ -11,6 +11,7 @@ import {
   protocolTransferFromSecondaryTrade,
   protocolTransferStatus,
   protocolTransferTodos,
+  setProtocolTransferStep,
 } from "../protocol-transfer.js";
 
 const sample = `申请日期：     2026年 6月10日
@@ -217,6 +218,22 @@ test("advances protocol transfer workflow by action buttons", () => {
 
   const submitted = markProtocolTransferStep(own, "submit");
   assert.equal(protocolTransferStatus(submitted), "已递交");
+});
+
+test("withdraws a protocol transfer action together with dependent later steps", () => {
+  const submitted = markProtocolTransferStep(parseProtocolTransferText(sample), "submit");
+
+  const ownWithdrawn = setProtocolTransferStep(submitted, "own", false);
+  assert.equal(ownWithdrawn.counterpartySealed, true);
+  assert.equal(ownWithdrawn.ownSealed, false);
+  assert.equal(ownWithdrawn.exchangeSubmitted, false);
+  assert.equal(protocolTransferStatus(ownWithdrawn), "待本方用印");
+
+  const counterpartyWithdrawn = setProtocolTransferStep(submitted, "counterparty", false);
+  assert.equal(counterpartyWithdrawn.counterpartySealed, false);
+  assert.equal(counterpartyWithdrawn.ownSealed, false);
+  assert.equal(counterpartyWithdrawn.exchangeSubmitted, false);
+  assert.equal(protocolTransferStatus(counterpartyWithdrawn), "待对手方用印");
 });
 
 test("builds protocol transfer todos and ledger rows", () => {

@@ -837,8 +837,18 @@ label[data-recognition-source="wind"]::after {
 .protocol-template-summary[data-status="ready"] { border-color: rgba(14,165,183,.24); color: #087f8d; background: rgba(239,250,247,.82); }
 .protocol-template-summary[data-status="attention"] { border-color: rgba(230,153,37,.28); color: #9a5a08; background: #fffaf0; }
 .protocol-template-summary[data-status="error"] { border-color: rgba(225,49,86,.28); color: var(--danger); background: #fff4f6; }
-.protocol-step-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
-.protocol-step-grid .checkbox-label { padding-top: 0; }
+.protocol-step-grid { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 12px; padding: 9px; border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(145deg, #f7f9ff, #fbfcff); }
+.protocol-step-action { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; padding: 8px 12px; overflow: hidden; border: 1px solid #d7deea; border-radius: 10px; color: #59667d; background: rgba(255,255,255,.9); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(32,49,78,.04); transition: border-color .18s ease, color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease; }
+.protocol-step-action:not(:disabled):hover { border-color: color-mix(in srgb, var(--accent) 48%, var(--line)); color: var(--accent); box-shadow: 0 8px 20px rgba(76,92,220,.12); transform: translateY(-1px); }
+.protocol-step-action:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 24%, transparent); outline-offset: 2px; }
+.protocol-step-action.is-current { border-color: transparent; color: #fff; background: linear-gradient(135deg, #6678ff, #4657df); box-shadow: 0 10px 24px rgba(76,92,220,.22); }
+.protocol-step-action.is-current:hover { color: #fff; box-shadow: 0 12px 28px rgba(76,92,220,.27); }
+.protocol-step-action.is-complete { border-color: rgba(14,165,183,.26); color: #087f8d; background: linear-gradient(145deg, #effbf9, #f9ffff); }
+.protocol-step-action:disabled { border-color: #e2e7ef; color: #a1aabd; background: rgba(246,248,252,.78); cursor: not-allowed; box-shadow: none; }
+.protocol-step-index { display: inline-grid; flex: 0 0 25px; width: 25px; height: 25px; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; letter-spacing: .03em; opacity: .8; }
+.protocol-step-action.is-complete .protocol-step-index { border-color: #0ea5b7; color: transparent; background: #0ea5b7; }
+.protocol-step-action.is-complete .protocol-step-index::after { position: absolute; color: #fff; font-size: 12px; content: "✓"; }
+.protocol-step-grid > input[hidden] { display: none !important; }
 
 .secondary-workspace { display: grid; gap: 14px; width: 100%; min-width: 0; max-width: 100%; }
 .secondary-workspace-nav { display: flex; gap: 8px; flex-wrap: wrap; padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.78); box-shadow: var(--shadow); }
@@ -1615,7 +1625,10 @@ label[data-recognition-source="wind"]::after {
   .guarantor-row { grid-template-columns: 1fr; }
   .guarantor-remove { justify-self: start; min-height: 34px; }
   .project-pricing-panel .tranche-term-identity { grid-column: auto; }
-  .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-step-grid, .protocol-template-controls { grid-template-columns: 1fr; max-width: none; }
+  .review-grid, .batch-issuer-grid, .tranche-grid, .project-detail-panel .tranche-grid, .bid-level-card .tranche-grid, .outsourced-card .tranche-grid, .quick-output-grid, .result-modal-grid, .protocol-transfer-detail .field-grid, .protocol-template-controls { grid-template-columns: 1fr; max-width: none; }
+  .protocol-step-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px; }
+  .protocol-step-action { min-height: 54px; gap: 5px; padding: 7px 5px; font-size: 10px; line-height: 1.3; text-align: center; }
+  .protocol-step-index { flex-basis: 22px; width: 22px; height: 22px; font-size: 8px; }
   .protocol-transfer-detail .field-grid .span-2 { grid-column: span 1; }
   .protocol-application-head { align-items: flex-start; flex-direction: column; }
   .protocol-application-rule { font-size: 12px; }

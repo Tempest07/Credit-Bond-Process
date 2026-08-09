@@ -327,6 +327,36 @@ export function markProtocolTransferStep(record, step) {
   return transfer;
 }
 
+export function setProtocolTransferStep(record, step, completed = true) {
+  const transfer = normalizeProtocolTransfer(record);
+  if (completed) return markProtocolTransferStep(transfer, step);
+  if (step === "counterparty") {
+    return normalizeProtocolTransfer({
+      ...transfer,
+      counterpartySealed: false,
+      ownSealed: false,
+      exchangeSubmitted: false,
+      completed: false,
+    });
+  }
+  if (step === "own") {
+    return normalizeProtocolTransfer({
+      ...transfer,
+      ownSealed: false,
+      exchangeSubmitted: false,
+      completed: false,
+    });
+  }
+  if (step === "submit") {
+    return normalizeProtocolTransfer({
+      ...transfer,
+      exchangeSubmitted: false,
+      completed: false,
+    });
+  }
+  return transfer;
+}
+
 function normalizeText(value = "") {
   return String(value)
     .replace(/\r\n?/g, "\n")
