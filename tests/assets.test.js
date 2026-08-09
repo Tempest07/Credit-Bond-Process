@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260809-hide-legacy-brief";
+const VERSION = "20260809-protocol-transfer-docx";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.11">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.12">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -32,6 +32,8 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`history-parser\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`protocol-transfer-templates\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`protocol-transfer-docx\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`reminders\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`secondary-inventory\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`trade-record-converter\\.js\\?v=${VERSION}`));
@@ -474,6 +476,34 @@ test("ships the protocol transfer ledger xlsx template", async () => {
 
   assert.equal(workbook[0], 0x50);
   assert.equal(workbook[1], 0x4b);
+});
+
+test("ships maker-specific protocol transfer Word templates and generation controls", async () => {
+  const [html, app, styles, jiantou, huachuang, yintai, pizzip] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+    readFile(new URL("../templates/protocol-transfer/citic-jiantou.docx", import.meta.url)),
+    readFile(new URL("../templates/protocol-transfer/huachuang.docx", import.meta.url)),
+    readFile(new URL("../templates/protocol-transfer/yintai.docx", import.meta.url)),
+    readFile(new URL("../vendor/pizzip.min.js", import.meta.url), "utf8"),
+  ]);
+
+  for (const template of [jiantou, huachuang, yintai]) {
+    assert.equal(template[0], 0x50);
+    assert.equal(template[1], 0x4b);
+  }
+  assert.match(html, /id="protocolTransferMarketMaker"/);
+  assert.match(html, /id="protocolTransferTemplateSelect"/);
+  assert.match(html, /id="protocolTransferGenerateDocxButton"/);
+  assert.match(html, /id="protocolTransferTemplateInput"/);
+  assert.match(html, /最终买方不写入申请单/);
+  assert.match(html, /vendor\/pizzip\.min\.js/);
+  assert.match(pizzip, /window\.PizZip=/);
+  assert.match(app, /generateProtocolTransferApplicationDocx/);
+  assert.match(app, /indexedDB\.open\(PROTOCOL_TRANSFER_TEMPLATE_DB/);
+  assert.match(styles, /\.protocol-template-controls\s*\{[^}]*grid-template-columns:/s);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.protocol-transfer-detail \.field-grid \.span-2\s*\{\s*grid-column:\s*span 1;/s);
 });
 
 test("exposes unified reminders to the Android bridge", async () => {

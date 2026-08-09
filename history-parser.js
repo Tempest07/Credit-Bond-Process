@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260809-hide-legacy-brief";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260809-protocol-transfer-docx";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

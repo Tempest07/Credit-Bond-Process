@@ -5,7 +5,10 @@ import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
   markProtocolTransferStep,
+  normalizeProtocolTransfer,
   parseProtocolTransferText,
+  protocolTransferApplicationParties,
+  protocolTransferFromSecondaryTrade,
   protocolTransferStatus,
   protocolTransferTodos,
 } from "../protocol-transfer.js";
@@ -38,6 +41,8 @@ test("parses SSE protocol transfer Word-style text", () => {
   assert.equal(parsed.tradeDate, "2026-06-10");
   assert.equal(parsed.buyer, "银泰证券");
   assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.marketMaker, "银泰证券");
+  assert.equal(parsed.templateId, "yintai");
   assert.equal(parsed.type, "商业银行");
   assert.equal(parsed.price, 100.659);
   assert.equal(parsed.amountTenThousand, 10000);
@@ -52,9 +57,12 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.equal(parsed.code, "280607.SH");
   assert.equal(parsed.shortName, "25汉投03");
   assert.equal(parsed.tradeDate, "2026-06-15");
-  assert.equal(parsed.buyer, "华创证券");
+  assert.equal(parsed.buyer, "南方基金");
   assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.marketMaker, "华创证券");
   assert.equal(parsed.finalBuyer, "南方基金");
+  assert.equal(parsed.marketMakerDirection, "buy");
+  assert.equal(parsed.templateId, "huachuang");
   assert.equal(parsed.type, "商业银行");
   assert.equal(parsed.price, 101.031);
   assert.equal(parsed.amountTenThousand, 3000);
@@ -71,11 +79,51 @@ test("parses chat-style protocol transfer trade elements", () => {
 test("uses contact list to identify the bridge party when no sent-by quote exists", () => {
   const parsed = parseProtocolTransferText(contactBridgeElements, new Date("2026-06-12T09:00:00+08:00"));
 
-  assert.equal(parsed.buyer, "华创证券");
+  assert.equal(parsed.buyer, "南方基金");
   assert.equal(parsed.seller, "兴业银行");
+  assert.equal(parsed.marketMaker, "华创证券");
   assert.equal(parsed.finalBuyer, "南方基金");
   assert.equal(parsed.amountTenThousand, 3000);
   assert.equal(parsed.price, 101.031);
+});
+
+test("migrates legacy bridge records into separate final buyer and market maker fields", () => {
+  const migrated = normalizeProtocolTransfer({
+    buyer: "华创证券",
+    seller: "兴业银行",
+    finalBuyer: "南方基金",
+  });
+
+  assert.equal(migrated.buyer, "南方基金");
+  assert.equal(migrated.seller, "兴业银行");
+  assert.equal(migrated.marketMaker, "华创证券");
+  assert.equal(migrated.marketMakerDirection, "buy");
+  assert.deepEqual(protocolTransferApplicationParties(migrated), {
+    buyer: "华创证券",
+    seller: "兴业银行",
+    marketMaker: "华创证券",
+    finalBuyer: "南方基金",
+    marketMakerDirection: "buy",
+  });
+});
+
+test("keeps structured secondary intake fields when routing into protocol transfer", () => {
+  const transfer = protocolTransferFromSecondaryTrade({
+    side: "sell",
+    code: "280607.SH",
+    shortName: "25汉投03",
+    tradeDate: "2026-06-15",
+    counterparty: "南方基金",
+    intermediary: "上海",
+    quantityWan: 3000,
+    price: 101.031,
+    sourceText: tradeElements,
+  }, new Date("2026-06-12T09:00:00+08:00"));
+
+  assert.equal(transfer.buyer, "南方基金");
+  assert.equal(transfer.seller, "兴业银行");
+  assert.equal(transfer.marketMaker, "华创证券");
+  assert.equal(transfer.quantityHands, 30000);
 });
 
 test("derives seal dates as T-2 and T-1 from chat-style trade dates", () => {

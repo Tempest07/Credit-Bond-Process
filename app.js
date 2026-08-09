@@ -19,7 +19,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260809-hide-legacy-brief";
+} from "./core.js?v=20260809-protocol-transfer-docx";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260809-hide-legacy-brief";
+} from "./lifecycle.js?v=20260809-protocol-transfer-docx";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260809-hide-legacy-brief";
+} from "./history-parser.js?v=20260809-protocol-transfer-docx";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -54,16 +54,29 @@ import {
   normalizeProtocolTransfer,
   normalizeProtocolTransfers,
   parseProtocolTransferText,
+  protocolTransferApplicationParties,
+  protocolTransferFromSecondaryTrade,
   protocolTransferStatus,
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260809-hide-legacy-brief";
+} from "./protocol-transfer.js?v=20260809-protocol-transfer-docx";
+import {
+  BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
+  matchProtocolTransferTemplate,
+  protocolTransferTemplateById,
+} from "./protocol-transfer-templates.js?v=20260809-protocol-transfer-docx";
+import {
+  extractProtocolTransferTemplateMetadata,
+  patchProtocolTransferDocumentXml,
+  protocolTransferApplicationFilename,
+  validateProtocolTransferApplication,
+} from "./protocol-transfer-docx.js?v=20260809-protocol-transfer-docx";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260809-hide-legacy-brief";
+} from "./reminders.js?v=20260809-protocol-transfer-docx";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -90,11 +103,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260809-hide-legacy-brief";
+} from "./secondary-inventory.js?v=20260809-protocol-transfer-docx";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260809-hide-legacy-brief";
+} from "./trade-record-converter.js?v=20260809-protocol-transfer-docx";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -105,13 +118,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260809-hide-legacy-brief";
+} from "./trade-record-grid.js?v=20260809-protocol-transfer-docx";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260809-hide-legacy-brief";
-import { initializeDatePickers } from "./date-picker.js?v=20260809-hide-legacy-brief";
+} from "./trade-record-ledger.js?v=20260809-protocol-transfer-docx";
+import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-transfer-docx";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -120,22 +133,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260809-hide-legacy-brief";
+} from "./project-screenshot-ocr.js?v=20260809-protocol-transfer-docx";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260809-hide-legacy-brief";
+} from "./project-screenshot-layout.js?v=20260809-protocol-transfer-docx";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260809-hide-legacy-brief";
+} from "./project-screenshot-image.js?v=20260809-protocol-transfer-docx";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260809-hide-legacy-brief";
+} from "./payment-receipts.js?v=20260809-protocol-transfer-docx";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -156,6 +169,8 @@ const PDFJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build
 const PDFJS_WORKER_URL = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 const EXCELJS_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
 const PROTOCOL_TRANSFER_TEMPLATE_URL = "./templates/protocol-transfer-ledger-template.xlsx";
+const PROTOCOL_TRANSFER_TEMPLATE_DB = "tempest07-protocol-transfer-templates";
+const PROTOCOL_TRANSFER_TEMPLATE_STORE = "templates";
 const PROJECT_SCREENSHOT_MIN_OCR_WIDTH = 2600;
 const PROJECT_SCREENSHOT_ROW_GAP = 18;
 const PROJECT_SCREENSHOT_MAX_FILE_BYTES = 30 * 1024 * 1024;
@@ -269,6 +284,7 @@ let resultRecognitionProjectId = "";
 let activePrepaymentTarget = null;
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
+let customProtocolTransferTemplates = [];
 let dmLastPayload = null;
 let projectDmHistory = loadProjectDmHistory();
 let projectDmHistorySaveTimer = null;
@@ -6575,6 +6591,11 @@ function bindProtocolTransfer() {
   });
   $("#protocolTransferAmount").addEventListener("input", () => syncProtocolTransferAmountFields("amount"));
   $("#protocolTransferQuantity").addEventListener("input", () => syncProtocolTransferAmountFields("hands"));
+  $("#protocolTransferMarketMaker").addEventListener("input", syncProtocolTransferTemplateMatch);
+  $("#protocolTransferTemplateSelect").addEventListener("change", renderProtocolTransferTemplateSummary);
+  $("#protocolTransferGenerateDocxButton").addEventListener("click", generateProtocolTransferApplicationDocx);
+  $("#protocolTransferTemplateInput").addEventListener("change", addCustomProtocolTransferTemplate);
+  $("#protocolTransferDeleteTemplateButton").addEventListener("click", deleteSelectedProtocolTransferTemplate);
   $("#protocolTransferForm").addEventListener("input", (event) => clearRecognitionForInput(event.target));
   $("#protocolTransferForm").addEventListener("change", (event) => clearRecognitionForInput(event.target));
   $("#protocolTransferDocxInput").addEventListener("change", parseProtocolTransferDocument);
@@ -6591,6 +6612,10 @@ function bindProtocolTransfer() {
     completeProtocolTransferStep(button.dataset.protocolTransferId, button.dataset.protocolTransferStep);
   });
   initializeProtocolTransferImport();
+  loadCustomProtocolTransferTemplates().then(() => {
+    renderProtocolTransferTemplateOptions();
+    syncProtocolTransferTemplateMatch();
+  }).catch(() => renderProtocolTransferTemplateOptions());
 }
 
 function initializeProtocolTransferImport() {
@@ -6598,6 +6623,222 @@ function initializeProtocolTransferImport() {
   $("#protocolTransferDocxInput").disabled = false;
   $("#protocolTransferDocxButton").classList.remove("unavailable");
   $("#protocolTransferDocxButtonText").textContent = isReady ? "上传 Word/PDF/图片" : "上传 PDF/图片";
+}
+
+function allProtocolTransferTemplates() {
+  return [...BUILTIN_PROTOCOL_TRANSFER_TEMPLATES, ...customProtocolTransferTemplates];
+}
+
+function selectedProtocolTransferTemplate() {
+  const selectedId = $("#protocolTransferTemplateSelect")?.value || "";
+  if (selectedId) return protocolTransferTemplateById(selectedId, allProtocolTransferTemplates());
+  return matchProtocolTransferTemplate($("#protocolTransferMarketMaker")?.value || "", allProtocolTransferTemplates());
+}
+
+function renderProtocolTransferTemplateOptions(preferredId = "") {
+  const select = $("#protocolTransferTemplateSelect");
+  if (!select) return;
+  const current = preferredId || select.value;
+  const builtins = BUILTIN_PROTOCOL_TRANSFER_TEMPLATES.map((template) =>
+    `<option value="${escapeAttribute(template.id)}">${escapeHtml(template.label)} · 归档模板</option>`,
+  ).join("");
+  const customs = customProtocolTransferTemplates.map((template) =>
+    `<option value="${escapeAttribute(template.id)}">${escapeHtml(template.label)} · 自定义模板</option>`,
+  ).join("");
+  select.innerHTML = `<option value="">按做市商自动匹配</option>${builtins}${customs}`;
+  if ([...select.options].some((option) => option.value === current)) select.value = current;
+  renderProtocolTransferTemplateSummary();
+}
+
+function syncProtocolTransferTemplateMatch() {
+  const select = $("#protocolTransferTemplateSelect");
+  if (!select) return;
+  const matched = matchProtocolTransferTemplate($("#protocolTransferMarketMaker").value, allProtocolTransferTemplates());
+  select.value = matched?.id || "";
+  renderProtocolTransferTemplateSummary();
+}
+
+function renderProtocolTransferTemplateSummary() {
+  const summary = $("#protocolTransferTemplateSummary");
+  const deleteButton = $("#protocolTransferDeleteTemplateButton");
+  if (!summary || !deleteButton) return;
+  const template = selectedProtocolTransferTemplate();
+  deleteButton.hidden = !template?.custom;
+  if (!template) {
+    summary.textContent = "尚未匹配做市商模板。请补充做市商，或添加一份其他做市商的标准申请单。";
+    summary.dataset.status = "attention";
+    return;
+  }
+  const fixed = template.fixedFields || {};
+  summary.textContent = [
+    template.label,
+    fixed.traderCode ? `交易商代码 ${fixed.traderCode}` : "",
+    fixed.shareholderAccount ? `股东账号 ${fixed.shareholderAccount}` : "",
+    fixed.seatNumber ? `席位 ${fixed.seatNumber}` : "",
+    fixed.phone ? `电话 ${fixed.phone}` : "",
+    template.custom ? "仅保存在当前浏览器" : "来自 X 盘最新归档",
+  ].filter(Boolean).join(" · ");
+  summary.dataset.status = "ready";
+}
+
+async function generateProtocolTransferApplicationDocx() {
+  const button = $("#protocolTransferGenerateDocxButton");
+  const summary = $("#protocolTransferTemplateSummary");
+  const record = readProtocolTransferForm();
+  const template = selectedProtocolTransferTemplate();
+  const validation = validateProtocolTransferApplication(record, template);
+  if (!validation.ok) {
+    summary.textContent = validation.errors.join("；");
+    summary.dataset.status = "error";
+    showToast(validation.errors[0]);
+    return;
+  }
+  button.disabled = true;
+  button.classList.add("busy");
+  summary.textContent = `正在按 ${template.label} 模板生成申请单…`;
+  summary.dataset.status = "working";
+  try {
+    if (typeof window.PizZip !== "function") throw new Error("Word 生成组件未加载，请刷新页面后重试");
+    const templateBuffer = await protocolTransferTemplateArrayBuffer(template);
+    const zip = new window.PizZip(templateBuffer);
+    const documentPart = zip.file("word/document.xml");
+    if (!documentPart) throw new Error("模板缺少 word/document.xml");
+    const nextXml = patchProtocolTransferDocumentXml(documentPart.asText(), record, template);
+    zip.file("word/document.xml", nextXml);
+    const output = zip.generate({
+      type: "uint8array",
+      compression: "DEFLATE",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    downloadBlob(
+      protocolTransferApplicationFilename(record, template),
+      new Blob([output], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+    );
+    $("#protocolTransferTemplateSelect").value = template.id;
+    summary.textContent = `${template.label} 申请单已生成；最终买方未写入 Word。`;
+    summary.dataset.status = "ready";
+    showToast("协议转让申请单已生成，可发送做市商用印。");
+  } catch (error) {
+    summary.textContent = `生成失败：${error.message || "未知错误"}`;
+    summary.dataset.status = "error";
+    showToast(`Word 生成失败：${error.message || "未知错误"}`);
+  } finally {
+    button.disabled = false;
+    button.classList.remove("busy");
+  }
+}
+
+async function protocolTransferTemplateArrayBuffer(template) {
+  if (template.custom && template.arrayBuffer) return template.arrayBuffer.slice(0);
+  const build = document.querySelector('meta[name="application-build"]')?.content || "latest";
+  const response = await fetch(`${template.url}?v=${encodeURIComponent(build)}`);
+  if (!response.ok) throw new Error(`${template.label} 模板读取失败`);
+  return response.arrayBuffer();
+}
+
+async function addCustomProtocolTransferTemplate() {
+  const input = $("#protocolTransferTemplateInput");
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    if (!file.name.toLowerCase().endsWith(".docx")) throw new Error("请上传标准 .docx 申请单");
+    if (typeof window.PizZip !== "function") throw new Error("Word 模板组件未加载，请刷新页面后重试");
+    const arrayBuffer = await file.arrayBuffer();
+    const zip = new window.PizZip(arrayBuffer);
+    const xml = zip.file("word/document.xml")?.asText();
+    if (!xml) throw new Error("该文件不是有效的 Word 模板");
+    const draft = extractProtocolTransferTemplateMetadata(xml, {
+      id: `custom-${crypto.randomUUID()}`,
+      sourceFileName: file.name,
+      sourceUpdatedAt: new Date(file.lastModified || Date.now()).toISOString(),
+      custom: true,
+    });
+    const builtInMatch = matchProtocolTransferTemplate(draft.marketMakerName, BUILTIN_PROTOCOL_TRANSFER_TEMPLATES);
+    if (builtInMatch) throw new Error(`${builtInMatch.label} 已有 X 盘归档模板，无需重复添加`);
+    const existing = matchProtocolTransferTemplate(draft.marketMakerName, customProtocolTransferTemplates);
+    if (existing) draft.id = existing.id;
+    const stored = { ...draft, arrayBuffer };
+    await putProtocolTransferTemplate(stored);
+    customProtocolTransferTemplates = [
+      ...customProtocolTransferTemplates.filter((template) => template.id !== stored.id),
+      stored,
+    ].sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
+    $("#protocolTransferMarketMaker").value = stored.marketMakerName;
+    renderProtocolTransferTemplateOptions(stored.id);
+    showToast(`已添加 ${stored.label} 模板，仅保存在当前浏览器。`);
+  } catch (error) {
+    showToast(`模板添加失败：${error.message || "未知错误"}`);
+  } finally {
+    input.value = "";
+  }
+}
+
+async function deleteSelectedProtocolTransferTemplate() {
+  const template = selectedProtocolTransferTemplate();
+  if (!template?.custom) return;
+  if (!confirm(`确认删除当前浏览器中的 ${template.label} 模板？`)) return;
+  await deleteProtocolTransferTemplate(template.id);
+  customProtocolTransferTemplates = customProtocolTransferTemplates.filter((item) => item.id !== template.id);
+  renderProtocolTransferTemplateOptions();
+  syncProtocolTransferTemplateMatch();
+  showToast(`${template.label} 模板已删除。`);
+}
+
+async function loadCustomProtocolTransferTemplates() {
+  if (!window.indexedDB) return [];
+  const db = await openProtocolTransferTemplateDb();
+  const transaction = db.transaction(PROTOCOL_TRANSFER_TEMPLATE_STORE, "readonly");
+  const request = transaction.objectStore(PROTOCOL_TRANSFER_TEMPLATE_STORE).getAll();
+  customProtocolTransferTemplates = (await indexedDbRequest(request))
+    .filter((template) => template?.id && template?.arrayBuffer)
+    .sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
+  db.close();
+  return customProtocolTransferTemplates;
+}
+
+async function putProtocolTransferTemplate(template) {
+  const db = await openProtocolTransferTemplateDb();
+  const transaction = db.transaction(PROTOCOL_TRANSFER_TEMPLATE_STORE, "readwrite");
+  transaction.objectStore(PROTOCOL_TRANSFER_TEMPLATE_STORE).put(template);
+  await indexedDbTransaction(transaction);
+  db.close();
+}
+
+async function deleteProtocolTransferTemplate(id) {
+  const db = await openProtocolTransferTemplateDb();
+  const transaction = db.transaction(PROTOCOL_TRANSFER_TEMPLATE_STORE, "readwrite");
+  transaction.objectStore(PROTOCOL_TRANSFER_TEMPLATE_STORE).delete(id);
+  await indexedDbTransaction(transaction);
+  db.close();
+}
+
+function openProtocolTransferTemplateDb() {
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(PROTOCOL_TRANSFER_TEMPLATE_DB, 1);
+    request.addEventListener("upgradeneeded", () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PROTOCOL_TRANSFER_TEMPLATE_STORE)) {
+        db.createObjectStore(PROTOCOL_TRANSFER_TEMPLATE_STORE, { keyPath: "id" });
+      }
+    });
+    request.addEventListener("success", () => resolve(request.result), { once: true });
+    request.addEventListener("error", () => reject(request.error || new Error("浏览器模板库打开失败")), { once: true });
+  });
+}
+
+function indexedDbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.addEventListener("success", () => resolve(request.result), { once: true });
+    request.addEventListener("error", () => reject(request.error || new Error("浏览器模板读取失败")), { once: true });
+  });
+}
+
+function indexedDbTransaction(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.addEventListener("complete", resolve, { once: true });
+    transaction.addEventListener("abort", () => reject(transaction.error || new Error("浏览器模板保存失败")), { once: true });
+    transaction.addEventListener("error", () => reject(transaction.error || new Error("浏览器模板保存失败")), { once: true });
+  });
 }
 
 function renderProtocolTransferWorkspace() {
@@ -6656,7 +6897,7 @@ function renderProtocolTransferList() {
   const dateFilter = $("#protocolTransferDateFilter").value;
   const records = protocolTransferRecordsForDate(dateFilter)
     .filter((record) =>
-      `${record.code} ${record.shortName} ${record.buyer} ${record.seller} ${record.finalBuyer}`.toLowerCase().includes(query),
+      `${record.code} ${record.shortName} ${record.buyer} ${record.seller} ${record.marketMaker}`.toLowerCase().includes(query),
     )
     .sort((left, right) =>
       right.tradeDate.localeCompare(left.tradeDate)
@@ -6709,12 +6950,11 @@ function formatProtocolPrice(value) {
 }
 
 function formatProtocolTransferFlow(record) {
-  const parties = [
-    record.seller || "卖方待补",
-    record.buyer || "买方/做市商待补",
-    record.finalBuyer,
-  ].filter(Boolean);
-  return parties.join(" → ");
+  const parties = protocolTransferApplicationParties(record);
+  const applicationFlow = [parties.seller || "卖方待补", parties.buyer || "买方待补"].join(" → ");
+  return record.marketMaker && record.buyer && !record.buyer.includes(record.marketMaker)
+    ? `${applicationFlow} · 最终买方 ${record.buyer}`
+    : applicationFlow;
 }
 
 function syncProtocolTransferAmountFields(source) {
@@ -6888,7 +7128,9 @@ function readProtocolTransferForm() {
     type: existing?.type,
     buyer: $("#protocolTransferBuyer").value,
     seller: $("#protocolTransferSeller").value,
-    finalBuyer: $("#protocolTransferFinalBuyer").value,
+    marketMaker: $("#protocolTransferMarketMaker").value,
+    marketMakerDirection: $("#protocolTransferMarketMakerDirection").value,
+    templateId: $("#protocolTransferTemplateSelect").value,
     price: $("#protocolTransferPrice").value,
     amountTenThousand: $("#protocolTransferAmount").value,
     quantityHands: $("#protocolTransferQuantity").value,
@@ -6915,7 +7157,8 @@ function fillProtocolTransferForm(input) {
   $("#protocolTransferTradeDate").value = record.tradeDate;
   $("#protocolTransferBuyer").value = record.buyer;
   $("#protocolTransferSeller").value = record.seller;
-  $("#protocolTransferFinalBuyer").value = record.finalBuyer;
+  $("#protocolTransferMarketMaker").value = record.marketMaker;
+  $("#protocolTransferMarketMakerDirection").value = record.marketMakerDirection;
   $("#protocolTransferPrice").value = record.price ?? "";
   $("#protocolTransferAmount").value = record.amountTenThousand ?? "";
   $("#protocolTransferQuantity").value = record.quantityHands ?? "";
@@ -6928,6 +7171,8 @@ function fillProtocolTransferForm(input) {
   if (record.rawText) $("#protocolTransferInput").value = record.rawText;
   $("#protocolTransferDeleteButton").hidden = !(state.protocolTransfers || []).some((item) => item.id === record.id);
   $("#protocolTransferStatusPill").textContent = protocolTransferStatus(record);
+  renderProtocolTransferTemplateOptions(record.templateId);
+  if (!record.templateId) syncProtocolTransferTemplateMatch();
   applyProtocolTransferRecognitionMarks(record);
   renderProtocolTransferList();
   updateProtocolTransferModeControls();
@@ -6950,11 +7195,12 @@ function buildProtocolTransferRecognitionMarks(record, rawText = "") {
       ? recognitionMark("success", "交易日已识别")
       : recognitionMark("attention", "交易日为系统默认，请复核")
     : recognitionMark("error", "交易日未识别，请补充");
-  markRequired("buyer", "买入方/做市商");
+  markRequired("buyer", "买方/最终买方");
   markRequired("seller", "卖出方");
-  marks.finalBuyer = valueHasContent(record.finalBuyer)
-    ? recognitionMark("success", "最终买方已识别")
-    : recognitionMark("attention", "最终买方未识别，如为过桥交易请补充");
+  markRequired("marketMaker", "做市商");
+  marks.marketMakerDirection = valueHasContent(record.marketMakerDirection)
+    ? recognitionMark("success", "做市商方向已识别")
+    : recognitionMark("attention", "做市商方向未识别，请复核");
   markRequired("price", "价格");
   markRequired("amountTenThousand", "交易量（万元）");
   markRequired("quantityHands", "交易量（手）");
@@ -6985,7 +7231,8 @@ function protocolTransferInputIds() {
     tradeDate: "protocolTransferTradeDate",
     buyer: "protocolTransferBuyer",
     seller: "protocolTransferSeller",
-    finalBuyer: "protocolTransferFinalBuyer",
+    marketMaker: "protocolTransferMarketMaker",
+    marketMakerDirection: "protocolTransferMarketMakerDirection",
     price: "protocolTransferPrice",
     amountTenThousand: "protocolTransferAmount",
     quantityHands: "protocolTransferQuantity",
@@ -7011,6 +7258,7 @@ function clearProtocolTransferForm(resetInput = true) {
   if (resetInput) $("#protocolTransferInput").value = "";
   $("#protocolTransferDeleteButton").hidden = true;
   $("#protocolTransferStatusPill").textContent = "待录入";
+  renderProtocolTransferTemplateOptions();
   renderProtocolTransferList();
   updateProtocolTransferModeControls();
 }
@@ -7996,7 +8244,7 @@ function importSecondaryTrades() {
   }
   if (result.trades.length) state = upsertSecondaryTrades(state, result.trades);
   for (const candidate of result.protocolCandidates) {
-    state = upsertProtocolTransfer(state, parseProtocolTransferText(candidate.sourceText, referenceDate));
+    state = upsertProtocolTransfer(state, protocolTransferFromSecondaryTrade(candidate, referenceDate));
   }
   persistState();
   renderSecondaryInventoryWorkspace();

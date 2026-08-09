@@ -1,3 +1,9 @@
+import {
+  isKnownProtocolTransferMarketMaker,
+  matchProtocolTransferTemplate,
+  matchesProtocolTransferParty,
+} from "./protocol-transfer-templates.js";
+
 const DEFAULT_TYPE = "商业银行";
 const DATE_PATTERN = /(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/;
 const CHINESE_MONTH_DAY_PATTERN = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
@@ -23,6 +29,8 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
   const inputQuantityHands = numberOrNull(input.quantityHands);
   const amountTenThousand = inputAmountTenThousand ?? (inputQuantityHands !== null ? inputQuantityHands / 10 : null);
   const quantityHands = inputQuantityHands ?? (inputAmountTenThousand !== null ? Math.round(inputAmountTenThousand * 10) : null);
+  const parties = normalizeProtocolTransferParties(input);
+  const matchedTemplate = matchProtocolTransferTemplate(parties.marketMaker);
 
   return {
     id: input.id || crypto.randomUUID(),
@@ -33,9 +41,14 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
     tradeDate,
     type: String(input.type || DEFAULT_TYPE).trim() || DEFAULT_TYPE,
     remarks: String(input.remarks || "").trim(),
-    buyer: String(input.buyer || "").trim(),
-    seller: String(input.seller || "").trim(),
-    finalBuyer: String(input.finalBuyer || "").trim(),
+    buyer: parties.buyer,
+    seller: parties.seller,
+    marketMaker: parties.marketMaker,
+    finalBuyer: parties.buyer,
+    marketMakerDirection: ["buy", "sell"].includes(input.marketMakerDirection)
+      ? input.marketMakerDirection
+      : inferMarketMakerDirection(parties),
+    templateId: String(input.templateId || matchedTemplate?.id || "").trim(),
     price: normalizePrice(input.price),
     amountTenThousand,
     quantityHands,
@@ -53,6 +66,32 @@ export function normalizeProtocolTransfer(input = {}, referenceDate = new Date()
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
+}
+
+function normalizeProtocolTransferParties(input = {}) {
+  const explicitMarketMaker = String(input.marketMaker || "").trim();
+  const legacyFinalBuyer = String(input.finalBuyer || "").trim();
+  const inputBuyer = String(input.buyer || "").trim();
+  const seller = String(input.seller || "").trim();
+  if (explicitMarketMaker) {
+    return { buyer: inputBuyer || legacyFinalBuyer, seller, marketMaker: explicitMarketMaker };
+  }
+  if (legacyFinalBuyer && inputBuyer && !matchesProtocolTransferParty(legacyFinalBuyer, inputBuyer)) {
+    return { buyer: legacyFinalBuyer, seller, marketMaker: inputBuyer };
+  }
+  return {
+    buyer: inputBuyer,
+    seller,
+    marketMaker: isKnownProtocolTransferMarketMaker(inputBuyer) ? inputBuyer : "",
+  };
+}
+
+function inferMarketMakerDirection({ buyer, seller, marketMaker }) {
+  if (/兴业银行/.test(seller)) return "buy";
+  if (/兴业银行/.test(buyer)) return "sell";
+  if (marketMaker && matchesProtocolTransferParty(marketMaker, buyer)) return "buy";
+  if (marketMaker && matchesProtocolTransferParty(marketMaker, seller)) return "sell";
+  return "";
 }
 
 function normalizeStoredObject(value) {
@@ -85,6 +124,7 @@ export function parseProtocolTransferText(rawText = "", referenceDate = new Date
   const code = firstMatch(compact, /(\d{6}\.SH)\b/i).toUpperCase();
   const shortName = parseShortName(text, code);
   const sides = parseTradeSides(text);
+  const marketMaker = parseMarketMaker(text, sides);
   const tradeDate = parseDateFromText(compact, referenceDate) || localDate(referenceDate);
 
   return normalizeProtocolTransfer({
@@ -94,7 +134,7 @@ export function parseProtocolTransferText(rawText = "", referenceDate = new Date
     type: inferTransferType(compact, sides),
     buyer: firstMatch(compact, /(?:买入方|买方|受让方)[:：\s]*([^，,；;\n]+)/) || sides.buyer,
     seller: firstMatch(compact, /(?:卖出方|卖方|转让方)[:：\s]*([^，,；;\n]+)/) || sides.seller,
-    finalBuyer: "",
+    marketMaker,
     price: parsePrice(compact),
     quantityHands: parseQuantityHands(compact),
     remarks: parseRemarks(text),
@@ -114,9 +154,7 @@ function parseChatStyleTradeElements(text, referenceDate) {
   const afterCode = line.slice(codeMatch.index + codeMatch[0].length);
   const shortName = extractShortNameAfterCode(afterCode);
   const sides = parseOperatorSides(line);
-  const bridgeBuyer = parseBridgeBuyer(text, sides);
-  const actualSides = { ...sides, buyer: bridgeBuyer || sides.buyer };
-  const finalBuyer = actualSides.buyer && sides.buyer && actualSides.buyer !== sides.buyer ? sides.buyer : "";
+  const marketMaker = parseMarketMaker(text, sides);
   const price = parsePrice(line);
   const amountTenThousand = parseChatAmountTenThousand(line);
   const quantityHands = amountTenThousand !== null ? Math.round(amountTenThousand * 10) : parseQuantityHands(line);
@@ -126,10 +164,10 @@ function parseChatStyleTradeElements(text, referenceDate) {
     code,
     shortName,
     tradeDate,
-    type: inferTransferType(line, actualSides),
-    buyer: actualSides.buyer,
-    seller: actualSides.seller,
-    finalBuyer,
+    type: inferTransferType(line, sides),
+    buyer: sides.buyer,
+    seller: sides.seller,
+    marketMaker,
     price,
     amountTenThousand,
     quantityHands,
@@ -170,6 +208,42 @@ export function protocolTransferTodos(records = [], referenceDate = new Date()) 
     );
 }
 
+export function protocolTransferFromSecondaryTrade(input = {}, referenceDate = new Date()) {
+  const parsed = parseProtocolTransferText(input.sourceText || "", referenceDate);
+  const side = input.side;
+  const bank = "兴业银行";
+  const buyer = side === "buy" ? bank : input.counterparty || parsed.buyer;
+  const seller = side === "sell" ? bank : input.counterparty || parsed.seller;
+  const candidateMaker = isKnownProtocolTransferMarketMaker(input.intermediary) ? input.intermediary : "";
+  return normalizeProtocolTransfer({
+    ...parsed,
+    code: input.code || parsed.code,
+    shortName: input.shortName || parsed.shortName,
+    tradeDate: input.tradeDate || parsed.tradeDate,
+    buyer,
+    seller,
+    marketMaker: parsed.marketMaker || candidateMaker,
+    marketMakerDirection: side === "sell" ? "buy" : side === "buy" ? "sell" : parsed.marketMakerDirection,
+    price: input.frontOfficePrice || input.price || parsed.price,
+    amountTenThousand: input.quantityWan || parsed.amountTenThousand,
+    quantityHands: Number(input.quantityWan) > 0 ? Math.round(Number(input.quantityWan) * 10) : parsed.quantityHands,
+    tradeRecord: input.tradeRecord,
+    rawText: input.sourceText || parsed.rawText,
+  }, referenceDate);
+}
+
+export function protocolTransferApplicationParties(record = {}) {
+  const transfer = normalizeProtocolTransfer(record);
+  const direction = transfer.marketMakerDirection || inferMarketMakerDirection(transfer);
+  return {
+    buyer: direction === "buy" ? transfer.marketMaker : transfer.buyer,
+    seller: direction === "sell" ? transfer.marketMaker : transfer.seller,
+    marketMaker: transfer.marketMaker,
+    finalBuyer: transfer.buyer,
+    marketMakerDirection: direction,
+  };
+}
+
 export function buildProtocolTransferLedgerRows(records = []) {
   const header = ["序号", "代码", "简称", "材料首次收悉日期", "材料确认日期", "交易日", "类型", "备注", "买入方", "卖出方", "价格（全价请标注）", "数量（手）"];
   const numberedRecords = normalizeProtocolTransfers(records)
@@ -179,20 +253,23 @@ export function buildProtocolTransferLedgerRows(records = []) {
     )
     .map((record, index) => ({ record, serial: index + 1 }));
   const duplicateRemarks = buildDuplicateProtocolTransferRemarks(numberedRecords);
-  const body = numberedRecords.map(({ record, serial }) => [
-    serial,
-    record.code,
-    record.shortName,
-    record.tradeDate,
-    record.tradeDate,
-    record.tradeDate,
-    record.type,
-    duplicateRemarks.get(serial) || "",
-    record.buyer,
-    record.seller,
-    record.price ?? "",
-    record.quantityHands ?? "",
-  ]);
+  const body = numberedRecords.map(({ record, serial }) => {
+    const parties = protocolTransferApplicationParties(record);
+    return [
+      serial,
+      record.code,
+      record.shortName,
+      record.tradeDate,
+      record.tradeDate,
+      record.tradeDate,
+      record.type,
+      duplicateRemarks.get(serial) || "",
+      parties.buyer,
+      parties.seller,
+      record.price ?? "",
+      record.quantityHands ?? "",
+    ];
+  });
   return [header, ...body];
 }
 
@@ -207,14 +284,15 @@ export function excelDateSerialFromLocalDate(value) {
 function buildDuplicateProtocolTransferRemarks(numberedRecords) {
   const groups = new Map();
   numberedRecords.forEach(({ record, serial }) => {
+    const parties = protocolTransferApplicationParties(record);
     const key = JSON.stringify([
       record.tradeDate,
       record.code,
       record.shortName,
       record.type,
+      parties.buyer,
+      parties.seller,
       record.buyer,
-      record.seller,
-      record.finalBuyer,
       record.price ?? "",
       record.quantityHands ?? "",
     ]);
@@ -297,14 +375,22 @@ function parseOperatorSides(text) {
   return result;
 }
 
-function parseBridgeBuyer(text, sides) {
+function parseMarketMaker(text, sides) {
+  const explicit = firstMatch(
+    String(text || "").replace(/\s+/g, " "),
+    /(?:做市商|桥|中间商)[:：\s]*([^，,；;\n]+)/,
+  );
+  if (explicit) return cleanPartyName(explicit);
   const sentByParty = parseSentByParty(text);
-  if (sentByParty && sentByParty !== sides.seller) return sentByParty;
+  if (sentByParty && !matchesProtocolTransferParty(sentByParty, sides.seller)) return sentByParty;
 
   const excluded = new Set([sides.seller, sides.buyer].filter(Boolean));
   const contacts = parseContactParties(text);
-  return contacts.find((party) => !excluded.has(party))
-    || contacts.find((party) => party !== sides.seller)
+  const isExcluded = (party) => [...excluded].some((candidate) => matchesProtocolTransferParty(party, candidate));
+  return contacts.find((party) => !isExcluded(party) && isKnownProtocolTransferMarketMaker(party))
+    || contacts.find((party) => !isExcluded(party))
+    || (isKnownProtocolTransferMarketMaker(sides.buyer) ? sides.buyer : "")
+    || (isKnownProtocolTransferMarketMaker(sides.seller) ? sides.seller : "")
     || "";
 }
 

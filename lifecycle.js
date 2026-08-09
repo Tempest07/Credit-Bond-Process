@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-hide-legacy-brief";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-transfer-docx";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
