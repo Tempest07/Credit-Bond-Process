@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260809-protocol-transfer-maker-alias";
+const VERSION = "20260809-protocol-todo-navigation";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.14">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.15">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -476,6 +476,21 @@ test("ships the protocol transfer ledger xlsx template", async () => {
 
   assert.equal(workbook[0], 0x50);
   assert.equal(workbook[1], 0x4b);
+});
+
+test("opens protocol transfer todo records in the detail form", async () => {
+  const [app, styles] = await Promise.all([
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(app, /data-protocol-transfer-open/);
+  assert.match(app, /function openProtocolTransferRecord\(id, \{ scroll = true \} = \{\}\)/);
+  assert.match(app, /protocolTransferEditMode = true;\s*renderProtocolTransferWorkspace\(\);/s);
+  assert.match(app, /detail\.scrollIntoView\(\{[^}]*block: "start",[^}]*inline: "nearest"/s);
+  assert.match(app, /persistState\(\);\s*openProtocolTransferRecord\(next\.id\);/s);
+  assert.match(styles, /\.protocol-todo-record\s*\{[^}]*cursor:\s*pointer;/s);
+  assert.match(styles, /\.protocol-transfer-detail\s*\{[^}]*scroll-margin-top:\s*14px;/s);
 });
 
 test("ships maker-specific protocol transfer Word templates and generation controls", async () => {

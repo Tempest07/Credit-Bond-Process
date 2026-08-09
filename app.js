@@ -19,7 +19,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260809-protocol-transfer-maker-alias";
+} from "./core.js?v=20260809-protocol-todo-navigation";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260809-protocol-transfer-maker-alias";
+} from "./lifecycle.js?v=20260809-protocol-todo-navigation";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260809-protocol-transfer-maker-alias";
+} from "./history-parser.js?v=20260809-protocol-todo-navigation";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -60,23 +60,23 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260809-protocol-transfer-maker-alias";
+} from "./protocol-transfer.js?v=20260809-protocol-todo-navigation";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260809-protocol-transfer-maker-alias";
+} from "./protocol-transfer-templates.js?v=20260809-protocol-todo-navigation";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260809-protocol-transfer-maker-alias";
+} from "./protocol-transfer-docx.js?v=20260809-protocol-todo-navigation";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260809-protocol-transfer-maker-alias";
+} from "./reminders.js?v=20260809-protocol-todo-navigation";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -103,11 +103,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260809-protocol-transfer-maker-alias";
+} from "./secondary-inventory.js?v=20260809-protocol-todo-navigation";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260809-protocol-transfer-maker-alias";
+} from "./trade-record-converter.js?v=20260809-protocol-todo-navigation";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -118,13 +118,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260809-protocol-transfer-maker-alias";
+} from "./trade-record-grid.js?v=20260809-protocol-todo-navigation";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260809-protocol-transfer-maker-alias";
-import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-transfer-maker-alias";
+} from "./trade-record-ledger.js?v=20260809-protocol-todo-navigation";
+import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-todo-navigation";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -133,22 +133,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260809-protocol-transfer-maker-alias";
+} from "./project-screenshot-ocr.js?v=20260809-protocol-todo-navigation";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260809-protocol-transfer-maker-alias";
+} from "./project-screenshot-layout.js?v=20260809-protocol-todo-navigation";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260809-protocol-transfer-maker-alias";
+} from "./project-screenshot-image.js?v=20260809-protocol-todo-navigation";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260809-protocol-transfer-maker-alias";
+} from "./payment-receipts.js?v=20260809-protocol-todo-navigation";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -6607,9 +6607,14 @@ function bindProtocolTransfer() {
     renderProtocolTransferWorkspace();
   });
   $("#protocolTransferTodoList").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-protocol-transfer-step]");
-    if (!button) return;
-    completeProtocolTransferStep(button.dataset.protocolTransferId, button.dataset.protocolTransferStep);
+    const stepButton = event.target.closest("[data-protocol-transfer-step]");
+    if (stepButton) {
+      completeProtocolTransferStep(stepButton.dataset.protocolTransferId, stepButton.dataset.protocolTransferStep);
+      return;
+    }
+    const recordButton = event.target.closest("[data-protocol-transfer-open]");
+    if (!recordButton) return;
+    openProtocolTransferRecord(recordButton.dataset.protocolTransferId);
   });
   initializeProtocolTransferImport();
   loadCustomProtocolTransferTemplates().then(() => {
@@ -6882,14 +6887,31 @@ function renderProtocolTransferTodos() {
   $("#protocolTransferTodoList").innerHTML = todos.length
     ? todos.map(({ record, step, timing }) => `
       <article class="protocol-todo-item ${timing}">
-        <div>
+        <button class="protocol-todo-record" type="button" data-protocol-transfer-id="${escapeAttribute(record.id)}" data-protocol-transfer-open>
           <strong>${escapeHtml(record.shortName || record.code || "未命名单据")}</strong>
           <span>${escapeHtml(step.dueDate)} · ${escapeHtml(step.label)}</span>
-        </div>
+        </button>
         <button class="button subtle" type="button" data-protocol-transfer-id="${escapeAttribute(record.id)}" data-protocol-transfer-step="${escapeAttribute(step.key)}">${escapeHtml(step.label)}</button>
       </article>
     `).join("")
     : '<div class="payment-todo-empty">目前没有待处理的协议转让事项。</div>';
+}
+
+function openProtocolTransferRecord(id, { scroll = true } = {}) {
+  if (!protocolTransferRecordExists(id)) return;
+  selectedProtocolTransferId = id;
+  protocolTransferEditMode = true;
+  renderProtocolTransferWorkspace();
+  if (!scroll) return;
+  requestAnimationFrame(() => {
+    const detail = $(".protocol-transfer-detail");
+    if (!detail) return;
+    detail.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
+      inline: "nearest",
+    });
+  });
 }
 
 function renderProtocolTransferList() {
@@ -7296,9 +7318,8 @@ function completeProtocolTransferStep(id, step) {
   if (!record) return;
   const next = markProtocolTransferStep(record, step);
   state = upsertProtocolTransfer(state, next);
-  selectedProtocolTransferId = next.id;
   persistState();
-  renderProtocolTransferWorkspace();
+  openProtocolTransferRecord(next.id);
   renderSecondaryLedger();
   showToast(`${next.shortName || next.code} 已完成：${step === "counterparty" ? "对手方用印" : step === "own" ? "本方用印" : "递交上交所"}`);
 }
