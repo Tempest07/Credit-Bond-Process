@@ -809,6 +809,8 @@ label[data-recognition-source="wind"]::after {
 .protocol-todo-record:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 54%, transparent); outline-offset: 4px; border-radius: 4px; }
 .protocol-todo-item.today { border-color: color-mix(in srgb, var(--warning) 42%, var(--line)); background: var(--warning-soft); }
 .protocol-todo-item.overdue { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); background: #fff2f4; }
+.protocol-todo-item.active { border-color: var(--accent); background: linear-gradient(145deg, var(--accent-soft), #fff); box-shadow: inset 4px 0 0 var(--accent), 0 8px 20px rgba(76,92,220,.1); }
+.protocol-todo-item.active .protocol-todo-record strong { color: var(--accent); }
 .protocol-todo-item strong, .protocol-todo-item span { display: block; }
 .protocol-todo-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .protocol-todo-item span { margin-top: 3px; color: var(--muted); font-size: 10px; }

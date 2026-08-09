@@ -19,7 +19,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260809-protocol-duplicate-remarks";
+} from "./core.js?v=20260809-protocol-selection-stable";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260809-protocol-duplicate-remarks";
+} from "./lifecycle.js?v=20260809-protocol-selection-stable";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260809-protocol-duplicate-remarks";
+} from "./history-parser.js?v=20260809-protocol-selection-stable";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -61,23 +61,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260809-protocol-duplicate-remarks";
+} from "./protocol-transfer.js?v=20260809-protocol-selection-stable";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260809-protocol-duplicate-remarks";
+} from "./protocol-transfer-templates.js?v=20260809-protocol-selection-stable";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260809-protocol-duplicate-remarks";
+} from "./protocol-transfer-docx.js?v=20260809-protocol-selection-stable";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260809-protocol-duplicate-remarks";
+} from "./reminders.js?v=20260809-protocol-selection-stable";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -104,11 +104,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260809-protocol-duplicate-remarks";
+} from "./secondary-inventory.js?v=20260809-protocol-selection-stable";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260809-protocol-duplicate-remarks";
+} from "./trade-record-converter.js?v=20260809-protocol-selection-stable";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -119,13 +119,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260809-protocol-duplicate-remarks";
+} from "./trade-record-grid.js?v=20260809-protocol-selection-stable";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260809-protocol-duplicate-remarks";
-import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-duplicate-remarks";
+} from "./trade-record-ledger.js?v=20260809-protocol-selection-stable";
+import { initializeDatePickers } from "./date-picker.js?v=20260809-protocol-selection-stable";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -134,22 +134,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260809-protocol-duplicate-remarks";
+} from "./project-screenshot-ocr.js?v=20260809-protocol-selection-stable";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260809-protocol-duplicate-remarks";
+} from "./project-screenshot-layout.js?v=20260809-protocol-selection-stable";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260809-protocol-duplicate-remarks";
+} from "./project-screenshot-image.js?v=20260809-protocol-selection-stable";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260809-protocol-duplicate-remarks";
+} from "./payment-receipts.js?v=20260809-protocol-selection-stable";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -6888,7 +6888,7 @@ function renderProtocolTransferTodos() {
   const todos = protocolTransferTodos(state.protocolTransfers || []);
   $("#protocolTransferTodoList").innerHTML = todos.length
     ? todos.map(({ record, step, timing }) => `
-      <article class="protocol-todo-item ${timing}">
+      <article class="protocol-todo-item ${timing} ${record.id === selectedProtocolTransferId ? "active" : ""}">
         <button class="protocol-todo-record" type="button" data-protocol-transfer-id="${escapeAttribute(record.id)}" data-protocol-transfer-open>
           <strong>${escapeHtml(record.shortName || record.code || "未命名单据")}</strong>
           <span>${escapeHtml(step.dueDate)} · ${escapeHtml(step.label)}</span>
@@ -6899,21 +6899,13 @@ function renderProtocolTransferTodos() {
     : '<div class="payment-todo-empty">目前没有待处理的协议转让事项。</div>';
 }
 
-function openProtocolTransferRecord(id, { scroll = true } = {}) {
+function openProtocolTransferRecord(id) {
   if (!protocolTransferRecordExists(id)) return;
+  const scrollPosition = { left: window.scrollX, top: window.scrollY };
   selectedProtocolTransferId = id;
   protocolTransferEditMode = true;
   renderProtocolTransferWorkspace();
-  if (!scroll) return;
-  requestAnimationFrame(() => {
-    const detail = $(".protocol-transfer-detail");
-    if (!detail) return;
-    detail.scrollIntoView({
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-      block: "start",
-      inline: "nearest",
-    });
-  });
+  requestAnimationFrame(() => window.scrollTo({ ...scrollPosition, behavior: "auto" }));
 }
 
 function renderProtocolTransferList() {

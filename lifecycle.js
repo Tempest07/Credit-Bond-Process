@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-duplicate-remarks";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-selection-stable";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
