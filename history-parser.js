@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260809-protocol-transfer-filename";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260809-protocol-transfer-maker-alias";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

@@ -156,7 +156,10 @@ export function protocolTransferApplicationFilename(record = {}, template = {}) 
 
 function protocolTransferMakerFilenameAlias(record = {}, template = {}) {
   const archivedAlias = String(template.sourceFileName || "").match(/\s兴业([^\s.]+)\s/)?.[1];
-  const value = archivedAlias || template.label || record.marketMaker || "做市商";
+  const makerIdentity = template.marketMakerName || template.label || record.marketMaker || "";
+  const knownAlias = ["长城证券股份有限公司", "长城证券", "长城"]
+    .some((alias) => matchesProtocolTransferParty(makerIdentity, alias)) ? "长城" : "";
+  const value = archivedAlias || knownAlias || template.label || record.marketMaker || "做市商";
   return sanitizeFilename(String(value)
     .replace(/证券股份有限公司|证券有限责任公司|证券有限公司|股份有限公司|有限责任公司|有限公司/g, "")
     .replace(/证券$/g, "")

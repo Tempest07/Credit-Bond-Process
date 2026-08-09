@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-transfer-filename";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-transfer-maker-alias";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

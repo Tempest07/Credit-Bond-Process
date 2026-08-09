@@ -121,6 +121,21 @@ test("falls back from hands to the archive amount and compacts a new maker name"
   );
 });
 
+test("uses 长城 as the fixed archive alias for Great Wall Securities", () => {
+  assert.equal(
+    protocolTransferApplicationFilename({
+      tradeDate: "2026-12-03",
+      shortName: "26测试02",
+      marketMaker: "长城证券股份有限公司",
+      amountTenThousand: 2000,
+    }, {
+      label: "长城证券股份有限公司",
+      marketMakerName: "长城证券股份有限公司",
+    }),
+    "上交所协议转让N1203 兴业长城 26测试02 2000.docx",
+  );
+});
+
 test("swaps application directions when the maker sells to the bank", async () => {
   const template = matchProtocolTransferTemplate("中信建投");
   const zip = await readTemplateZip("citic-jiantou.docx");
