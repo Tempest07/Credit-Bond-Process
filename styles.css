@@ -174,6 +174,7 @@ h3 { margin: 24px 0 12px; font-size: 13px; }
 .brief-template-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 textarea, input, select { display: block; width: 100%; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: #fbfcfe; outline: none; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease; }
+#briefInput[hidden] { display: none; }
 input[type="hidden"], .file-button input { display: none; }
 textarea:focus, input:focus, select:focus { border-color: color-mix(in srgb, var(--accent) 74%, #fff); background: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent), 0 8px 22px rgba(91,108,255,.055); }
 label[data-recognition-status] input,

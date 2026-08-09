@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260808-rating-agency-default-guarantee";
+const VERSION = "20260809-hide-legacy-brief";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.10">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.11">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -103,6 +103,16 @@ test("hides the project empty state once a project is selected", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
+});
+
+test("keeps the legacy project brief textarea available to code but hidden from the new-project UI", async () => {
+  const [html, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /<textarea id="briefInput" hidden><\/textarea>/);
+  assert.match(styles, /#briefInput\[hidden\]\s*\{\s*display:\s*none;\s*\}/);
 });
 
 test("ships project guarantor entry, DM mapping and ledger detail display", async () => {

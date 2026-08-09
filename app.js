@@ -19,7 +19,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260808-rating-agency-default-guarantee";
+} from "./core.js?v=20260809-hide-legacy-brief";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260808-rating-agency-default-guarantee";
+} from "./lifecycle.js?v=20260809-hide-legacy-brief";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260808-rating-agency-default-guarantee";
+} from "./history-parser.js?v=20260809-hide-legacy-brief";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -58,12 +58,12 @@ import {
   protocolTransferTodos,
   removeProtocolTransfer,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260808-rating-agency-default-guarantee";
+} from "./protocol-transfer.js?v=20260809-hide-legacy-brief";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260808-rating-agency-default-guarantee";
+} from "./reminders.js?v=20260809-hide-legacy-brief";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -90,11 +90,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260808-rating-agency-default-guarantee";
+} from "./secondary-inventory.js?v=20260809-hide-legacy-brief";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260808-rating-agency-default-guarantee";
+} from "./trade-record-converter.js?v=20260809-hide-legacy-brief";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -105,13 +105,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260808-rating-agency-default-guarantee";
+} from "./trade-record-grid.js?v=20260809-hide-legacy-brief";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260808-rating-agency-default-guarantee";
-import { initializeDatePickers } from "./date-picker.js?v=20260808-rating-agency-default-guarantee";
+} from "./trade-record-ledger.js?v=20260809-hide-legacy-brief";
+import { initializeDatePickers } from "./date-picker.js?v=20260809-hide-legacy-brief";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -120,22 +120,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260808-rating-agency-default-guarantee";
+} from "./project-screenshot-ocr.js?v=20260809-hide-legacy-brief";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260808-rating-agency-default-guarantee";
+} from "./project-screenshot-layout.js?v=20260809-hide-legacy-brief";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260808-rating-agency-default-guarantee";
+} from "./project-screenshot-image.js?v=20260809-hide-legacy-brief";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260808-rating-agency-default-guarantee";
+} from "./payment-receipts.js?v=20260809-hide-legacy-brief";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
