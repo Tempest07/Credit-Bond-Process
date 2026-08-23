@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260809-protocol-selection-stable";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260823-result-slash-header";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -968,7 +968,7 @@ function durationMatchKey(value) {
 }
 
 function parseAdvertisementBlock(block, headerText, referenceDate) {
-  const headerParts = headerText.trim().split(/[，,；;\s]+/).filter(Boolean);
+  const headerParts = headerText.trim().split(/[／/|，,；;\s]+/).filter(Boolean);
   const labeledShortName = block.match(/简称(?:代码)?[：:\s]*([^\s（(，,]+)/)?.[1] || "";
   const bodyShortName = extractAdvertisementShortName(headerText, block);
   const shortName = headerParts.find((part) => /^\d{2}\S+/.test(part) && !isAdvertisementSecurityCode(part)) || labeledShortName || bodyShortName;
@@ -1044,7 +1044,7 @@ function inferUnlabeledCouponRate(block = "") {
 }
 
 function extractAdvertisementSecurityCode(headerText) {
-  return headerText.match(/(?:^|[-_，,；;\s])([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=$|[-_，,；;\s])/i)?.[1] || "";
+  return headerText.match(/(?:^|[-_／/|，,；;\s])([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=$|[-_／/|，,；;\s])/i)?.[1] || "";
 }
 
 function applyAutoAward(tranche, project = {}) {
@@ -1177,7 +1177,10 @@ function durationYearsForFtp(durationText) {
 }
 
 function parseIssuerName(text) {
-  return text.match(/^([^\n。；;]+?(?:集团|公司|有限责任公司|股份有限公司))20\d{2}/m)?.[1]?.trim() || "";
+  const normalized = String(text || "")
+    .replace(/【[^】]+】/g, " ")
+    .replace(/(?:发行成功|发行失败|取消发行)[，,：:\s]*/g, " ");
+  return normalized.match(/([A-Za-z0-9\u4e00-\u9fa5（）()·]{2,80}(?:有限责任公司|股份有限公司|有限公司|集团|公司))(?=20\d{2})/)?.[1]?.trim() || "";
 }
 
 function parseLabeledDate(text, label, referenceDate) {

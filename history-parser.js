@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260809-protocol-selection-stable";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260823-result-slash-header";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

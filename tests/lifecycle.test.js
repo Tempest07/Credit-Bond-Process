@@ -673,6 +673,46 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(bracketed.items[0].paymentDate, "2026-06-18");
 });
 
+test("parses slash-delimited exchange result headers and applies every result field", () => {
+  const advertisement = "【26粤海水务01/524962.SZ】发行成功，广东粤海水务投资有限公司2026年面向专业投资者公开发行公司债券（第一期），5亿元，3年期，中证鹏元AAA/AAA，深交所，票面利率1.49%，全场倍数7.42倍，缴款/起息日：8月27日。";
+  const referenceDate = new Date("2026-08-23T09:00:00+08:00");
+  const parsed = parseIssuanceAdvertisement(advertisement, referenceDate);
+
+  assert.equal(parsed.issuerName, "广东粤海水务投资有限公司");
+  assert.deepEqual(parsed.items[0], {
+    shortName: "26粤海水务01",
+    securityCode: "524962.SZ",
+    issueScale: 5,
+    fullMarketMultiple: 7.42,
+    marginalMultiple: null,
+    couponRate: 1.49,
+    durationText: "3年期",
+    paymentDate: "2026-08-27",
+    startDate: "2026-08-27",
+    allocationNote: "",
+  });
+
+  const project = applyIssuanceAdvertisement(normalizeProjectRecord({
+    shortName: "26粤海水务01",
+    tranches: [{
+      shortName: "26粤海水务01",
+      durationText: "3年",
+      bidLevels: [{ bidRate: 1.75, bidAmount: 1.5 }],
+      pricingMode: "综合定价",
+      pricingRate: 1.75,
+    }],
+  }), advertisement, referenceDate);
+
+  assert.equal(project.tranches[0].securityCode, "524962.SZ");
+  assert.equal(project.tranches[0].issueScale, 5);
+  assert.equal(project.tranches[0].winningRate, 1.49);
+  assert.equal(project.tranches[0].fullMarketMultiple, 7.42);
+  assert.equal(project.tranches[0].paymentDate, "2026-08-27");
+  assert.equal(project.tranches[0].startDate, "2026-08-27");
+  assert.equal(project.tranches[0].resultStatus, "未中标");
+  assert.equal(project.tranches[0].winningAmountWan, 0);
+});
+
 test("applies bracketed result advertisements to update award status", () => {
   const ad = `【结果-26珠城轨MTN002-F102682259-万一团费】
 【规模】5亿元
