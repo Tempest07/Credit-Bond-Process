@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260826-secondary-pending-grid";
+} from "./core.js?v=20260826-won-payment-date-filter";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -212,6 +212,15 @@ export function trancheNeedsPayment(tranche, referenceDate = new Date()) {
   return isWinningTranche(tranche)
     && Boolean(tranche.paymentDate)
     && !tranche.paymentCompleted;
+}
+
+export function projectMatchesDateFilter(project, date) {
+  if (!date) return true;
+  if (project.cutoffAt?.slice(0, 10) === date) return true;
+  if (!project.resultConfirmed || project.status === "未中标") return false;
+  return (project.tranches || []).some((tranche) =>
+    tranche.paymentDate === date && trancheNeedsPayment(tranche, date),
+  );
 }
 
 export function buildPrepaymentNumber(suffix, referenceDate = new Date()) {

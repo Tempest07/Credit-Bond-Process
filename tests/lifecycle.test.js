@@ -14,6 +14,7 @@ import {
   deriveProjectStatus,
   normalizeProjectRecord,
   parseIssuanceAdvertisement,
+  projectMatchesDateFilter,
   suggestProjectCutoff,
   trancheNeedsPayment,
   updateProjectCutoff,
@@ -345,6 +346,45 @@ test("suggests cutoff times by venue and flags private interbank issuers", () =>
     suggestProjectCutoff({ venue: "银行间", sourceText: "" }, null, new Date("2026-06-13T09:00:00")).cutoffAt,
     "2026-06-15T18:00",
   );
+});
+
+test("only repeats awarded projects on their payment date", () => {
+  const paymentDate = "2026-08-26";
+  const cutoffDate = "2026-08-25";
+  const lost = normalizeProjectRecord({
+    shortName: "26未中标MTN001",
+    status: "未中标",
+    resultConfirmed: true,
+    cutoffAt: `${cutoffDate}T18:00`,
+    tranches: [{ shortName: "26未中标MTN001", resultStatus: "未中标", paymentDate }],
+  });
+  const won = normalizeProjectRecord({
+    shortName: "26中标MTN001",
+    status: "待缴款",
+    resultConfirmed: true,
+    cutoffAt: `${cutoffDate}T18:00`,
+    tranches: [{ shortName: "26中标MTN001", resultStatus: "中标", paymentDate }],
+  });
+  const awaitingResult = normalizeProjectRecord({
+    shortName: "26待结果MTN001",
+    status: "已投标待结果",
+    resultConfirmed: false,
+    cutoffAt: `${cutoffDate}T18:00`,
+    tranches: [{ shortName: "26待结果MTN001", paymentDate }],
+  });
+  const paid = normalizeProjectRecord({
+    shortName: "26已缴款MTN001",
+    status: "已缴款",
+    resultConfirmed: true,
+    cutoffAt: `${cutoffDate}T18:00`,
+    tranches: [{ shortName: "26已缴款MTN001", resultStatus: "中标", paymentDate, paymentCompleted: true }],
+  });
+
+  assert.equal(projectMatchesDateFilter(lost, paymentDate), false);
+  assert.equal(projectMatchesDateFilter(awaitingResult, paymentDate), false);
+  assert.equal(projectMatchesDateFilter(paid, paymentDate), false);
+  assert.equal(projectMatchesDateFilter(won, paymentDate), true);
+  assert.equal(projectMatchesDateFilter(lost, cutoffDate), true);
 });
 
 test("records cutoff changes and confirmation state", () => {
