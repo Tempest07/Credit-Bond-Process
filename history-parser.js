@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260823-result-slash-header";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260825-ledger-zoom-fit";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

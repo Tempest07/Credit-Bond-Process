@@ -647,8 +647,8 @@ label[data-recognition-source="wind"]::after {
 .payment-todo-item .button { min-height: 30px; padding: 0 10px; font-size: 11px; }
 .payment-todo-item .prepayment-button.recorded { border-color: rgba(14,165,183,.32); color: #087f8d; background: var(--secondary-soft); }
 .payment-todo-empty { grid-column: 1 / -1; display: grid; place-items: center; min-height: 63px; padding: 12px; border: 1px dashed rgba(208,216,231,.9); border-radius: 11px; background: rgba(248,250,253,.72); text-align: center; }
-.ledger-grid { display: grid; grid-template-columns: clamp(320px, 27vw, 430px) minmax(760px, 1fr); gap: 16px; align-items: start; }
-.project-list-panel, .project-detail-panel { min-height: 640px; padding: 17px; border-color: rgba(216,222,235,.95); border-radius: 20px; background: rgba(255,255,255,.95); box-shadow: 0 18px 46px rgba(15,23,42,.065), inset 0 1px 0 #fff; }
+.ledger-grid { display: grid; grid-template-columns: clamp(320px, 27vw, 430px) minmax(0, 1fr); gap: 16px; min-width: 0; align-items: start; }
+.project-list-panel, .project-detail-panel { min-width: 0; min-height: 640px; padding: 17px; border-color: rgba(216,222,235,.95); border-radius: 20px; background: rgba(255,255,255,.95); box-shadow: 0 18px 46px rgba(15,23,42,.065), inset 0 1px 0 #fff; }
 .project-list-panel { position: static; max-height: none; overflow: visible; }
 .project-detail-panel { padding: 17px 19px; }
 .project-list-panel > .panel-head { margin-bottom: 12px; padding-bottom: 13px; border-bottom: 1px solid rgba(224,229,239,.9); }
@@ -733,14 +733,14 @@ label[data-recognition-source="wind"]::after {
 .quick-output-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .quick-output-card-head strong { color: var(--accent); font-size: 11px; }
 .quick-output-card .result-summary { min-height: 122px; background: #fff; }
-.tranche-list { display: grid; gap: 9px; }
-.tranche-card { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
+.tranche-list { display: grid; gap: 9px; min-width: 0; }
+.tranche-card { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
 .tranche-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .tranche-card-head strong { font-size: 11px; }
-.tranche-section { margin-top: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.tranche-section { min-width: 0; margin-top: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .bid-entry-section { background: linear-gradient(145deg, #fff, var(--panel-soft)); }
 .tranche-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.project-detail-panel .tranche-grid { grid-template-columns: repeat(6, minmax(118px, 1fr)); gap: 7px; max-width: 1260px; }
+.project-detail-panel .tranche-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; max-width: 1260px; }
 .tranche-grid label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 700; }
 .tranche-grid input, .tranche-grid select { min-height: 34px; padding: 6px 8px; font-size: 11px; }
 .tranche-grid .span-3 { grid-column: span 3; }
@@ -748,14 +748,14 @@ label[data-recognition-source="wind"]::after {
 .tranche-subheading.first-subheading { margin-top: 0; padding-top: 0; border-top: 0; }
 .tranche-subheading strong { color: var(--muted); font-size: 10px; }
 .tranche-subheading-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.bid-level-list { display: grid; gap: 7px; margin: 7px 0 9px; }
-.bid-level-card { padding: 9px; border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--accent-soft) 42%, #fff); }
-.bid-level-card .tranche-grid { grid-template-columns: repeat(4, minmax(118px, 1fr)); max-width: 660px; }
+.bid-level-list { display: grid; gap: 7px; min-width: 0; margin: 7px 0 9px; }
+.bid-level-card { min-width: 0; padding: 9px; border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line)); border-radius: 7px; background: color-mix(in srgb, var(--accent-soft) 42%, #fff); }
+.bid-level-card .tranche-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 660px; }
 .bid-level-card .outsourced-card-head strong { color: var(--accent); }
-.outsourced-list { display: grid; gap: 8px; }
-.outsourced-card { padding: 10px; border: 1px dashed var(--line-strong); border-radius: 7px; background: #fff; }
+.outsourced-list { display: grid; gap: 8px; min-width: 0; }
+.outsourced-card { min-width: 0; padding: 10px; border: 1px dashed var(--line-strong); border-radius: 7px; background: #fff; }
 .outsourced-card.result-card { border-style: solid; background: var(--panel-soft); }
-.outsourced-card .tranche-grid { grid-template-columns: repeat(4, minmax(118px, 1fr)); max-width: 860px; }
+.outsourced-card .tranche-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 860px; }
 .outsourced-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .outsourced-card-head strong { color: var(--accent); font-size: 10px; }
 .empty.compact { padding: 12px; border: 1px dashed var(--line); border-radius: 7px; }

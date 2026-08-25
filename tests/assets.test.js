@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260823-result-slash-header";
+const VERSION = "20260825-ledger-zoom-fit";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.19">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.20">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -204,6 +204,16 @@ test("lets every project list set the page height without internal scrolling", a
   assert.doesNotMatch(styles, /\.project-list\s*\{[^}]*overflow:\s*auto;/s);
   assert.match(styles, /\.project-item\s*\{[^}]*scroll-margin-block:\s*12px;/s);
   assert.match(styles, /\.project-list\.liquid-track::before\s*\{[^}]*box-sizing:\s*border-box;/s);
+});
+
+test("keeps project bidding cards inside a zoom-constrained desktop workspace", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /\.ledger-grid\s*\{[^}]*grid-template-columns:\s*clamp\(320px, 27vw, 430px\) minmax\(0, 1fr\);[^}]*min-width:\s*0;/s);
+  assert.match(styles, /\.project-list-panel, \.project-detail-panel\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(styles, /\.project-detail-panel \.tranche-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6, minmax\(0, 1fr\)\);/s);
+  assert.match(styles, /\.bid-level-card \.tranche-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/s);
+  assert.match(styles, /\.outsourced-card \.tranche-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);/s);
 });
 
 test("places the optional valuation badge between inquiry and offering facts", async () => {

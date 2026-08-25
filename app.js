@@ -19,7 +19,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260823-result-slash-header";
+} from "./core.js?v=20260825-ledger-zoom-fit";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +39,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260823-result-slash-header";
+} from "./lifecycle.js?v=20260825-ledger-zoom-fit";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260823-result-slash-header";
+} from "./history-parser.js?v=20260825-ledger-zoom-fit";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -61,23 +61,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260823-result-slash-header";
+} from "./protocol-transfer.js?v=20260825-ledger-zoom-fit";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260823-result-slash-header";
+} from "./protocol-transfer-templates.js?v=20260825-ledger-zoom-fit";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260823-result-slash-header";
+} from "./protocol-transfer-docx.js?v=20260825-ledger-zoom-fit";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260823-result-slash-header";
+} from "./reminders.js?v=20260825-ledger-zoom-fit";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -104,11 +104,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260823-result-slash-header";
+} from "./secondary-inventory.js?v=20260825-ledger-zoom-fit";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260823-result-slash-header";
+} from "./trade-record-converter.js?v=20260825-ledger-zoom-fit";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -119,13 +119,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260823-result-slash-header";
+} from "./trade-record-grid.js?v=20260825-ledger-zoom-fit";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260823-result-slash-header";
-import { initializeDatePickers } from "./date-picker.js?v=20260823-result-slash-header";
+} from "./trade-record-ledger.js?v=20260825-ledger-zoom-fit";
+import { initializeDatePickers } from "./date-picker.js?v=20260825-ledger-zoom-fit";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -134,22 +134,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260823-result-slash-header";
+} from "./project-screenshot-ocr.js?v=20260825-ledger-zoom-fit";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260823-result-slash-header";
+} from "./project-screenshot-layout.js?v=20260825-ledger-zoom-fit";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260823-result-slash-header";
+} from "./project-screenshot-image.js?v=20260825-ledger-zoom-fit";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260823-result-slash-header";
+} from "./payment-receipts.js?v=20260825-ledger-zoom-fit";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
