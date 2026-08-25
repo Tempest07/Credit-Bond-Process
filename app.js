@@ -3,12 +3,15 @@ import {
   applyIssuerCommonFields,
   buildBondFullName,
   buildUnderwriter,
+  calculateAbsTrancheSharePct,
+  compactSelectedAbsShortNames,
   durationParts,
   durationToDays,
   findIssuer,
   formatNumber,
   formatProjectValuationSummary,
   generateOpinion,
+  inferAbsClassNameFromShortName,
   isAbsProject,
   mergeImportedIssuers,
   normalizeBondFullNameForProject,
@@ -19,7 +22,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260825-ledger-zoom-fit";
+} from "./core.js?v=20260825-abs-tranche-sync";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -39,13 +42,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260825-ledger-zoom-fit";
+} from "./lifecycle.js?v=20260825-abs-tranche-sync";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260825-ledger-zoom-fit";
+} from "./history-parser.js?v=20260825-abs-tranche-sync";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -61,23 +64,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260825-ledger-zoom-fit";
+} from "./protocol-transfer.js?v=20260825-abs-tranche-sync";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260825-ledger-zoom-fit";
+} from "./protocol-transfer-templates.js?v=20260825-abs-tranche-sync";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260825-ledger-zoom-fit";
+} from "./protocol-transfer-docx.js?v=20260825-abs-tranche-sync";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260825-ledger-zoom-fit";
+} from "./reminders.js?v=20260825-abs-tranche-sync";
 import {
   applyCodeMappingText,
   buildSecondaryOfferListText,
@@ -104,11 +107,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260825-ledger-zoom-fit";
+} from "./secondary-inventory.js?v=20260825-abs-tranche-sync";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260825-ledger-zoom-fit";
+} from "./trade-record-converter.js?v=20260825-abs-tranche-sync";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -119,13 +122,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260825-ledger-zoom-fit";
+} from "./trade-record-grid.js?v=20260825-abs-tranche-sync";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260825-ledger-zoom-fit";
-import { initializeDatePickers } from "./date-picker.js?v=20260825-ledger-zoom-fit";
+} from "./trade-record-ledger.js?v=20260825-abs-tranche-sync";
+import { initializeDatePickers } from "./date-picker.js?v=20260825-abs-tranche-sync";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -134,22 +137,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260825-ledger-zoom-fit";
+} from "./project-screenshot-ocr.js?v=20260825-abs-tranche-sync";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260825-ledger-zoom-fit";
+} from "./project-screenshot-layout.js?v=20260825-abs-tranche-sync";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260825-ledger-zoom-fit";
+} from "./project-screenshot-image.js?v=20260825-abs-tranche-sync";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260825-ledger-zoom-fit";
+} from "./payment-receipts.js?v=20260825-abs-tranche-sync";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -3882,6 +3885,10 @@ function bindGenerator() {
     input.addEventListener("input", () => {
       clearRecognitionForInput(input);
       updateAbsInfoFromInputs();
+      if (input.dataset.absField === "totalScale") {
+        refreshDerivedAbsTrancheFields(project.absInfo);
+        syncDerivedAbsTrancheInputs();
+      }
       project.sourceText = buildDmProjectSourceText(project);
       $("#briefInput").value = project.sourceText;
       regenerate();
@@ -3892,7 +3899,9 @@ function bindGenerator() {
     ensureAbsInfo(project);
     project.instrumentType = project.instrumentType || "ABS";
     project.absInfo.tranches.push(defaultAbsTranche());
+    syncAbsProjectSelectionScope();
     renderAbsTrancheFields();
+    renderProjectPricingFields();
     syncProjectConditionalFields();
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
@@ -3906,7 +3915,11 @@ function bindGenerator() {
     if (input.dataset.absTrancheField === "selected") {
       input.closest(".abs-tranche-row")?.classList.toggle("is-selected", input.checked);
     }
-    updateAbsTranchesFromInputs();
+    updateAbsTranchesFromInputs(input);
+    refreshDerivedAbsTrancheFields(project.absInfo);
+    syncDerivedAbsTrancheInputs();
+    syncAbsProjectSelectionScope();
+    renderProjectPricingFields();
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
     regenerate();
@@ -3917,7 +3930,9 @@ function bindGenerator() {
     if (!remove) return;
     ensureAbsInfo(project);
     project.absInfo.tranches.splice(Number(remove.dataset.removeAbsTranche), 1);
+    syncAbsProjectSelectionScope();
     renderAbsTrancheFields();
+    renderProjectPricingFields();
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
     regenerate();
@@ -4140,7 +4155,9 @@ function clonePlain(value) {
 function upsertParsedProjectToLedger(projectValue, issuer, generated) {
   if (!projectValue?.shortName) return null;
   if (!projectIssuerSaveStatus(projectValue, issuer).ok) return null;
-  const existing = (state.projects || []).find((item) => item.shortName === projectValue.shortName && item.status !== "已结束");
+  const activeProjects = (state.projects || []).filter((item) => item.status !== "已结束");
+  const existing = activeProjects.find((item) => item.shortName === projectValue.shortName)
+    || (isAbsProject(projectValue) ? findExistingAbsProject(activeProjects, projectValue) : null);
   const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing);
   state = upsertProject(state, record);
   return { record, isUpdate: Boolean(existing) };
@@ -4198,31 +4215,49 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
         pricingUnit: existing.pricingUnit,
         afterTaxRevenue: existing.afterTaxRevenue,
         ftpCost: existing.ftpCost,
-        tranches: existing.tranches?.length === created.tranches.length
-          ? created.tranches.map((tranche, index) => ({
-              ...existing.tranches[index],
-              shortName: tranche.shortName,
-              durationText: tranche.durationText,
-              inquiryLow: tranche.inquiryLow,
-              inquiryHigh: tranche.inquiryHigh,
-              suggestedRatio: tranche.suggestedRatio,
-              marketValuation: tranche.marketValuation,
-              issueScale: tranche.issueScale ?? existing.tranches[index].issueScale,
-              securityCode: tranche.securityCode || existing.tranches[index].securityCode,
-              absClassName: tranche.absClassName || existing.tranches[index].absClassName,
-              sharePct: tranche.sharePct ?? existing.tranches[index].sharePct,
-              expectedMaturityDate: tranche.expectedMaturityDate || existing.tranches[index].expectedMaturityDate,
-              debtRating: tranche.debtRating || existing.tranches[index].debtRating,
-              debtRatingAgency: tranche.debtRatingAgency || existing.tranches[index].debtRatingAgency,
-              pricingMode: existing.tranches[index].pricingRate == null && tranche.pricingRate != null
-                ? tranche.pricingMode
-                : existing.tranches[index].pricingMode,
-              pricingRate: existing.tranches[index].pricingRate ?? tranche.pricingRate,
-            }))
-          : created.tranches,
+        tranches: mergeExistingProjectTranches(existing, created, projectValue),
         createdAt: existing.createdAt,
       })
     : created;
+}
+
+function mergeExistingProjectTranches(existing, created, projectValue) {
+  const existingTranches = existing.tranches || [];
+  if (isAbsProject(projectValue)) {
+    return created.tranches.map((tranche) => {
+      const previous = existingTranches.find((item) => (
+        normalizeSourceComparable(item.shortName) === normalizeSourceComparable(tranche.shortName)
+      ));
+      return mergeExistingProjectTranche(previous, tranche);
+    });
+  }
+  return existingTranches.length === created.tranches.length
+    ? created.tranches.map((tranche, index) => mergeExistingProjectTranche(existingTranches[index], tranche))
+    : created.tranches;
+}
+
+function mergeExistingProjectTranche(existing, created) {
+  if (!existing) return created;
+  return {
+    ...existing,
+    shortName: created.shortName,
+    durationText: created.durationText,
+    inquiryLow: created.inquiryLow,
+    inquiryHigh: created.inquiryHigh,
+    suggestedRatio: created.suggestedRatio,
+    marketValuation: created.marketValuation,
+    issueScale: created.issueScale ?? existing.issueScale,
+    securityCode: created.securityCode || existing.securityCode,
+    absClassName: created.absClassName || existing.absClassName,
+    sharePct: created.sharePct ?? existing.sharePct,
+    expectedMaturityDate: created.expectedMaturityDate || existing.expectedMaturityDate,
+    debtRating: created.debtRating || existing.debtRating,
+    debtRatingAgency: created.debtRatingAgency || existing.debtRatingAgency,
+    pricingMode: existing.pricingRate == null && created.pricingRate != null
+      ? created.pricingMode
+      : existing.pricingMode,
+    pricingRate: existing.pricingRate ?? created.pricingRate,
+  };
 }
 
 function bindLedger() {
@@ -4375,6 +4410,7 @@ function bindLedger() {
       })),
       sourceText: record.sourceText,
     };
+    if (isAbsProject(project)) syncAbsProjectSelectionScope({ updateField: false });
     selectedIssuerId = record.issuerId || "";
     $("#briefInput").value = record.sourceText;
     fillProjectFields();
@@ -4498,6 +4534,7 @@ function applyDmLookupToCurrentProject(payload) {
   const patch = projectPatchFromDmLookup(payload);
   const { sourceMap: _sourceMap, ...projectPatch } = patch;
   project = replaceProjectWithDmLookup(project, projectPatch);
+  if (isAbsProject(project)) syncAbsProjectSelectionScope({ updateField: false });
   const matched = findIssuerForProject(project)
     || findIssuer(patch.issuerName || "", state.issuers)
     || null;
@@ -4687,10 +4724,12 @@ function projectAbsInfoFromDm(normalized = {}, issueGroup = null) {
         const range = parseDmInquiryRange(tranche.inquiryRange);
         return normalizeProjectAbsTranche({
           className: tranche.trancheLevel,
+          classNameSource: tranche.trancheLevel ? "dm" : "",
           shortName: tranche.shortName,
           securityId: tranche.securityId,
           scale: numberOrNull(tranche.actualScale) ?? numberOrNull(tranche.planScale),
           sharePct: tranche.sharePct,
+          sharePctSource: Number.isFinite(numberOrNull(tranche.sharePct)) ? "dm" : "",
           expectedMaturityDate: tranche.expectedMaturityDate,
           expectedTerm: normalizeDmTenor(tranche.tenor),
           debtRating: tranche.debtRating,
@@ -4704,13 +4743,32 @@ function projectAbsInfoFromDm(normalized = {}, issueGroup = null) {
   const totalScale = numberOrNull(base.totalScale)
     ?? numberOrNull(issueGroup?.totalScale)
     ?? sumFinite(absTranches.map((tranche) => tranche.scale));
+  const enrichedTranches = absTranches.map((tranche) => {
+    if (Number.isFinite(numberOrNull(tranche.sharePct))) return tranche;
+    const derivedSharePct = calculateAbsTrancheSharePct(tranche.scale, totalScale);
+    return Number.isFinite(derivedSharePct)
+      ? normalizeProjectAbsTranche({ ...tranche, sharePct: derivedSharePct, sharePctSource: "derived" })
+      : tranche;
+  });
   return normalizeProjectAbsInfo({
     ...base,
     planName: base.planName || issueGroup?.issueName || normalized.fullName || "",
     totalScale,
     bookDate: base.bookDate || issueGroup?.subscribeDate || normalized.subscribeDate || "",
-    tranches: absTranches,
+    tranches: enrichedTranches,
   });
+}
+
+function findExistingAbsProject(projects, projectValue) {
+  const target = normalizeProjectAbsInfo(projectValue.absInfo);
+  const planName = normalizeSourceComparable(target.planName || projectValue.fullName);
+  if (!planName) return null;
+  return projects.find((item) => {
+    if (!isAbsProject(item)) return false;
+    const candidate = normalizeProjectAbsInfo(item.absInfo);
+    if (normalizeSourceComparable(candidate.planName) !== planName) return false;
+    return !target.bookDate || !candidate.bookDate || target.bookDate === candidate.bookDate;
+  }) || null;
 }
 
 function markAbsInfoSources(absInfo, sourceMap, source) {
@@ -4840,7 +4898,13 @@ function buildProjectDmRecognitionMarks(patch) {
         ["inquiryLow", "分档利率下限"],
         ["inquiryHigh", "分档利率上限"],
       ].forEach(([field, label]) => {
-        if (valueHasContent(tranche[field])) marks[`abs.tranches.${index}.${field}`] = sourcedRecognitionMark(label, "dm");
+        if (!valueHasContent(tranche[field])) return;
+        const source = field === "className"
+          ? tranche.classNameSource || "dm"
+          : field === "sharePct"
+            ? tranche.sharePctSource || "dm"
+            : "dm";
+        marks[`abs.tranches.${index}.${field}`] = sourcedRecognitionMark(label, source);
       });
     });
   }
@@ -4857,6 +4921,7 @@ function buildProjectDmRecognitionMarks(patch) {
 function sourcedRecognitionMark(label, source) {
   if (source === "cloud") return recognitionMark("success", `${label}已由云端数据库预填`, "cloud");
   if (source === "wind") return recognitionMark("success", `${label}已由 Wind 预填`, "wind");
+  if (source === "derived") return recognitionMark("success", `${label}已由系统推导`, "derived");
   return recognitionMark("success", `${label}已由 DM 预填`, "dm");
 }
 
@@ -5526,13 +5591,20 @@ function normalizeProjectAbsInfo(input = {}) {
 }
 
 function normalizeProjectAbsTranche(input = {}) {
+  const shortName = String(input.shortName || "").trim();
+  const explicitClassName = String(input.className || input.trancheLevel || input.absClassName || "").trim();
+  const inferredClassName = !explicitClassName || explicitClassName === "优先级"
+    ? inferAbsClassNameFromShortName(shortName)
+    : "";
   return {
     id: input.id || crypto.randomUUID(),
-    className: String(input.className || input.trancheLevel || input.absClassName || "").trim(),
-    shortName: String(input.shortName || "").trim(),
+    className: explicitClassName || inferredClassName,
+    classNameSource: String(inferredClassName ? "derived" : input.classNameSource || "").trim(),
+    shortName,
     securityId: String(input.securityId || input.securityCode || "").trim(),
     scale: numberOrNull(input.scale ?? input.actualScale ?? input.planScale ?? input.issueScale),
     sharePct: numberOrNull(input.sharePct),
+    sharePctSource: String(input.sharePctSource || "").trim(),
     expectedMaturityDate: String(input.expectedMaturityDate || "").trim(),
     expectedTerm: String(input.expectedTerm || input.tenor || "").trim(),
     debtRating: String(input.debtRating || "").trim().toUpperCase(),
@@ -5541,6 +5613,46 @@ function normalizeProjectAbsTranche(input = {}) {
     inquiryHigh: numberOrNull(input.inquiryHigh),
     selected: Boolean(input.selected),
   };
+}
+
+function syncAbsProjectSelectionScope(options = {}) {
+  const { updateField = true } = options;
+  const absInfo = ensureAbsInfo(project);
+  const selectedTranches = absInfo.tranches.filter((tranche) => tranche.selected && tranche.shortName);
+  const scopedTranches = selectedTranches.length
+    ? selectedTranches
+    : absInfo.tranches.filter((tranche) => tranche.shortName).slice(0, 1);
+  const fallback = scopedTranches[0]?.shortName || project.shortName || "";
+  const compactName = compactSelectedAbsShortNames(selectedTranches, fallback);
+  if (compactName) project.shortName = compactName;
+  project.shortNames = scopedTranches.map((tranche) => tranche.shortName);
+  project.durationParts = scopedTranches.map((tranche) => tranche.expectedTerm || tranche.expectedMaturityDate || "");
+  project.durationText = compactProjectDurations(project.durationParts.filter(Boolean));
+  syncAbsProjectPricingScope(scopedTranches);
+  if (updateField) {
+    const shortNameInput = $('[data-project-field="shortName"]');
+    if (shortNameInput) shortNameInput.value = project.shortName;
+  }
+  const aggregated = scopedTranches.length > 1;
+  if (aggregated) {
+    projectRecognitionMarks.shortName = recognitionMark("success", "项目简称已按本次投资分档聚合", "derived");
+    if (updateField) setRecognitionForInput($('[data-project-field="shortName"]'), projectRecognitionMarks.shortName);
+  }
+}
+
+function syncAbsProjectPricingScope(scopedTranches) {
+  const existingRows = Array.isArray(project.tranchePricing) ? project.tranchePricing : [];
+  const pricingByName = new Map(existingRows.map((row) => [String(row.shortName || "").trim(), row]));
+  project.tranchePricing = scopedTranches.map((tranche) => {
+    const existing = pricingByName.get(tranche.shortName) || {};
+    return {
+      shortName: tranche.shortName,
+      durationText: tranche.expectedTerm || tranche.expectedMaturityDate || "",
+      marketValuation: numberOrNull(existing.marketValuation),
+      guidancePrice: numberOrNull(existing.guidancePrice),
+    };
+  });
+  syncProjectPricingMirrors(project);
 }
 
 function defaultAbsTranche() {
@@ -5607,11 +5719,18 @@ function renderAbsTrancheFields() {
     : '<div class="empty compact">暂无 ABS 分档，读取 DM 后会自动带入，也可手工增加。</div>';
 }
 
-function updateAbsTranchesFromInputs() {
+function updateAbsTranchesFromInputs(changedInput = null) {
   const absInfo = ensureAbsInfo(project);
+  const changedCard = changedInput?.closest?.("[data-abs-tranche-index]");
+  const changedIndex = Number(changedCard?.dataset?.absTrancheIndex);
+  const changedField = changedInput?.dataset?.absTrancheField || "";
   absInfo.tranches = [...$("#absTrancheRows").querySelectorAll("[data-abs-tranche-index]")].map((card, index) => {
     const existing = absInfo.tranches[index] || {};
-    const values = { id: existing.id };
+    const values = {
+      id: existing.id,
+      classNameSource: existing.classNameSource || "",
+      sharePctSource: existing.sharePctSource || "",
+    };
     card.querySelectorAll("[data-abs-tranche-field]").forEach((input) => {
       values[input.dataset.absTrancheField] = input.type === "checkbox"
         ? input.checked
@@ -5619,9 +5738,49 @@ function updateAbsTranchesFromInputs() {
           ? numberOrNull(input.value)
           : input.value.trim();
     });
+    if (index === changedIndex && changedField === "className") values.classNameSource = "manual";
+    if (index === changedIndex && changedField === "sharePct") values.sharePctSource = "manual";
     return normalizeProjectAbsTranche(values);
   });
   project.instrumentType = project.instrumentType || "ABS";
+}
+
+function refreshDerivedAbsTrancheFields(absInfo) {
+  const totalScale = numberOrNull(absInfo?.totalScale);
+  absInfo.tranches = (absInfo?.tranches || []).map((tranche) => {
+    const inferredClassName = inferAbsClassNameFromShortName(tranche.shortName);
+    const classPatch = (!tranche.className || tranche.classNameSource === "derived") && inferredClassName
+      ? { className: inferredClassName, classNameSource: "derived" }
+      : {};
+    const derivedSharePct = calculateAbsTrancheSharePct(tranche.scale, totalScale);
+    const sharePatch = (!Number.isFinite(numberOrNull(tranche.sharePct)) || tranche.sharePctSource === "derived")
+      && Number.isFinite(derivedSharePct)
+      ? { sharePct: derivedSharePct, sharePctSource: "derived" }
+      : {};
+    return normalizeProjectAbsTranche({ ...tranche, ...classPatch, ...sharePatch });
+  });
+}
+
+function syncDerivedAbsTrancheInputs() {
+  const cards = [...$("#absTrancheRows").querySelectorAll("[data-abs-tranche-index]")];
+  cards.forEach((card, index) => {
+    const tranche = project.absInfo?.tranches?.[index];
+    if (!tranche) return;
+    const classInput = card.querySelector('[data-abs-tranche-field="className"]');
+    const shareInput = card.querySelector('[data-abs-tranche-field="sharePct"]');
+    if (classInput && tranche.classNameSource === "derived") {
+      classInput.value = tranche.className;
+      const mark = recognitionMark("success", "分档级别已由简称推导", "derived");
+      projectRecognitionMarks[`abs.tranches.${index}.className`] = mark;
+      setRecognitionForInput(classInput, mark);
+    }
+    if (shareInput && tranche.sharePctSource === "derived") {
+      shareInput.value = tranche.sharePct ?? "";
+      const mark = recognitionMark("success", "分档占比已按分档规模与总规模计算", "derived");
+      projectRecognitionMarks[`abs.tranches.${index}.sharePct`] = mark;
+      setRecognitionForInput(shareInput, mark);
+    }
+  });
 }
 
 function clearProjectRecognitionMarks() {

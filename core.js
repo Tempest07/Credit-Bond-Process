@@ -405,6 +405,23 @@ function combineShortNames(names) {
   return names.join("/");
 }
 
+export function compactSelectedAbsShortNames(tranches = [], fallback = "") {
+  const selectedNames = [...new Set(
+    (Array.isArray(tranches) ? tranches : [])
+      .filter((tranche) => tranche?.selected)
+      .map((tranche) => String(tranche?.shortName || "").trim())
+      .filter(Boolean),
+  )];
+  return combineShortNames(selectedNames) || String(fallback || "").trim();
+}
+
+export function calculateAbsTrancheSharePct(scale, totalScale) {
+  const trancheScale = numberOrNull(scale);
+  const planScale = numberOrNull(totalScale);
+  if (!Number.isFinite(trancheScale) || !Number.isFinite(planScale) || trancheScale < 0 || planScale <= 0) return null;
+  return round(trancheScale / planScale * 100, 2);
+}
+
 function nextLetter(value) {
   return String.fromCharCode(String(value).toUpperCase().charCodeAt(0) + 1);
 }
@@ -537,8 +554,11 @@ function normalizeAbsClassName(value = "") {
   return `${text}级`;
 }
 
-function inferAbsClassNameFromShortName(shortName = "") {
-  const suffix = String(shortName || "").trim().toUpperCase().match(/\d([ABC])$/)?.[1] || "";
+export function inferAbsClassNameFromShortName(shortName = "") {
+  const text = String(shortName || "").trim().toUpperCase();
+  const explicitPriority = text.match(/A(\d+)$/)?.[1] || "";
+  if (explicitPriority) return `优先A${Number(explicitPriority)}级`;
+  const suffix = text.match(/\d([ABC])$/)?.[1] || "";
   if (suffix === "A") return "优先A1级";
   if (suffix === "B") return "优先A2级";
   if (suffix === "C") return "次级";

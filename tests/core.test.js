@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 import {
   applyIssuerCommonFields,
   buildBondFullName,
+  calculateAbsTrancheSharePct,
   calculateSuggestion,
+  compactSelectedAbsShortNames,
   determineApprover,
   durationToDays,
   findIssuer,
   generateOpinion,
+  inferAbsClassNameFromShortName,
   formatProjectValuationSummary,
   mergeImportedIssuers,
   normalizeGuaranteeInfo,
@@ -18,6 +21,26 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
 } from "../core.js";
+
+test("derives ABS tranche shares, explicit priority classes, and selected project name", () => {
+  const tranches = [
+    { shortName: "G蔚能3A1", scale: 1.27, selected: true },
+    { shortName: "G蔚能3A2", scale: 2.72, selected: true },
+    { shortName: "G蔚能3A3", scale: 3.08, selected: true },
+    { shortName: "G蔚能3A4", scale: 0.86, selected: true },
+  ];
+
+  assert.deepEqual(
+    tranches.map((tranche) => calculateAbsTrancheSharePct(tranche.scale, 7.93)),
+    [16.02, 34.3, 38.84, 10.84],
+  );
+  assert.deepEqual(
+    tranches.map((tranche) => inferAbsClassNameFromShortName(tranche.shortName)),
+    ["优先A1级", "优先A2级", "优先A3级", "优先A4级"],
+  );
+  assert.equal(compactSelectedAbsShortNames(tranches), "G蔚能3A1/2/3/4");
+  assert.equal(compactSelectedAbsShortNames(tranches.map((tranche, index) => ({ ...tranche, selected: index < 2 }))), "G蔚能3A1/2");
+});
 
 test("normalizes rating agency names to desk display conventions", () => {
   assert.equal(normalizeRatingAgency("中诚信评级"), "中诚信国际");

@@ -230,6 +230,19 @@ label[data-recognition-source="wind"]::after {
   font-weight: 900;
   line-height: 1.25;
 }
+label[data-recognition-source="derived"]::after {
+  content: "系统推导";
+  justify-self: start;
+  margin-top: -2px;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--line));
+  border-radius: 4px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, #fff);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.25;
+}
 .brief-input { min-height: 350px; padding: 14px; resize: vertical; font-family: "Cascadia Mono", "Microsoft YaHei", monospace; font-size: 12px; line-height: 1.8; }
 .brief-template-guide { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding: 10px; border: 1px dashed color-mix(in srgb, var(--accent) 34%, var(--line)); border-radius: 8px; color: var(--muted); background: var(--panel-soft); font-size: 10px; line-height: 1.6; }
 .brief-template-guide strong { margin-right: 2px; color: var(--accent); }

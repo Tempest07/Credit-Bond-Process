@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260825-ledger-zoom-fit";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260825-ledger-zoom-fit";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260825-abs-tranche-sync";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260825-abs-tranche-sync";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

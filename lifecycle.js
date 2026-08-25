@@ -1,4 +1,4 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260825-ledger-zoom-fit";
+import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260825-abs-tranche-sync";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
