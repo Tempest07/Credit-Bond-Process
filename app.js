@@ -22,7 +22,7 @@ import {
   replaceProjectWithDmLookup,
   splitProjectBriefs,
   upsertIssuer,
-} from "./core.js?v=20260825-abs-ledger-name-sync";
+} from "./core.js?v=20260826-secondary-pending-grid";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -42,13 +42,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260825-abs-ledger-name-sync";
+} from "./lifecycle.js?v=20260826-secondary-pending-grid";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260825-abs-ledger-name-sync";
+} from "./history-parser.js?v=20260826-secondary-pending-grid";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -64,24 +64,25 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260825-abs-ledger-name-sync";
+} from "./protocol-transfer.js?v=20260826-secondary-pending-grid";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260825-abs-ledger-name-sync";
+} from "./protocol-transfer-templates.js?v=20260826-secondary-pending-grid";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260825-abs-ledger-name-sync";
+} from "./protocol-transfer-docx.js?v=20260826-secondary-pending-grid";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260825-abs-ledger-name-sync";
+} from "./reminders.js?v=20260826-secondary-pending-grid";
 import {
+  applySecondaryPendingDraftRows,
   applyCodeMappingText,
   buildSecondaryOfferListText,
   buildPrimaryAwardTrades,
@@ -107,11 +108,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260825-abs-ledger-name-sync";
+} from "./secondary-inventory.js?v=20260826-secondary-pending-grid";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260825-abs-ledger-name-sync";
+} from "./trade-record-converter.js?v=20260826-secondary-pending-grid";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -122,13 +123,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260825-abs-ledger-name-sync";
+} from "./trade-record-grid.js?v=20260826-secondary-pending-grid";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260825-abs-ledger-name-sync";
-import { initializeDatePickers } from "./date-picker.js?v=20260825-abs-ledger-name-sync";
+} from "./trade-record-ledger.js?v=20260826-secondary-pending-grid";
+import { initializeDatePickers } from "./date-picker.js?v=20260826-secondary-pending-grid";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -137,22 +138,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260825-abs-ledger-name-sync";
+} from "./project-screenshot-ocr.js?v=20260826-secondary-pending-grid";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260825-abs-ledger-name-sync";
+} from "./project-screenshot-layout.js?v=20260826-secondary-pending-grid";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260825-abs-ledger-name-sync";
+} from "./project-screenshot-image.js?v=20260826-secondary-pending-grid";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260825-abs-ledger-name-sync";
+} from "./payment-receipts.js?v=20260826-secondary-pending-grid";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -319,6 +320,16 @@ const LIQUID_TRACK_CONFIGS = [
 ];
 const liquidMotionTimers = new WeakMap();
 let activeSecondaryWorkspacePanel = "intake";
+let secondaryIntakeCollapsed = false;
+let secondaryIntakeCollapseTouched = false;
+let secondaryPendingDraftSignature = "";
+let secondaryPendingDraftRows = [];
+let secondaryPendingUndoStack = [];
+let secondaryPendingEditSnapshot = null;
+let secondaryPendingDmLoading = false;
+let secondaryPendingDmAttemptKey = "";
+let secondaryPendingSavePending = false;
+let secondaryPendingShowAllColumns = false;
 let secondaryLedgerDraftDate = "";
 let secondaryLedgerDraftRows = [];
 let secondaryLedgerUndoStack = [];
@@ -7537,6 +7548,9 @@ function bindSecondaryInventory() {
   });
   $("#secondaryParseTradesButton").addEventListener("click", importSecondaryTrades);
   $("#secondaryClearInputButton").addEventListener("click", clearSecondaryIntake);
+  $("#secondaryIntakeToggleButton").addEventListener("click", () => {
+    setSecondaryIntakeCollapsed(!secondaryIntakeCollapsed);
+  });
   $("#secondaryLedgerDate").addEventListener("change", () => {
     resetSecondaryLedgerDraft();
     renderSecondaryLedger();
@@ -7553,11 +7567,24 @@ function bindSecondaryInventory() {
   $("#secondaryLedgerCopyButton").addEventListener("click", copySecondaryLedgerRows);
   $("#secondaryLedgerSendButton").addEventListener("click", () => callSecondaryLedgerMailer("send"));
   $("#secondaryLedgerOutputCloseButton").addEventListener("click", hideSecondaryLedgerOutput);
+  $("#secondaryPendingDmButton").addEventListener("click", () => enrichSecondaryPendingFromDm({ refresh: true }));
+  $("#secondaryPendingUndoButton").addEventListener("click", undoSecondaryPendingEdit);
+  $("#secondaryPendingCopyButton").addEventListener("click", copySecondaryPendingRows);
+  $("#secondaryPendingColumnsButton").addEventListener("click", () => {
+    secondaryPendingShowAllColumns = !secondaryPendingShowAllColumns;
+    renderSecondaryTrades();
+  });
+  $("#secondaryPendingSaveButton").addEventListener("click", () => saveSecondaryPendingDraft());
   $("#secondaryLedgerList").addEventListener("input", handleSecondaryLedgerCellInput);
   $("#secondaryLedgerList").addEventListener("focusin", handleSecondaryLedgerCellFocus);
   $("#secondaryLedgerList").addEventListener("focusout", handleSecondaryLedgerCellBlur);
   $("#secondaryLedgerList").addEventListener("paste", handleSecondaryLedgerPaste);
   $("#secondaryLedgerList").addEventListener("keydown", handleSecondaryLedgerKeydown);
+  $("#secondaryTradeList").addEventListener("input", handleSecondaryPendingCellInput);
+  $("#secondaryTradeList").addEventListener("focusin", handleSecondaryPendingCellFocus);
+  $("#secondaryTradeList").addEventListener("focusout", handleSecondaryPendingCellBlur);
+  $("#secondaryTradeList").addEventListener("paste", handleSecondaryPendingPaste);
+  $("#secondaryTradeList").addEventListener("keydown", handleSecondaryPendingKeydown);
   $("#secondaryTradeList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-secondary-trade-action]");
     if (!button) return;
@@ -7581,6 +7608,10 @@ function switchSecondaryWorkspacePanel(panelName) {
 
 function renderSecondaryInventoryWorkspace() {
   if (!$("#secondaryInput")) return;
+  if (!secondaryIntakeCollapseTouched && pendingSecondaryTrades(state).length) {
+    secondaryIntakeCollapsed = true;
+  }
+  renderSecondaryIntakeCollapse();
   switchSecondaryWorkspacePanel(activeSecondaryWorkspacePanel);
   renderSecondaryDashboard();
   renderSecondaryTrades();
@@ -7730,89 +7761,194 @@ const SECONDARY_PENDING_COLUMN_CLASSES = Object.freeze({
   结算方式: "settlement-method-column",
 });
 
-function secondaryPendingRecordValue(trade, record, column) {
-  const fallbackValues = {
-    谈判日: trade.negotiationDate,
-    债券代码: trade.code,
-    债券简称: trade.shortName,
-    净价: trade.frontOfficePrice || trade.price,
-    "收益率(%)": Number.isFinite(trade.yieldRate) ? trade.yieldRate : "",
-    我行方向: trade.side === "buy" ? "买入" : trade.side === "sell" ? "卖出" : "",
-    "面值（万元）": trade.quantityWan > 0 ? trade.quantityWan : "",
-    真实交易对手: trade.counterparty,
-    组合: trade.account,
-    中介: trade.intermediary,
-    "清算速度(0/1)": trade.settlementSpeed,
+const SECONDARY_PENDING_OPTIONAL_COLUMNS = new Set([
+  "交易对手",
+  "组合",
+  "成本",
+  "价差",
+  "清算速度",
+  "结算方式",
+]);
+
+function secondaryPendingDraftUpdates(record = {}) {
+  return {
+    negotiationDate: record["谈判日"],
+    tradeDate: record["交易日"],
+    code: record["债券代码"],
+    shortName: record["债券简称"],
+    bondType: record["债券类型"],
+    frontOfficePrice: record["净价"],
+    yieldRate: record["收益率(%)"],
+    valuationYield: record["估值收益率"],
+    side: record["我行方向"] === "买入" ? "buy" : record["我行方向"] === "卖出" ? "sell" : "unknown",
+    quantityWan: record["面值（万元）"],
+    counterparty: record["真实交易对手"],
+    tradeCounterparty: record["交易对手"],
+    portfolio: record["组合"],
+    intermediary: record["中介"],
+    settlementSpeed: record["清算速度(0/1)"],
+    cost: record["成本"],
+    spread: record["价差"],
+    settlementSpeedText: record["清算速度"],
+    settlementMethod: record["结算方式"],
   };
-  return String(record[column] || fallbackValues[column] || "").trim();
 }
 
-function renderSecondaryPendingCell(trade, record, column, missingKeys) {
+function setSecondaryIntakeCollapsed(collapsed) {
+  secondaryIntakeCollapsed = Boolean(collapsed);
+  secondaryIntakeCollapseTouched = true;
+  renderSecondaryIntakeCollapse();
+}
+
+function renderSecondaryIntakeCollapse() {
+  const panel = $(".secondary-input-panel");
+  const button = $("#secondaryIntakeToggleButton");
+  panel?.classList.toggle("collapsed", secondaryIntakeCollapsed);
+  if (button) button.textContent = secondaryIntakeCollapsed ? "展开录入区" : "收起录入区";
+}
+
+function secondaryPendingTradeFromDraftRow(trade, row) {
+  return updateSecondaryPendingTrade({
+    ...trade,
+    tradeRecordSources: row.fieldSources,
+    tradeRecordDm: row.dmLookup,
+  }, secondaryPendingDraftUpdates(row.record));
+}
+
+function secondaryPendingSourceRows(trades = pendingSecondaryTrades(state)) {
+  return trades.map((trade) => ({
+    id: trade.id,
+    source: "secondary",
+    record: trade.tradeRecord,
+    fieldSources: trade.tradeRecordSources,
+    dmLookup: trade.tradeRecordDm,
+  }));
+}
+
+function secondaryPendingStateSignature(trades = pendingSecondaryTrades(state)) {
+  return trades.map((trade) => `${trade.id}:${trade.updatedAt}`).join("|");
+}
+
+function ensureSecondaryPendingDraft() {
+  const trades = pendingSecondaryTrades(state);
+  const signature = secondaryPendingStateSignature(trades);
+  if (secondaryPendingDraftSignature === signature) return secondaryPendingDraftRows;
+  secondaryPendingDraftSignature = signature;
+  secondaryPendingDraftRows = createTradeRecordDraftRows(secondaryPendingSourceRows(trades));
+  secondaryPendingUndoStack = [];
+  secondaryPendingEditSnapshot = null;
+  return secondaryPendingDraftRows;
+}
+
+function resetSecondaryPendingDraft({ keepDmAttempt = false } = {}) {
+  secondaryPendingDraftSignature = "";
+  secondaryPendingDraftRows = [];
+  secondaryPendingUndoStack = [];
+  secondaryPendingEditSnapshot = null;
+  if (!keepDmAttempt) secondaryPendingDmAttemptKey = "";
+}
+
+function secondaryPendingDmRequestKey(rows = secondaryPendingDraftRows) {
+  return tradeRecordDmRequestRows(rows)
+    .map((row) => `${row.id}:${row.securityId}:${row.negotiationDate}`)
+    .join("|");
+}
+
+function tradeRecordDmDependencyKey(rows = []) {
+  return rows.map((row) => `${row.id}:${row.securityId}:${row.negotiationDate}`).join("|");
+}
+
+function markTradeRecordDmErrors(rows = [], ids = []) {
+  const failedIds = new Set(ids);
+  if (!failedIds.size) return rows;
+  return rows.map((row) => failedIds.has(row.key)
+    ? { ...row, dmLookup: { ...(row.dmLookup || {}), status: "error" } }
+    : row);
+}
+
+function secondaryPendingVisibleColumns() {
+  return secondaryPendingShowAllColumns
+    ? TRADE_RECORD_COLUMNS
+    : TRADE_RECORD_COLUMNS.filter((column) => !SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column));
+}
+
+function renderSecondaryPendingCell(row, column, rowIndex, missingKeys) {
+  const source = row.fieldSources[column] || "";
+  const sourceLabel = source === "dm" ? "DM" : source === "manual" && TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "人工" : "";
+  const title = source === "dm"
+    ? secondaryLedgerDmCellTitle(row, column)
+    : source === "manual" ? "人工编辑" : "";
   const field = SECONDARY_PENDING_COLUMN_FIELDS[column];
-  const common = `data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-field="${escapeAttribute(field)}"${missingKeys.has(field) ? ' aria-invalid="true"' : ""}`;
-  const value = secondaryPendingRecordValue(trade, record, column);
-  if (column === "谈判日" || column === "交易日") {
-    return `<td><input type="date" value="${escapeAttribute(value)}" ${common}></td>`;
-  }
-  if (column === "我行方向") {
-    return `
-      <td>
-        <select ${common}>
-          <option value="">—</option>
-          <option value="buy" ${value === "买入" ? "selected" : ""}>买入</option>
-          <option value="sell" ${value === "卖出" ? "selected" : ""}>卖出</option>
-        </select>
-      </td>
-    `;
-  }
-  if (column === "清算速度(0/1)") {
-    return `
-      <td>
-        <select ${common}>
-          <option value="">—</option>
-          <option value="0" ${value === "0" ? "selected" : ""}>0</option>
-          <option value="1" ${value === "1" ? "selected" : ""}>1</option>
-        </select>
-      </td>
-    `;
-  }
-  if (column === "净价") {
-    return `<td><input type="number" min="50" max="150" step="0.001" inputmode="decimal" value="${escapeAttribute(value)}" ${common}></td>`;
-  }
-  if (column === "收益率(%)") {
-    return `<td><input type="number" step="0.0001" inputmode="decimal" value="${escapeAttribute(value)}" ${common}></td>`;
-  }
-  if (column === "面值（万元）") {
-    return `<td><input type="number" min="0" step="1" inputmode="decimal" value="${escapeAttribute(value)}" ${common}></td>`;
-  }
-  return `<td><input type="text" value="${escapeAttribute(value)}" ${common}></td>`;
+  const value = row.record[column] || "";
+  const valid = isTradeRecordCellValueValid(column, value) && !missingKeys.has(field);
+  const optionalClass = SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column) ? " secondary-pending-optional" : "";
+  return `
+    <td class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-cell" : ""}${optionalClass}" data-source="${escapeAttribute(source)}">
+      <div class="secondary-ledger-cell-wrap">
+        <input
+          class="secondary-pending-cell ${valid ? "" : "invalid"}"
+          type="text"
+          value="${escapeAttribute(value)}"
+          data-secondary-trade-id="${escapeAttribute(row.id)}"
+          data-secondary-trade-field="${escapeAttribute(field)}"
+          data-pending-key="${escapeAttribute(row.key)}"
+          data-pending-column="${escapeAttribute(column)}"
+          data-pending-row-index="${rowIndex}"
+          data-pending-column-index="${secondaryPendingVisibleColumns().indexOf(column)}"
+          inputmode="${secondaryLedgerInputMode(column)}"
+          spellcheck="false"
+          autocomplete="off"
+          aria-invalid="${valid ? "false" : "true"}"
+          aria-label="第${rowIndex + 1}行 ${escapeAttribute(column)}"
+        >
+        ${sourceLabel ? `<span class="secondary-ledger-cell-source" title="${escapeAttribute(title)}">${sourceLabel}</span>` : ""}
+      </div>
+    </td>
+  `;
 }
 
 function renderSecondaryTrades() {
-  const trades = pendingSecondaryTrades(state).slice(0, 120);
-  $("#secondaryTradeList").innerHTML = trades.length
+  const trades = pendingSecondaryTrades(state);
+  const rows = ensureSecondaryPendingDraft();
+  const tradeById = new Map(trades.map((trade) => [trade.id, trade]));
+  $("#secondaryPendingCountPill").textContent = `${trades.length}笔`;
+  $("#secondaryTradeList").innerHTML = rows.length
     ? `
       <div class="secondary-pending-sheet">
-        <table class="secondary-pending-table" aria-label="待成交工作表">
+        <table class="secondary-pending-table ${secondaryPendingShowAllColumns ? "show-all-columns" : ""}" aria-label="待成交工作表">
           <colgroup>
-            ${TRADE_RECORD_COLUMNS.map((column) => `<col class="${SECONDARY_PENDING_COLUMN_CLASSES[column]}">`).join("")}
+            <col class="secondary-pending-row-number-column">
+            ${TRADE_RECORD_COLUMNS.map((column) => `<col class="${SECONDARY_PENDING_COLUMN_CLASSES[column]}${SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column) ? " secondary-pending-optional" : ""}">`).join("")}
             <col class="action-column">
           </colgroup>
           <thead>
             <tr>
-              ${TRADE_RECORD_COLUMNS.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}
+              <th class="secondary-pending-row-number" scope="col">#</th>
+              ${TRADE_RECORD_COLUMNS.map((column) => `
+                <th class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-column" : ""}${SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column) ? " secondary-pending-optional" : ""}" scope="col">
+                  ${escapeHtml(column)}
+                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM</span>' : ""}
+                </th>
+              `).join("")}
               <th class="secondary-pending-action-heading">操作</th>
             </tr>
           </thead>
           <tbody>
-            ${trades.map((trade) => {
-              const record = trade.tradeRecord || {};
-              const missingFields = secondaryTradeMissingFields(trade);
+            ${rows.map((row, rowIndex) => {
+              const trade = tradeById.get(row.id);
+              if (!trade) return "";
+              const draftTrade = secondaryPendingTradeFromDraftRow(trade, row);
+              const missingFields = secondaryTradeMissingFields(draftTrade);
               const missingKeys = new Set(missingFields.map((field) => field.key));
+              const dmStatus = secondaryLedgerDmRowStatus(row);
               return `
-                <tr class="${missingFields.length ? "incomplete" : "ready"}" title="${escapeAttribute(trade.sourceText || "")}">
+                <tr class="${missingFields.length ? "incomplete" : "ready"} ${row.dirty ? "dirty" : ""}" title="${escapeAttribute(trade.sourceText || "")}">
+                  <th class="secondary-pending-row-number" scope="row">
+                    <span>${rowIndex + 1}</span>
+                    ${dmStatus.label ? `<small class="${escapeAttribute(dmStatus.className)}" title="${escapeAttribute(dmStatus.title)}">${escapeHtml(dmStatus.label)}</small>` : ""}
+                  </th>
                   ${TRADE_RECORD_COLUMNS.map((column) =>
-                    renderSecondaryPendingCell(trade, record, column, missingKeys)
+                    renderSecondaryPendingCell(row, column, rowIndex, missingKeys)
                   ).join("")}
                   <td class="secondary-pending-actions">
                     <div class="secondary-pending-action-buttons">
@@ -7828,6 +7964,316 @@ function renderSecondaryTrades() {
       </div>
     `
     : '<div class="empty">暂无待成交记录。把交易要素粘贴到上方，点击“转换为待成交”。</div>';
+  updateSecondaryPendingControls();
+  const dmRows = tradeRecordDmRequestRows(rows);
+  const attemptKey = secondaryPendingDmRequestKey(rows);
+  if (dmRows.length && !secondaryPendingDmLoading && secondaryPendingDmAttemptKey !== attemptKey) {
+    secondaryPendingDmAttemptKey = attemptKey;
+    queueMicrotask(() => enrichSecondaryPendingFromDm({ automatic: true }));
+  }
+}
+
+function handleSecondaryPendingCellFocus(event) {
+  const input = event.target.closest(".secondary-pending-cell");
+  if (!input) return;
+  secondaryPendingEditSnapshot = {
+    key: input.dataset.pendingKey,
+    column: input.dataset.pendingColumn,
+    value: input.value,
+    rows: cloneTradeRecordDraftRows(secondaryPendingDraftRows),
+  };
+}
+
+function handleSecondaryPendingCellInput(event) {
+  const input = event.target.closest(".secondary-pending-cell");
+  if (!input) return;
+  secondaryPendingDraftRows = updateTradeRecordDraftCell(secondaryPendingDraftRows, {
+    key: input.dataset.pendingKey,
+    column: input.dataset.pendingColumn,
+    value: input.value,
+    source: "manual",
+  });
+  const row = secondaryPendingDraftRows.find((item) => item.key === input.dataset.pendingKey);
+  const trade = (state.secondaryTrades || []).find((item) => item.id === row?.id);
+  const missingKeys = trade && row
+    ? new Set(secondaryTradeMissingFields(secondaryPendingTradeFromDraftRow(trade, row)).map((field) => field.key))
+    : new Set();
+  const valid = isTradeRecordCellValueValid(input.dataset.pendingColumn, input.value)
+    && !missingKeys.has(input.dataset.secondaryTradeField);
+  input.classList.toggle("invalid", !valid);
+  input.setAttribute("aria-invalid", valid ? "false" : "true");
+  const cell = input.closest("td");
+  cell.dataset.source = "manual";
+  let badge = cell.querySelector(".secondary-ledger-cell-source");
+  if (TRADE_RECORD_FORMULA_COLUMNS.has(input.dataset.pendingColumn)) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "secondary-ledger-cell-source";
+      cell.querySelector(".secondary-ledger-cell-wrap").append(badge);
+    }
+    badge.textContent = "人工";
+    badge.title = "人工编辑";
+  } else {
+    badge?.remove();
+  }
+  input.closest("tr")?.classList.add("dirty");
+  updateSecondaryPendingControls();
+}
+
+function handleSecondaryPendingCellBlur(event) {
+  const input = event.target.closest(".secondary-pending-cell");
+  if (!input || !secondaryPendingEditSnapshot) return;
+  const dependencyChanged = ["债券代码", "谈判日"].includes(input.dataset.pendingColumn)
+    && secondaryPendingEditSnapshot.value !== input.value;
+  if (
+    secondaryPendingEditSnapshot.key === input.dataset.pendingKey
+    && secondaryPendingEditSnapshot.column === input.dataset.pendingColumn
+    && secondaryPendingEditSnapshot.value !== input.value
+  ) {
+    pushSecondaryPendingUndo(secondaryPendingEditSnapshot.rows);
+  }
+  secondaryPendingEditSnapshot = null;
+  if (dependencyChanged) renderSecondaryTrades();
+}
+
+function handleSecondaryPendingPaste(event) {
+  const input = event.target.closest(".secondary-pending-cell");
+  const text = event.clipboardData?.getData("text/plain");
+  if (!input || !text || (!text.includes("\t") && !/[\r\n]/.test(text))) return;
+  event.preventDefault();
+  const firstClipboardRow = text.replace(/\r\n?/g, "\n").split("\n", 1)[0].split("\t");
+  const hasFullHeader = TRADE_RECORD_COLUMNS.every((column, index) => firstClipboardRow[index]?.trim() === column);
+  const useFullColumns = input.dataset.pendingColumn === TRADE_RECORD_COLUMNS[0]
+    && (hasFullHeader || firstClipboardRow.length >= TRADE_RECORD_COLUMNS.length);
+  const columns = useFullColumns ? TRADE_RECORD_COLUMNS : secondaryPendingVisibleColumns();
+  const columnIndex = columns.indexOf(input.dataset.pendingColumn);
+  const before = cloneTradeRecordDraftRows(secondaryPendingDraftRows);
+  secondaryPendingEditSnapshot = null;
+  secondaryPendingDraftRows = pasteTradeRecordDraftCells(secondaryPendingDraftRows, {
+    rowIndex: Number(input.dataset.pendingRowIndex),
+    columnIndex,
+    text,
+    columns,
+    skipMatchingHeader: hasFullHeader,
+  });
+  if (useFullColumns) secondaryPendingShowAllColumns = true;
+  pushSecondaryPendingUndo(before);
+  renderSecondaryTrades();
+  focusSecondaryPendingColumn(Number(input.dataset.pendingRowIndex), input.dataset.pendingColumn);
+}
+
+function handleSecondaryPendingKeydown(event) {
+  const input = event.target.closest(".secondary-pending-cell");
+  if (!input) return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if (secondaryPendingEditSnapshot?.rows) {
+      secondaryPendingDraftRows = secondaryPendingEditSnapshot.rows;
+      secondaryPendingEditSnapshot = null;
+      renderSecondaryTrades();
+    } else {
+      undoSecondaryPendingEdit();
+    }
+    return;
+  }
+  if (event.key === "Escape" && secondaryPendingEditSnapshot?.rows) {
+    event.preventDefault();
+    secondaryPendingDraftRows = secondaryPendingEditSnapshot.rows;
+    secondaryPendingEditSnapshot = null;
+    renderSecondaryTrades();
+    return;
+  }
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const rowIndex = Number(input.dataset.pendingRowIndex) + (event.shiftKey ? -1 : 1);
+  focusSecondaryPendingCell(rowIndex, Number(input.dataset.pendingColumnIndex));
+}
+
+function focusSecondaryPendingCell(rowIndex, columnIndex) {
+  const input = $(`.secondary-pending-cell[data-pending-row-index="${rowIndex}"][data-pending-column-index="${columnIndex}"]`);
+  input?.focus();
+  input?.select();
+}
+
+function focusSecondaryPendingColumn(rowIndex, column) {
+  if (!column) return;
+  if (SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column) && !secondaryPendingShowAllColumns) {
+    secondaryPendingShowAllColumns = true;
+    renderSecondaryTrades();
+  }
+  const input = $(`.secondary-pending-cell[data-pending-row-index="${rowIndex}"][data-pending-column="${column}"]`);
+  input?.focus();
+  input?.select();
+}
+
+function pushSecondaryPendingUndo(rows) {
+  secondaryPendingUndoStack.push(cloneTradeRecordDraftRows(rows));
+  if (secondaryPendingUndoStack.length > 20) secondaryPendingUndoStack.shift();
+  updateSecondaryPendingControls();
+}
+
+function undoSecondaryPendingEdit() {
+  const previous = secondaryPendingUndoStack.pop();
+  if (!previous) return;
+  secondaryPendingDraftRows = previous;
+  secondaryPendingEditSnapshot = null;
+  renderSecondaryTrades();
+}
+
+function updateSecondaryPendingControls() {
+  const dirtyCells = tradeRecordDirtyCellCount(secondaryPendingDraftRows);
+  const dirtyRows = secondaryPendingDraftRows.filter((row) => row.dirty).length;
+  const saveStatus = $("#secondaryPendingSaveStatus");
+  if (saveStatus) {
+    saveStatus.textContent = secondaryPendingSavePending
+      ? "正在保存"
+      : dirtyRows ? `${dirtyRows} 行 · ${dirtyCells} 格待保存` : "已保存";
+    saveStatus.className = `secondary-ledger-save-status ${dirtyRows ? "dirty" : "saved"}`;
+  }
+  const dmStatus = $("#secondaryPendingDmStatus");
+  if (dmStatus) {
+    const complete = secondaryPendingDraftRows.filter((row) => row.dmLookup?.status === "complete").length;
+    const partial = secondaryPendingDraftRows.filter((row) => ["partial", "missing"].includes(row.dmLookup?.status)).length;
+    const errors = secondaryPendingDraftRows.filter((row) => row.dmLookup?.status === "error").length;
+    dmStatus.textContent = secondaryPendingDmLoading
+      ? "DM 读取中"
+      : errors ? `DM ${errors} 笔失败 · 可重试`
+        : complete || partial ? `DM ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : "DM 待读取";
+  }
+  const dmButton = $("#secondaryPendingDmButton");
+  if (dmButton) dmButton.disabled = secondaryPendingDmLoading || !secondaryPendingDraftRows.length;
+  const undoButton = $("#secondaryPendingUndoButton");
+  if (undoButton) undoButton.disabled = !secondaryPendingUndoStack.length;
+  const saveButton = $("#secondaryPendingSaveButton");
+  if (saveButton) saveButton.disabled = secondaryPendingSavePending || !dirtyRows;
+  const copyButton = $("#secondaryPendingCopyButton");
+  if (copyButton) copyButton.disabled = !secondaryPendingDraftRows.length;
+  const columnsButton = $("#secondaryPendingColumnsButton");
+  if (columnsButton) columnsButton.textContent = secondaryPendingShowAllColumns ? "收起附加列" : "展开附加列";
+}
+
+async function copySecondaryPendingRows() {
+  const rows = ensureSecondaryPendingDraft();
+  if (!rows.length) {
+    showToast("暂无待成交记录可复制。");
+    return;
+  }
+  const text = buildTradeRecordTableText(rows, { includeHeader: true });
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(`已复制 ${rows.length} 笔待成交记录，可直接粘贴到 Excel。`);
+  } catch {
+    downloadBlob("待成交记录.tsv", new Blob([text], { type: "text/tab-separated-values;charset=utf-8" }));
+    showToast(`已导出 ${rows.length} 笔待成交记录。`);
+  }
+}
+
+async function saveSecondaryPendingDraft({ silent = false } = {}) {
+  if (secondaryPendingSavePending) return false;
+  const dirtyRows = secondaryPendingDraftRows.filter((row) => row.dirty);
+  if (!dirtyRows.length) return true;
+  const validationErrors = validateTradeRecordDraftRows(dirtyRows);
+  if (validationErrors.length) {
+    const first = validationErrors[0];
+    const row = dirtyRows[first.rowIndex];
+    const rowIndex = secondaryPendingDraftRows.findIndex((item) => item.key === row?.key);
+    focusSecondaryPendingColumn(rowIndex, first.column);
+    if (!silent) showToast(`第 ${rowIndex + 1} 行“${first.column}”：${first.message}`);
+    return false;
+  }
+  secondaryPendingSavePending = true;
+  updateSecondaryPendingControls();
+  state = applySecondaryPendingDraftRows(state, secondaryPendingDraftRows);
+  secondaryPendingDraftSignature = secondaryPendingStateSignature();
+  const saved = await saveCloudState();
+  secondaryPendingSavePending = false;
+  if (!saved) {
+    updateSecondaryPendingControls();
+    if (!silent) showToast("待成交修改尚未同步到 D1，请检查登录或网络后重试。");
+    return false;
+  }
+  resetSecondaryPendingDraft({ keepDmAttempt: true });
+  renderSecondaryDashboard();
+  renderSecondaryTrades();
+  if (!silent) showToast(`已保存 ${dirtyRows.length} 行待成交修改。`);
+  return true;
+}
+
+async function requestTradeRecordDmRows(requestRows = []) {
+  const rows = [];
+  const failedIds = [];
+  const errors = [];
+  for (let index = 0; index < requestRows.length; index += 80) {
+    const batch = requestRows.slice(index, index + 80);
+    try {
+      const response = await fetch(DM_TRADE_RECORDS_URL, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ rows: batch }),
+      });
+      const text = await response.text();
+      const payload = parseJson(text);
+      if (!response.ok || !payload?.ok) {
+        const error = new Error(payload?.hint || payload?.reason || `HTTP ${response.status}`);
+        if (response.status === 401) {
+          clearAuthSession();
+          redirectToGatewayLogin();
+          error.dmAuthFailure = true;
+          throw error;
+        }
+        throw error;
+      }
+      rows.push(...(payload.rows || []));
+    } catch (error) {
+      if (error?.dmAuthFailure) throw error;
+      failedIds.push(...batch.map((row) => row.id));
+      errors.push(error?.message || "DM 查询失败");
+    }
+  }
+  return { rows, failedIds, errors };
+}
+
+async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false } = {}) {
+  const rows = ensureSecondaryPendingDraft();
+  const requestRows = tradeRecordDmRequestRows(rows, { refresh });
+  if (!requestRows.length) {
+    if (!automatic) showToast("当前待成交记录的 DM 字段已齐全。");
+    return;
+  }
+  const requestedIds = new Set(requestRows.map((row) => row.id));
+  const sentDependencyKey = tradeRecordDmDependencyKey(requestRows);
+  secondaryPendingDmLoading = true;
+  updateSecondaryPendingControls();
+  try {
+    const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows);
+    secondaryPendingDraftRows = mergeTradeRecordDmResults(secondaryPendingDraftRows, results);
+    secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, failedIds);
+    renderSecondaryTrades();
+    if (!automatic) {
+      const complete = results.filter((row) => row.status === "complete").length;
+      const partial = results.length - complete;
+      const failed = failedIds.length;
+      showToast(failed
+        ? `DM 已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
+        : `DM 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+    }
+  } catch (error) {
+    secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, [...requestedIds]);
+    renderSecondaryTrades();
+    if (!automatic) showToast(error.message || "DM 待成交字段读取失败。");
+  } finally {
+    secondaryPendingDmLoading = false;
+    const currentDependencies = tradeRecordDmRequestRows(secondaryPendingDraftRows, { refresh: true })
+      .filter((row) => requestedIds.has(row.id));
+    if (tradeRecordDmDependencyKey(currentDependencies) !== sentDependencyKey) {
+      secondaryPendingDmAttemptKey = "";
+      renderSecondaryTrades();
+    } else {
+      secondaryPendingDmAttemptKey = secondaryPendingDmRequestKey(secondaryPendingDraftRows);
+      updateSecondaryPendingControls();
+    }
+  }
 }
 
 function secondaryTradeStageLabel(trade) {
@@ -7843,12 +8289,21 @@ function secondaryTradeCategoryLabel(trade) {
 }
 
 function confirmSecondaryFrontOffice(id) {
+  const rows = ensureSecondaryPendingDraft();
+  const rowIndex = rows.findIndex((item) => item.id === id);
+  const row = rows[rowIndex];
+  if (!row) return;
+  const validationErrors = validateTradeRecordDraftRows([row]);
+  if (validationErrors.length) {
+    const first = validationErrors[0];
+    focusSecondaryPendingColumn(rowIndex, first.column);
+    showToast(`第 ${rowIndex + 1} 行“${first.column}”：${first.message}`);
+    return;
+  }
   const trades = normalizeSecondaryTrades(state.secondaryTrades || []);
   const trade = trades.find((item) => item.id === id);
   if (!trade) return;
-  const inputs = $$("[data-secondary-trade-field]").filter((input) => input.dataset.secondaryTradeId === id);
-  const updates = Object.fromEntries(inputs.map((input) => [input.dataset.secondaryTradeField, input.value]));
-  const completedTrade = updateSecondaryPendingTrade(trade, updates);
+  const completedTrade = secondaryPendingTradeFromDraftRow(trade, row);
   const missingFields = secondaryTradeMissingFields(completedTrade);
   if (missingFields.length) {
     state = {
@@ -7857,14 +8312,15 @@ function confirmSecondaryFrontOffice(id) {
       updatedAt: new Date().toISOString(),
     };
     persistState();
+    secondaryPendingDraftRows = secondaryPendingDraftRows.map((item) =>
+      item.id === id ? { ...item, changedColumns: [], dirty: false } : item
+    );
+    secondaryPendingDraftSignature = secondaryPendingStateSignature();
     renderSecondaryInventoryWorkspace();
     requestAnimationFrame(() => {
-      $$("[data-secondary-trade-field]")
-        .find((input) =>
-          input.dataset.secondaryTradeId === id
-          && input.dataset.secondaryTradeField === missingFields[0].key
-        )
-        ?.focus();
+      const column = Object.entries(SECONDARY_PENDING_COLUMN_FIELDS)
+        .find(([, field]) => field === missingFields[0].key)?.[0];
+      focusSecondaryPendingColumn(rowIndex, column);
     });
     showToast(`请先补全：${missingFields.map((field) => field.label).join("、")}。`);
     return;
@@ -7879,6 +8335,10 @@ function confirmSecondaryFrontOffice(id) {
     updatedAt: new Date().toISOString(),
   };
   persistState();
+  secondaryPendingDraftRows = secondaryPendingDraftRows.filter((item) => item.id !== id);
+  secondaryPendingDraftSignature = secondaryPendingStateSignature();
+  secondaryPendingUndoStack = [];
+  secondaryPendingEditSnapshot = null;
   renderSecondaryInventoryWorkspace();
   showToast(`${completedTrade.shortName || completedTrade.code || "该笔交易"} 已成交，并进入 ${completedTrade.tradeDate} 台账。`);
 }
@@ -7889,6 +8349,10 @@ function removePendingSecondaryTrade(id) {
   if (!confirm(`确认删除 ${trade.shortName || trade.code || "这笔"} 待成交记录？`)) return;
   state = removeSecondaryTrade(state, id);
   persistState();
+  secondaryPendingDraftRows = secondaryPendingDraftRows.filter((item) => item.id !== id);
+  secondaryPendingDraftSignature = secondaryPendingStateSignature();
+  secondaryPendingUndoStack = [];
+  secondaryPendingEditSnapshot = null;
   renderSecondaryInventoryWorkspace();
   showToast("待成交记录已删除。");
 }
@@ -8189,23 +8653,10 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
   secondaryLedgerDmLoading = true;
   updateSecondaryLedgerControls();
   try {
-    const response = await fetch(DM_TRADE_RECORDS_URL, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ rows: requestRows }),
-    });
-    const text = await response.text();
-    const payload = parseJson(text);
-    if (!response.ok || !payload?.ok) {
-      if (response.status === 401) {
-        clearAuthSession();
-        redirectToGatewayLogin();
-      }
-      throw new Error(payload?.hint || payload?.reason || `HTTP ${response.status}`);
-    }
+    const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows);
     const before = cloneTradeRecordDraftRows(secondaryLedgerDraftRows);
-    secondaryLedgerDraftRows = mergeTradeRecordDmResults(secondaryLedgerDraftRows, payload.rows || []);
+    secondaryLedgerDraftRows = mergeTradeRecordDmResults(secondaryLedgerDraftRows, results);
+    secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, failedIds);
     if (secondaryLedgerDraftRows.some((row, index) =>
       JSON.stringify(row.record) !== JSON.stringify(before[index]?.record)
     )) {
@@ -8213,17 +8664,14 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
     }
     renderSecondaryLedger();
     if (!automatic) {
-      const complete = (payload.rows || []).filter((row) => row.status === "complete").length;
-      const partial = (payload.rows || []).length - complete;
-      showToast(`DM 已返回 ${payload.rows?.length || 0} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+      const complete = results.filter((row) => row.status === "complete").length;
+      const partial = results.length - complete;
+      showToast(failedIds.length
+        ? `DM 已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
+        : `DM 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
-    const requestedKeys = new Set(requestRows.map((row) => row.id));
-    secondaryLedgerDraftRows = secondaryLedgerDraftRows.map((row) =>
-      requestedKeys.has(row.key)
-        ? { ...row, dmLookup: { ...(row.dmLookup || {}), status: "error" } }
-        : row
-    );
+    secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, requestRows.map((row) => row.id));
     renderSecondaryLedger();
     if (!automatic) showToast(error.message || "DM 成交台账字段读取失败。");
   } finally {
@@ -8467,11 +8915,16 @@ function importSecondaryTrades() {
     showToast("没有识别到交易记录。请确认每行包含债券代码或简称，以及面值。");
     return;
   }
+  if (result.trades.length && secondaryPendingDraftRows.some((row) => row.dirty)) {
+    state = applySecondaryPendingDraftRows(state, secondaryPendingDraftRows);
+  }
   if (result.trades.length) state = upsertSecondaryTrades(state, result.trades);
   for (const candidate of result.protocolCandidates) {
     state = upsertProtocolTransfer(state, protocolTransferFromSecondaryTrade(candidate, referenceDate));
   }
   persistState();
+  if (result.trades.length) resetSecondaryPendingDraft();
+  if (result.trades.length) setSecondaryIntakeCollapsed(true);
   renderSecondaryInventoryWorkspace();
   renderProtocolTransferWorkspace();
   showSecondaryIntakeResult(result);

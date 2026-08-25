@@ -1,8 +1,8 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260825-abs-ledger-name-sync";
+const VERSION = "20260826-secondary-pending-grid";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.22">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.23">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -358,7 +358,7 @@ test("ships the daily trade ledger as an editable DM-backed spreadsheet", async 
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-ledger-cell\s*\{[^}]*font-size:\s*16px;/s);
 });
 
-test("renders pending secondary trades as compact editable rows", async () => {
+test("renders pending secondary trades as an editable DM-backed spreadsheet", async () => {
   const [html, app, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
@@ -366,18 +366,27 @@ test("renders pending secondary trades as compact editable rows", async () => {
   ]);
 
   assert.doesNotMatch(html, /一笔一行|一行一笔；可一次粘贴多笔交易|当前仅接收公募债及 PPN/);
-  assert.match(app, /class="secondary-pending-table"/);
-  assert.match(app, /TRADE_RECORD_COLUMNS\.map\(\(column\) => `<th>\$\{escapeHtml\(column\)\}<\/th>`\)/);
-  assert.match(app, /TRADE_RECORD_COLUMNS\.map\(\(column\) =>\s*renderSecondaryPendingCell\(trade, record, column, missingKeys\)/);
+  assert.match(html, /id="secondaryPendingDmButton"[^>]*>重新读取 DM</);
+  assert.match(html, /id="secondaryIntakeToggleButton"[^>]*>收起录入区</);
+  assert.match(html, /id="secondaryPendingSaveButton"[^>]*>保存修改</);
+  assert.match(html, /id="secondaryPendingCopyButton"[^>]*>复制到 Excel</);
+  assert.match(app, /class="secondary-pending-table \$\{secondaryPendingShowAllColumns/);
+  assert.match(app, /class="secondary-pending-cell/);
+  assert.match(app, /pasteTradeRecordDraftCells\(secondaryPendingDraftRows/);
+  assert.match(app, /applySecondaryPendingDraftRows/);
+  assert.match(app, /enrichSecondaryPendingFromDm/);
+  assert.match(app, /for \(let index = 0; index < requestRows\.length; index \+= 80\)/);
   assert.match(app, /"清算速度\(0\/1\)": "settlementSpeed"/);
   assert.match(app, /清算速度: "settlementSpeedText"/);
   assert.match(app, /data-secondary-trade-action="front-office">成交</);
-  assert.doesNotMatch(app, /secondary-pending-status|<th>#<\/th>|<th>状态<\/th>/);
   assert.doesNotMatch(app, /secondary-card secondary-pending-trade/);
-  assert.match(styles, /\.secondary-pending-sheet\s*\{[^}]*overflow-x:\s*auto;/s);
+  assert.match(styles, /\.secondary-pending-sheet\s*\{[^}]*overflow:\s*auto;/s);
+  assert.match(styles, /\.secondary-input-panel\.collapsed > :not\(\.panel-head\)\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /\.secondary-pending-table:not\(\.show-all-columns\) \.secondary-pending-optional\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /\.secondary-pending-cell:focus\s*\{[^}]*outline:\s*2px solid #3f9e95;/s);
   assert.match(styles, /\.secondary-pending-actions, \.secondary-pending-action-heading\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s);
   assert.match(styles, /\.secondary-pending-action-buttons\s*\{[^}]*display:\s*flex;[^}]*min-width:\s*118px;/s);
-  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-pending-table input, \.secondary-pending-table select\s*\{[^}]*font-size:\s*16px;/s);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-pending-cell\s*\{[^}]*font-size:\s*16px;/s);
 });
 
 test("uses single-pane project navigation on compact screens", async () => {

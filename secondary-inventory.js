@@ -406,6 +406,7 @@ export function removeSecondaryTrade(state = {}, id = "") {
 
 export function secondaryTradeMissingFields(input = {}) {
   const tradeRecord = normalizeTradeRecord(input.tradeRecord || secondaryTradeToTradeRecord(input));
+  const hasStructuredTradeRecord = Boolean(input.tradeRecord && typeof input.tradeRecord === "object");
   const fields = [];
   const add = (key, label) => fields.push({ key, label });
   const settlementSpeed = String(tradeRecord["清算速度(0/1)"] || "").trim();
@@ -419,7 +420,10 @@ export function secondaryTradeMissingFields(input = {}) {
   if (!String(tradeRecord["真实交易对手"] || "").trim()) add("counterparty", "真实交易对手");
   if (!String(tradeRecord["中介"] || "").trim()) add("intermediary", "中介");
   if (!["0", "1"].includes(settlementSpeed)) add("settlementSpeed", "清算速度");
-  if (!isValidSecondaryNetPrice(input.frontOfficePrice || input.price || tradeRecord["净价"])) {
+  const netPrice = hasStructuredTradeRecord
+    ? tradeRecord["净价"]
+    : input.frontOfficePrice || input.price || tradeRecord["净价"];
+  if (!isValidSecondaryNetPrice(netPrice)) {
     add("frontOfficePrice", "成交净价");
   }
 
@@ -507,11 +511,63 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
     counterparty,
     intermediary,
     frontOfficePrice,
-    price: frontOfficePrice || trade.price,
+    price: frontOfficePrice,
     parseWarnings,
     tradeRecord,
     updatedAt: new Date().toISOString(),
   });
+}
+
+export function applySecondaryPendingDraftRows(state = {}, rows = []) {
+  const dirtyRows = new Map(
+    rows
+      .filter((row) => row?.dirty && row?.id && (!row.source || row.source === "secondary"))
+      .map((row) => [String(row.id), row]),
+  );
+  if (!dirtyRows.size) return state;
+
+  const secondaryTrades = normalizeSecondaryTrades(state.secondaryTrades || []).map((trade) => {
+    const row = dirtyRows.get(trade.id);
+    if (!row) return trade;
+    const record = normalizeTradeRecord(row.record || {});
+    const updated = updateSecondaryPendingTrade({
+      ...trade,
+      tradeRecordSources: row.fieldSources,
+      tradeRecordDm: row.dmLookup,
+    }, {
+      negotiationDate: record["谈判日"],
+      tradeDate: record["交易日"],
+      code: record["债券代码"],
+      shortName: record["债券简称"],
+      bondType: record["债券类型"],
+      frontOfficePrice: record["净价"],
+      yieldRate: record["收益率(%)"],
+      valuationYield: record["估值收益率"],
+      side: record["我行方向"] === "买入" ? "buy" : record["我行方向"] === "卖出" ? "sell" : "unknown",
+      quantityWan: record["面值（万元）"],
+      counterparty: record["真实交易对手"],
+      tradeCounterparty: record["交易对手"],
+      portfolio: record["组合"],
+      intermediary: record["中介"],
+      settlementSpeed: record["清算速度(0/1)"],
+      cost: record["成本"],
+      spread: record["价差"],
+      settlementSpeedText: record["清算速度"],
+      settlementMethod: record["结算方式"],
+    });
+    return normalizeSecondaryTrade({
+      ...updated,
+      tradeRecord: record,
+      tradeRecordSources: row.fieldSources,
+      tradeRecordDm: row.dmLookup,
+    });
+  });
+
+  return {
+    ...state,
+    secondaryTrades,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export function markSecondaryTradeFrontOffice(trade, input = {}) {

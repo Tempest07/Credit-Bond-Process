@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { TRADE_RECORD_COLUMNS } from "../trade-record-converter.js";
 
 import {
   cloneTradeRecordDraftRows,
@@ -80,6 +81,31 @@ test("pastes a rectangular TSV block without growing past existing ledger rows",
   assert.equal(rows.length, 2);
 });
 
+test("strips the matching header when pasting a copied full trade-record table", () => {
+  const first = TRADE_RECORD_COLUMNS.map((column) => column === "债券代码" ? "111111.IB" : `一-${column}`);
+  const second = TRADE_RECORD_COLUMNS.map((column) => column === "债券代码" ? "222222.IB" : `二-${column}`);
+  const rows = pasteTradeRecordDraftCells(draftRows(), {
+    text: [TRADE_RECORD_COLUMNS, first, second].map((values) => values.join("\t")).join("\n"),
+    columns: TRADE_RECORD_COLUMNS,
+    skipMatchingHeader: true,
+  });
+
+  assert.equal(rows[0].record["谈判日"], "一-谈判日");
+  assert.equal(rows[0].record["债券代码"], "111111.IB");
+  assert.equal(rows[1].record["债券代码"], "222222.IB");
+});
+
+test("maps spreadsheet paste across only the currently visible columns", () => {
+  const rows = pasteTradeRecordDraftCells(draftRows(), {
+    text: "对手A\t中介A",
+    columns: ["真实交易对手", "中介"],
+  });
+
+  assert.equal(rows[0].record["真实交易对手"], "对手A");
+  assert.equal(rows[0].record["中介"], "中介A");
+  assert.equal(rows[0].record["交易对手"], "");
+});
+
 test("builds DM requests only for formula columns that still need values", () => {
   const rows = draftRows();
   const request = tradeRecordDmRequestRows(rows);
@@ -92,6 +118,20 @@ test("builds DM requests only for formula columns that still need values", () =>
   snapshot[0].record["债券类型"] = "中期票据";
   snapshot[0].record["估值收益率"] = "1.9";
   assert.deepEqual(tradeRecordDmRequestRows(snapshot).map((row) => row.id), ["secondary:two"]);
+});
+
+test("marks a DM lookup result dirty even when DM has no field value to fill", () => {
+  const rows = mergeTradeRecordDmResults(draftRows(), [{
+    id: "secondary:one",
+    securityId: "102682206.IB",
+    requestedDate: "2026-07-23",
+    status: "missing",
+    missing: ["债券简称", "债券类型", "估值收益率"],
+    queriedAt: "2026-07-24T10:00:00.000Z",
+  }]);
+
+  assert.equal(rows[0].dirty, true);
+  assert.equal(rows[0].dmLookup.status, "missing");
 });
 
 test("changing a security code clears only DM-derived cells and ignores a stale response", () => {

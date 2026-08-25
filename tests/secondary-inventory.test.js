@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applySecondaryPendingDraftRows,
   applyCodeMappingText,
   buildPrimaryAwardTrades,
   buildSecondaryOfferListText,
@@ -296,6 +297,64 @@ test("requires missing trade elements to be completed instead of inventing date 
   assert.equal(completed.tradeRecord["净价"], "100.125");
   assert.deepEqual(secondaryTradeMissingFields(completed), []);
   assert.doesNotMatch(completed.parseWarnings.join("；"), /未识别交易日|未识别清算速度/);
+});
+
+test("saves spreadsheet drafts without turning pending trades into completed trades", () => {
+  const pending = parseSecondaryTradeIntake(
+    "【北京】259D 26广州产投SCP006 012681665.IB 1.52 5000 7.20+0 兴业银行 出给 国泰海通，对话发给兴业银行俞维谦",
+    { negotiationDate: "2026-07-17", referenceDate: new Date("2026-07-17T09:00:00+08:00") },
+  ).trades[0];
+  const next = applySecondaryPendingDraftRows({ secondaryTrades: [pending] }, [{
+    id: pending.id,
+    source: "secondary",
+    dirty: true,
+    record: {
+      ...pending.tradeRecord,
+      债券类型: "超短期融资券",
+      估值收益率: "1.49",
+      净价: "99.87",
+    },
+    fieldSources: {
+      债券简称: "dm",
+      债券类型: "dm",
+      估值收益率: "dm",
+      净价: "manual",
+    },
+    dmLookup: {
+      status: "complete",
+      requestedDate: "2026-07-16",
+      valuationDate: "2026-07-16",
+      valuationField: "cbYtm",
+    },
+  }]);
+
+  const saved = next.secondaryTrades[0];
+  assert.equal(saved.frontOfficeDone, false);
+  assert.equal(saved.tradeStage, "negotiated");
+  assert.equal(saved.tradeRecord["债券类型"], "超短期融资券");
+  assert.equal(saved.tradeRecord["估值收益率"], "1.49");
+  assert.equal(saved.tradeRecord["净价"], "99.87");
+  assert.equal(saved.tradeRecordSources["估值收益率"], "dm");
+  assert.equal(saved.tradeRecordDm.status, "complete");
+});
+
+test("clearing a saved net price keeps a pending trade incomplete", () => {
+  const pending = updateSecondaryPendingTrade(parseSecondaryTradeIntake(
+    "【北京】259D 26广州产投SCP006 012681665.IB 1.52 5000 7.20+0 兴业银行 出给 国泰海通，对话发给兴业银行俞维谦",
+    { negotiationDate: "2026-07-17", referenceDate: new Date("2026-07-17T09:00:00+08:00") },
+  ).trades[0], { frontOfficePrice: "99.87" });
+  const next = applySecondaryPendingDraftRows({ secondaryTrades: [pending] }, [{
+    id: pending.id,
+    source: "secondary",
+    dirty: true,
+    record: { ...pending.tradeRecord, 净价: "" },
+    fieldSources: { 净价: "manual" },
+  }]).secondaryTrades[0];
+
+  assert.equal(next.frontOfficePrice, "");
+  assert.equal(next.price, "");
+  assert.equal(next.tradeRecord["净价"], "");
+  assert.equal(secondaryTradeMissingFields(next).some((field) => field.key === "frontOfficePrice"), true);
 });
 
 test("does not mistake a remaining-term token for the bond short name", () => {

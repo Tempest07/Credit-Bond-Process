@@ -85,15 +85,21 @@ export function pasteTradeRecordDraftCells(rows = [], {
   rowIndex = 0,
   columnIndex = 0,
   text = "",
+  columns = TRADE_RECORD_COLUMNS,
+  skipMatchingHeader = false,
 } = {}) {
+  const targetColumns = Array.isArray(columns)
+    ? columns.filter((column) => TRADE_RECORD_COLUMNS.includes(column))
+    : TRADE_RECORD_COLUMNS;
   const matrix = clipboardMatrix(text);
+  if (skipMatchingHeader && clipboardRowMatchesColumns(matrix[0], targetColumns)) matrix.shift();
   if (!matrix.length) return rows;
   let next = rows;
   matrix.forEach((cells, rowOffset) => {
     const targetRow = next[rowIndex + rowOffset];
     if (!targetRow) return;
     cells.forEach((value, columnOffset) => {
-      const column = TRADE_RECORD_COLUMNS[columnIndex + columnOffset];
+      const column = targetColumns[columnIndex + columnOffset];
       if (!column) return;
       next = updateTradeRecordDraftCell(next, {
         key: targetRow.key,
@@ -138,19 +144,21 @@ export function mergeTradeRecordDmResults(rows = [], results = []) {
         dirty = true;
       }
     }
+    const dmLookup = normalizeDmLookup({
+      status: result.status,
+      requestedDate: result.requestedDate,
+      valuationDate: result.valuationDate,
+      valuationField: result.valuationField,
+      missing: result.missing,
+      queriedAt: result.queriedAt,
+    });
+    if (JSON.stringify(dmLookup) !== JSON.stringify(row.dmLookup)) dirty = true;
     return {
       ...row,
       record,
       fieldSources,
       changedColumns,
-      dmLookup: normalizeDmLookup({
-        status: result.status,
-        requestedDate: result.requestedDate,
-        valuationDate: result.valuationDate,
-        valuationField: result.valuationField,
-        missing: result.missing,
-        queriedAt: result.queriedAt,
-      }),
+      dmLookup,
       dirty,
     };
   });
@@ -210,6 +218,11 @@ function clipboardMatrix(value) {
   const rows = normalized.split("\n");
   if (rows.at(-1) === "") rows.pop();
   return rows.filter((row, index) => row || index < rows.length - 1).map((row) => row.split("\t"));
+}
+
+function clipboardRowMatchesColumns(row = [], columns = []) {
+  return row.length >= columns.length
+    && columns.every((column, index) => cleanCellValue(row[index]) === column);
 }
 
 function normalizeFieldSources(value) {

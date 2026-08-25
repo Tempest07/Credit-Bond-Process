@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260825-abs-ledger-name-sync";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260825-abs-ledger-name-sync";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260826-secondary-pending-grid";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260826-secondary-pending-grid";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260825-abs-ledger-name-sync";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260826-secondary-pending-grid";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

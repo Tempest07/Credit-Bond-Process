@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.3.0">
-  <meta name="application-build-version" content="3.3.0.22">
-  <meta name="application-build" content="20260825-abs-ledger-name-sync">
+  <meta name="application-build-version" content="3.3.0.23">
+  <meta name="application-build" content="20260826-secondary-pending-grid">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260825-abs-ledger-name-sync"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260825-abs-ledger-name-sync">
+  <script src="./app-shell-mode.js?v=20260826-secondary-pending-grid"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260826-secondary-pending-grid">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.22 · 2026-08-25 更新">v3.3.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.23 · 2026-08-26 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -527,7 +527,10 @@
               <section class="panel secondary-input-panel">
                 <div class="panel-head">
                   <div><span class="step">TRADE</span><h2>二级交易录入</h2></div>
-                  <span class="pill">公募 / PPN</span>
+                  <div class="secondary-intake-panel-actions">
+                    <span class="pill">公募 / PPN</span>
+                    <button class="button subtle" id="secondaryIntakeToggleButton" type="button">收起录入区</button>
+                  </div>
                 </div>
                 <div class="secondary-summary-grid secondary-intake-summary">
                   <article><span>待成交</span><strong id="secondaryPendingTradeCount">0</strong></article>
@@ -548,6 +551,21 @@
               <section class="panel secondary-panel secondary-trade-panel">
                 <div class="panel-head">
                   <div><span class="step">PENDING</span><h2>待成交</h2></div>
+                  <span class="pill" id="secondaryPendingCountPill">0笔</span>
+                </div>
+                <div class="secondary-pending-toolbar">
+                  <span>可从 Excel 整块粘贴；Enter 上下移动，Tab 左右移动。</span>
+                  <div>
+                    <button class="button subtle" id="secondaryPendingDmButton" type="button">重新读取 DM</button>
+                    <button class="button subtle" id="secondaryPendingUndoButton" type="button" disabled>撤销</button>
+                    <button class="button subtle" id="secondaryPendingCopyButton" type="button">复制到 Excel</button>
+                    <button class="button subtle" id="secondaryPendingColumnsButton" type="button">展开附加列</button>
+                    <button class="button secondary-ledger-save-button" id="secondaryPendingSaveButton" type="button" disabled>保存修改</button>
+                  </div>
+                </div>
+                <div class="secondary-pending-sheet-meta">
+                  <span class="secondary-ledger-save-status saved" id="secondaryPendingSaveStatus">已保存</span>
+                  <span id="secondaryPendingDmStatus">DM 待读取</span>
                 </div>
                 <div class="secondary-list" id="secondaryTradeList"></div>
               </section>
@@ -1133,6 +1151,6 @@
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
-  <script type="module" src="./app.js?v=20260825-abs-ledger-name-sync"></script>
+  <script type="module" src="./app.js?v=20260826-secondary-pending-grid"></script>
 </body>
 </html>
