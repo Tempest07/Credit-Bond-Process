@@ -1,4 +1,9 @@
-import { normalizeGuaranteeInfo, normalizeRatingAgency, parseUnderwriterNames } from "./core.js?v=20260825-abs-tranche-sync";
+import {
+  compactSelectedAbsShortNames,
+  normalizeGuaranteeInfo,
+  normalizeRatingAgency,
+  parseUnderwriterNames,
+} from "./core.js?v=20260825-abs-ledger-name-sync";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -129,6 +134,9 @@ export function normalizeProjectRecord(input = {}) {
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
+  if (normalized.instrumentType) {
+    normalized.shortName = compactSelectedAbsShortNames(normalized.absInfo.tranches, normalized.shortName);
+  }
   if (!normalized.bidSubmissions.length && status === "已投标待结果") {
     const legacyTranches = snapshotBidSubmissionTranches(normalized, false);
     if (legacyTranches.length) {

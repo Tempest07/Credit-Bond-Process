@@ -138,6 +138,28 @@ test("preserves ABS structured fields on project ledger records", () => {
   assert.equal(record.tranches[0].expectedMaturityDate, "2027-04-16");
 });
 
+test("normalizes a stored ABS project title from its selected investment tranches", () => {
+  const record = normalizeProjectRecord({
+    shortName: "G蔚能3A1",
+    instrumentType: "ABS",
+    absInfo: {
+      planName: "蔚能电池第3期绿色科技创新资产支持专项计划",
+      tranches: [
+        { className: "优先A1级", shortName: "G蔚能3A1", selected: true },
+        { className: "优先A2级", shortName: "G蔚能3A2", selected: true },
+        { className: "优先A3级", shortName: "G蔚能3A3", selected: false },
+        { className: "优先A4级", shortName: "G蔚能3A4", selected: false },
+      ],
+    },
+    tranches: [
+      { shortName: "G蔚能3A1" },
+      { shortName: "G蔚能3A2" },
+    ],
+  });
+
+  assert.equal(record.shortName, "G蔚能3A1/2");
+});
+
 test("fills missing comprehensive pricing from project brief guidance prices", () => {
   const project = normalizeProjectRecord({
     shortName: "26测试MTN001A/B",
