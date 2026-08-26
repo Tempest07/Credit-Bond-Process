@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260826-mobile-date-scroll-guard";
+} from "./core.js?v=20260826-issuer-credit-workspace";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -54,13 +54,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260826-mobile-date-scroll-guard";
+} from "./lifecycle.js?v=20260826-issuer-credit-workspace";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260826-mobile-date-scroll-guard";
+} from "./history-parser.js?v=20260826-issuer-credit-workspace";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,23 +76,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260826-mobile-date-scroll-guard";
+} from "./protocol-transfer.js?v=20260826-issuer-credit-workspace";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260826-mobile-date-scroll-guard";
+} from "./protocol-transfer-templates.js?v=20260826-issuer-credit-workspace";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260826-mobile-date-scroll-guard";
+} from "./protocol-transfer-docx.js?v=20260826-issuer-credit-workspace";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260826-mobile-date-scroll-guard";
+} from "./reminders.js?v=20260826-issuer-credit-workspace";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -120,11 +120,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260826-mobile-date-scroll-guard";
+} from "./secondary-inventory.js?v=20260826-issuer-credit-workspace";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260826-mobile-date-scroll-guard";
+} from "./trade-record-converter.js?v=20260826-issuer-credit-workspace";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -135,13 +135,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260826-mobile-date-scroll-guard";
+} from "./trade-record-grid.js?v=20260826-issuer-credit-workspace";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260826-mobile-date-scroll-guard";
-import { initializeDatePickers } from "./date-picker.js?v=20260826-mobile-date-scroll-guard";
+} from "./trade-record-ledger.js?v=20260826-issuer-credit-workspace";
+import { initializeDatePickers } from "./date-picker.js?v=20260826-issuer-credit-workspace";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -150,26 +150,26 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260826-mobile-date-scroll-guard";
+} from "./project-screenshot-ocr.js?v=20260826-issuer-credit-workspace";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260826-mobile-date-scroll-guard";
+} from "./project-screenshot-layout.js?v=20260826-issuer-credit-workspace";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260826-mobile-date-scroll-guard";
+} from "./project-screenshot-image.js?v=20260826-issuer-credit-workspace";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260826-mobile-date-scroll-guard";
+} from "./payment-receipts.js?v=20260826-issuer-credit-workspace";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260826-mobile-date-scroll-guard";
+} from "./issuer-search.js?v=20260826-issuer-credit-workspace";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -264,6 +264,7 @@ let state = loadLocalState();
 let project = parseProjectBrief("");
 let newProjectCutoffMode = "auto";
 let selectedIssuerId = "";
+let databaseCreditModule = "";
 let issuerSearchEntries = [];
 let issuerPickerVisibleEntries = [];
 let issuerPickerActiveIndex = -1;
@@ -413,7 +414,7 @@ async function initialize() {
   renderProtocolTransferWorkspace();
   renderSecondaryInventoryWorkspace();
   renderFtpCurveForm();
-  clearIssuerForm();
+  clearIssuerForm({ openEditor: false });
   clearAbsCreditApprovalForm();
   updateAuthUi();
   applyRouteFromHash();
@@ -1821,6 +1822,7 @@ function switchView(viewName, options = {}) {
   if (viewName === "database") {
     renderAbsCreditEnhancerOptions();
     renderAbsCreditApprovalList();
+    syncIssuerCreditWorkspace();
   }
   if (options.updateHash && window.location.hash !== `#${viewName}`) {
     history.replaceState(null, "", `#${viewName}`);
@@ -4128,10 +4130,20 @@ function bindGenerator() {
     });
   });
   $("#openAbsCreditLibraryButton")?.addEventListener("click", () => {
-    switchView("database", { updateHash: true });
-    renderAbsCreditEnhancerOptions();
-    renderAbsCreditApprovalList();
-    $("#absCreditLibraryPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    openQuickAbsCreditPanel();
+  });
+  $$('[data-close-quick-abs-credit]').forEach((button) => {
+    button.addEventListener("click", closeQuickAbsCreditPanel);
+  });
+  $("#quickAbsCreditEnhancerIssuerId")?.addEventListener("change", syncQuickAbsNewEnhancerFields);
+  $("#quickAbsCreditScopeType")?.addEventListener("change", syncQuickAbsCreditScopeFields);
+  $("#quickAbsCreditRawText")?.addEventListener("change", () => {
+    fillParsedAbsCreditFields("quickAbsCredit");
+    syncQuickAbsCreditScopeFields();
+  });
+  $("#quickAbsCreditForm")?.addEventListener("submit", saveQuickAbsCreditApproval);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("#quickAbsCreditPanel")?.hidden) closeQuickAbsCreditPanel();
   });
   $("#addAbsTrancheButton")?.addEventListener("click", () => {
     ensureAbsInfo(project);
@@ -5996,7 +6008,7 @@ function renderAbsCreditApprovalOptions() {
   if (!absInfo.creditEnhancementParty) {
     hint.textContent = "请先填写增信 / 支持主体；ABS 不会使用普通信用债 50206 授信。";
   } else if (!absInfo.creditEnhancementIssuerId) {
-    hint.textContent = "该增信方尚未进入主体库，请先在资料库新增主体，再录入 50217 批单。";
+    hint.textContent = "该增信方尚未进入主体库；点击“即时新增 50217”可同时新增主体和批单。";
   } else if (!approvals.length) {
     hint.textContent = "没有适用于该增信方及专项计划的 50217 批单；可新增单项目批或储架批。";
   } else if (absInfo.creditApprovalId) {
@@ -6041,6 +6053,175 @@ function applySelectedAbsCreditApprovalToProject() {
   syncAbsCreditSnapshotInputs();
   renderAbsCreditApprovalOptions();
   syncAbsCreditSnapshotReadOnly();
+}
+
+function openQuickAbsCreditPanel() {
+  const absInfo = ensureAbsInfo(project);
+  project.instrumentType = project.instrumentType || "ABS";
+  const form = $("#quickAbsCreditForm");
+  if (!form) return;
+  form.reset();
+  renderQuickAbsCreditEnhancerOptions();
+  $("#quickAbsCreditApprovalLevel").value = "总行";
+  $("#quickAbsCreditScopeType").value = ABS_CREDIT_SCOPE_PROJECT;
+  $("#quickAbsCreditProjectName").value = absInfo.planName || project.fullName || "";
+  $("#quickAbsEnhancerLegalName").value = absInfo.creditEnhancementParty || "";
+  $("#quickAbsEnhancerAliases").value = "";
+  $("#quickAbsEnhancerDefaultBranch").value = project.branch || "";
+  $("#quickAbsEnhancerEnterpriseType").value = "";
+  $("#quickAbsEnhancerSubjectRating").value = "";
+  $("#quickAbsEnhancerRatingAgency").value = "";
+  $("#quickAbsEnhancerHiddenRating").value = "";
+  syncQuickAbsNewEnhancerFields();
+  syncQuickAbsCreditScopeFields();
+  const panel = $("#quickAbsCreditPanel");
+  panel.hidden = false;
+  document.body.classList.add("modal-open");
+  requestAnimationFrame(() => {
+    const select = $("#quickAbsCreditEnhancerIssuerId");
+    (select.value === "__new__" ? $("#quickAbsEnhancerLegalName") : select)?.focus();
+  });
+}
+
+function closeQuickAbsCreditPanel() {
+  const panel = $("#quickAbsCreditPanel");
+  if (!panel || panel.hidden) return;
+  panel.hidden = true;
+  document.body.classList.remove("modal-open");
+  $("#openAbsCreditLibraryButton")?.focus();
+}
+
+function renderQuickAbsCreditEnhancerOptions() {
+  const select = $("#quickAbsCreditEnhancerIssuerId");
+  if (!select) return;
+  const absInfo = ensureAbsInfo(project);
+  const matched = (state.issuers || []).find((issuer) => issuer.id === absInfo.creditEnhancementIssuerId)
+    || findIssuer(absInfo.creditEnhancementParty, state.issuers || []);
+  select.innerHTML = [
+    '<option value="">请选择已有主体</option>',
+    ...(state.issuers || [])
+      .slice()
+      .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"))
+      .map((issuer) => `<option value="${escapeAttribute(issuer.id)}">${escapeHtml(issuer.legalName)}</option>`),
+    '<option value="__new__">＋ 增信方未入库，就地新增主体</option>',
+  ].join("");
+  select.value = matched?.id || (absInfo.creditEnhancementParty ? "__new__" : "");
+}
+
+function syncQuickAbsNewEnhancerFields() {
+  const creating = $("#quickAbsCreditEnhancerIssuerId")?.value === "__new__";
+  const panel = $("#quickAbsNewEnhancerFields");
+  if (panel) panel.hidden = !creating;
+  [
+    "quickAbsEnhancerLegalName",
+    "quickAbsEnhancerDefaultBranch",
+    "quickAbsEnhancerSubjectRating",
+    "quickAbsEnhancerRatingAgency",
+    "quickAbsEnhancerHiddenRating",
+  ].forEach((id) => {
+    if ($(`#${id}`)) $(`#${id}`).required = creating;
+  });
+}
+
+function syncQuickAbsCreditScopeFields() {
+  const shelf = $("#quickAbsCreditScopeType")?.value === ABS_CREDIT_SCOPE_SHELF;
+  $("#quickAbsCreditProjectNameField").hidden = shelf;
+  $("#quickAbsCreditShelfNameField").hidden = !shelf;
+  $("#quickAbsCreditProjectName").required = !shelf;
+  $("#quickAbsCreditShelfName").required = shelf;
+}
+
+function fillParsedAbsCreditFields(prefix) {
+  const rawText = $(`#${prefix}RawText`)?.value.trim() || "";
+  const parsed = parseCreditText(rawText);
+  if (/储架批/.test(rawText)) $(`#${prefix}ScopeType`).value = ABS_CREDIT_SCOPE_SHELF;
+  const fields = {
+    [`${prefix}ApprovalLevel`]: parsed.approvalLevel,
+    [`${prefix}ApprovedAmount`]: parsed.approvedAmount,
+    [`${prefix}ApprovedRatio`]: parsed.approvedRatio,
+    [`${prefix}InvestmentTermText`]: parsed.investmentTermText,
+  };
+  Object.entries(fields).forEach(([id, value]) => {
+    const input = $(`#${id}`);
+    if (input && value !== null && value !== undefined && !input.value) input.value = value;
+  });
+}
+
+function readQuickAbsEnhancer() {
+  const selectedId = $("#quickAbsCreditEnhancerIssuerId").value;
+  if (selectedId !== "__new__") {
+    const existing = (state.issuers || []).find((issuer) => issuer.id === selectedId);
+    if (!existing) throw new Error("请选择 50217 的增信方主体。");
+    return existing;
+  }
+  const draft = {
+    legalName: $("#quickAbsEnhancerLegalName").value,
+    aliases: $("#quickAbsEnhancerAliases").value,
+    defaultBranch: $("#quickAbsEnhancerDefaultBranch").value,
+    enterpriseType: $("#quickAbsEnhancerEnterpriseType").value,
+    subjectRating: $("#quickAbsEnhancerSubjectRating").value,
+    ratingAgency: $("#quickAbsEnhancerRatingAgency").value,
+    hiddenRating: $("#quickAbsEnhancerHiddenRating").value,
+  };
+  const required = [
+    ["legalName", "主体正式名称", "quickAbsEnhancerLegalName"],
+    ["defaultBranch", "联动分行", "quickAbsEnhancerDefaultBranch"],
+    ["subjectRating", "主体评级", "quickAbsEnhancerSubjectRating"],
+    ["ratingAgency", "评级机构", "quickAbsEnhancerRatingAgency"],
+    ["hiddenRating", "市场隐含评级", "quickAbsEnhancerHiddenRating"],
+  ];
+  const missing = required.filter(([key]) => !String(draft[key] || "").trim());
+  if (missing.length) {
+    $(`#${missing[0][2]}`)?.focus();
+    throw new Error(`新增增信方主体还需填写：${missing.map(([, label]) => label).join("、")}。`);
+  }
+  const duplicate = (state.issuers || []).find((issuer) => issuer.legalName === draft.legalName.trim());
+  if (duplicate) return duplicate;
+  return issuerFromDraft(draft);
+}
+
+function saveQuickAbsCreditApproval(event) {
+  event.preventDefault();
+  try {
+    fillParsedAbsCreditFields("quickAbsCredit");
+    syncQuickAbsCreditScopeFields();
+    const enhancer = readQuickAbsEnhancer();
+    const approval = normalizeAbsCreditApproval({
+      businessCode: ABS_CREDIT_CODE,
+      enhancerIssuerId: enhancer.id,
+      enhancerName: enhancer.legalName,
+      approvalNo: $("#quickAbsCreditApprovalNo").value,
+      approvalLevel: $("#quickAbsCreditApprovalLevel").value,
+      scopeType: $("#quickAbsCreditScopeType").value,
+      projectName: $("#quickAbsCreditProjectName").value,
+      shelfName: $("#quickAbsCreditShelfName").value,
+      approvedAmount: $("#quickAbsCreditApprovedAmount").value,
+      approvedRatio: $("#quickAbsCreditApprovedRatio").value,
+      investmentTermText: $("#quickAbsCreditInvestmentTermText").value,
+      rawText: $("#quickAbsCreditRawText").value,
+    });
+    const stateWithEnhancer = (state.issuers || []).some((issuer) => issuer.id === enhancer.id)
+      ? state
+      : upsertIssuer(state, enhancer);
+    state = upsertAbsCreditApproval(stateWithEnhancer, approval);
+    const saved = (state.absCreditApprovals || []).find((item) => item.id === approval.id) || approval;
+    project = applyAbsCreditApproval(project, saved);
+    project.sourceText = buildDmProjectSourceText(project);
+    $("#briefInput").value = project.sourceText;
+    persistState();
+    renderIssuerOptions();
+    renderIssuerList();
+    renderAbsCreditEnhancerOptions();
+    renderAbsCreditApprovalList();
+    syncIssuerCreditWorkspace();
+    fillProjectFields();
+    regenerate();
+    scheduleProjectDmHistorySave();
+    closeQuickAbsCreditPanel();
+    showToast(`50217 批单已新增，并已关联当前 ABS 项目。`);
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function syncAbsCreditSnapshotInputs() {
@@ -11013,8 +11194,11 @@ function saveBatchProjects() {
 }
 
 function bindDatabase() {
-  $("#newIssuerButton").addEventListener("click", clearIssuerForm);
+  $("#newIssuerButton").addEventListener("click", () => clearIssuerForm({ openEditor: true }));
   $("#issuerSearch").addEventListener("input", renderIssuerList);
+  $$('[data-issuer-credit-module]').forEach((button) => {
+    button.addEventListener("click", () => selectIssuerCreditModule(button.dataset.issuerCreditModule));
+  });
   $("#ftpCurveForm").addEventListener("submit", (event) => {
     event.preventDefault();
     state = { ...state, ftpCurve: readFtpCurveForm() };
@@ -11037,33 +11221,29 @@ function bindDatabase() {
       if (input && value !== null && value !== undefined && !input.value) input.value = value;
     });
   });
-  $("#newAbsCreditApprovalButton")?.addEventListener("click", clearAbsCreditApprovalForm);
-  $("#absCreditApprovalSearch")?.addEventListener("input", renderAbsCreditApprovalList);
+  $("#newAbsCreditApprovalButton")?.addEventListener("click", () => clearAbsCreditApprovalForm({ showForm: true }));
+  $("#cancelAbsCreditApprovalButton")?.addEventListener("click", () => {
+    $("#absCreditApprovalForm").hidden = true;
+    $("#absCreditApprovalId").value = "";
+    renderAbsCreditApprovalList();
+  });
   $("#absCreditScopeType")?.addEventListener("change", syncAbsCreditScopeFields);
   $("#absCreditRawText")?.addEventListener("change", () => {
-    const rawText = $("#absCreditRawText").value.trim();
-    const parsed = parseCreditText(rawText);
-    if (/储架批/.test(rawText)) $("#absCreditScopeType").value = ABS_CREDIT_SCOPE_SHELF;
-    const fields = {
-      absCreditApprovalLevel: parsed.approvalLevel,
-      absCreditApprovedAmount: parsed.approvedAmount,
-      absCreditApprovedRatio: parsed.approvedRatio,
-      absCreditInvestmentTermText: parsed.investmentTermText,
-    };
-    Object.entries(fields).forEach(([id, value]) => {
-      const selector = `#${id}`;
-      if ($(selector) && value !== null && value !== undefined && !$(selector).value) $(selector).value = value;
-    });
+    fillParsedAbsCreditFields("absCredit");
     syncAbsCreditScopeFields();
   });
   $("#absCreditApprovalForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     try {
+      fillParsedAbsCreditFields("absCredit");
+      syncAbsCreditScopeFields();
       const approval = readAbsCreditApprovalForm();
       state = upsertAbsCreditApproval(state, approval);
       persistState();
+      renderIssuerList();
       renderAbsCreditApprovalList();
       fillAbsCreditApprovalForm((state.absCreditApprovals || []).find((item) => item.id === approval.id));
+      syncIssuerCreditWorkspace();
       renderAbsCreditApprovalOptions();
       regenerate();
       showToast("50217 批单已保存。");
@@ -11080,8 +11260,10 @@ function bindDatabase() {
     if (!confirm(`确定删除这张 50217 批单吗${detail}？`)) return;
     state = removeAbsCreditApproval(state, id);
     persistState();
+    renderIssuerList();
     clearAbsCreditApprovalForm();
     renderAbsCreditApprovalList();
+    syncIssuerCreditWorkspace();
     clearInapplicableAbsCreditApproval();
     renderAbsCreditApprovalOptions();
     regenerate();
@@ -11096,7 +11278,7 @@ function bindDatabase() {
       renderIssuerOptions();
       renderIssuerList();
       renderAbsCreditEnhancerOptions();
-      fillIssuerForm(state.issuers.find((item) => item.id === issuer.id));
+      fillIssuerForm(state.issuers.find((item) => item.id === issuer.id), { module: "50206" });
       regenerate();
       if (batchItems.length) renderBatchResults();
       showToast("主体与普通信用债 50206 授信已保存。");
@@ -11120,7 +11302,7 @@ function bindDatabase() {
     renderIssuerOptions();
     renderIssuerList();
     renderAbsCreditEnhancerOptions();
-    clearIssuerForm();
+    clearIssuerForm({ openEditor: false });
     regenerate();
   });
 
@@ -12329,12 +12511,22 @@ function renderIssuerList() {
     .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"));
 
   $("#issuerList").innerHTML = issuers.length
-    ? issuers.map((issuer) => `
-      <button class="issuer-item ${$("#issuerId").value === issuer.id ? "active" : ""}" data-issuer-id="${escapeAttribute(issuer.id)}">
-        <strong>${escapeHtml(issuer.legalName)}</strong>
-        <span>${escapeHtml((issuer.aliases || []).join(" / ") || "暂无简称")} · ${escapeHtml(issuer.enterpriseType || "企业性质待补")} · ${escapeHtml(issuerCommonSummary(issuer))} · ${escapeHtml(issuer.credit?.rawText || "暂无授信原文")}</span>
-      </button>
-    `).join("")
+    ? issuers.map((issuer) => {
+      const absCount = (state.absCreditApprovals || []).filter((approval) => approval.enhancerIssuerId === issuer.id).length;
+      const ordinaryAvailable = issuerHasOrdinaryCredit(issuer);
+      return `
+        <button class="issuer-item ${$("#issuerId").value === issuer.id ? "active" : ""}" data-issuer-id="${escapeAttribute(issuer.id)}">
+          <span class="issuer-item-head">
+            <strong>${escapeHtml(issuer.legalName)}</strong>
+            <span class="issuer-item-credit-tags">
+              <em class="${ordinaryAvailable ? "available" : ""}">50206 ${ordinaryAvailable ? "已录" : "未录"}</em>
+              <em class="${absCount ? "available" : ""}">50217 ${absCount}张</em>
+            </span>
+          </span>
+          <span>${escapeHtml((issuer.aliases || []).join(" / ") || "暂无简称")} · ${escapeHtml(issuer.enterpriseType || "企业性质待补")} · ${escapeHtml(issuerCommonSummary(issuer))}</span>
+        </button>
+      `;
+    }).join("")
     : '<div class="empty">暂无主体资料。可新增主体，或载入示例。</div>';
 
   $$("[data-issuer-id]").forEach((button) => {
@@ -12343,32 +12535,20 @@ function renderIssuerList() {
 }
 
 function renderAbsCreditEnhancerOptions() {
-  const select = $("#absCreditEnhancerIssuerId");
-  if (!select) return;
-  const current = select.value;
-  select.innerHTML = [
-    '<option value="">请选择主体</option>',
-    ...[...(state.issuers || [])]
-      .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"))
-      .map((issuer) => `<option value="${escapeAttribute(issuer.id)}">${escapeHtml(issuer.legalName)}</option>`),
-  ].join("");
-  if ((state.issuers || []).some((issuer) => issuer.id === current)) select.value = current;
+  const input = $("#absCreditEnhancerIssuerId");
+  if (input) input.value = $("#issuerId")?.value || "";
 }
 
 function renderAbsCreditApprovalList() {
   const list = $("#absCreditApprovalList");
   if (!list) return;
-  const query = String($("#absCreditApprovalSearch")?.value || "").trim().toLowerCase();
+  const enhancerIssuerId = $("#issuerId")?.value || "";
   const approvals = [...(state.absCreditApprovals || [])]
     .map(normalizeAbsCreditApproval)
-    .filter((approval) => [
-      approval.enhancerName,
-      approval.approvalNo,
-      approval.projectName,
-      approval.shelfName,
-      approval.rawText,
-    ].join(" ").toLowerCase().includes(query))
+    .filter((approval) => approval.enhancerIssuerId === enhancerIssuerId)
     .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+  const count = $("#selectedIssuerAbsCreditCount");
+  if (count) count.textContent = `${approvals.length} 张批单`;
   list.innerHTML = approvals.length
     ? approvals.map((approval) => {
       const scopeName = approval.scopeType === ABS_CREDIT_SCOPE_SHELF ? approval.shelfName : approval.projectName;
@@ -12384,12 +12564,14 @@ function renderAbsCreditApprovalList() {
       ].filter(Boolean).join(" · ");
       return `
         <button class="issuer-item abs-credit-item ${$("#absCreditApprovalId")?.value === approval.id ? "active" : ""}" data-abs-credit-id="${escapeAttribute(approval.id)}" type="button">
-          <strong>${escapeHtml(approval.enhancerName)} · ${escapeHtml(scope)}</strong>
+          <strong>${escapeHtml(scope)} · ${escapeHtml(scopeName || "范围待补")}</strong>
           <span>${escapeHtml(facts)}</span>
         </button>
       `;
     }).join("")
-    : '<div class="empty">暂无 50217 批单。可按增信方新增单项目批或储架批。</div>';
+    : enhancerIssuerId
+      ? '<div class="empty compact">该主体暂无 50217 批单，可新增单项目批或储架批。</div>'
+      : '<div class="empty compact">请先选择主体。</div>';
   $$("[data-abs-credit-id]").forEach((button) => {
     button.addEventListener("click", () => {
       fillAbsCreditApprovalForm((state.absCreditApprovals || []).find((item) => item.id === button.dataset.absCreditId));
@@ -12398,7 +12580,7 @@ function renderAbsCreditApprovalList() {
 }
 
 function readAbsCreditApprovalForm() {
-  const enhancerIssuerId = $("#absCreditEnhancerIssuerId").value;
+  const enhancerIssuerId = $("#issuerId")?.value || $("#absCreditEnhancerIssuerId").value;
   const enhancer = (state.issuers || []).find((issuer) => issuer.id === enhancerIssuerId);
   return normalizeAbsCreditApproval({
     id: $("#absCreditApprovalId").value || undefined,
@@ -12419,13 +12601,16 @@ function readAbsCreditApprovalForm() {
   });
 }
 
-function clearAbsCreditApprovalForm() {
+function clearAbsCreditApprovalForm({ showForm = false } = {}) {
   const form = $("#absCreditApprovalForm");
   if (!form) return;
   form.reset();
+  form.hidden = !showForm;
   $("#absCreditApprovalId").value = "";
+  $("#absCreditEnhancerIssuerId").value = $("#issuerId")?.value || "";
   $("#absCreditApprovalLevel").value = "总行";
   $("#absCreditScopeType").value = ABS_CREDIT_SCOPE_PROJECT;
+  $("#absCreditApprovalFormTitle").textContent = "新增 50217 批单";
   $("#deleteAbsCreditApprovalButton").hidden = true;
   syncAbsCreditScopeFields();
   renderAbsCreditApprovalList();
@@ -12435,6 +12620,7 @@ function fillAbsCreditApprovalForm(input) {
   if (!input) return clearAbsCreditApprovalForm();
   const approval = normalizeAbsCreditApproval(input);
   renderAbsCreditEnhancerOptions();
+  $("#absCreditApprovalForm").hidden = false;
   $("#absCreditApprovalId").value = approval.id;
   $("#absCreditEnhancerIssuerId").value = approval.enhancerIssuerId;
   $("#absCreditApprovalNo").value = approval.approvalNo;
@@ -12446,6 +12632,9 @@ function fillAbsCreditApprovalForm(input) {
   $("#absCreditApprovedRatio").value = approval.approvedRatio ?? "";
   $("#absCreditInvestmentTermText").value = approval.investmentTermText;
   $("#absCreditRawText").value = approval.rawText;
+  $("#absCreditApprovalFormTitle").textContent = approval.approvalNo
+    ? `编辑批单：${approval.approvalNo}`
+    : `编辑${approval.scopeType === ABS_CREDIT_SCOPE_SHELF ? "储架批" : "单项目批"}`;
   $("#deleteAbsCreditApprovalButton").hidden = false;
   syncAbsCreditScopeFields();
   renderAbsCreditApprovalList();
@@ -12489,15 +12678,84 @@ function readFtpCurveForm() {
   return curve;
 }
 
-function clearIssuerForm() {
+function issuerHasOrdinaryCredit(issuer) {
+  const credit = issuer?.credit || {};
+  return [
+    credit.approvalLevel,
+    credit.approvedAmount,
+    credit.privateAmount,
+    credit.offeringType,
+    credit.approvedRatio,
+    credit.privateRatio,
+    credit.investmentTermText,
+    credit.rawText,
+  ].some((value) => value !== null && value !== undefined && String(value).trim() !== "");
+}
+
+function selectIssuerCreditModule(module) {
+  const issuerId = $("#issuerId")?.value || "";
+  if (module === "50217" && !issuerId) {
+    showToast("请先保存主体，再新增该主体名下的 50217 批单。");
+    return;
+  }
+  databaseCreditModule = ["50206", "50217"].includes(module) ? module : "";
+  if (databaseCreditModule === "50217") clearAbsCreditApprovalForm();
+  syncIssuerCreditWorkspace();
+}
+
+function syncIssuerCreditWorkspace() {
+  const issuerId = $("#issuerId")?.value || "";
+  const issuer = (state.issuers || []).find((item) => item.id === issuerId) || null;
+  const creating = !issuer && databaseCreditModule === "50206";
+  const absCount = issuer
+    ? (state.absCreditApprovals || []).filter((approval) => approval.enhancerIssuerId === issuer.id).length
+    : 0;
+  const empty = $("#issuerWorkspaceEmpty");
+  $("#issuerWorkspaceTitle").textContent = issuer?.legalName || (creating ? "新增主体" : "请选择主体");
+  $("#issuerWorkspaceStatus").textContent = issuer
+    ? `50206 ${issuerHasOrdinaryCredit(issuer) ? "已录入" : "未录入"} · 50217 ${absCount} 张`
+    : creating ? "先建立主体，再分别维护授信" : "以主体为入口维护授信";
+  $("#issuerCreditChooser").hidden = !issuer;
+  if (empty) {
+    empty.hidden = Boolean(issuer || creating);
+    if (issuer && !databaseCreditModule) {
+      empty.hidden = false;
+      empty.innerHTML = `
+        <strong>选择要维护的授信代码</strong>
+        <span>50206 用于普通信用债且每个主体仅一张；50217 用于 ABS，同一主体可以有多张项目批或储架批。</span>
+      `;
+    } else if (!issuer && !creating) {
+      empty.innerHTML = `
+        <strong>先从左侧选择一个主体</strong>
+        <span>进入主体后，可分别维护普通信用债 50206，或查看该主体名下的全部 ABS 50217 批单。</span>
+      `;
+    }
+  }
+  $$('[data-issuer-credit-module]').forEach((button) => {
+    const active = button.dataset.issuerCreditModule === databaseCreditModule;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  $("#issuer50206Status").textContent = issuerHasOrdinaryCredit(issuer) ? "已录入 · 点击查看或修改" : "未录入 · 点击新增";
+  $("#issuer50217Status").textContent = absCount ? `${absCount} 张批单 · 点击查看` : "暂无批单 · 点击新增";
+  $("#issuerForm").hidden = databaseCreditModule !== "50206";
+  $("#absCreditLibraryPanel").hidden = databaseCreditModule !== "50217" || !issuer;
+  renderAbsCreditEnhancerOptions();
+  if (databaseCreditModule === "50217") renderAbsCreditApprovalList();
+}
+
+function clearIssuerForm({ openEditor = true } = {}) {
   $("#issuerForm").reset();
   $("#issuerId").value = "";
   $("#issuerFormTitle").textContent = "新增主体与 50206 授信";
   $("#deleteIssuerButton").hidden = true;
+  databaseCreditModule = openEditor ? "50206" : "";
+  clearAbsCreditApprovalForm();
+  syncIssuerCreditWorkspace();
   renderIssuerList();
 }
 
-function fillIssuerForm(issuer) {
+function fillIssuerForm(issuer, { module = "" } = {}) {
   if (!issuer) return clearIssuerForm();
   $("#issuerId").value = issuer.id;
   $("#legalName").value = issuer.legalName || "";
@@ -12519,6 +12777,9 @@ function fillIssuerForm(issuer) {
   $("#creditRawText").value = issuer.credit?.rawText || "";
   $("#issuerFormTitle").textContent = `编辑：${issuer.legalName}`;
   $("#deleteIssuerButton").hidden = false;
+  databaseCreditModule = module;
+  clearAbsCreditApprovalForm();
+  syncIssuerCreditWorkspace();
   renderIssuerList();
 }
 

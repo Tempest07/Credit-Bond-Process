@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260826-mobile-date-scroll-guard";
+const VERSION = "20260826-issuer-credit-workspace";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.28">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.29">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -125,21 +125,36 @@ test("hides the project empty state once a project is selected", async () => {
 });
 
 test("ships separate 50206 and 50217 credit modules with project and shelf approval scopes", async () => {
-  const [html, app, core] = await Promise.all([
+  const [html, app, core, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../core.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
   assert.match(html, /普通信用债授信（50206）/);
+  assert.match(html, /data-issuer-credit-module="50206"/);
+  assert.match(html, /data-issuer-credit-module="50217"/);
+  assert.match(html, /id="selectedIssuerAbsCreditCount">0 张批单/);
   assert.match(html, /id="absCreditApprovalForm"/);
   assert.match(html, /单项目批复（总行批）/);
   assert.match(html, /储架批复（总行储架批）/);
   assert.match(html, /data-abs-field="creditApprovalId"/);
+  assert.match(html, /id="openAbsCreditLibraryButton">即时新增 50217/);
+  assert.match(html, /id="quickAbsCreditPanel"[^>]*role="dialog"[^>]*aria-modal="true"/);
+  assert.match(html, /保存并关联当前项目/);
+  assert.match(html, /增信方尚未入库，同时新增主体/);
   assert.match(app, /upsertAbsCreditApproval\(state, approval\)/);
   assert.match(app, /absCreditApprovalAppliesToProject/);
+  assert.match(app, /filter\(\(approval\) => approval\.enhancerIssuerId === enhancerIssuerId\)/);
+  assert.match(app, /project = applyAbsCreditApproval\(project, saved\)/);
+  assert.match(app, /function syncIssuerCreditWorkspace\(\)/);
+  assert.match(app, /增信方未入库，就地新增主体/);
   assert.match(core, /ABS 项目尚未关联 50217 批单/);
   assert.doesNotMatch(core, /abs\.approvalRatio\)\s*\?\?\s*numberOrNull\(issuer\?\.credit/);
+  assert.match(styles, /\.issuer-credit-chooser\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
+  assert.match(styles, /\.abs-credit-library-panel\s*\{[^}]*padding:\s*18px;/s);
+  assert.match(styles, /\.quick-abs-credit-dialog\s*\{[^}]*padding:\s*24px;/s);
 });
 
 test("keeps the legacy project brief textarea available to code but hidden from the new-project UI", async () => {

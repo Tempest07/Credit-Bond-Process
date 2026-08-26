@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.3.0">
-  <meta name="application-build-version" content="3.3.0.28">
-  <meta name="application-build" content="20260826-mobile-date-scroll-guard">
+  <meta name="application-build-version" content="3.3.0.29">
+  <meta name="application-build" content="20260826-issuer-credit-workspace">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260826-mobile-date-scroll-guard"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260826-mobile-date-scroll-guard">
+  <script src="./app-shell-mode.js?v=20260826-issuer-credit-workspace"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260826-issuer-credit-workspace">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.28 · 2026-08-26 更新">v3.3.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.29 · 2026-08-26 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -239,7 +239,7 @@
                       <option value="">未关联 50217 批单</option>
                     </select>
                   </label>
-                  <button class="button subtle" type="button" id="openAbsCreditLibraryButton">管理 50217 批单</button>
+                  <button class="button subtle" type="button" id="openAbsCreditLibraryButton">即时新增 50217</button>
                   <small id="absCreditApprovalHint">ABS 不会使用普通信用债 50206 授信。</small>
                 </div>
                 <label>授信批复金额（亿元）<input data-abs-field="approvalAmount" type="number" step="0.0001"></label>
@@ -806,13 +806,36 @@
             <div class="issuer-list" id="issuerList"></div>
           </section>
 
-          <section class="panel issuer-form-panel">
-            <div class="panel-head">
-              <div><span class="step">50206</span><h2 id="issuerFormTitle">普通信用债主体与授信</h2></div>
-              <span class="pill">每个主体仅一张 50206</span>
+          <section class="panel issuer-form-panel issuer-credit-workspace" id="issuerCreditWorkspacePanel">
+            <div class="panel-head issuer-workspace-head">
+              <div><span class="step">CREDIT</span><h2 id="issuerWorkspaceTitle">请选择主体</h2></div>
+              <span class="pill" id="issuerWorkspaceStatus">以主体为入口维护授信</span>
             </div>
-            <form id="issuerForm">
+
+            <div class="issuer-workspace-empty" id="issuerWorkspaceEmpty">
+              <strong>先从左侧选择一个主体</strong>
+              <span>进入主体后，可分别维护普通信用债 50206，或查看该主体名下的全部 ABS 50217 批单。</span>
+            </div>
+
+            <div class="issuer-credit-chooser" id="issuerCreditChooser" hidden>
+              <button class="issuer-credit-module-card" type="button" data-issuer-credit-module="50206" aria-pressed="false">
+                <span class="step">50206</span>
+                <strong>普通信用债授信</strong>
+                <small id="issuer50206Status">每个主体仅一张</small>
+              </button>
+              <button class="issuer-credit-module-card" type="button" data-issuer-credit-module="50217" aria-pressed="false">
+                <span class="step">50217</span>
+                <strong>ABS 增信授信</strong>
+                <small id="issuer50217Status">可维护多张批单</small>
+              </button>
+            </div>
+
+            <form id="issuerForm" hidden>
               <input id="issuerId" type="hidden">
+              <div class="module-heading">
+                <div><span class="step">50206</span><h3 id="issuerFormTitle">普通信用债主体与授信</h3></div>
+                <span class="pill">每个主体仅一张 50206</span>
+              </div>
               <div class="field-grid">
                 <label class="span-2">主体正式名称<input id="legalName" required></label>
                 <label class="span-2">常用简称（逗号或换行分隔）<textarea id="aliases" rows="3"></textarea></label>
@@ -842,51 +865,49 @@
                 <button class="button primary" type="submit">保存主体与 50206</button>
               </div>
             </form>
+
+            <section class="abs-credit-library-panel" id="absCreditLibraryPanel" hidden>
+              <div class="module-heading">
+                <div><span class="step">50217</span><h3>ABS 增信授信批单</h3></div>
+                <button class="button subtle" id="newAbsCreditApprovalButton" type="button">新增批单</button>
+              </div>
+              <p class="panel-note">这里只显示当前主体的 50217。单项目批仅适用于指定专项计划；储架批可覆盖同一储架下的多个 ABS 项目。</p>
+              <div class="abs-credit-summary">
+                <strong id="selectedIssuerAbsCreditCount">0 张批单</strong>
+                <span>50217 与普通信用债 50206 分开使用</span>
+              </div>
+              <div class="issuer-list abs-credit-approval-list" id="absCreditApprovalList"></div>
+              <form id="absCreditApprovalForm" hidden>
+                <input id="absCreditApprovalId" type="hidden">
+                <input id="absCreditEnhancerIssuerId" type="hidden">
+                <div class="module-subheading">
+                  <strong id="absCreditApprovalFormTitle">新增 50217 批单</strong>
+                  <button class="button subtle" id="cancelAbsCreditApprovalButton" type="button">收起</button>
+                </div>
+                <div class="field-grid">
+                  <label>批单号<input id="absCreditApprovalNo" placeholder="可按行内批单号录入"></label>
+                  <label>批复类型
+                    <select id="absCreditScopeType">
+                      <option value="PROJECT">单项目批复（总行批）</option>
+                      <option value="SHELF">储架批复（总行储架批）</option>
+                    </select>
+                  </label>
+                  <label class="span-2" id="absCreditProjectNameField">适用 ABS 项目 / 专项计划<input id="absCreditProjectName"></label>
+                  <label class="span-2" id="absCreditShelfNameField" hidden>储架名称<input id="absCreditShelfName"></label>
+                  <label>审批层级<input id="absCreditApprovalLevel" value="总行"></label>
+                  <label>批复金额（亿元）<input id="absCreditApprovedAmount" type="number" step="0.0001"></label>
+                  <label>投资比例上限（%）<input id="absCreditApprovedRatio" type="number" step="0.01"></label>
+                  <label>投资期限<input id="absCreditInvestmentTermText" placeholder="如 3年、18个月"></label>
+                  <label class="span-2">授信原文<input id="absCreditRawText" placeholder="如：总行储架批0.7亿，每期投资比例不超过20%，期限不超过3年"></label>
+                </div>
+                <div class="form-actions">
+                  <button class="button danger" id="deleteAbsCreditApprovalButton" type="button" hidden>删除批单</button>
+                  <button class="button primary" type="submit">保存 50217 批单</button>
+                </div>
+              </form>
+            </section>
           </section>
         </div>
-
-        <section class="panel abs-credit-library-panel" id="absCreditLibraryPanel">
-          <div class="panel-head">
-            <div><span class="step">50217</span><h2>ABS 增信授信批单</h2></div>
-            <div class="result-actions">
-              <span class="pill">同一增信方可有多张</span>
-              <button class="button subtle" id="newAbsCreditApprovalButton" type="button">新增 50217 批单</button>
-            </div>
-          </div>
-          <p class="panel-note">单项目批复仅适用于指定专项计划；储架批复可关联同一储架下的多个 ABS 项目。50217 不与普通信用债 50206 混用。</p>
-          <div class="abs-credit-library-grid">
-            <div>
-              <input class="search-input" id="absCreditApprovalSearch" type="search" placeholder="搜索增信方、批单号、项目或储架">
-              <div class="issuer-list" id="absCreditApprovalList"></div>
-            </div>
-            <form id="absCreditApprovalForm">
-              <input id="absCreditApprovalId" type="hidden">
-              <div class="field-grid">
-                <label class="span-2">增信方主体
-                  <select id="absCreditEnhancerIssuerId" required><option value="">请选择主体</option></select>
-                </label>
-                <label>批单号<input id="absCreditApprovalNo" placeholder="可按行内批单号录入"></label>
-                <label>批复类型
-                  <select id="absCreditScopeType">
-                    <option value="PROJECT">单项目批复（总行批）</option>
-                    <option value="SHELF">储架批复（总行储架批）</option>
-                  </select>
-                </label>
-                <label class="span-2" id="absCreditProjectNameField">适用 ABS 项目 / 专项计划<input id="absCreditProjectName"></label>
-                <label class="span-2" id="absCreditShelfNameField" hidden>储架名称<input id="absCreditShelfName"></label>
-                <label>审批层级<input id="absCreditApprovalLevel" value="总行"></label>
-                <label>批复金额（亿元）<input id="absCreditApprovedAmount" type="number" step="0.0001"></label>
-                <label>投资比例上限（%）<input id="absCreditApprovedRatio" type="number" step="0.01"></label>
-                <label>投资期限<input id="absCreditInvestmentTermText" placeholder="如 3年、18个月"></label>
-                <label class="span-2">授信原文<input id="absCreditRawText" placeholder="如：总行储架批0.7亿，每期投资比例不超过20%，期限不超过3年"></label>
-              </div>
-              <div class="form-actions">
-                <button class="button danger" id="deleteAbsCreditApprovalButton" type="button" hidden>删除批单</button>
-                <button class="button primary" type="submit">保存 50217 批单</button>
-              </div>
-            </form>
-          </div>
-        </section>
       </section>
 
       <section class="view" data-view="dm-test">
@@ -1144,6 +1165,57 @@
     </main>
   </div>
 
+  <section class="quick-abs-credit-panel" id="quickAbsCreditPanel" role="dialog" aria-modal="true" aria-labelledby="quickAbsCreditTitle" hidden>
+    <button class="quick-abs-credit-backdrop" type="button" data-close-quick-abs-credit aria-label="关闭 50217 即时录入"></button>
+    <form class="quick-abs-credit-dialog" id="quickAbsCreditForm">
+      <header class="quick-abs-credit-head">
+        <div><span class="step">50217</span><h2 id="quickAbsCreditTitle">即时新增 ABS 授信批单</h2></div>
+        <button class="prepayment-close" type="button" data-close-quick-abs-credit aria-label="关闭">×</button>
+      </header>
+      <p class="quick-abs-credit-note">在当前项目内新增后会立即关联，无需离开“新增项目”。50217 不会占用或更新普通信用债 50206。</p>
+      <div class="field-grid quick-abs-credit-fields">
+        <label class="span-2">增信方主体
+          <select id="quickAbsCreditEnhancerIssuerId" required></select>
+        </label>
+      </div>
+      <section class="quick-abs-new-enhancer" id="quickAbsNewEnhancerFields" hidden>
+        <div class="module-subheading">
+          <strong>增信方尚未入库，同时新增主体</strong>
+          <span class="pill">不创建 50206</span>
+        </div>
+        <div class="field-grid">
+          <label class="span-2">主体正式名称<input id="quickAbsEnhancerLegalName"></label>
+          <label class="span-2">常用简称（逗号或换行分隔）<input id="quickAbsEnhancerAliases"></label>
+          <label>联动分行<input id="quickAbsEnhancerDefaultBranch"></label>
+          <label>企业性质<select id="quickAbsEnhancerEnterpriseType"><option value="">待选择</option><option>央企</option><option>地方国企</option><option>民营企业</option><option>其他</option></select></label>
+          <label>主体评级<input id="quickAbsEnhancerSubjectRating" placeholder="如 AAA"></label>
+          <label>评级机构<input id="quickAbsEnhancerRatingAgency" placeholder="如 中诚信国际"></label>
+          <label>市场隐含评级<input id="quickAbsEnhancerHiddenRating" placeholder="如 AAA-、AA+"></label>
+        </div>
+      </section>
+      <div class="field-grid quick-abs-credit-fields">
+        <label>批单号<input id="quickAbsCreditApprovalNo" placeholder="可按行内批单号录入"></label>
+        <label>批复类型
+          <select id="quickAbsCreditScopeType">
+            <option value="PROJECT">单项目批复（总行批）</option>
+            <option value="SHELF">储架批复（总行储架批）</option>
+          </select>
+        </label>
+        <label class="span-2" id="quickAbsCreditProjectNameField">适用 ABS 项目 / 专项计划<input id="quickAbsCreditProjectName"></label>
+        <label class="span-2" id="quickAbsCreditShelfNameField" hidden>储架名称<input id="quickAbsCreditShelfName"></label>
+        <label>审批层级<input id="quickAbsCreditApprovalLevel" value="总行"></label>
+        <label>批复金额（亿元）<input id="quickAbsCreditApprovedAmount" type="number" step="0.0001"></label>
+        <label>投资比例上限（%）<input id="quickAbsCreditApprovedRatio" type="number" step="0.01"></label>
+        <label>投资期限<input id="quickAbsCreditInvestmentTermText" placeholder="如 3年、18个月"></label>
+        <label class="span-2">授信原文<input id="quickAbsCreditRawText" placeholder="如：总行储架批0.7亿，每期投资比例不超过20%，期限不超过3年"></label>
+      </div>
+      <footer class="quick-abs-credit-actions">
+        <button class="button subtle" type="button" data-close-quick-abs-credit>取消</button>
+        <button class="button primary" type="submit">保存并关联当前项目</button>
+      </footer>
+    </form>
+  </section>
+
   <section class="payment-receipt-explorer-panel" id="paymentReceiptExplorerPanel" role="dialog" aria-modal="true" aria-labelledby="paymentReceiptExplorerTitle" hidden>
     <button class="payment-receipt-explorer-backdrop" type="button" data-close-receipt-explorer aria-label="关闭原始缴款单文件管理器"></button>
     <div class="payment-receipt-explorer-dialog" id="paymentReceiptExplorerDialog" tabindex="-1">
@@ -1214,6 +1286,6 @@
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
   <script src="./vendor/pinyin-pro.min.js?v=3.29.3"></script>
-  <script type="module" src="./app.js?v=20260826-mobile-date-scroll-guard"></script>
+  <script type="module" src="./app.js?v=20260826-issuer-credit-workspace"></script>
 </body>
 </html>
