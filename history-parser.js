@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260826-abs-credit-model";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260826-secondary-delete-popover";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

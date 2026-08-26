@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260826-abs-credit-model";
+} from "./core.js?v=20260826-secondary-delete-popover";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -54,13 +54,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260826-abs-credit-model";
+} from "./lifecycle.js?v=20260826-secondary-delete-popover";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260826-abs-credit-model";
+} from "./history-parser.js?v=20260826-secondary-delete-popover";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,23 +76,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260826-abs-credit-model";
+} from "./protocol-transfer.js?v=20260826-secondary-delete-popover";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260826-abs-credit-model";
+} from "./protocol-transfer-templates.js?v=20260826-secondary-delete-popover";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260826-abs-credit-model";
+} from "./protocol-transfer-docx.js?v=20260826-secondary-delete-popover";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260826-abs-credit-model";
+} from "./reminders.js?v=20260826-secondary-delete-popover";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -120,11 +120,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260826-abs-credit-model";
+} from "./secondary-inventory.js?v=20260826-secondary-delete-popover";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260826-abs-credit-model";
+} from "./trade-record-converter.js?v=20260826-secondary-delete-popover";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -135,13 +135,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260826-abs-credit-model";
+} from "./trade-record-grid.js?v=20260826-secondary-delete-popover";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260826-abs-credit-model";
-import { initializeDatePickers } from "./date-picker.js?v=20260826-abs-credit-model";
+} from "./trade-record-ledger.js?v=20260826-secondary-delete-popover";
+import { initializeDatePickers } from "./date-picker.js?v=20260826-secondary-delete-popover";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -150,22 +150,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260826-abs-credit-model";
+} from "./project-screenshot-ocr.js?v=20260826-secondary-delete-popover";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260826-abs-credit-model";
+} from "./project-screenshot-layout.js?v=20260826-secondary-delete-popover";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260826-abs-credit-model";
+} from "./project-screenshot-image.js?v=20260826-secondary-delete-popover";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260826-abs-credit-model";
+} from "./payment-receipts.js?v=20260826-secondary-delete-popover";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -342,6 +342,8 @@ let secondaryPendingDmLoading = false;
 let secondaryPendingDmAttemptKey = "";
 let secondaryPendingSavePending = false;
 let secondaryPendingShowAllColumns = false;
+let secondaryPendingQuickDelete = false;
+let secondaryPendingDeleteConfirmId = "";
 let secondaryLedgerDraftDate = "";
 let secondaryLedgerDraftRows = [];
 let secondaryLedgerUndoStack = [];
@@ -7747,6 +7749,14 @@ function bindSecondaryInventory() {
     secondaryPendingShowAllColumns = !secondaryPendingShowAllColumns;
     renderSecondaryTrades();
   });
+  $("#secondaryPendingQuickDeleteButton").addEventListener("click", () => {
+    secondaryPendingQuickDelete = !secondaryPendingQuickDelete;
+    closeSecondaryPendingDeleteConfirm();
+    updateSecondaryPendingControls();
+    showToast(secondaryPendingQuickDelete
+      ? "本次页面已开启免确认删除。"
+      : "待成交删除已恢复气泡确认。");
+  });
   $("#secondaryPendingSaveButton").addEventListener("click", () => saveSecondaryPendingDraft());
   $("#secondaryLedgerList").addEventListener("input", handleSecondaryLedgerCellInput);
   $("#secondaryLedgerList").addEventListener("focusin", handleSecondaryLedgerCellFocus);
@@ -7759,13 +7769,31 @@ function bindSecondaryInventory() {
   $("#secondaryTradeList").addEventListener("paste", handleSecondaryPendingPaste);
   $("#secondaryTradeList").addEventListener("keydown", handleSecondaryPendingKeydown);
   $("#secondaryTradeList").addEventListener("click", (event) => {
+    const deleteConfirmButton = event.target.closest("[data-secondary-delete-confirm-action]");
+    if (deleteConfirmButton) {
+      if (deleteConfirmButton.dataset.secondaryDeleteConfirmAction === "confirm") {
+        removePendingSecondaryTrade(deleteConfirmButton.dataset.secondaryTradeId);
+      } else {
+        closeSecondaryPendingDeleteConfirm({ returnFocus: true });
+      }
+      return;
+    }
     const button = event.target.closest("[data-secondary-trade-action]");
     if (!button) return;
     if (button.dataset.secondaryTradeAction === "remove") {
-      removePendingSecondaryTrade(button.dataset.secondaryTradeId);
+      requestRemovePendingSecondaryTrade(button.dataset.secondaryTradeId);
       return;
     }
     confirmSecondaryFrontOffice(button.dataset.secondaryTradeId);
+  });
+  document.addEventListener("click", (event) => {
+    if (
+      secondaryPendingDeleteConfirmId
+      && !event.target.closest("[data-secondary-delete-confirm-popover]")
+      && !event.target.closest('[data-secondary-trade-action="remove"]')
+    ) {
+      closeSecondaryPendingDeleteConfirm();
+    }
   });
 }
 
@@ -8126,7 +8154,17 @@ function renderSecondaryTrades() {
                   <td class="secondary-pending-actions">
                     <div class="secondary-pending-action-buttons">
                       <button class="button primary" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="front-office">成交</button>
-                      <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove">删除</button>
+                      <button class="button subtle danger-button" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-trade-action="remove" aria-expanded="${secondaryPendingDeleteConfirmId === trade.id ? "true" : "false"}">删除</button>
+                      ${secondaryPendingDeleteConfirmId === trade.id ? `
+                        <div class="secondary-pending-delete-popover" data-secondary-delete-confirm-popover="${escapeAttribute(trade.id)}" role="dialog" aria-label="确认删除待成交记录">
+                          <strong>删除这笔待成交？</strong>
+                          <span>${escapeHtml(trade.shortName || trade.code || "该笔交易")}，删除后无法从待成交中恢复。</span>
+                          <div>
+                            <button class="button subtle" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-delete-confirm-action="cancel">取消</button>
+                            <button class="button danger-button" type="button" data-secondary-trade-id="${escapeAttribute(trade.id)}" data-secondary-delete-confirm-action="confirm">确认删除</button>
+                          </div>
+                        </div>
+                      ` : ""}
                     </div>
                   </td>
                 </tr>
@@ -8236,6 +8274,11 @@ function handleSecondaryPendingPaste(event) {
 }
 
 function handleSecondaryPendingKeydown(event) {
+  if (event.key === "Escape" && secondaryPendingDeleteConfirmId) {
+    event.preventDefault();
+    closeSecondaryPendingDeleteConfirm({ returnFocus: true });
+    return;
+  }
   const input = event.target.closest(".secondary-pending-cell");
   if (!input) return;
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
@@ -8323,6 +8366,12 @@ function updateSecondaryPendingControls() {
   if (copyButton) copyButton.disabled = !secondaryPendingDraftRows.length;
   const columnsButton = $("#secondaryPendingColumnsButton");
   if (columnsButton) columnsButton.textContent = secondaryPendingShowAllColumns ? "收起附加列" : "展开附加列";
+  const quickDeleteButton = $("#secondaryPendingQuickDeleteButton");
+  if (quickDeleteButton) {
+    quickDeleteButton.textContent = `免确认删除：${secondaryPendingQuickDelete ? "开" : "关"}`;
+    quickDeleteButton.classList.toggle("is-active", secondaryPendingQuickDelete);
+    quickDeleteButton.setAttribute("aria-pressed", secondaryPendingQuickDelete ? "true" : "false");
+  }
 }
 
 async function copySecondaryPendingRows() {
@@ -8516,10 +8565,38 @@ function confirmSecondaryFrontOffice(id) {
   showToast(`${completedTrade.shortName || completedTrade.code || "该笔交易"} 已成交，并进入 ${completedTrade.tradeDate} 台账。`);
 }
 
+function requestRemovePendingSecondaryTrade(id) {
+  const trade = pendingSecondaryTrades(state).find((item) => item.id === id);
+  if (!trade) return;
+  if (secondaryPendingQuickDelete) {
+    removePendingSecondaryTrade(id);
+    return;
+  }
+  secondaryPendingDeleteConfirmId = id;
+  renderSecondaryTrades();
+  requestAnimationFrame(() => {
+    $$('[data-secondary-delete-confirm-action="confirm"]')
+      .find((button) => button.dataset.secondaryTradeId === id)
+      ?.focus();
+  });
+}
+
+function closeSecondaryPendingDeleteConfirm({ returnFocus = false } = {}) {
+  const id = secondaryPendingDeleteConfirmId;
+  if (!id) return;
+  secondaryPendingDeleteConfirmId = "";
+  const popover = $("[data-secondary-delete-confirm-popover]");
+  popover?.remove();
+  const removeButton = $$('[data-secondary-trade-action="remove"]')
+    .find((button) => button.dataset.secondaryTradeId === id);
+  removeButton?.setAttribute("aria-expanded", "false");
+  if (returnFocus) removeButton?.focus();
+}
+
 function removePendingSecondaryTrade(id) {
   const trade = pendingSecondaryTrades(state).find((item) => item.id === id);
   if (!trade) return;
-  if (!confirm(`确认删除 ${trade.shortName || trade.code || "这笔"} 待成交记录？`)) return;
+  secondaryPendingDeleteConfirmId = "";
   state = removeSecondaryTrade(state, id);
   persistState();
   secondaryPendingDraftRows = secondaryPendingDraftRows.filter((item) => item.id !== id);

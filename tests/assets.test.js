@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260826-abs-credit-model";
+const VERSION = "20260826-secondary-delete-popover";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.25">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.26">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -388,6 +388,7 @@ test("renders pending secondary trades as an editable DM-backed spreadsheet", as
   assert.match(html, /id="secondaryIntakeToggleButton"[^>]*>收起录入区</);
   assert.match(html, /id="secondaryPendingSaveButton"[^>]*>保存修改</);
   assert.match(html, /id="secondaryPendingCopyButton"[^>]*>复制到 Excel</);
+  assert.match(html, /id="secondaryPendingQuickDeleteButton"[^>]*aria-pressed="false"[^>]*>免确认删除：关</);
   assert.match(app, /class="secondary-pending-table \$\{secondaryPendingShowAllColumns/);
   assert.match(app, /class="secondary-pending-cell/);
   assert.match(app, /pasteTradeRecordDraftCells\(secondaryPendingDraftRows/);
@@ -397,6 +398,10 @@ test("renders pending secondary trades as an editable DM-backed spreadsheet", as
   assert.match(app, /"清算速度\(0\/1\)": "settlementSpeed"/);
   assert.match(app, /清算速度: "settlementSpeedText"/);
   assert.match(app, /data-secondary-trade-action="front-office">成交</);
+  assert.match(app, /data-secondary-delete-confirm-popover=/);
+  assert.match(app, /secondaryPendingQuickDelete/);
+  assert.match(app, /if \(secondaryPendingQuickDelete\) \{\s*removePendingSecondaryTrade\(id\);\s*return;/s);
+  assert.doesNotMatch(app, /confirm\(`确认删除 \$\{trade\.shortName \|\| trade\.code \|\| "这笔"\} 待成交记录/);
   assert.doesNotMatch(app, /secondary-card secondary-pending-trade/);
   assert.match(styles, /\.secondary-pending-sheet\s*\{[^}]*overflow:\s*auto;/s);
   assert.match(styles, /\.secondary-input-panel\.collapsed > :not\(\.panel-head\)\s*\{[^}]*display:\s*none;/s);
@@ -404,6 +409,7 @@ test("renders pending secondary trades as an editable DM-backed spreadsheet", as
   assert.match(styles, /\.secondary-pending-cell:focus\s*\{[^}]*outline:\s*2px solid #3f9e95;/s);
   assert.match(styles, /\.secondary-pending-actions, \.secondary-pending-action-heading\s*\{[^}]*position:\s*sticky;[^}]*right:\s*0;/s);
   assert.match(styles, /\.secondary-pending-action-buttons\s*\{[^}]*display:\s*flex;[^}]*min-width:\s*118px;/s);
+  assert.match(styles, /\.secondary-pending-delete-popover\s*\{[^}]*position:\s*absolute;[^}]*right:\s*calc\(100% \+ 9px\);/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.secondary-pending-cell\s*\{[^}]*font-size:\s*16px;/s);
 });
 

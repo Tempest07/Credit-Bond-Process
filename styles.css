@@ -1033,8 +1033,15 @@ label[data-recognition-source="derived"]::after {
 .secondary-pending-actions, .secondary-pending-action-heading { position: sticky; right: 0; background: #fff !important; box-shadow: -6px 0 12px rgba(31,47,72,.08); }
 .secondary-pending-action-heading { z-index: 6; background: #edf2f7 !important; }
 .secondary-pending-actions { z-index: 4; padding: 0 6px !important; }
-.secondary-pending-action-buttons { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 118px; white-space: nowrap; }
+.secondary-pending-action-buttons { position: relative; display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-width: 118px; white-space: nowrap; }
 .secondary-pending-actions .button { min-height: 28px; padding: 0 8px; border-radius: 5px; font-size: 9px; }
+.secondary-pending-quick-delete-toggle.is-active { border-color: #e09a9a; color: #a52f2f; background: #fff1f1; box-shadow: inset 0 0 0 1px rgba(193,62,62,.08); }
+.secondary-pending-delete-popover { position: absolute; z-index: 12; top: 50%; right: calc(100% + 9px); display: grid; gap: 7px; width: 188px; padding: 10px; border: 1px solid #e2b1b1; border-radius: 9px; color: #3c2730; background: #fff; box-shadow: 0 12px 30px rgba(44,35,54,.18); transform: translateY(-50%); white-space: normal; text-align: left; }
+.secondary-pending-delete-popover::after { position: absolute; top: 50%; right: -6px; width: 10px; height: 10px; border-top: 1px solid #e2b1b1; border-right: 1px solid #e2b1b1; background: #fff; content: ""; transform: translateY(-50%) rotate(45deg); }
+.secondary-pending-delete-popover strong { color: #8f2929; font-size: 10px; }
+.secondary-pending-delete-popover span { color: #6e5961; font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.secondary-pending-delete-popover > div { display: flex; justify-content: flex-end; gap: 5px; }
+.secondary-pending-actions .secondary-pending-delete-popover .button { min-height: 26px; }
 
 .payment-receipt-workspace { display: grid; gap: 16px; }
 .payment-receipt-hero { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px 26px; border: 1px solid rgba(216,222,235,.95); border-radius: 20px; background: radial-gradient(circle at 94% 4%, rgba(91,108,255,.14), transparent 34%), linear-gradient(145deg, #fff, #f7f8ff); box-shadow: 0 18px 46px rgba(15,23,42,.065), inset 0 1px 0 #fff; }
