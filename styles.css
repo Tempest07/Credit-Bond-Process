@@ -142,7 +142,7 @@ h3 { margin: 24px 0 12px; font-size: 13px; }
 .cloud-gate-error .cloud-orb-ring { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .button.cloud-login-link { position: relative; z-index: 1; align-self: center; justify-self: end; justify-content: center; width: 172px; min-height: 48px; padding: 0 20px; border-radius: 12px; text-align: center; text-decoration: none; font-size: 13px; font-weight: 800; }
 
-.generator-grid, .database-grid { display: grid; grid-template-columns: minmax(330px, .8fr) minmax(520px, 1.2fr); gap: 18px; }
+.generator-grid, .database-grid, .abs-credit-library-grid { display: grid; grid-template-columns: minmax(330px, .8fr) minmax(520px, 1.2fr); gap: 18px; }
 .panel { min-width: 0; max-width: 100%; border: 1px solid rgba(218,224,235,.92); border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: var(--shadow), inset 0 1px 0 #fff; }
 .input-panel, .fields-panel, .issuer-list-panel, .issuer-form-panel { padding: 22px; }
 .result-panel { margin-top: 18px; padding: 22px; }
@@ -275,6 +275,10 @@ label[data-recognition-source="derived"]::after {
 .field-grid label { display: grid; min-width: 0; max-width: 100%; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .field-grid input, .field-grid select, .field-grid textarea, .search-input { min-height: 38px; padding: 8px 10px; font-size: 12px; }
 .field-grid select, .field-grid input { overflow: hidden; text-overflow: ellipsis; }
+.abs-credit-project-link { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 10px; }
+.abs-credit-project-link > label { min-width: 0; }
+.abs-credit-project-link > .button { min-height: 38px; white-space: nowrap; }
+.abs-credit-project-link > small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .new-project-cutoff { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 11px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 52%, #fff), #fff); }
 .new-project-cutoff-copy { display: grid; gap: 3px; min-width: 0; }
 .new-project-cutoff-copy span { color: var(--muted); font-size: 11px; font-weight: 800; }
@@ -353,6 +357,12 @@ label[data-recognition-source="derived"]::after {
 .issuer-item { display: grid; gap: 4px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: #fff; text-align: left; }
 .issuer-item:hover, .issuer-item.active { border-color: var(--accent); background: var(--accent-soft); }
 .issuer-item span { color: var(--muted); font-size: 10px; }
+.abs-credit-library-panel { margin-top: 18px; }
+.abs-credit-library-panel label[hidden] { display: none; }
+.abs-credit-library-panel .panel-note { margin: -4px 0 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.abs-credit-library-grid { align-items: start; }
+.abs-credit-item strong { display: flex; align-items: center; gap: 7px; }
+.abs-credit-item strong::before { display: inline-flex; min-height: 20px; align-items: center; padding: 2px 6px; border-radius: 5px; color: #fff; background: var(--accent); content: "50217"; font-size: 8px; letter-spacing: .04em; }
 .empty { padding: 34px 10px; color: var(--muted); text-align: center; font-size: 12px; }
 .form-actions { justify-content: flex-end; margin-top: 24px; }
 .history-import-panel { margin-bottom: 16px; padding: 18px; scroll-margin-top: 16px; border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
@@ -1445,7 +1455,7 @@ label[data-recognition-source="derived"]::after {
 }
 
 @media (max-width: 1380px) {
-  .generator-grid, .database-grid, .batch-card-grid, .ledger-grid, .protocol-transfer-grid, .secondary-grid, .dm-test-grid { grid-template-columns: 1fr; }
+  .generator-grid, .database-grid, .abs-credit-library-grid, .batch-card-grid, .ledger-grid, .protocol-transfer-grid, .secondary-grid, .dm-test-grid { grid-template-columns: 1fr; }
   .dm-test-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dm-test-actions { justify-content: flex-start; }
   .project-list-panel { position: static; max-height: none; overflow: visible; }
@@ -1653,7 +1663,8 @@ label[data-recognition-source="derived"]::after {
     min-width: 0;
     max-width: 100%;
   }
-  .field-grid, .rules-grid, .secondary-summary-grid, .project-dm-entry-form, .project-dm-toolbar, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list, .abs-tranche-main, .abs-tranche-secondary { grid-template-columns: 1fr; }
+  .field-grid, .rules-grid, .secondary-summary-grid, .project-dm-entry-form, .project-dm-toolbar, .dm-test-form, .dm-normalized-grid, .dm-candidate-list, .dm-issue-group-list, .dm-suggestion-list, .abs-tranche-main, .abs-tranche-secondary, .abs-credit-project-link { grid-template-columns: 1fr; }
+  .abs-credit-project-link > small { grid-column: 1; }
   .abs-tranche-row-head { grid-template-columns: minmax(0, 1fr) auto; }
   .abs-invest-switch { grid-column: 1 / -1; }
   .abs-tranche-main .is-wide { grid-column: span 1; }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260826-won-payment-date-filter";
+const VERSION = "20260826-abs-credit-model";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.24">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.25">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -105,6 +105,24 @@ test("hides the project empty state once a project is selected", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.project-empty\[hidden\]\s*\{\s*display:\s*none;/);
+});
+
+test("ships separate 50206 and 50217 credit modules with project and shelf approval scopes", async () => {
+  const [html, app, core] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../core.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /普通信用债授信（50206）/);
+  assert.match(html, /id="absCreditApprovalForm"/);
+  assert.match(html, /单项目批复（总行批）/);
+  assert.match(html, /储架批复（总行储架批）/);
+  assert.match(html, /data-abs-field="creditApprovalId"/);
+  assert.match(app, /upsertAbsCreditApproval\(state, approval\)/);
+  assert.match(app, /absCreditApprovalAppliesToProject/);
+  assert.match(core, /ABS 项目尚未关联 50217 批单/);
+  assert.doesNotMatch(core, /abs\.approvalRatio\)\s*\?\?\s*numberOrNull\(issuer\?\.credit/);
 });
 
 test("keeps the legacy project brief textarea available to code but hidden from the new-project UI", async () => {

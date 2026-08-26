@@ -5,8 +5,9 @@ const GATEWAY_AUTH_HEADER = "X-Tempest-Auth";
 const SESSION_COOKIE = "tempest07_session";
 
 export const EMPTY_APP_STATE = {
-  version: 4,
+  version: 5,
   issuers: [],
+  absCreditApprovals: [],
   projects: [],
   protocolTransfers: [],
   secondaryInventoryPositions: [],

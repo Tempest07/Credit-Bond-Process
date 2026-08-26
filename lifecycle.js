@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260826-won-payment-date-filter";
+} from "./core.js?v=20260826-abs-credit-model";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -606,6 +606,13 @@ function normalizeInstrumentType(value = "") {
 }
 
 function normalizeAbsInfo(input = {}) {
+  const creditApprovalId = String(input.creditApprovalId || "").trim();
+  const hasLegacyCreditSnapshot = !creditApprovalId && Boolean(
+    String(input.creditApprovalText || "").trim()
+    || Number.isFinite(numberOrNull(input.approvalAmount))
+    || Number.isFinite(numberOrNull(input.approvalRatio))
+    || String(input.approvalTermText || "").trim()
+  );
   return {
     planName: String(input.planName || "").trim(),
     totalScale: numberOrNull(input.totalScale),
@@ -614,6 +621,14 @@ function normalizeAbsInfo(input = {}) {
     underlyingAsset: String(input.underlyingAsset || "").trim(),
     creditEnhancementType: String(input.creditEnhancementType || "").trim(),
     creditEnhancementParty: String(input.creditEnhancementParty || "").trim(),
+    creditEnhancementIssuerId: String(input.creditEnhancementIssuerId || "").trim(),
+    creditApprovalId,
+    creditApprovalCode: String(input.creditApprovalCode || "").trim(),
+    creditApprovalScopeType: String(input.creditApprovalScopeType || "").trim(),
+    creditApprovalScopeName: String(input.creditApprovalScopeName || "").trim(),
+    creditApprovalNo: String(input.creditApprovalNo || "").trim(),
+    creditApprovalLevel: String(input.creditApprovalLevel || "").trim(),
+    creditApprovalSource: String(input.creditApprovalSource || (hasLegacyCreditSnapshot ? "legacy-snapshot" : "")).trim(),
     creditApprovalText: String(input.creditApprovalText || "").trim(),
     approvalAmount: numberOrNull(input.approvalAmount),
     approvalRatio: numberOrNull(input.approvalRatio),

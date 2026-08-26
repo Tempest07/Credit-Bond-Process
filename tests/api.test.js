@@ -221,6 +221,25 @@ test("rejects an invalid gateway assertion", async () => {
   assert.equal(response.status, 401);
 });
 
+test("rejects ordinary 50206 records from the ABS approval collection", async () => {
+  const DB = createMockDb();
+  const response = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({
+        data: {
+          version: 5,
+          issuers: [],
+          absCreditApprovals: [{ id: "wrong", businessCode: "50206" }],
+        },
+      }),
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /只能保存业务代码 50217/);
+});
+
 test("accepts and preserves project ledger records under admin", async () => {
   const DB = createMockDb();
   const token = await gatewayToken("correct");
@@ -233,6 +252,14 @@ test("accepts and preserves project ledger records under admin", async () => {
         data: {
           version: 3,
           issuers: [],
+          absCreditApprovals: [{
+            id: "a1",
+            businessCode: "50217",
+            enhancerIssuerId: "i1",
+            enhancerName: "测试增信方",
+            scopeType: "SHELF",
+            shelfName: "测试储架",
+          }],
           projects: [{ id: "p1", shortName: "26测试01", tranches: [{ id: "t1", prepaymentNumber: "W2026071500003" }] }],
           protocolTransfers: [{ id: "t1", code: "281926.SH", shortName: "26光交01" }],
           secondaryInventoryPositions: [{ id: "s1", code: "280680.SH", shortName: "25联投17", quantityWan: 5000 }],
@@ -260,6 +287,9 @@ test("accepts and preserves project ledger records under admin", async () => {
   const saved = JSON.parse(DB.userStates.get("admin").data);
   assert.equal(response.status, 200);
   assert.equal(saved.projects[0].shortName, "26测试01");
+  assert.equal(saved.version, 5);
+  assert.equal(saved.absCreditApprovals[0].businessCode, "50217");
+  assert.equal(saved.absCreditApprovals[0].shelfName, "测试储架");
   assert.equal(saved.projects[0].tranches[0].prepaymentNumber, "W2026071500003");
   assert.equal(saved.protocolTransfers[0].code, "281926.SH");
   assert.equal(saved.secondaryInventoryPositions[0].quantityWan, 5000);

@@ -120,6 +120,13 @@ test("preserves ABS structured fields on project ledger records", () => {
       underlyingAsset: "租金请求权",
       creditEnhancementType: "差额支付承诺人",
       creditEnhancementParty: "创格融资租赁有限公司",
+      creditEnhancementIssuerId: "enhancer-1",
+      creditApprovalId: "approval-1",
+      creditApprovalCode: "50217",
+      creditApprovalScopeType: "SHELF",
+      creditApprovalScopeName: "创格租赁储架",
+      creditApprovalNo: "ABS-S-001",
+      creditApprovalSource: "50217",
       approvalAmount: 0.7,
       approvalRatio: 20,
       tranches: [
@@ -132,6 +139,9 @@ test("preserves ABS structured fields on project ledger records", () => {
   assert.equal(record.instrumentType, "ABS");
   assert.equal(record.absInfo.planName, "创格租赁悦升2025年第2期资产支持专项计划(普惠金融)");
   assert.equal(record.absInfo.tranches.length, 2);
+  assert.equal(record.absInfo.creditApprovalId, "approval-1");
+  assert.equal(record.absInfo.creditApprovalCode, "50217");
+  assert.equal(record.absInfo.creditApprovalScopeType, "SHELF");
   assert.equal(record.tranches.length, 1);
   assert.equal(record.tranches[0].shortName, "26创格2A");
   assert.equal(record.tranches[0].absClassName, "优先A1级");

@@ -1,6 +1,7 @@
 export const DEFAULT_STATE = {
-  version: 2,
+  version: 5,
   issuers: [],
+  absCreditApprovals: [],
   projects: [],
   protocolTransfers: [],
   secondaryInventoryPositions: [],
@@ -24,6 +25,11 @@ export const DEFAULT_STATE = {
   },
   updatedAt: null,
 };
+
+export const ORDINARY_CREDIT_CODE = "50206";
+export const ABS_CREDIT_CODE = "50217";
+export const ABS_CREDIT_SCOPE_PROJECT = "PROJECT";
+export const ABS_CREDIT_SCOPE_SHELF = "SHELF";
 
 const BOND_TYPES = {
   SCP: "超短期融资券",
@@ -440,6 +446,7 @@ function parseExplicitIssueNumber(text) {
 }
 
 function defaultAbsInfo(input = {}) {
+  const creditApprovalId = String(input.creditApprovalId || "").trim();
   return {
     planName: String(input.planName || "").trim(),
     totalScale: numberOrNull(input.totalScale),
@@ -448,6 +455,14 @@ function defaultAbsInfo(input = {}) {
     underlyingAsset: String(input.underlyingAsset || "").trim(),
     creditEnhancementType: String(input.creditEnhancementType || "").trim(),
     creditEnhancementParty: String(input.creditEnhancementParty || "").trim(),
+    creditEnhancementIssuerId: String(input.creditEnhancementIssuerId || "").trim(),
+    creditApprovalId,
+    creditApprovalCode: String(input.creditApprovalCode || "").trim(),
+    creditApprovalScopeType: String(input.creditApprovalScopeType || "").trim(),
+    creditApprovalScopeName: String(input.creditApprovalScopeName || "").trim(),
+    creditApprovalNo: String(input.creditApprovalNo || "").trim(),
+    creditApprovalLevel: String(input.creditApprovalLevel || "").trim(),
+    creditApprovalSource: String(input.creditApprovalSource || "").trim(),
     creditApprovalText: String(input.creditApprovalText || "").trim(),
     approvalAmount: numberOrNull(input.approvalAmount),
     approvalRatio: numberOrNull(input.approvalRatio),
@@ -1173,19 +1188,14 @@ function formatGuaranteeClause(input = {}) {
 
 function calculateAbsSuggestion(project, issuer) {
   const abs = defaultAbsInfo(project.absInfo);
-  const credit = issuer?.credit || {};
   const tranches = abs.tranches.map((tranche) => ({
     ...tranche,
     selected: tranche.selected || absTrancheMatchesSelection(tranche, project, abs),
   }));
   const selected = tranches.filter((tranche) => tranche.selected);
   const investable = selected.length ? selected : tranches.filter(isInvestableAbsTranche);
-  const ratio = numberOrNull(abs.approvalRatio)
-    ?? numberOrNull(credit.approvedRatio)
-    ?? 20;
-  const approvalAmount = numberOrNull(abs.approvalAmount)
-    ?? numberOrNull(credit.approvedAmount)
-    ?? numberOrNull(credit.privateAmount);
+  const ratio = numberOrNull(abs.approvalRatio) ?? 20;
+  const approvalAmount = numberOrNull(abs.approvalAmount);
   const selectedScale = sumNumbers(investable.map((tranche) => tranche.scale));
   const calculatedAmount = Number.isFinite(selectedScale) && Number.isFinite(ratio)
     ? round(selectedScale * ratio / 100, 4)
@@ -1208,8 +1218,11 @@ function calculateAbsSuggestion(project, issuer) {
       }))
     : [{ index: 0, durationText: abs.selectedClass || "优先级", suggestedRatio: ratio }];
   const warnings = [];
-  if (!Number.isFinite(numberOrNull(abs.approvalRatio)) && !Number.isFinite(numberOrNull(credit.approvedRatio))) {
-    warnings.push("ABS 投资比例未从授信或字段中识别，暂按 20% 生成，请复核。");
+  if (!abs.creditApprovalId) {
+    warnings.push("ABS 项目尚未关联 50217 批单，禁止使用普通信用债 50206 授信替代。");
+  }
+  if (!Number.isFinite(numberOrNull(abs.approvalRatio))) {
+    warnings.push("50217 批单未提供投资比例，暂按 20% 生成，请复核。");
   }
   if (!Number.isFinite(applicationAmount)) warnings.push("ABS 申请投标金额待补充。");
 
@@ -1378,13 +1391,13 @@ function formatAbsRatingSentence(tranches = []) {
 }
 
 function formatAbsCreditSentence(abs, issuer, selectedClassText, ratioText) {
-  const credit = issuer?.credit || {};
-  const level = abs.approvalAmount || credit.approvedAmount ? (credit.approvalLevel || "总行储架") : "【待补充审批层级】";
-  const amount = Number.isFinite(numberOrNull(abs.approvalAmount ?? credit.approvedAmount))
-    ? `${formatNumber(abs.approvalAmount ?? credit.approvedAmount)}亿`
+  const level = abs.creditApprovalLevel || (abs.approvalAmount ? "总行" : "【待补充审批层级】");
+  const scopeWord = abs.creditApprovalScopeType === ABS_CREDIT_SCOPE_SHELF ? "储架批" : "批";
+  const amount = Number.isFinite(numberOrNull(abs.approvalAmount))
+    ? `${formatNumber(abs.approvalAmount)}亿`
     : "【待补充批复金额】";
-  const term = abs.approvalTermText || credit.investmentTermText || daysToTermText(credit.investmentTermDays) || "【待补充投资期限】";
-  return `${level}批${amount}，每期投资金额不超过该期${selectedClassText}发行规模的${ratioText}，投资期限不超过${term}且不超过${selectedClassText}预期到期日`;
+  const term = abs.approvalTermText || "【待补充投资期限】";
+  return `${level}${scopeWord}${amount}，每期投资金额不超过该期${selectedClassText}发行规模的${ratioText}，投资期限不超过${term}且不超过${selectedClassText}预期到期日`;
 }
 
 function formatAbsRatioSentence(selectedClassText, ratioText, tranches = []) {
@@ -1474,6 +1487,7 @@ export function normalizeIssuer(input) {
     hiddenRating: String(input.hiddenRating || "").trim().toUpperCase(),
     isRealEstate: Boolean(input.isRealEstate),
     credit: {
+      businessCode: ORDINARY_CREDIT_CODE,
       approvalLevel: String(input.credit?.approvalLevel || "").trim(),
       approvedAmount: numberOrNull(input.credit?.approvedAmount),
       privateAmount: numberOrNull(input.credit?.privateAmount),
@@ -1490,6 +1504,144 @@ export function normalizeIssuer(input) {
   };
   if (!issuer.legalName) throw new Error("主体正式名称不能为空。");
   return issuer;
+}
+
+export function normalizeAbsCreditApproval(input = {}) {
+  const rawText = String(input.rawText || input.creditApprovalText || "").trim();
+  const requestedScope = String(input.scopeType || input.creditApprovalScopeType || "").trim().toUpperCase();
+  const scopeType = requestedScope === ABS_CREDIT_SCOPE_SHELF || (!requestedScope && /储架批/.test(rawText))
+    ? ABS_CREDIT_SCOPE_SHELF
+    : ABS_CREDIT_SCOPE_PROJECT;
+  return {
+    id: input.id || crypto.randomUUID(),
+    businessCode: ABS_CREDIT_CODE,
+    enhancerIssuerId: String(input.enhancerIssuerId || input.creditEnhancementIssuerId || "").trim(),
+    enhancerName: String(input.enhancerName || input.creditEnhancementParty || "").trim(),
+    approvalNo: String(input.approvalNo || input.creditApprovalNo || "").trim(),
+    approvalLevel: String(input.approvalLevel || input.creditApprovalLevel || "总行").trim(),
+    scopeType,
+    projectName: scopeType === ABS_CREDIT_SCOPE_PROJECT
+      ? String(input.projectName || input.creditApprovalScopeName || "").trim()
+      : "",
+    shelfName: scopeType === ABS_CREDIT_SCOPE_SHELF
+      ? String(input.shelfName || input.creditApprovalScopeName || "").trim()
+      : "",
+    approvedAmount: numberOrNull(input.approvedAmount ?? input.approvalAmount),
+    approvedRatio: numberOrNull(input.approvedRatio ?? input.approvalRatio),
+    investmentTermText: String(input.investmentTermText || input.approvalTermText || "").trim(),
+    investmentTermDays: durationToDays(input.investmentTermText || input.approvalTermText)
+      ?? numberOrNull(input.investmentTermDays),
+    rawText,
+    linkedProjectIds: [...new Set((input.linkedProjectIds || []).map((value) => String(value || "").trim()).filter(Boolean))],
+    linkedProjectNames: [...new Set((input.linkedProjectNames || []).map((value) => String(value || "").trim()).filter(Boolean))],
+    updatedAt: input.updatedAt || new Date().toISOString(),
+  };
+}
+
+export function upsertAbsCreditApproval(state, input) {
+  if (input?.businessCode && String(input.businessCode).trim() !== ABS_CREDIT_CODE) {
+    throw new Error("ABS 授信库只能保存 50217 批单。");
+  }
+  const approval = normalizeAbsCreditApproval(input);
+  if (!approval.enhancerIssuerId || !approval.enhancerName) throw new Error("50217 批单必须选择增信方主体。");
+  if (approval.scopeType === ABS_CREDIT_SCOPE_PROJECT && !approval.projectName) {
+    throw new Error("单项目 50217 批单必须填写适用 ABS 项目/专项计划。");
+  }
+  if (approval.scopeType === ABS_CREDIT_SCOPE_SHELF && !approval.shelfName) {
+    throw new Error("储架 50217 批单必须填写储架名称。");
+  }
+  const approvals = [...(state.absCreditApprovals || [])].map(normalizeAbsCreditApproval);
+  if (approval.approvalNo && approvals.some((item) => (
+    item.id !== approval.id
+    && item.enhancerIssuerId === approval.enhancerIssuerId
+    && normalizeApprovalMatchText(item.approvalNo) === normalizeApprovalMatchText(approval.approvalNo)
+  ))) {
+    throw new Error("同一增信方下已存在相同批单号的 50217 批单。");
+  }
+  const index = approvals.findIndex((item) => item.id === approval.id);
+  if (index >= 0) approvals[index] = approval;
+  else approvals.unshift(approval);
+  return { ...state, absCreditApprovals: approvals, version: Math.max(Number(state.version) || 0, 5), updatedAt: new Date().toISOString() };
+}
+
+export function removeAbsCreditApproval(state, id) {
+  return {
+    ...state,
+    absCreditApprovals: (state.absCreditApprovals || []).filter((item) => item.id !== id),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function absCreditApprovalAppliesToProject(input, project = {}) {
+  if (input?.businessCode && String(input.businessCode).trim() !== ABS_CREDIT_CODE) return false;
+  const approval = normalizeAbsCreditApproval(input);
+  if (approval.businessCode !== ABS_CREDIT_CODE || !isAbsProject(project)) return false;
+  const abs = defaultAbsInfo(project.absInfo);
+  const enhancerMatches = abs.creditEnhancementIssuerId
+    ? approval.enhancerIssuerId === abs.creditEnhancementIssuerId
+    : normalizeApprovalMatchText(approval.enhancerName) === normalizeApprovalMatchText(abs.creditEnhancementParty);
+  if (!enhancerMatches) return false;
+  if (approval.scopeType === ABS_CREDIT_SCOPE_SHELF) return true;
+  const planName = abs.planName || project.fullName || "";
+  return normalizeApprovalMatchText(approval.projectName) === normalizeApprovalMatchText(planName);
+}
+
+export function applicableAbsCreditApprovals(project, approvals = []) {
+  return (approvals || [])
+    .filter((approval) => absCreditApprovalAppliesToProject(approval, project))
+    .map(normalizeAbsCreditApproval)
+    .sort((left, right) => {
+      if (left.scopeType !== right.scopeType) return left.scopeType === ABS_CREDIT_SCOPE_PROJECT ? -1 : 1;
+      return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+    });
+}
+
+export function applyAbsCreditApproval(project, input) {
+  if (input?.businessCode && String(input.businessCode).trim() !== ABS_CREDIT_CODE) {
+    throw new Error("ABS 项目只能关联 50217 批单。");
+  }
+  const approval = normalizeAbsCreditApproval(input);
+  if (approval.businessCode !== ABS_CREDIT_CODE) throw new Error("ABS 项目只能关联 50217 批单。");
+  const scopeName = approval.scopeType === ABS_CREDIT_SCOPE_SHELF ? approval.shelfName : approval.projectName;
+  return {
+    ...project,
+    absInfo: {
+      ...(project.absInfo || {}),
+      creditEnhancementIssuerId: approval.enhancerIssuerId,
+      creditEnhancementParty: approval.enhancerName,
+      creditApprovalId: approval.id,
+      creditApprovalCode: ABS_CREDIT_CODE,
+      creditApprovalScopeType: approval.scopeType,
+      creditApprovalScopeName: scopeName,
+      creditApprovalNo: approval.approvalNo,
+      creditApprovalLevel: approval.approvalLevel,
+      creditApprovalSource: "50217",
+      creditApprovalText: approval.rawText,
+      approvalAmount: approval.approvedAmount,
+      approvalRatio: approval.approvedRatio,
+      approvalTermText: approval.investmentTermText,
+    },
+  };
+}
+
+export function linkAbsCreditApprovalToProject(state, project) {
+  const approvalId = String(project?.absInfo?.creditApprovalId || "").trim();
+  if (!approvalId || !project?.id) return state;
+  const approvals = (state.absCreditApprovals || []).map((input) => {
+    const approval = normalizeAbsCreditApproval(input);
+    const linkedProjectIds = approval.linkedProjectIds.filter((id) => id !== project.id);
+    if (approval.id !== approvalId) return normalizeAbsCreditApproval({ ...approval, linkedProjectIds });
+    return normalizeAbsCreditApproval({
+      ...approval,
+      linkedProjectIds: [...linkedProjectIds, project.id],
+      linkedProjectNames: [...approval.linkedProjectNames, project.absInfo?.planName || project.shortName],
+    });
+  });
+  return { ...state, absCreditApprovals: approvals };
+}
+
+function normalizeApprovalMatchText(value) {
+  return String(value || "").replace(/\s+/g, "").trim().toUpperCase();
 }
 
 export function upsertIssuer(state, input) {

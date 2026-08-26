@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260826-won-payment-date-filter";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260826-abs-credit-model";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

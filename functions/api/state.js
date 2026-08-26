@@ -65,6 +65,11 @@ function validateState(data) {
     throw new Error("资料库必须包含 issuers 数组");
   }
   if (data.issuers.length > 10000) throw new Error("主体数量不能超过10000");
+  if (data.absCreditApprovals !== undefined && !Array.isArray(data.absCreditApprovals)) throw new Error("ABS 50217 批单必须为 absCreditApprovals 数组");
+  if ((data.absCreditApprovals || []).length > 10000) throw new Error("ABS 50217 批单数量不能超过10000");
+  if ((data.absCreditApprovals || []).some((approval) => approval?.businessCode !== "50217")) {
+    throw new Error("ABS 授信库只能保存业务代码 50217");
+  }
   if (data.projects !== undefined && !Array.isArray(data.projects)) throw new Error("项目台账必须为 projects 数组");
   if ((data.projects || []).length > 10000) throw new Error("项目数量不能超过10000");
   if (data.protocolTransfers !== undefined && !Array.isArray(data.protocolTransfers)) throw new Error("协议转让台账必须为 protocolTransfers 数组");
@@ -77,8 +82,9 @@ function validateState(data) {
   if ((data.secondaryTrades || []).length > 20000) throw new Error("二级成交流水数量不能超过20000");
   return {
     ...EMPTY_APP_STATE,
-    version: 4,
+    version: 5,
     issuers: data.issuers,
+    absCreditApprovals: data.absCreditApprovals || [],
     projects: data.projects || [],
     protocolTransfers: data.protocolTransfers || [],
     secondaryInventoryPositions: data.secondaryInventoryPositions || [],

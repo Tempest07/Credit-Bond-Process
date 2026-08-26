@@ -1,5 +1,12 @@
 import {
+  ABS_CREDIT_CODE,
+  ABS_CREDIT_SCOPE_PROJECT,
+  ABS_CREDIT_SCOPE_SHELF,
   DEFAULT_STATE,
+  ORDINARY_CREDIT_CODE,
+  absCreditApprovalAppliesToProject,
+  applicableAbsCreditApprovals,
+  applyAbsCreditApproval,
   applyIssuerCommonFields,
   buildBondFullName,
   buildUnderwriter,
@@ -14,15 +21,19 @@ import {
   inferAbsClassNameFromShortName,
   isAbsProject,
   mergeImportedIssuers,
+  normalizeAbsCreditApproval,
   normalizeBondFullNameForProject,
   normalizeGuaranteeInfo,
   normalizeIssuer,
   normalizeRatingAgency,
   parseProjectBrief,
+  removeAbsCreditApproval,
   replaceProjectWithDmLookup,
   splitProjectBriefs,
+  linkAbsCreditApprovalToProject,
+  upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260826-won-payment-date-filter";
+} from "./core.js?v=20260826-abs-credit-model";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -43,13 +54,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260826-won-payment-date-filter";
+} from "./lifecycle.js?v=20260826-abs-credit-model";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260826-won-payment-date-filter";
+} from "./history-parser.js?v=20260826-abs-credit-model";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -65,23 +76,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260826-won-payment-date-filter";
+} from "./protocol-transfer.js?v=20260826-abs-credit-model";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260826-won-payment-date-filter";
+} from "./protocol-transfer-templates.js?v=20260826-abs-credit-model";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260826-won-payment-date-filter";
+} from "./protocol-transfer-docx.js?v=20260826-abs-credit-model";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260826-won-payment-date-filter";
+} from "./reminders.js?v=20260826-abs-credit-model";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -109,11 +120,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260826-won-payment-date-filter";
+} from "./secondary-inventory.js?v=20260826-abs-credit-model";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260826-won-payment-date-filter";
+} from "./trade-record-converter.js?v=20260826-abs-credit-model";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -124,13 +135,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260826-won-payment-date-filter";
+} from "./trade-record-grid.js?v=20260826-abs-credit-model";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260826-won-payment-date-filter";
-import { initializeDatePickers } from "./date-picker.js?v=20260826-won-payment-date-filter";
+} from "./trade-record-ledger.js?v=20260826-abs-credit-model";
+import { initializeDatePickers } from "./date-picker.js?v=20260826-abs-credit-model";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -139,22 +150,22 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260826-won-payment-date-filter";
+} from "./project-screenshot-ocr.js?v=20260826-abs-credit-model";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260826-won-payment-date-filter";
+} from "./project-screenshot-layout.js?v=20260826-abs-credit-model";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260826-won-payment-date-filter";
+} from "./project-screenshot-image.js?v=20260826-abs-credit-model";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260826-won-payment-date-filter";
+} from "./payment-receipts.js?v=20260826-abs-credit-model";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
@@ -384,11 +395,14 @@ async function initialize() {
   renderProjectDmHistoryControls();
   renderIssuerOptions();
   renderIssuerList();
+  renderAbsCreditEnhancerOptions();
+  renderAbsCreditApprovalList();
   renderProjectWorkspace();
   renderProtocolTransferWorkspace();
   renderSecondaryInventoryWorkspace();
   renderFtpCurveForm();
   clearIssuerForm();
+  clearAbsCreditApprovalForm();
   updateAuthUi();
   applyRouteFromHash();
   await Promise.all([loadCloudState(), loadPolicyCurve()]);
@@ -1792,6 +1806,10 @@ function switchView(viewName, options = {}) {
   if (viewName === "reminders") renderUnifiedReminders();
   if (viewName === "payment-receipts") renderPaymentReceiptArchive();
   if (viewName === "ledger") syncLedgerMobilePane();
+  if (viewName === "database") {
+    renderAbsCreditEnhancerOptions();
+    renderAbsCreditApprovalList();
+  }
   if (options.updateHash && window.location.hash !== `#${viewName}`) {
     history.replaceState(null, "", `#${viewName}`);
   }
@@ -3897,6 +3915,14 @@ function bindGenerator() {
     input.addEventListener("input", () => {
       clearRecognitionForInput(input);
       updateAbsInfoFromInputs();
+      if (["creditEnhancementParty", "planName"].includes(input.dataset.absField)) {
+        syncAbsCreditEnhancerIdentity();
+        clearInapplicableAbsCreditApproval();
+        renderAbsCreditApprovalOptions();
+      }
+      if (input.dataset.absField === "creditApprovalId") {
+        applySelectedAbsCreditApprovalToProject();
+      }
       if (input.dataset.absField === "totalScale") {
         refreshDerivedAbsTrancheFields(project.absInfo);
         syncDerivedAbsTrancheInputs();
@@ -3906,6 +3932,12 @@ function bindGenerator() {
       regenerate();
       scheduleProjectDmHistorySave();
     });
+  });
+  $("#openAbsCreditLibraryButton")?.addEventListener("click", () => {
+    switchView("database", { updateHash: true });
+    renderAbsCreditEnhancerOptions();
+    renderAbsCreditApprovalList();
+    $("#absCreditLibraryPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   $("#addAbsTrancheButton")?.addEventListener("click", () => {
     ensureAbsInfo(project);
@@ -4172,6 +4204,7 @@ function upsertParsedProjectToLedger(projectValue, issuer, generated) {
     || (isAbsProject(projectValue) ? findExistingAbsProject(activeProjects, projectValue) : null);
   const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing);
   state = upsertProject(state, record);
+  state = linkAbsCreditApprovalToProject(state, record);
   return { record, isUpdate: Boolean(existing) };
 }
 
@@ -4191,6 +4224,15 @@ function absProjectSaveStatus(projectValue) {
   if (!String(projectValue.branch || "").trim()) missing.push({ key: "branch", label: "联动分行" });
   if (!String(absInfo.planName || projectValue.fullName || "").trim()) missing.push({ key: "abs.planName", label: "专项计划/产品名称" });
   if (!absInfo.tranches.length) missing.push({ key: "abs.tranches", label: "ABS分档结构" });
+  if (!absInfo.creditApprovalId && absInfo.creditApprovalSource !== "legacy-snapshot") {
+    missing.push({ key: "abs.creditApprovalId", label: "50217 授信批单" });
+  }
+  if (absInfo.creditApprovalId) {
+    const approval = (state.absCreditApprovals || []).find((item) => item.id === absInfo.creditApprovalId);
+    if (!approval || approval.businessCode !== ABS_CREDIT_CODE || !absCreditApprovalAppliesToProject(approval, { ...projectValue, absInfo })) {
+      missing.push({ key: "abs.creditApprovalId", label: "有效且适用的 50217 授信批单" });
+    }
+  }
   return missing.length
     ? { ok: false, reason: "incompleteAbs", missing }
     : { ok: true, reason: "", missing: [] };
@@ -5583,6 +5625,7 @@ function ensureAbsInfo(projectValue) {
 }
 
 function normalizeProjectAbsInfo(input = {}) {
+  const creditApprovalId = String(input.creditApprovalId || "").trim();
   return {
     planName: String(input.planName || "").trim(),
     totalScale: numberOrNull(input.totalScale),
@@ -5591,6 +5634,14 @@ function normalizeProjectAbsInfo(input = {}) {
     underlyingAsset: String(input.underlyingAsset || "").trim(),
     creditEnhancementType: String(input.creditEnhancementType || "").trim(),
     creditEnhancementParty: String(input.creditEnhancementParty || "").trim(),
+    creditEnhancementIssuerId: String(input.creditEnhancementIssuerId || "").trim(),
+    creditApprovalId,
+    creditApprovalCode: String(input.creditApprovalCode || "").trim(),
+    creditApprovalScopeType: String(input.creditApprovalScopeType || "").trim(),
+    creditApprovalScopeName: String(input.creditApprovalScopeName || "").trim(),
+    creditApprovalNo: String(input.creditApprovalNo || "").trim(),
+    creditApprovalLevel: String(input.creditApprovalLevel || "").trim(),
+    creditApprovalSource: String(input.creditApprovalSource || "").trim(),
     creditApprovalText: String(input.creditApprovalText || "").trim(),
     approvalAmount: numberOrNull(input.approvalAmount),
     approvalRatio: numberOrNull(input.approvalRatio),
@@ -5673,11 +5724,14 @@ function defaultAbsTranche() {
 
 function fillAbsFields() {
   const absInfo = ensureAbsInfo(project);
+  syncAbsCreditEnhancerIdentity();
+  renderAbsCreditApprovalOptions();
   $$("[data-abs-field]").forEach((input) => {
     const field = input.dataset.absField;
     input.value = absInfo[field] ?? "";
   });
   renderAbsTrancheFields();
+  syncAbsCreditSnapshotReadOnly();
 }
 
 function updateAbsInfoFromInputs() {
@@ -5691,6 +5745,124 @@ function updateAbsInfoFromInputs() {
   if (Number.isFinite(numberOrNull(absInfo.totalScale)) && !Number.isFinite(numberOrNull(project.issueScale))) {
     project.issueScale = absInfo.totalScale;
   }
+}
+
+function syncAbsCreditEnhancerIdentity() {
+  const absInfo = ensureAbsInfo(project);
+  const current = (state.issuers || []).find((issuer) => issuer.id === absInfo.creditEnhancementIssuerId);
+  const matched = findIssuer(absInfo.creditEnhancementParty, state.issuers || []);
+  absInfo.creditEnhancementIssuerId = matched?.id
+    || (current?.legalName === absInfo.creditEnhancementParty ? current.id : "");
+}
+
+function clearInapplicableAbsCreditApproval() {
+  const absInfo = ensureAbsInfo(project);
+  if (!absInfo.creditApprovalId) return;
+  const approval = (state.absCreditApprovals || []).find((item) => item.id === absInfo.creditApprovalId);
+  if (approval && absCreditApprovalAppliesToProject(approval, project)) return;
+  Object.assign(absInfo, {
+    creditApprovalId: "",
+    creditApprovalCode: "",
+    creditApprovalScopeType: "",
+    creditApprovalScopeName: "",
+    creditApprovalNo: "",
+    creditApprovalLevel: "",
+    creditApprovalSource: "",
+    creditApprovalText: "",
+    approvalAmount: null,
+    approvalRatio: null,
+    approvalTermText: "",
+  });
+  syncAbsCreditSnapshotInputs();
+  syncAbsCreditSnapshotReadOnly();
+}
+
+function renderAbsCreditApprovalOptions() {
+  const select = $("#absCreditApprovalSelect");
+  if (!select) return;
+  const absInfo = ensureAbsInfo(project);
+  const approvals = applicableAbsCreditApprovals(project, state.absCreditApprovals || []);
+  select.innerHTML = [
+    '<option value="">未关联 50217 批单</option>',
+    ...approvals.map((approval) => {
+      const scope = approval.scopeType === ABS_CREDIT_SCOPE_SHELF
+        ? `储架 · ${approval.shelfName}`
+        : `单项目 · ${approval.projectName}`;
+      const facts = [
+        scope,
+        approval.approvalNo || "无批单号",
+        Number.isFinite(approval.approvedAmount) ? `${formatNumber(approval.approvedAmount)}亿` : "",
+      ].filter(Boolean).join(" · ");
+      return `<option value="${escapeAttribute(approval.id)}">${escapeHtml(facts)}</option>`;
+    }),
+  ].join("");
+  select.value = approvals.some((approval) => approval.id === absInfo.creditApprovalId) ? absInfo.creditApprovalId : "";
+  const hint = $("#absCreditApprovalHint");
+  if (!hint) return;
+  if (!absInfo.creditEnhancementParty) {
+    hint.textContent = "请先填写增信 / 支持主体；ABS 不会使用普通信用债 50206 授信。";
+  } else if (!absInfo.creditEnhancementIssuerId) {
+    hint.textContent = "该增信方尚未进入主体库，请先在资料库新增主体，再录入 50217 批单。";
+  } else if (!approvals.length) {
+    hint.textContent = "没有适用于该增信方及专项计划的 50217 批单；可新增单项目批或储架批。";
+  } else if (absInfo.creditApprovalId) {
+    const selected = approvals.find((approval) => approval.id === absInfo.creditApprovalId);
+    hint.textContent = selected?.scopeType === ABS_CREDIT_SCOPE_SHELF
+      ? `已关联总行储架批：${selected.shelfName}；该批单可覆盖多个 ABS 项目。`
+      : `已关联总行批：${selected?.projectName || absInfo.planName}；仅适用于本项目。`;
+  } else {
+    hint.textContent = `找到 ${approvals.length} 张可用 50217 批单，请选择；ABS 不会使用 50206。`;
+  }
+}
+
+function applySelectedAbsCreditApprovalToProject() {
+  const select = $("#absCreditApprovalSelect");
+  const approvalId = String(select?.value || "").trim();
+  if (!approvalId) {
+    Object.assign(ensureAbsInfo(project), {
+      creditApprovalId: "",
+      creditApprovalCode: "",
+      creditApprovalScopeType: "",
+      creditApprovalScopeName: "",
+      creditApprovalNo: "",
+      creditApprovalLevel: "",
+      creditApprovalSource: "",
+      creditApprovalText: "",
+      approvalAmount: null,
+      approvalRatio: null,
+      approvalTermText: "",
+    });
+    syncAbsCreditSnapshotInputs();
+    renderAbsCreditApprovalOptions();
+    syncAbsCreditSnapshotReadOnly();
+    return;
+  }
+  const approval = (state.absCreditApprovals || []).find((item) => item.id === approvalId);
+  if (!approval || !absCreditApprovalAppliesToProject(approval, project)) {
+    showToast("这张 50217 批单不适用于当前增信方或专项计划。");
+    renderAbsCreditApprovalOptions();
+    return;
+  }
+  project = applyAbsCreditApproval(project, approval);
+  syncAbsCreditSnapshotInputs();
+  renderAbsCreditApprovalOptions();
+  syncAbsCreditSnapshotReadOnly();
+}
+
+function syncAbsCreditSnapshotInputs() {
+  const absInfo = ensureAbsInfo(project);
+  ["approvalAmount", "approvalRatio", "approvalTermText", "creditApprovalText"].forEach((field) => {
+    const input = `[data-abs-field="${field}"]`;
+    if ($(input)) $(input).value = absInfo[field] ?? "";
+  });
+}
+
+function syncAbsCreditSnapshotReadOnly() {
+  const linked = Boolean(ensureAbsInfo(project).creditApprovalId);
+  ["approvalAmount", "approvalRatio", "approvalTermText", "creditApprovalText"].forEach((field) => {
+    const input = `[data-abs-field="${field}"]`;
+    if ($(input)) $(input).readOnly = linked;
+  });
 }
 
 function renderAbsTrancheFields() {
@@ -10596,6 +10768,55 @@ function bindDatabase() {
       if (input && value !== null && value !== undefined && !input.value) input.value = value;
     });
   });
+  $("#newAbsCreditApprovalButton")?.addEventListener("click", clearAbsCreditApprovalForm);
+  $("#absCreditApprovalSearch")?.addEventListener("input", renderAbsCreditApprovalList);
+  $("#absCreditScopeType")?.addEventListener("change", syncAbsCreditScopeFields);
+  $("#absCreditRawText")?.addEventListener("change", () => {
+    const rawText = $("#absCreditRawText").value.trim();
+    const parsed = parseCreditText(rawText);
+    if (/储架批/.test(rawText)) $("#absCreditScopeType").value = ABS_CREDIT_SCOPE_SHELF;
+    const fields = {
+      absCreditApprovalLevel: parsed.approvalLevel,
+      absCreditApprovedAmount: parsed.approvedAmount,
+      absCreditApprovedRatio: parsed.approvedRatio,
+      absCreditInvestmentTermText: parsed.investmentTermText,
+    };
+    Object.entries(fields).forEach(([id, value]) => {
+      const selector = `#${id}`;
+      if ($(selector) && value !== null && value !== undefined && !$(selector).value) $(selector).value = value;
+    });
+    syncAbsCreditScopeFields();
+  });
+  $("#absCreditApprovalForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    try {
+      const approval = readAbsCreditApprovalForm();
+      state = upsertAbsCreditApproval(state, approval);
+      persistState();
+      renderAbsCreditApprovalList();
+      fillAbsCreditApprovalForm((state.absCreditApprovals || []).find((item) => item.id === approval.id));
+      renderAbsCreditApprovalOptions();
+      regenerate();
+      showToast("50217 批单已保存。");
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  $("#deleteAbsCreditApprovalButton")?.addEventListener("click", () => {
+    const id = $("#absCreditApprovalId").value;
+    const approval = (state.absCreditApprovals || []).find((item) => item.id === id);
+    if (!approval) return;
+    const links = approval.linkedProjectIds?.length || 0;
+    const detail = links ? `，已有 ${links} 个项目关联；项目中的历史快照会保留` : "";
+    if (!confirm(`确定删除这张 50217 批单吗${detail}？`)) return;
+    state = removeAbsCreditApproval(state, id);
+    persistState();
+    clearAbsCreditApprovalForm();
+    renderAbsCreditApprovalList();
+    clearInapplicableAbsCreditApproval();
+    renderAbsCreditApprovalOptions();
+    regenerate();
+  });
   $("#issuerForm").addEventListener("submit", (event) => {
     event.preventDefault();
     try {
@@ -10605,10 +10826,11 @@ function bindDatabase() {
       persistState();
       renderIssuerOptions();
       renderIssuerList();
+      renderAbsCreditEnhancerOptions();
       fillIssuerForm(state.issuers.find((item) => item.id === issuer.id));
       regenerate();
       if (batchItems.length) renderBatchResults();
-      showToast("主体与最新授信已保存。");
+      showToast("主体与普通信用债 50206 授信已保存。");
     } catch (error) {
       showToast(error.message);
     }
@@ -10617,12 +10839,18 @@ function bindDatabase() {
   $("#deleteIssuerButton").addEventListener("click", () => {
     const id = $("#issuerId").value;
     const issuer = state.issuers.find((item) => item.id === id);
+    const absApprovalCount = (state.absCreditApprovals || []).filter((item) => item.enhancerIssuerId === id).length;
+    if (issuer && absApprovalCount) {
+      showToast(`该主体仍关联 ${absApprovalCount} 张 50217 批单，请先处理这些批单。`);
+      return;
+    }
     if (!issuer || !confirm(`确定删除“${issuer.legalName}”及其授信资料吗？`)) return;
     state = { ...state, issuers: state.issuers.filter((item) => item.id !== id), updatedAt: new Date().toISOString() };
     if (selectedIssuerId === id) selectedIssuerId = "";
     persistState();
     renderIssuerOptions();
     renderIssuerList();
+    renderAbsCreditEnhancerOptions();
     clearIssuerForm();
     regenerate();
   });
@@ -10646,6 +10874,7 @@ function bindDatabase() {
     persistState();
     renderIssuerOptions();
     renderIssuerList();
+    renderAbsCreditEnhancerOptions();
     regenerate();
     if (batchItems.length) renderBatchResults();
     showToast(`已导入并归并 ${imported.baseIssuers.length + imported.reviewedIssuers.length} 个主体。`);
@@ -11844,6 +12073,123 @@ function renderIssuerList() {
   });
 }
 
+function renderAbsCreditEnhancerOptions() {
+  const select = $("#absCreditEnhancerIssuerId");
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = [
+    '<option value="">请选择主体</option>',
+    ...[...(state.issuers || [])]
+      .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"))
+      .map((issuer) => `<option value="${escapeAttribute(issuer.id)}">${escapeHtml(issuer.legalName)}</option>`),
+  ].join("");
+  if ((state.issuers || []).some((issuer) => issuer.id === current)) select.value = current;
+}
+
+function renderAbsCreditApprovalList() {
+  const list = $("#absCreditApprovalList");
+  if (!list) return;
+  const query = String($("#absCreditApprovalSearch")?.value || "").trim().toLowerCase();
+  const approvals = [...(state.absCreditApprovals || [])]
+    .map(normalizeAbsCreditApproval)
+    .filter((approval) => [
+      approval.enhancerName,
+      approval.approvalNo,
+      approval.projectName,
+      approval.shelfName,
+      approval.rawText,
+    ].join(" ").toLowerCase().includes(query))
+    .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+  list.innerHTML = approvals.length
+    ? approvals.map((approval) => {
+      const scopeName = approval.scopeType === ABS_CREDIT_SCOPE_SHELF ? approval.shelfName : approval.projectName;
+      const scope = approval.scopeType === ABS_CREDIT_SCOPE_SHELF ? "储架批" : "单项目批";
+      const facts = [
+        approval.enhancerName,
+        `${scope}：${scopeName}`,
+        approval.approvalNo ? `批单号 ${approval.approvalNo}` : "",
+        Number.isFinite(approval.approvedAmount) ? `金额 ${formatNumber(approval.approvedAmount)}亿` : "",
+        Number.isFinite(approval.approvedRatio) ? `比例 ${formatNumber(approval.approvedRatio)}%` : "",
+        approval.investmentTermText ? `期限 ${approval.investmentTermText}` : "",
+        approval.linkedProjectIds.length ? `已关联 ${approval.linkedProjectIds.length} 个项目` : "尚未关联项目",
+      ].filter(Boolean).join(" · ");
+      return `
+        <button class="issuer-item abs-credit-item ${$("#absCreditApprovalId")?.value === approval.id ? "active" : ""}" data-abs-credit-id="${escapeAttribute(approval.id)}" type="button">
+          <strong>${escapeHtml(approval.enhancerName)} · ${escapeHtml(scope)}</strong>
+          <span>${escapeHtml(facts)}</span>
+        </button>
+      `;
+    }).join("")
+    : '<div class="empty">暂无 50217 批单。可按增信方新增单项目批或储架批。</div>';
+  $$("[data-abs-credit-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      fillAbsCreditApprovalForm((state.absCreditApprovals || []).find((item) => item.id === button.dataset.absCreditId));
+    });
+  });
+}
+
+function readAbsCreditApprovalForm() {
+  const enhancerIssuerId = $("#absCreditEnhancerIssuerId").value;
+  const enhancer = (state.issuers || []).find((issuer) => issuer.id === enhancerIssuerId);
+  return normalizeAbsCreditApproval({
+    id: $("#absCreditApprovalId").value || undefined,
+    businessCode: ABS_CREDIT_CODE,
+    enhancerIssuerId,
+    enhancerName: enhancer?.legalName || "",
+    approvalNo: $("#absCreditApprovalNo").value,
+    approvalLevel: $("#absCreditApprovalLevel").value,
+    scopeType: $("#absCreditScopeType").value,
+    projectName: $("#absCreditProjectName").value,
+    shelfName: $("#absCreditShelfName").value,
+    approvedAmount: $("#absCreditApprovedAmount").value,
+    approvedRatio: $("#absCreditApprovedRatio").value,
+    investmentTermText: $("#absCreditInvestmentTermText").value,
+    rawText: $("#absCreditRawText").value,
+    linkedProjectIds: (state.absCreditApprovals || []).find((item) => item.id === $("#absCreditApprovalId").value)?.linkedProjectIds || [],
+    linkedProjectNames: (state.absCreditApprovals || []).find((item) => item.id === $("#absCreditApprovalId").value)?.linkedProjectNames || [],
+  });
+}
+
+function clearAbsCreditApprovalForm() {
+  const form = $("#absCreditApprovalForm");
+  if (!form) return;
+  form.reset();
+  $("#absCreditApprovalId").value = "";
+  $("#absCreditApprovalLevel").value = "总行";
+  $("#absCreditScopeType").value = ABS_CREDIT_SCOPE_PROJECT;
+  $("#deleteAbsCreditApprovalButton").hidden = true;
+  syncAbsCreditScopeFields();
+  renderAbsCreditApprovalList();
+}
+
+function fillAbsCreditApprovalForm(input) {
+  if (!input) return clearAbsCreditApprovalForm();
+  const approval = normalizeAbsCreditApproval(input);
+  renderAbsCreditEnhancerOptions();
+  $("#absCreditApprovalId").value = approval.id;
+  $("#absCreditEnhancerIssuerId").value = approval.enhancerIssuerId;
+  $("#absCreditApprovalNo").value = approval.approvalNo;
+  $("#absCreditApprovalLevel").value = approval.approvalLevel;
+  $("#absCreditScopeType").value = approval.scopeType;
+  $("#absCreditProjectName").value = approval.projectName;
+  $("#absCreditShelfName").value = approval.shelfName;
+  $("#absCreditApprovedAmount").value = approval.approvedAmount ?? "";
+  $("#absCreditApprovedRatio").value = approval.approvedRatio ?? "";
+  $("#absCreditInvestmentTermText").value = approval.investmentTermText;
+  $("#absCreditRawText").value = approval.rawText;
+  $("#deleteAbsCreditApprovalButton").hidden = false;
+  syncAbsCreditScopeFields();
+  renderAbsCreditApprovalList();
+}
+
+function syncAbsCreditScopeFields() {
+  const shelf = $("#absCreditScopeType")?.value === ABS_CREDIT_SCOPE_SHELF;
+  if ($("#absCreditProjectNameField")) $("#absCreditProjectNameField").hidden = shelf;
+  if ($("#absCreditShelfNameField")) $("#absCreditShelfNameField").hidden = !shelf;
+  if ($("#absCreditProjectName")) $("#absCreditProjectName").required = !shelf;
+  if ($("#absCreditShelfName")) $("#absCreditShelfName").required = shelf;
+}
+
 function issuerCommonSummary(issuer) {
   const rating = issuer.subjectRating
     ? `${issuer.subjectRating}${issuer.ratingAgency ? `(${issuer.ratingAgency})` : ""}`
@@ -11879,7 +12225,7 @@ function readFtpCurveForm() {
 function clearIssuerForm() {
   $("#issuerForm").reset();
   $("#issuerId").value = "";
-  $("#issuerFormTitle").textContent = "新增主体与最新授信";
+  $("#issuerFormTitle").textContent = "新增主体与 50206 授信";
   $("#deleteIssuerButton").hidden = true;
   renderIssuerList();
 }
@@ -11934,6 +12280,8 @@ function bindDataActions() {
       persistState();
       renderIssuerOptions();
       renderIssuerList();
+      renderAbsCreditEnhancerOptions();
+      renderAbsCreditApprovalList();
       renderFtpCurveForm();
       renderProjectWorkspace();
       renderProtocolTransferWorkspace();
@@ -11994,6 +12342,7 @@ async function loadCloudState() {
     const remote = await response.json();
     const shouldMigrateFtpCurve = ftpCurveNeedsMigration(remote.data?.ftpCurve);
     const shouldMigrateIssuerBranch = issuerBranchNeedsMigration(remote.data);
+    const shouldMigrateCreditModel = creditModelNeedsMigration(remote.data);
     if (remote.data?.issuers) {
       state = normalizeLoadedState(remote.data);
     }
@@ -12003,17 +12352,17 @@ async function loadCloudState() {
     }
     cloudAvailable = true;
     persistLocal();
-    setSyncStatus(isLocalApiMode() ? "本地 D1 已连接" : "D1 已连接", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(isLocalApiMode() ? "本地 D1 已连接" : "D1 已连接", `${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目`);
     setCloudGate(true, {
       state: "success",
       title: isLocalApiMode() ? "本地 D1 连接成功" : "D1 连接成功",
-      detail: `已载入 ${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目。`,
+      detail: `已载入 ${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目。`,
     });
     window.setTimeout(() => {
       setCloudGate(false, { state: "success" });
       restoreLedgerMobileViewport();
     }, 850);
-    if (shouldMigrateFtpCurve || shouldMigrateIssuerBranch) await saveCloudState();
+    if (shouldMigrateFtpCurve || shouldMigrateIssuerBranch || shouldMigrateCreditModel) await saveCloudState();
   } catch {
     cloudAvailable = false;
     setSyncStatus(isLocalApiMode() ? "本地 D1 未连接" : "D1 未连接", isLocalApiMode() ? "请确认本地 wrangler 正在运行" : "请检查登录状态或重新登录");
@@ -12025,6 +12374,9 @@ async function loadCloudState() {
   }
   renderIssuerOptions();
   renderIssuerList();
+  renderAbsCreditEnhancerOptions();
+  renderAbsCreditApprovalList();
+  renderAbsCreditApprovalOptions();
   renderFtpCurveForm();
   renderProjectWorkspace();
   renderProtocolTransferWorkspace();
@@ -12058,7 +12410,7 @@ async function saveCloudStateSnapshot(snapshot) {
       throw new Error(`HTTP ${response.status}`);
     }
     cloudAvailable = true;
-    setSyncStatus(isLocalApiMode() ? "本地 D1 已同步" : "D1 已同步", `${state.issuers.length} 个主体 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(isLocalApiMode() ? "本地 D1 已同步" : "D1 已同步", `${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目`);
     setCloudGate(false, { state: "success" });
     return true;
   } catch {
@@ -12104,7 +12456,11 @@ function normalizeLoadedState(value) {
   return {
     ...DEFAULT_STATE,
     ...value,
+    version: 5,
     issuers: (value.issuers || []).filter((issuer) => issuer?.legalName).map(normalizeIssuer),
+    absCreditApprovals: (value.absCreditApprovals || [])
+      .filter((approval) => !approval?.businessCode || String(approval.businessCode).trim() === ABS_CREDIT_CODE)
+      .map(normalizeAbsCreditApproval),
     ftpCurve: normalizeFtpCurve(value.ftpCurve),
     projects: (value.projects || []).map(normalizeProjectRecord),
     protocolTransfers: normalizeProtocolTransfers(value.protocolTransfers || []),
@@ -12113,6 +12469,12 @@ function normalizeLoadedState(value) {
     secondaryTrades: normalizeSecondaryTrades(value.secondaryTrades || []),
     reminderState: normalizeReminderState(value.reminderState),
   };
+}
+
+function creditModelNeedsMigration(data = {}) {
+  return Number(data.version || 0) < 5
+    || !Array.isArray(data.absCreditApprovals)
+    || (data.issuers || []).some((issuer) => issuer?.credit?.businessCode !== ORDINARY_CREDIT_CODE);
 }
 
 function issuerBranchNeedsMigration(data = {}) {

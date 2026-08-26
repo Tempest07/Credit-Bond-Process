@@ -2,6 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ABS_CREDIT_CODE,
+  ABS_CREDIT_SCOPE_PROJECT,
+  ABS_CREDIT_SCOPE_SHELF,
+  ORDINARY_CREDIT_CODE,
+  absCreditApprovalAppliesToProject,
+  applicableAbsCreditApprovals,
+  applyAbsCreditApproval,
   applyIssuerCommonFields,
   buildBondFullName,
   calculateAbsTrancheSharePct,
@@ -12,6 +19,7 @@ import {
   findIssuer,
   generateOpinion,
   inferAbsClassNameFromShortName,
+  linkAbsCreditApprovalToProject,
   formatProjectValuationSummary,
   mergeImportedIssuers,
   normalizeGuaranteeInfo,
@@ -20,6 +28,7 @@ import {
   parseProjectBrief,
   replaceProjectWithDmLookup,
   splitProjectBriefs,
+  upsertAbsCreditApproval,
 } from "../core.js";
 
 test("derives ABS tranche shares, explicit priority classes, and selected project name", () => {
@@ -247,6 +256,112 @@ test("parses structured project advertisements", () => {
   assert.equal(parsed.inquiryLow, 2.95);
   assert.equal(parsed.inquiryHigh, 3.95);
   assert.match(generateOpinion(parsed, null).opinion, /陕西建工控股集团有限公司2026年度第五期短期融资券/);
+});
+
+test("separates ordinary 50206 credit from reusable ABS 50217 approvals", () => {
+  const enhancer = normalizeIssuer({
+    id: "enhancer-1",
+    legalName: "蔚能电池资产有限公司",
+    credit: { approvedAmount: 20, approvedRatio: 35, investmentTermText: "3年" },
+  });
+  assert.equal(enhancer.credit.businessCode, ORDINARY_CREDIT_CODE);
+
+  let state = { version: 3, issuers: [enhancer], absCreditApprovals: [] };
+  state = upsertAbsCreditApproval(state, {
+    id: "approval-project",
+    enhancerIssuerId: enhancer.id,
+    enhancerName: enhancer.legalName,
+    approvalNo: "ABS-P-001",
+    scopeType: ABS_CREDIT_SCOPE_PROJECT,
+    projectName: "蔚能电池第3期绿色科技创新资产支持专项计划",
+    approvedAmount: 0.7,
+    approvedRatio: 20,
+    investmentTermText: "1年",
+    rawText: "总行批0.7亿，每期投资比例不超过20%，期限不超过1年",
+  });
+  state = upsertAbsCreditApproval(state, {
+    id: "approval-shelf",
+    enhancerIssuerId: enhancer.id,
+    enhancerName: enhancer.legalName,
+    approvalNo: "ABS-S-001",
+    scopeType: ABS_CREDIT_SCOPE_SHELF,
+    shelfName: "蔚能绿色科创储架",
+    approvedAmount: 2,
+    approvedRatio: 25,
+    investmentTermText: "2年",
+    rawText: "总行储架批2亿，每期投资比例不超过25%，期限不超过2年",
+  });
+  assert.equal(state.absCreditApprovals.length, 2);
+  assert.ok(state.absCreditApprovals.every((approval) => approval.businessCode === ABS_CREDIT_CODE));
+
+  const project = {
+    shortName: "G蔚能3A1/2/3/4",
+    instrumentType: "ABS",
+    absInfo: {
+      planName: "蔚能电池第3期绿色科技创新资产支持专项计划",
+      creditEnhancementIssuerId: enhancer.id,
+      creditEnhancementParty: enhancer.legalName,
+    },
+  };
+  const applicable = applicableAbsCreditApprovals(project, state.absCreditApprovals);
+  assert.deepEqual(applicable.map((approval) => approval.id), ["approval-project", "approval-shelf"]);
+  assert.equal(absCreditApprovalAppliesToProject(state.absCreditApprovals.find((item) => item.id === "approval-project"), {
+    ...project,
+    absInfo: { ...project.absInfo, planName: "另一专项计划" },
+  }), false);
+  assert.equal(absCreditApprovalAppliesToProject({
+    businessCode: ORDINARY_CREDIT_CODE,
+    enhancerIssuerId: enhancer.id,
+    scopeType: ABS_CREDIT_SCOPE_SHELF,
+    shelfName: "错误混用",
+  }, project), false);
+  assert.throws(
+    () => applyAbsCreditApproval(project, { businessCode: ORDINARY_CREDIT_CODE, enhancerIssuerId: enhancer.id }),
+    /只能关联 50217/,
+  );
+
+  const linkedShelfProject = applyAbsCreditApproval(project, state.absCreditApprovals.find((item) => item.id === "approval-shelf"));
+  assert.equal(linkedShelfProject.absInfo.creditApprovalCode, ABS_CREDIT_CODE);
+  assert.equal(linkedShelfProject.absInfo.creditApprovalScopeType, ABS_CREDIT_SCOPE_SHELF);
+  assert.equal(linkedShelfProject.absInfo.approvalRatio, 25);
+  assert.match(generateOpinion({
+    ...linkedShelfProject,
+    branch: "武汉分行",
+    absInfo: {
+      ...linkedShelfProject.absInfo,
+      tranches: [{ className: "优先A1级", shortName: "G蔚能3A1", scale: 1, selected: true }],
+    },
+  }, enhancer).opinion, /总行储架批2亿/);
+
+  state = linkAbsCreditApprovalToProject(state, { ...linkedShelfProject, id: "project-1" });
+  state = linkAbsCreditApprovalToProject(state, {
+    ...linkedShelfProject,
+    id: "project-2",
+    shortName: "G蔚能4A1",
+    absInfo: { ...linkedShelfProject.absInfo, planName: "蔚能电池第4期绿色科技创新资产支持专项计划" },
+  });
+  assert.deepEqual(
+    state.absCreditApprovals.find((item) => item.id === "approval-shelf").linkedProjectIds.sort(),
+    ["project-1", "project-2"],
+  );
+});
+
+test("never falls back from ABS to an issuer's ordinary 50206 limit", () => {
+  const suggestion = calculateSuggestion({
+    shortName: "G测试1A1",
+    instrumentType: "ABS",
+    absInfo: {
+      planName: "测试资产支持专项计划",
+      tranches: [{ className: "优先A1级", scale: 1, selected: true }],
+    },
+  }, normalizeIssuer({
+    legalName: "测试增信方有限公司",
+    credit: { approvedAmount: 9, approvedRatio: 35, investmentTermText: "3年" },
+  }));
+
+  assert.equal(suggestion.approvedRatio, 20);
+  assert.equal(suggestion.applicationAmount, 0.2);
+  assert.ok(suggestion.warnings.some((warning) => warning.includes("禁止使用普通信用债 50206")));
 });
 
 test("parses multiple guarantors and writes them into the flow opinion", () => {
