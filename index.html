@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="3.3.0">
-  <meta name="application-build-version" content="3.3.0.26">
-  <meta name="application-build" content="20260826-secondary-delete-popover">
+  <meta name="application-build-version" content="3.3.0.27">
+  <meta name="application-build" content="20260826-issuer-pinyin-search">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260826-secondary-delete-popover"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260826-secondary-delete-popover">
+  <script src="./app-shell-mode.js?v=20260826-issuer-pinyin-search"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260826-issuer-pinyin-search">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.26 · 2026-08-26 更新">v3.3.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 3.3.0.27 · 2026-08-26 更新">v3.3.0</span></small>
         </span>
       </a>
 
@@ -199,9 +199,18 @@
                   <button type="button" data-new-project-cutoff-mode="next-business-day" aria-pressed="false">下一工作日</button>
                 </div>
               </div>
-              <label class="span-2">匹配主体
-                <select id="issuerSelect"><option value="">未匹配主体</option></select>
-              </label>
+              <div class="issuer-picker span-2" id="issuerPicker" data-recognition-root>
+                <label class="issuer-picker-label" for="issuerSearchInput">匹配主体</label>
+                <div class="issuer-picker-control" id="issuerPickerControl">
+                  <span class="issuer-picker-search-icon" aria-hidden="true"></span>
+                  <span class="issuer-picker-selection" id="issuerPickerSelection" hidden></span>
+                  <input id="issuerSearchInput" type="text" role="combobox" autocomplete="off" spellcheck="false" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="issuerSearchResults" aria-expanded="false" placeholder="输入中文、全拼或简拼">
+                  <button class="issuer-picker-clear" id="issuerPickerClear" type="button" aria-label="清除已匹配主体" hidden>×</button>
+                  <span class="issuer-picker-chevron" aria-hidden="true"></span>
+                </div>
+                <input id="issuerSelect" type="hidden" value="">
+                <div class="issuer-picker-results" id="issuerSearchResults" role="listbox" aria-label="主体搜索结果" hidden></div>
+              </div>
               <label class="span-2">债券全称（可覆盖自动生成结果）<input data-project-field="fullName"></label>
             </div>
             <div class="abs-field-panel" id="absFieldPanel" hidden>
@@ -1204,6 +1213,7 @@
   <div class="toast" id="toast" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
-  <script type="module" src="./app.js?v=20260826-secondary-delete-popover"></script>
+  <script src="./vendor/pinyin-pro.min.js?v=3.29.3"></script>
+  <script type="module" src="./app.js?v=20260826-issuer-pinyin-search"></script>
 </body>
 </html>

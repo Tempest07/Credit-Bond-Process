@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260826-secondary-delete-popover";
+} from "./core.js?v=20260826-issuer-pinyin-search";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -54,13 +54,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260826-secondary-delete-popover";
+} from "./lifecycle.js?v=20260826-issuer-pinyin-search";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260826-secondary-delete-popover";
+} from "./history-parser.js?v=20260826-issuer-pinyin-search";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,23 +76,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260826-secondary-delete-popover";
+} from "./protocol-transfer.js?v=20260826-issuer-pinyin-search";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260826-secondary-delete-popover";
+} from "./protocol-transfer-templates.js?v=20260826-issuer-pinyin-search";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260826-secondary-delete-popover";
+} from "./protocol-transfer-docx.js?v=20260826-issuer-pinyin-search";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260826-secondary-delete-popover";
+} from "./reminders.js?v=20260826-issuer-pinyin-search";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -120,11 +120,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260826-secondary-delete-popover";
+} from "./secondary-inventory.js?v=20260826-issuer-pinyin-search";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260826-secondary-delete-popover";
+} from "./trade-record-converter.js?v=20260826-issuer-pinyin-search";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -135,13 +135,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260826-secondary-delete-popover";
+} from "./trade-record-grid.js?v=20260826-issuer-pinyin-search";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260826-secondary-delete-popover";
-import { initializeDatePickers } from "./date-picker.js?v=20260826-secondary-delete-popover";
+} from "./trade-record-ledger.js?v=20260826-issuer-pinyin-search";
+import { initializeDatePickers } from "./date-picker.js?v=20260826-issuer-pinyin-search";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -150,26 +150,31 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260826-secondary-delete-popover";
+} from "./project-screenshot-ocr.js?v=20260826-issuer-pinyin-search";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260826-secondary-delete-popover";
+} from "./project-screenshot-layout.js?v=20260826-issuer-pinyin-search";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260826-secondary-delete-popover";
+} from "./project-screenshot-image.js?v=20260826-issuer-pinyin-search";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260826-secondary-delete-popover";
+} from "./payment-receipts.js?v=20260826-issuer-pinyin-search";
+import {
+  buildIssuerSearchIndex,
+  searchIssuerIndex,
+} from "./issuer-search.js?v=20260826-issuer-pinyin-search";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
+const ISSUER_PICKER_RESULT_LIMIT = 40;
 const NEW_PROJECT_CUTOFF_MODES = new Set(["auto", "today", "next-business-day"]);
 const POLICY_CURVE_TERMS = ["0.1Y", "0.2Y", "0.25Y", "0.3Y", "0.4Y", "0.5Y", "0.6Y", "0.7Y", "0.75Y", "0.8Y", "0.9Y", "1Y", "3Y", "5Y"];
 const POLICY_CURVE_KEY_TERMS = new Set(["0.1Y", "0.25Y", "0.3Y", "0.5Y", "0.75Y", "1Y", "3Y", "5Y"]);
@@ -259,6 +264,10 @@ let state = loadLocalState();
 let project = parseProjectBrief("");
 let newProjectCutoffMode = "auto";
 let selectedIssuerId = "";
+let issuerSearchEntries = [];
+let issuerPickerVisibleEntries = [];
+let issuerPickerActiveIndex = -1;
+let issuerPickerOpen = false;
 let cloudAvailable = false;
 let currentGatewayUser = null;
 let pendingHistoryImport = null;
@@ -379,6 +388,7 @@ async function initialize() {
   bindNavigation();
   bindRouteHashNavigation();
   bindProjectScreenshotTool();
+  bindIssuerPicker();
   bindGenerator();
   bindLedger();
   bindReminders();
@@ -3755,6 +3765,187 @@ function bindPlaceholderSelection() {
   document.addEventListener("dblclick", selectAnyPlaceholderOnDoubleClick);
 }
 
+function bindIssuerPicker() {
+  const picker = $("#issuerPicker");
+  const control = $("#issuerPickerControl");
+  const input = $("#issuerSearchInput");
+  const results = $("#issuerSearchResults");
+  const clear = $("#issuerPickerClear");
+  if (!picker || !control || !input || !results || !clear) return;
+
+  input.addEventListener("focus", openIssuerPicker);
+  input.addEventListener("input", () => {
+    issuerPickerActiveIndex = 0;
+    openIssuerPicker();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!issuerPickerOpen) openIssuerPicker();
+      moveIssuerPickerActive(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (event.key === "Enter" && issuerPickerOpen && issuerPickerActiveIndex >= 0) {
+      event.preventDefault();
+      const entry = issuerPickerVisibleEntries[issuerPickerActiveIndex];
+      if (entry) selectIssuerFromPicker(entry.issuer.id);
+      return;
+    }
+    if (event.key === "Escape" && issuerPickerOpen) {
+      event.preventDefault();
+      closeIssuerPicker();
+    }
+  });
+  control.addEventListener("click", (event) => {
+    if (event.target.closest("#issuerPickerClear")) return;
+    input.focus({ preventScroll: true });
+    openIssuerPicker();
+  });
+  clear.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectIssuerFromPicker("");
+    input.focus({ preventScroll: true });
+    openIssuerPicker();
+  });
+  results.addEventListener("pointerdown", (event) => event.preventDefault());
+  results.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-issuer-option]");
+    if (!option) return;
+    selectIssuerFromPicker(option.dataset.issuerOption);
+  });
+  results.addEventListener("mouseover", (event) => {
+    const option = event.target.closest("[data-issuer-option-index]");
+    if (!option) return;
+    issuerPickerActiveIndex = Number(option.dataset.issuerOptionIndex);
+    syncIssuerPickerActiveOption();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (issuerPickerOpen && !picker.contains(event.target)) closeIssuerPicker();
+  });
+}
+
+function openIssuerPicker() {
+  const picker = $("#issuerPicker");
+  const input = $("#issuerSearchInput");
+  const results = $("#issuerSearchResults");
+  if (!picker || !input || !results) return;
+  issuerPickerOpen = true;
+  picker.classList.add("is-open");
+  input.setAttribute("aria-expanded", "true");
+  results.hidden = false;
+  renderIssuerPickerResults();
+}
+
+function closeIssuerPicker() {
+  const picker = $("#issuerPicker");
+  const input = $("#issuerSearchInput");
+  const results = $("#issuerSearchResults");
+  if (!picker || !input || !results) return;
+  issuerPickerOpen = false;
+  issuerPickerActiveIndex = -1;
+  issuerPickerVisibleEntries = [];
+  picker.classList.remove("is-open");
+  input.value = "";
+  input.setAttribute("aria-expanded", "false");
+  input.removeAttribute("aria-activedescendant");
+  results.hidden = true;
+  syncIssuerPickerSelection();
+}
+
+function renderIssuerPickerResults() {
+  const results = $("#issuerSearchResults");
+  const input = $("#issuerSearchInput");
+  if (!results || !input || !issuerPickerOpen) return;
+  issuerPickerVisibleEntries = searchIssuerIndex(issuerSearchEntries, input.value)
+    .slice(0, ISSUER_PICKER_RESULT_LIMIT);
+  if (!issuerPickerVisibleEntries.length) {
+    issuerPickerActiveIndex = -1;
+    input.removeAttribute("aria-activedescendant");
+    results.innerHTML = '<div class="issuer-picker-empty">没有找到匹配主体</div>';
+    return;
+  }
+  if (issuerPickerActiveIndex < 0 || issuerPickerActiveIndex >= issuerPickerVisibleEntries.length) {
+    const selectedIndex = issuerPickerVisibleEntries.findIndex((entry) => entry.issuer.id === selectedIssuerId);
+    issuerPickerActiveIndex = selectedIndex >= 0 ? selectedIndex : 0;
+  }
+  results.innerHTML = issuerPickerVisibleEntries.map((entry, index) => {
+    const issuer = entry.issuer;
+    const selected = issuer.id === selectedIssuerId;
+    return `
+      <button
+        class="issuer-picker-option ${selected ? "is-selected" : ""}"
+        id="issuerSearchOption${index}"
+        type="button"
+        role="option"
+        aria-selected="${selected}"
+        data-issuer-option="${escapeAttribute(issuer.id)}"
+        data-issuer-option-index="${index}"
+      >
+        <span class="issuer-picker-option-head">
+          <strong>${escapeHtml(issuer.legalName)}</strong>
+          ${selected ? '<span class="issuer-picker-check" aria-hidden="true">✓</span>' : ""}
+        </span>
+        <span class="issuer-picker-option-meta">${escapeHtml(issuerPickerMeta(issuer))}</span>
+      </button>
+    `;
+  }).join("");
+  syncIssuerPickerActiveOption();
+}
+
+function moveIssuerPickerActive(delta) {
+  if (!issuerPickerVisibleEntries.length) return;
+  const length = issuerPickerVisibleEntries.length;
+  issuerPickerActiveIndex = (issuerPickerActiveIndex + delta + length) % length;
+  syncIssuerPickerActiveOption();
+}
+
+function syncIssuerPickerActiveOption() {
+  const input = $("#issuerSearchInput");
+  const options = $$("#issuerSearchResults [data-issuer-option-index]");
+  options.forEach((option, index) => option.classList.toggle("is-active", index === issuerPickerActiveIndex));
+  const active = options[issuerPickerActiveIndex];
+  if (!input || !active) {
+    input?.removeAttribute("aria-activedescendant");
+    return;
+  }
+  input.setAttribute("aria-activedescendant", active.id);
+  active.scrollIntoView({ block: "nearest" });
+}
+
+function selectIssuerFromPicker(issuerId) {
+  const select = $("#issuerSelect");
+  const input = $("#issuerSearchInput");
+  if (!select || !input) return;
+  select.value = (state.issuers || []).some((issuer) => issuer.id === issuerId) ? issuerId : "";
+  input.value = "";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  syncIssuerPickerSelection();
+  closeIssuerPicker();
+}
+
+function syncIssuerPickerSelection() {
+  const issuer = (state.issuers || []).find((item) => item.id === selectedIssuerId) || null;
+  const selection = $("#issuerPickerSelection");
+  const input = $("#issuerSearchInput");
+  const clear = $("#issuerPickerClear");
+  if (!selection || !input || !clear) return;
+  selection.hidden = !issuer;
+  selection.textContent = issuer?.legalName || "";
+  selection.title = issuer?.legalName || "";
+  clear.hidden = !issuer;
+  input.placeholder = issuer ? "继续搜索主体" : "输入中文、全拼或简拼";
+}
+
+function issuerPickerMeta(issuer) {
+  const aliases = (issuer.aliases || []).join(" / ");
+  const branch = issuer.linkedBranch || issuer.defaultBranch || "";
+  const rating = issuer.subjectRating
+    ? `${issuer.subjectRating}${issuer.ratingAgency ? ` · ${issuer.ratingAgency}` : ""}`
+    : "";
+  return [aliases, branch, rating].filter(Boolean).join(" · ") || "主体资料";
+}
+
 function bindGenerator() {
   $("#blankTemplateButton")?.addEventListener("click", loadBlankBriefTemplate);
   $("#briefInput")?.addEventListener("keydown", handleBriefTemplateKeydown);
@@ -3818,13 +4009,14 @@ function bindGenerator() {
   });
   $("#issuerSelect").addEventListener("change", () => {
     delete projectRecognitionMarks.issuerSelect;
-    setRecognitionForInput($("#issuerSelect"), null);
+    setRecognitionForInput($("#issuerSearchInput"), null);
     selectedIssuerId = $("#issuerSelect").value;
     const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
     project = applyIssuerCommonFields(project, issuer);
     project.sourceText = buildDmProjectSourceText(project);
     $("#briefInput").value = project.sourceText;
     fillProjectFields();
+    syncIssuerPickerSelection();
     regenerate();
   });
 
@@ -6124,8 +6316,8 @@ function applyProjectRecognitionMarks() {
     const key = `inquiryRanges.${input.dataset.inquiryIndex}.${input.dataset.inquiryBound}`;
     setRecognitionForInput(input, projectRecognitionMarks[key]);
   });
-  const issuerSelect = $("#issuerSelect");
-  if (issuerSelect) setRecognitionForInput(issuerSelect, projectRecognitionMarks.issuerSelect);
+  const issuerSearchInput = $("#issuerSearchInput");
+  if (issuerSearchInput) setRecognitionForInput(issuerSearchInput, projectRecognitionMarks.issuerSelect);
 }
 
 function commonFieldMismatchWarning(projectValue, field) {
@@ -10450,7 +10642,7 @@ function setRecognitionForInput(input, mark) {
 }
 
 function recognitionTargetForInput(input) {
-  return input.closest("label") || input;
+  return input.closest("[data-recognition-root]") || input.closest("label") || input;
 }
 
 function clearRecognitionMarks(root = document) {
@@ -12276,13 +12468,11 @@ function issuerCommonSummary(issuer) {
 }
 
 function renderIssuerOptions() {
-  $("#issuerSelect").innerHTML = [
-    '<option value="">未匹配主体</option>',
-    ...state.issuers
-      .sort((left, right) => left.legalName.localeCompare(right.legalName, "zh-CN"))
-      .map((issuer) => `<option value="${escapeAttribute(issuer.id)}">${escapeHtml(issuer.legalName)}</option>`),
-  ].join("");
+  issuerSearchEntries = buildIssuerSearchIndex(state.issuers || []);
   $("#issuerSelect").value = selectedIssuerId;
+  $("#issuerSearchInput").value = "";
+  syncIssuerPickerSelection();
+  if (issuerPickerOpen) renderIssuerPickerResults();
 }
 
 function renderFtpCurveForm() {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260826-secondary-delete-popover";
+const VERSION = "20260826-issuer-pinyin-search";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.26">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.27">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -504,6 +504,35 @@ test("ships liquid selection motion with accessible fallback", async () => {
   assert.match(styles, /\.ledger-filter-tabs\s*\{[^}]*grid-template-columns:\s*repeat\(5,/s);
   assert.match(styles, /@keyframes liquidSelectorMorph/);
   assert.match(styles, /prefers-reduced-motion:\s*reduce/);
+});
+
+test("ships a custom pinyin-searchable issuer picker", async () => {
+  const [html, app, styles, search, vendor, license] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+    readFile(new URL("../issuer-search.js", import.meta.url), "utf8"),
+    readFile(new URL("../vendor/pinyin-pro.min.js", import.meta.url), "utf8"),
+    readFile(new URL("../vendor/pinyin-pro.LICENSE.md", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="issuerSearchInput"[^>]+role="combobox"[^>]+aria-controls="issuerSearchResults"/);
+  assert.match(html, /id="issuerSearchResults"[^>]+role="listbox"/);
+  assert.match(html, /id="issuerSelect" type="hidden"/);
+  assert.doesNotMatch(html, /<select id="issuerSelect"/);
+  assert.ok(html.indexOf("vendor/pinyin-pro.min.js") < html.indexOf("app.js?v="));
+  assert.match(app, /function bindIssuerPicker\(\)/);
+  assert.match(app, /buildIssuerSearchIndex\(state\.issuers \|\| \[\]\)/);
+  assert.match(app, /searchIssuerIndex\(issuerSearchEntries, input\.value\)/);
+  assert.match(app, /event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(app, /event\.key === "Enter"/);
+  assert.match(search, /fullPinyinKeys/);
+  assert.match(search, /initialPinyinKeys/);
+  assert.match(styles, /\.issuer-picker-control input\s*\{[^}]*appearance:\s*none;/s);
+  assert.match(styles, /\.issuer-picker-results\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(styles, /\.issuer-picker-option:hover, \.issuer-picker-option\.is-active/);
+  assert.match(vendor, /pinyinPro/);
+  assert.match(license, /MIT License/);
 });
 
 test("shows the compact DM policy-bank curve in the project command corner", async () => {

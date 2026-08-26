@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260826-secondary-delete-popover";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260826-secondary-delete-popover";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260826-issuer-pinyin-search";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260826-issuer-pinyin-search";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";

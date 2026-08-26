@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260826-secondary-delete-popover";
+} from "./core.js?v=20260826-issuer-pinyin-search";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
