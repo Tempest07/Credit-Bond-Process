@@ -1,6 +1,7 @@
 const DATE_INPUT_SELECTOR = 'input[type="date"], input[type="datetime-local"]';
 const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
 const PANEL_ID = "bondCentreDatePicker";
+const DATE_INPUT_TAP_SLOP_PX = 10;
 
 let pickerPanel = null;
 let pickerBackdrop = null;
@@ -80,6 +81,15 @@ export function buildDatePickerMonth(year, month) {
   });
 }
 
+export function datePickerPointerMoved(startX, startY, currentX, currentY, threshold = DATE_INPUT_TAP_SLOP_PX) {
+  const deltaX = Number(currentX) - Number(startX);
+  const deltaY = Number(currentY) - Number(startY);
+  const allowedMovement = Math.max(0, Number(threshold) || 0);
+  return Number.isFinite(deltaX)
+    && Number.isFinite(deltaY)
+    && Math.hypot(deltaX, deltaY) > allowedMovement;
+}
+
 function ensurePickerPanel() {
   if (pickerPanel) return;
   pickerBackdrop = document.createElement("div");
@@ -152,17 +162,7 @@ function enhanceDateInputs(root) {
     input.setAttribute("aria-haspopup", "dialog");
     input.setAttribute("aria-controls", PANEL_ID);
     input.setAttribute("aria-expanded", "false");
-    input.addEventListener("pointerdown", (event) => {
-      if (input.disabled) return;
-      event.preventDefault();
-      input.focus({ preventScroll: true });
-      openPicker(input);
-    });
-    input.addEventListener("click", (event) => {
-      if (input.disabled) return;
-      event.preventDefault();
-      openPicker(input);
-    });
+    bindDateInputActivation(input);
     input.addEventListener("keydown", (event) => {
       if (["Enter", " ", "ArrowDown"].includes(event.key)) {
         event.preventDefault();
@@ -173,6 +173,50 @@ function enhanceDateInputs(root) {
         writePickerInputValue(input, "");
       }
     });
+  });
+}
+
+function bindDateInputActivation(input) {
+  let pointerGesture = null;
+  let suppressNextClick = false;
+
+  input.addEventListener("pointerdown", (event) => {
+    if (input.disabled || event.isPrimary === false || event.button !== 0) return;
+    pointerGesture = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+    suppressNextClick = false;
+  }, { passive: true });
+  input.addEventListener("pointermove", (event) => {
+    if (!pointerGesture || event.pointerId !== pointerGesture.pointerId) return;
+    if (datePickerPointerMoved(pointerGesture.startX, pointerGesture.startY, event.clientX, event.clientY)) {
+      suppressNextClick = true;
+    }
+  }, { passive: true });
+  input.addEventListener("pointerup", (event) => {
+    if (!pointerGesture || event.pointerId !== pointerGesture.pointerId) return;
+    if (datePickerPointerMoved(pointerGesture.startX, pointerGesture.startY, event.clientX, event.clientY)) {
+      suppressNextClick = true;
+    }
+    pointerGesture = null;
+  }, { passive: true });
+  input.addEventListener("pointercancel", (event) => {
+    if (!pointerGesture || event.pointerId !== pointerGesture.pointerId) return;
+    suppressNextClick = true;
+    pointerGesture = null;
+  }, { passive: true });
+  input.addEventListener("click", (event) => {
+    if (input.disabled) return;
+    event.preventDefault();
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      event.stopPropagation();
+      return;
+    }
+    input.focus({ preventScroll: true });
+    openPicker(input);
   });
 }
 

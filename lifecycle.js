@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260826-issuer-pinyin-search";
+} from "./core.js?v=20260826-mobile-date-scroll-guard";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

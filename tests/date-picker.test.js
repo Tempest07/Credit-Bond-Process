@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildDatePickerMonth,
+  datePickerPointerMoved,
   formatDatePickerValue,
   parseDatePickerValue,
 } from "../date-picker.js";
@@ -32,4 +33,12 @@ test("rejects impossible dates and includes leap day", () => {
   assert.equal(parseDatePickerValue("2026-02-30"), null);
   assert.equal(parseDatePickerValue("2026-07-13T25:00", "datetime-local"), null);
   assert.equal(buildDatePickerMonth(2028, 1).some((item) => item.value === "2028-02-29"), true);
+});
+
+test("distinguishes a tap from a scroll gesture on date inputs", () => {
+  assert.equal(datePickerPointerMoved(100, 200, 104, 206), false);
+  assert.equal(datePickerPointerMoved(100, 200, 100, 211), true);
+  assert.equal(datePickerPointerMoved(100, 200, 111, 200), true);
+  assert.equal(datePickerPointerMoved(100, 200, 104, 204, 8), false);
+  assert.equal(datePickerPointerMoved(100, 200, 107, 208, 8), true);
 });

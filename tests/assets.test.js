@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260826-issuer-pinyin-search";
+const VERSION = "20260826-mobile-date-scroll-guard";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.27">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.28">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -92,6 +92,23 @@ test("ships tranche prepayment entry with a mobile-safe three-digit input", asyn
   assert.match(app, /prepaymentNumber:\s*new Date|prepaymentRecordedAt:\s*new Date/);
   assert.match(styles, /\.prepayment-number-input input\s*\{[^}]*font-size:\s*18px;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.prepayment-entry-panel\s*\{[^}]*place-items:\s*end stretch;/s);
+});
+
+test("lets mobile scrolling start on date inputs without opening the picker", async () => {
+  const [datePicker, styles] = await Promise.all([
+    readFile(new URL("../date-picker.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+  const pointerDownStart = datePicker.indexOf('input.addEventListener("pointerdown"');
+  const clickStart = datePicker.indexOf('input.addEventListener("click"', pointerDownStart);
+
+  assert.ok(pointerDownStart >= 0);
+  assert.ok(clickStart > pointerDownStart);
+  assert.doesNotMatch(datePicker.slice(pointerDownStart, clickStart), /openPicker\(input\)/);
+  assert.match(datePicker, /input\.addEventListener\("pointermove"/);
+  assert.match(datePicker, /input\.addEventListener\("pointercancel"/);
+  assert.match(datePicker, /if \(suppressNextClick\)/);
+  assert.match(styles, /\.custom-date-input\s*\{[^}]*touch-action:\s*pan-y;/s);
 });
 
 test("revalidates non-fingerprinted application assets", async () => {
