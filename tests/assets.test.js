@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260826-issuer-credit-workspace";
+const VERSION = "20260830-state-history";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText] = await Promise.all([
@@ -13,7 +13,7 @@ test("exposes a readable product version consistent with package metadata", asyn
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.29">/);
+  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.30">/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -43,6 +43,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`project-screenshot-ocr\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-layout\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-image\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`state-history\\.js\\?v=${VERSION}`));
   assert.match(historyParser, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(lifecycle, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));

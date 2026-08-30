@@ -21,8 +21,30 @@ CREATE TABLE IF NOT EXISTS user_app_state (
   user_id TEXT PRIMARY KEY,
   data TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS user_app_state_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  revision INTEGER,
+  base_revision INTEGER,
+  data TEXT NOT NULL,
+  saved_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  save_reason TEXT NOT NULL,
+  client_id TEXT NOT NULL DEFAULT '',
+  client_label TEXT NOT NULL DEFAULT '',
+  restored_from_snapshot_id TEXT,
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  byte_size INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (user_id, revision),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_app_state_snapshots_user_saved
+  ON user_app_state_snapshots(user_id, saved_at DESC);
 
 CREATE TABLE IF NOT EXISTS app_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),

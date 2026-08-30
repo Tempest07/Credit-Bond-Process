@@ -11,6 +11,9 @@
 - 自动判断处室、金处、周总或房地产债林总终批
 - 一级投标利率固定留作待填写
 - 支持浏览器本地资料库与 Cloudflare D1 同步
+- 云端状态使用 revision 并发校验；多个标签页或设备同时保存时，过期写入会保留为冲突快照，不再静默覆盖当前数据
+- 支持查看最近 50 个资料库快照的保存时间、设备来源和增删改摘要，并可导出或回溯为新版本
+- 页面在前台 15 分钟无操作时提前 60 秒提示，等待云端保存确认后通过 Gateway 安全退出；保存失败时不会退出
 - 支持 JSON 导入导出备份
 - 支持在浏览器本地解析历史 Word 流程文档，按“越靠前越新”归并最新授信
 - 普通信用债 50206 与 ABS 50217 分开维护：每个主体仅保留一张 50206；同一 ABS 增信方可维护多张 50217
@@ -65,7 +68,7 @@
 
 缴款单系统还需要 R2、Queue、Email Routing 和独立 Email Worker，详见 [PAYMENT_RECEIPTS_DEPLOYMENT.md](./PAYMENT_RECEIPTS_DEPLOYMENT.md)。
 
-Pages Function 会在首次通过 gateway 访问资料库时自动创建所需表，并把旧 `app_state` 数据迁移到 `admin` 管理员账号名下；也可以手动执行 `schema.sql`。
+Pages Function 会在首次通过 gateway 访问资料库时自动创建所需表、为现有状态补充 revision 和初始快照，并把旧 `app_state` 数据迁移到 `admin` 管理员账号名下；也可以手动执行 `schema.sql`。单份状态在写入前限制为 1,800,000 bytes，以避开 D1 单行容量边界；达到限制时应先导出备份并拆分数据模型。
 
 ## Gateway
 

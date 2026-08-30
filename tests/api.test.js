@@ -20,6 +20,11 @@ import { onRequestGet as onPendingReceiptPagesGet } from "../functions/api/payme
 import { onRequestPost as onPendingReceiptRegroupPost } from "../functions/api/payment-receipt-files/[id]/regroup.js";
 import { onRequestGet as onPendingReceiptBatchEmailGet } from "../functions/api/payment-receipt-batches/[id]/email.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
+import { onRequestGet as onStateHistoryGet } from "../functions/api/state-history.js";
+import {
+  onRequestGet as onStateSnapshotGet,
+  onRequestPost as onStateSnapshotPost,
+} from "../functions/api/state-history/[id].js";
 
 test("rejects remote state access without a gateway assertion", async () => {
   const response = await onRequestGet({
@@ -228,6 +233,7 @@ test("rejects ordinary 50206 records from the ABS approval collection", async ()
     request: new Request("http://127.0.0.1:8788/api/state", {
       method: "PUT",
       body: JSON.stringify({
+        expectedRevision: 0,
         data: {
           version: 5,
           issuers: [],
@@ -249,6 +255,7 @@ test("accepts and preserves project ledger records under admin", async () => {
       method: "PUT",
       headers: { "X-Tempest-Auth": token },
       body: JSON.stringify({
+        expectedRevision: 0,
         data: {
           version: 3,
           issuers: [],
@@ -299,6 +306,101 @@ test("accepts and preserves project ledger records under admin", async () => {
   assert.equal(saved.secondaryTrades[0].tradeRecord["债券代码"], "280680.SH");
   assert.equal(saved.ftpCurve.y1, 1.5);
   assert.deepEqual(saved.reminderState.dailyMailSentDates, ["2026-07-10"]);
+  const payload = await response.clone().json();
+  assert.equal(payload.revision, 1);
+  assert.equal(payload.snapshot.revision, 1);
+  assert.equal(JSON.parse(DB.legacyState.data).projects[0].shortName, "26测试01");
+});
+
+test("preserves a stale writer as a conflict snapshot instead of overwriting current state", async () => {
+  const DB = createMockDb();
+  const first = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({
+        expectedRevision: 0,
+        meta: { source: "autosave", clientId: "client-a", clientLabel: "设备 A" },
+        data: { version: 5, issuers: [{ id: "a", legalName: "来源 A" }] },
+      }),
+    }),
+  });
+  const second = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({
+        expectedRevision: 0,
+        meta: { source: "autosave", clientId: "client-b", clientLabel: "设备 B" },
+        data: { version: 5, issuers: [{ id: "b", legalName: "来源 B" }] },
+      }),
+    }),
+  });
+  const conflict = await second.json();
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 409);
+  assert.equal(JSON.parse(DB.userStates.get("admin").data).issuers[0].legalName, "来源 A");
+  assert.equal(conflict.revision, 1);
+  assert.equal(conflict.conflictSnapshot.status, "conflict");
+  assert.equal(conflict.conflictSnapshot.clientLabel, "设备 B");
+
+  const historyResponse = await onStateHistoryGet({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state-history"),
+  });
+  const history = await historyResponse.json();
+  assert.equal(history.snapshots.some((snapshot) => snapshot.revision === 1 && snapshot.status === "accepted"), true);
+  assert.equal(history.snapshots.some((snapshot) => snapshot.status === "conflict"), true);
+
+  const detailResponse = await onStateSnapshotGet({
+    env: { DB },
+    params: { id: encodeURIComponent(conflict.conflictSnapshot.id) },
+    request: new Request(`http://127.0.0.1:8788/api/state-history/${encodeURIComponent(conflict.conflictSnapshot.id)}`),
+  });
+  const detail = await detailResponse.json();
+  assert.equal(detail.snapshot.data.issuers[0].legalName, "来源 B");
+
+  const revertResponse = await onStateSnapshotPost({
+    env: { DB },
+    params: { id: conflict.conflictSnapshot.id },
+    request: new Request(`http://127.0.0.1:8788/api/state-history/${conflict.conflictSnapshot.id}`, {
+      method: "POST",
+      body: JSON.stringify({ action: "revert", expectedRevision: 1, meta: { clientLabel: "设备 A" } }),
+    }),
+  });
+  const reverted = await revertResponse.json();
+  assert.equal(revertResponse.status, 200);
+  assert.equal(reverted.revision, 2);
+  assert.equal(reverted.snapshot.saveReason, "revert");
+  assert.equal(reverted.snapshot.restoredFromSnapshotId, conflict.conflictSnapshot.id);
+  assert.equal(JSON.parse(DB.userStates.get("admin").data).issuers[0].legalName, "来源 B");
+  assert.equal([...DB.snapshots.values()].some((snapshot) => snapshot.revision === 1), true);
+});
+
+test("requires a base revision and rejects state bodies beyond the D1-safe limit", async () => {
+  const DB = createMockDb();
+  const missingRevision = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({ data: { version: 5, issuers: [] } }),
+    }),
+  });
+  assert.equal(missingRevision.status, 428);
+
+  const tooLarge = await onRequestPut({
+    env: { DB },
+    request: new Request("http://127.0.0.1:8788/api/state", {
+      method: "PUT",
+      body: JSON.stringify({
+        expectedRevision: 0,
+        data: { version: 5, issuers: [{ id: "large", legalName: "超大主体", notes: "x".repeat(1_810_000) }] },
+      }),
+    }),
+  });
+  assert.equal(tooLarge.status, 413);
+  assert.equal((await tooLarge.json()).code, "state_too_large");
 });
 
 test("reads migrated legacy state with gateway auth", async () => {
@@ -330,6 +432,7 @@ test("returns unified reminders for the Android app bridge", async () => {
     request: new Request("http://127.0.0.1:8788/api/state", {
       method: "PUT",
       body: JSON.stringify({
+        expectedRevision: 0,
         data: {
           version: 4,
           issuers: [],
@@ -427,22 +530,26 @@ async function hmacHex(secret, value) {
 function createMockDb({ legacyData = null } = {}) {
   const users = new Map();
   const userStates = new Map();
-  const legacyState = legacyData
+  const snapshots = new Map();
+  let legacyState = legacyData
     ? { data: JSON.stringify(legacyData), updated_at: "2026-07-02T00:00:00.000Z" }
     : null;
 
   const db = {
     users,
     userStates,
+    snapshots,
+    get legacyState() { return legacyState; },
     prepare(sql) {
       let values = [];
-      return {
+      const statement = {
+        sql,
         bind(...args) {
           values = args;
           return this;
         },
         async run() {
-          if (/CREATE TABLE/i.test(sql)) return {};
+          if (/CREATE TABLE|CREATE INDEX|ALTER TABLE/i.test(sql)) return result(0);
           if (/INSERT INTO users/i.test(sql)) {
             const [id, username, nickname, passwordSalt, passwordHash, now] = values;
             users.set(username, {
@@ -455,14 +562,99 @@ function createMockDb({ legacyData = null } = {}) {
               created_at: now,
               updated_at: now,
             });
-            return {};
+            return result(1);
           }
-          if (/INSERT INTO user_app_state/i.test(sql)) {
+          if (/UPDATE user_app_state/i.test(sql)) {
+            const [data, updatedAt, revision, userId, expectedRevision] = values;
+            const current = userStates.get(userId);
+            if (!current || current.revision !== expectedRevision) return result(0);
+            userStates.set(userId, { ...current, data, updated_at: updatedAt, revision });
+            return result(1);
+          }
+          if (/INSERT INTO user_app_state\s*\(/i.test(sql)) {
             const [userId, data, updatedAt] = values;
-            userStates.set(userId, { user_id: userId, data, updated_at: updatedAt });
-            return {};
+            const current = userStates.get(userId);
+            userStates.set(userId, {
+              user_id: userId,
+              data,
+              updated_at: updatedAt,
+              revision: current?.revision || 0,
+            });
+            return result(1);
           }
-          return {};
+          if (/INSERT OR IGNORE INTO user_app_state_snapshots/i.test(sql) && /FROM user_app_state/i.test(sql)) {
+            let changes = 0;
+            for (const row of userStates.values()) {
+              if ([...snapshots.values()].some((snapshot) => snapshot.user_id === row.user_id && snapshot.revision === row.revision)) continue;
+              const id = `${row.user_id}:revision:${row.revision}`;
+              snapshots.set(id, {
+                id,
+                user_id: row.user_id,
+                revision: row.revision,
+                base_revision: row.revision > 0 ? row.revision - 1 : null,
+                data: row.data,
+                saved_at: row.updated_at,
+                status: "accepted",
+                save_reason: "migration",
+                client_id: "",
+                client_label: "历史云端状态",
+                restored_from_snapshot_id: null,
+                summary_json: '{"total":0,"collections":{},"settings":[]}',
+                byte_size: Buffer.byteLength(row.data),
+              });
+              changes += 1;
+            }
+            return result(changes);
+          }
+          if (/INSERT INTO user_app_state_snapshots/i.test(sql) && /'conflict'/i.test(sql)) {
+            const [id, userId, baseRevision, data, savedAt, saveReason, clientId, clientLabel, summaryJson, byteSize] = values;
+            snapshots.set(id, {
+              id,
+              user_id: userId,
+              revision: null,
+              base_revision: baseRevision,
+              data,
+              saved_at: savedAt,
+              status: "conflict",
+              save_reason: saveReason,
+              client_id: clientId,
+              client_label: clientLabel,
+              restored_from_snapshot_id: null,
+              summary_json: summaryJson,
+              byte_size: byteSize,
+            });
+            return result(1);
+          }
+          if (/INSERT INTO user_app_state_snapshots/i.test(sql) && /'accepted'/i.test(sql)) {
+            const [id, userId, revision, baseRevision, data, savedAt, saveReason, clientId, clientLabel, restoredFrom, summaryJson, byteSize] = values;
+            const current = userStates.get(userId);
+            if (!current || current.revision !== revision || current.updated_at !== savedAt) return result(0);
+            snapshots.set(id, {
+              id,
+              user_id: userId,
+              revision,
+              base_revision: baseRevision,
+              data,
+              saved_at: savedAt,
+              status: "accepted",
+              save_reason: saveReason,
+              client_id: clientId,
+              client_label: clientLabel,
+              restored_from_snapshot_id: restoredFrom,
+              summary_json: summaryJson,
+              byte_size: byteSize,
+            });
+            return result(1);
+          }
+          if (/INSERT INTO app_state/i.test(sql)) {
+            const [data, updatedAt, userId, revision] = values;
+            const current = userStates.get(userId);
+            if (!current || current.revision !== revision || current.updated_at !== updatedAt) return result(0);
+            legacyState = { data, updated_at: updatedAt };
+            return result(1);
+          }
+          if (/DELETE FROM user_app_state_snapshots/i.test(sql)) return result(0);
+          return result(0);
         },
         async first() {
           if (/SELECT id FROM users WHERE username/i.test(sql)) {
@@ -474,15 +666,40 @@ function createMockDb({ legacyData = null } = {}) {
             return row ? { user_id: row.user_id } : null;
           }
           if (/SELECT data, updated_at\s+FROM app_state/i.test(sql)) return legacyState;
-          if (/SELECT data, updated_at\s+FROM user_app_state/i.test(sql)) {
+          if (/SELECT data, updated_at, revision\s+FROM user_app_state/i.test(sql)) {
             return userStates.get(values[0]) || null;
+          }
+          if (/FROM user_app_state_snapshots/i.test(sql) && /WHERE user_id = \?1 AND id = \?2/i.test(sql)) {
+            const row = snapshots.get(values[1]);
+            return row?.user_id === values[0] ? row : null;
           }
           return null;
         },
+        async all() {
+          if (/PRAGMA table_info\(user_app_state\)/i.test(sql)) return { results: [{ name: "revision" }] };
+          if (/FROM user_app_state_snapshots/i.test(sql)) {
+            const rows = [...snapshots.values()]
+              .filter((row) => row.user_id === values[0])
+              .sort((left, right) => right.saved_at.localeCompare(left.saved_at))
+              .slice(0, Number(values[1] || 50));
+            return { results: rows };
+          }
+          return { results: [] };
+        },
       };
+      return statement;
+    },
+    async batch(statements) {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
     },
   };
   return db;
+}
+
+function result(changes) {
+  return { success: true, meta: { changes } };
 }
 
 function createReceiptArchiveListDb() {

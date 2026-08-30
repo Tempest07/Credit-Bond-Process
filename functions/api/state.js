@@ -6,10 +6,11 @@ import {
   json,
   readUserAppState,
   requireUser,
-  writeUserAppState,
 } from "./_auth.js";
+import { ensureStateVersionSchema, saveStateVersion } from "./_state-versioning.js";
 
-const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const MAX_BODY_BYTES = 1_900_000;
+const MAX_STATE_BYTES = 1_800_000;
 
 export async function onRequestGet(context) {
   const auth = await requireUser(context);
@@ -17,10 +18,12 @@ export async function onRequestGet(context) {
   if (!context.env.DB) return json({ error: "Cloudflare D1 binding DB 尚未配置" }, 503);
   try {
     await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
+    await ensureStateVersionSchema(context.env.DB);
     const result = await readUserAppState(context.env.DB, auth.user.id);
     return json({
       data: result.data,
       updatedAt: result.updatedAt,
+      revision: result.revision,
       user: auth.user,
     });
   } catch (error) {
@@ -35,24 +38,54 @@ export async function onRequestPut(context) {
   const declaredLength = Number(context.request.headers.get("Content-Length") || 0);
   if (declaredLength > MAX_BODY_BYTES) return json({ error: "提交的数据过大" }, 413);
 
+  let body;
+  let data;
   try {
     const text = await context.request.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-      return json({ error: "提交的数据过大" }, 413);
+    if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return stateTooLargeResponse();
+    body = JSON.parse(text);
+    if (body?.expectedRevision === undefined || body?.expectedRevision === null || !Number.isInteger(Number(body.expectedRevision))) {
+      return json({ error: "保存前必须先读取云端 revision", code: "revision_required" }, 428);
+    }
+    data = validateState(body?.data);
+    if (new TextEncoder().encode(JSON.stringify(data)).byteLength > MAX_STATE_BYTES) return stateTooLargeResponse();
+  } catch (error) {
+    return json({ error: error.message || "资料库格式无效" }, 400);
+  }
+
+  try {
+    await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
+    await ensureStateVersionSchema(context.env.DB);
+    const result = await saveStateVersion(context.env.DB, auth.user.id, {
+      data,
+      expectedRevision: Number(body.expectedRevision),
+      meta: body.meta,
+      mirrorLegacy: auth.user.id === "admin",
+    });
+    if (result.status === "conflict") {
+      return json({
+        error: "云端已有其他来源保存的新版本；本次内容已保留为冲突快照",
+        code: "state_conflict",
+        revision: result.revision,
+        updatedAt: result.updatedAt,
+        conflictSnapshot: result.snapshot,
+      }, 409);
     }
 
-    const body = JSON.parse(text);
-    const data = validateState(body?.data);
-    const updatedAt = new Date().toISOString();
-    data.updatedAt = updatedAt;
-
-    await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
-    await writeUserAppState(context.env.DB, auth.user.id, data, updatedAt);
-    if (auth.user.id === "admin") await writeLegacyAppState(context.env.DB, data, updatedAt);
-
-    return json({ status: "ok", updatedAt, user: auth.user });
+    return json({
+      status: result.status,
+      updatedAt: result.updatedAt,
+      revision: result.revision,
+      snapshot: result.snapshot,
+      user: auth.user,
+    });
   } catch (error) {
-    return json({ error: error.message || "保存资料库失败" }, 400);
+    console.error(JSON.stringify({
+      event: "state_save_failed",
+      userId: auth.user.id,
+      message: error.message || "unknown",
+    }));
+    return json({ error: error.message || "保存资料库失败", code: "state_save_failed" }, 500);
   }
 }
 
@@ -60,7 +93,7 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: apiHeaders() });
 }
 
-function validateState(data) {
+export function validateState(data) {
   if (!data || typeof data !== "object" || !Array.isArray(data.issuers)) {
     throw new Error("资料库必须包含 issuers 数组");
   }
@@ -96,21 +129,10 @@ function validateState(data) {
   };
 }
 
-async function writeLegacyAppState(db, data, updatedAt) {
-  try {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS app_state (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        data TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-    await db.prepare(`
-      INSERT INTO app_state (id, data, updated_at)
-      VALUES (1, ?1, ?2)
-      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
-    `).bind(JSON.stringify(data), updatedAt).run();
-  } catch {
-    // user_app_state is the source of truth; legacy app_state is only for older mailer deployments.
-  }
+function stateTooLargeResponse() {
+  return json({
+    error: "资料库已接近 Cloudflare D1 单行容量上限，请先导出备份并联系管理员拆分数据",
+    code: "state_too_large",
+    maxBytes: MAX_STATE_BYTES,
+  }, 413);
 }

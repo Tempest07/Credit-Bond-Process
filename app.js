@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260826-issuer-credit-workspace";
+} from "./core.js?v=20260830-state-history";
 import {
   FTP_TENORS,
   appendBidSubmission,
@@ -54,13 +54,13 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260826-issuer-credit-workspace";
+} from "./lifecycle.js?v=20260830-state-history";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260826-issuer-credit-workspace";
+} from "./history-parser.js?v=20260830-state-history";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,23 +76,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260826-issuer-credit-workspace";
+} from "./protocol-transfer.js?v=20260830-state-history";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260826-issuer-credit-workspace";
+} from "./protocol-transfer-templates.js?v=20260830-state-history";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260826-issuer-credit-workspace";
+} from "./protocol-transfer-docx.js?v=20260830-state-history";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260826-issuer-credit-workspace";
+} from "./reminders.js?v=20260830-state-history";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -120,11 +120,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260826-issuer-credit-workspace";
+} from "./secondary-inventory.js?v=20260830-state-history";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260826-issuer-credit-workspace";
+} from "./trade-record-converter.js?v=20260830-state-history";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -135,13 +135,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260826-issuer-credit-workspace";
+} from "./trade-record-grid.js?v=20260830-state-history";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260826-issuer-credit-workspace";
-import { initializeDatePickers } from "./date-picker.js?v=20260826-issuer-credit-workspace";
+} from "./trade-record-ledger.js?v=20260830-state-history";
+import { initializeDatePickers } from "./date-picker.js?v=20260830-state-history";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -150,28 +150,34 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260826-issuer-credit-workspace";
+} from "./project-screenshot-ocr.js?v=20260830-state-history";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260826-issuer-credit-workspace";
+} from "./project-screenshot-layout.js?v=20260830-state-history";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260826-issuer-credit-workspace";
+} from "./project-screenshot-image.js?v=20260830-state-history";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260826-issuer-credit-workspace";
+} from "./payment-receipts.js?v=20260830-state-history";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260826-issuer-credit-workspace";
+} from "./issuer-search.js?v=20260830-state-history";
+import {
+  formatStateChangeSummary,
+  statePayloadEquals,
+} from "./state-history.js?v=20260830-state-history";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
+const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
+const LOCAL_CACHE_VERSION = 2;
 const PROJECT_DM_HISTORY_KEY = "credit-bond-process-project-dm-history-v1";
 const PROJECT_DM_HISTORY_LIMIT = 12;
 const ISSUER_PICKER_RESULT_LIMIT = 40;
@@ -179,6 +185,7 @@ const NEW_PROJECT_CUTOFF_MODES = new Set(["auto", "today", "next-business-day"])
 const POLICY_CURVE_TERMS = ["0.1Y", "0.2Y", "0.25Y", "0.3Y", "0.4Y", "0.5Y", "0.6Y", "0.7Y", "0.75Y", "0.8Y", "0.9Y", "1Y", "3Y", "5Y"];
 const POLICY_CURVE_KEY_TERMS = new Set(["0.1Y", "0.25Y", "0.3Y", "0.5Y", "0.75Y", "1Y", "3Y", "5Y"]);
 const API_URL = "./api/state";
+const STATE_HISTORY_URL = "./api/state-history";
 const PAYMENT_RECEIPTS_URL = "./api/payment-receipts";
 const PAYMENT_RECEIPT_COVERAGE_URL = "./api/payment-receipt-coverage";
 const DM_VALUATION_URL = "./api/dm/valuation";
@@ -201,6 +208,8 @@ const PROJECT_SCREENSHOT_IMAGE_MIME_TYPES = new Set([
   "image/heic", "image/heif", "image/avif",
 ]);
 const PROJECT_SCREENSHOT_IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif|avif)$/i;
+const IDLE_WARNING_AFTER_MS = 15 * 60 * 1000;
+const IDLE_EXIT_COUNTDOWN_SECONDS = 60;
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
 270D 规模7亿 AAA(中诚信国际)/隐含AAA
 询价区间1.25-1.45 银行间 中信银行
@@ -260,7 +269,27 @@ const SAMPLE_ISSUER = {
   },
 };
 
-let state = loadLocalState();
+const initialLocalCache = loadLocalState();
+let state = initialLocalCache.data;
+let localStateDirty = initialLocalCache.dirty;
+let localBaseRevision = initialLocalCache.baseRevision;
+let localChangeGeneration = localStateDirty ? 1 : 0;
+let localDirtyAt = initialLocalCache.dirtyAt;
+let cloudRevision = Number.isInteger(localBaseRevision) ? localBaseRevision : 0;
+let cloudUpdatedAt = null;
+let syncConflictActive = false;
+let activeStateSnapshotId = "";
+let stateHistoryEntries = [];
+let stateHistorySelectedId = "";
+let stateHistorySelectedSnapshot = null;
+let stateHistoryTrigger = null;
+let idleLastActivityAt = Date.now();
+let idleWarningTimer = null;
+let idleCountdownTimer = null;
+let idleCountdownRemaining = IDLE_EXIT_COUNTDOWN_SECONDS;
+let idleExitInProgress = false;
+let bondActivityChannel = null;
+const stateClientId = loadStateClientId();
 let project = parseProjectBrief("");
 let newProjectCutoffMode = "auto";
 let selectedIssuerId = "";
@@ -403,6 +432,8 @@ async function initialize() {
   initializeDatePickers();
   initializeHistoryImport();
   bindDataActions();
+  bindStateHistory();
+  initializeIdleExit();
   initializeLiquidMotion();
   resetProjectDmWorkspace({ preserveCurrentAsHistory: false, showToastMessage: false });
   renderProjectDmHistoryControls();
@@ -9961,7 +9992,7 @@ function fillProjectForm(input) {
   $("#projectResultSummary").value = buildAwardResultText(record);
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = record.status;
-  $("#projectAutosaveStatus").textContent = "已实时保存";
+  $("#projectAutosaveStatus").textContent = localStateDirty ? "已保存到本机，正在上传" : "云端已确认";
   updateProjectActionButtons(record);
   renderBidSubmissionHistory(record);
   renderCutoffHint(record);
@@ -10515,6 +10546,7 @@ function scheduleProjectAutoSave() {
 function saveProjectDraftNow() {
   if ($("#projectForm").hidden || !$("#projectId").value) return;
   clearTimeout(projectAutoSaveTimer);
+  projectAutoSaveTimer = null;
   const draft = readProjectForm();
   if (draft.resultConfirmed) draft.status = deriveProjectStatus(draft);
   saveProjectRecordNow(draft);
@@ -10522,6 +10554,7 @@ function saveProjectDraftNow() {
 
 function saveProjectRecordNow(record) {
   clearTimeout(projectAutoSaveTimer);
+  projectAutoSaveTimer = null;
   const normalized = applyFtpRevenueToProject(record);
   const isCurrentProject = !$("#projectForm").hidden && $("#projectId").value === normalized.id;
   state = upsertProject(state, normalized);
@@ -10530,7 +10563,7 @@ function saveProjectRecordNow(record) {
   if (isCurrentProject) {
     $("#projectStatus").value = normalized.status;
     $("#projectStatusPill").textContent = normalized.status;
-    $("#projectAutosaveStatus").textContent = "已实时保存";
+    $("#projectAutosaveStatus").textContent = "已保存到本机，正在上传";
     $("#projectBidPosition").value = buildBidPositionText(normalized);
     updateProjectActionButtons(normalized);
     renderBidSubmissionHistory(normalized);
@@ -10662,7 +10695,9 @@ function syncModalOpenState() {
     !$("#resultEntryPanel").hidden
       || !$("#prepaymentEntryPanel").hidden
       || !$("#paymentReceiptRegroupPanel").hidden
-      || !$("#paymentReceiptExplorerPanel").hidden,
+      || !$("#paymentReceiptExplorerPanel").hidden
+      || !$("#stateHistoryPanel").hidden
+      || !$("#idleExitPanel").hidden,
   );
 }
 
@@ -11510,8 +11545,8 @@ async function enrichDmLookupWithLocalIssuer(payload) {
   };
 }
 
-function findLocalRatingForDmNormalized(normalized) {
-  return findProjectRatingForDmNormalized(normalized) || findIssuerForDmNormalized(normalized);
+function findLocalRatingForDmNormalized(normalized, sourceState = state) {
+  return findProjectRatingForDmNormalized(normalized, sourceState) || findIssuerForDmNormalized(normalized, sourceState);
 }
 
 async function findCloudRatingForDmNormalized(normalized) {
@@ -11520,20 +11555,19 @@ async function findCloudRatingForDmNormalized(normalized) {
     if (!response.ok) return null;
     const remote = await response.json();
     if (!remote.data?.issuers) return null;
-    state = normalizeLoadedState(remote.data);
-    persistLocal();
-    return findLocalRatingForDmNormalized(normalized);
+    const remoteState = normalizeLoadedState(remote.data);
+    return findLocalRatingForDmNormalized(normalized, remoteState);
   } catch {
     return null;
   }
 }
 
-function findProjectRatingForDmNormalized(normalized) {
+function findProjectRatingForDmNormalized(normalized, sourceState = state) {
   const querySecurityId = normalizeDmSecurityId(normalized.securityId);
   const queryNames = [normalized.shortName, normalized.fullName].filter(Boolean);
   const issuerTargets = [normalized.issuerName, normalized.fullName].filter(Boolean);
   let best = null;
-  for (const projectRecord of state.projects || []) {
+  for (const projectRecord of sourceState.projects || []) {
     const ratingFields = projectDmRatingFields(projectRecord);
     if (!ratingFields.subjectRating && !ratingFields.ratingAgency && !ratingFields.hiddenRating) continue;
     const codeScore = querySecurityId && projectDmSecurityIds(projectRecord).some((value) => normalizeDmSecurityId(value) === querySecurityId) ? 120 : 0;
@@ -11597,18 +11631,18 @@ function parseProjectDmRatingText(text = "") {
   };
 }
 
-function findIssuerForDmNormalized(normalized) {
+function findIssuerForDmNormalized(normalized, sourceState = state) {
   const targets = [normalized.issuerName, normalized.fullName, normalized.shortName].filter(Boolean);
   for (const target of targets) {
-    const issuer = findIssuer(String(target), state.issuers || []);
+    const issuer = findIssuer(String(target), sourceState.issuers || []);
     if (issuer) return issuer;
   }
-  return findIssuerForDmByCoreName(targets);
+  return findIssuerForDmByCoreName(targets, sourceState);
 }
 
-function findIssuerForDmByCoreName(targets) {
+function findIssuerForDmByCoreName(targets, sourceState = state) {
   let best = null;
-  for (const issuer of state.issuers || []) {
+  for (const issuer of sourceState.issuers || []) {
     const names = [issuer.legalName, ...(issuer.aliases || [])].filter(Boolean);
     for (const name of names) {
       const normalizedName = normalizeDmIssuerMatchText(name);
@@ -12785,7 +12819,7 @@ function fillIssuerForm(issuer, { module = "" } = {}) {
 
 function bindDataActions() {
   $("#saveCloudButton").addEventListener("click", async () => {
-    const ok = await saveCloudState();
+    const ok = await saveCloudState({ source: "manual", markChange: false });
     showToast(ok ? "资料库已同步至 Cloudflare D1。" : "D1 未连接，项目中心已锁定。");
   });
 
@@ -12805,7 +12839,7 @@ function bindDataActions() {
       const imported = JSON.parse(await file.text());
       if (!Array.isArray(imported.issuers)) throw new Error("文件中缺少 issuers 数组。");
       state = normalizeLoadedState({ ...imported, updatedAt: new Date().toISOString() });
-      persistState();
+      persistState({ source: "import" });
       renderIssuerOptions();
       renderIssuerList();
       renderAbsCreditEnhancerOptions();
@@ -12821,6 +12855,383 @@ function bindDataActions() {
       $("#importDataInput").value = "";
     }
   });
+}
+
+function bindStateHistory() {
+  $("#stateHistoryButton").addEventListener("click", (event) => openStateHistory(event.currentTarget));
+  $("#stateHistoryCloseButton").addEventListener("click", closeStateHistory);
+  $("#stateHistoryPanel").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeStateHistory();
+  });
+  $("#stateHistoryList").addEventListener("click", (event) => {
+    const card = event.target.closest("[data-state-snapshot-id]");
+    if (card) void selectStateSnapshot(card.dataset.stateSnapshotId);
+  });
+  $("#stateHistoryDetail").addEventListener("click", (event) => {
+    if (event.target.closest("[data-download-state-snapshot]")) downloadSelectedStateSnapshot();
+    if (event.target.closest("[data-revert-state-snapshot]")) void revertSelectedStateSnapshot();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("#stateHistoryPanel").hidden) closeStateHistory();
+  });
+}
+
+async function openStateHistory(trigger = null) {
+  stateHistoryTrigger = trigger || document.activeElement;
+  $("#stateHistoryPanel").hidden = false;
+  syncModalOpenState();
+  $(".state-history-dialog")?.focus({ preventScroll: true });
+  await loadStateHistory();
+}
+
+function closeStateHistory() {
+  $("#stateHistoryPanel").hidden = true;
+  syncModalOpenState();
+  stateHistoryTrigger?.focus?.({ preventScroll: true });
+  stateHistoryTrigger = null;
+}
+
+async function loadStateHistory({ selectId = stateHistorySelectedId } = {}) {
+  $("#stateHistoryList").innerHTML = '<div class="empty-state"><strong>正在读取版本历史...</strong></div>';
+  try {
+    const response = await fetch(`${STATE_HISTORY_URL}?limit=50`, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    stateHistoryEntries = payload.snapshots || [];
+    renderStateHistoryList();
+    const targetId = selectId && stateHistoryEntries.some((entry) => entry.id === selectId)
+      ? selectId
+      : stateHistoryEntries[0]?.id;
+    if (targetId) await selectStateSnapshot(targetId);
+  } catch (error) {
+    $("#stateHistoryList").innerHTML = `<div class="empty-state"><strong>版本历史读取失败</strong><span>${escapeHtml(error.message || "请稍后重试")}</span></div>`;
+  }
+}
+
+function renderStateHistoryList() {
+  if (!stateHistoryEntries.length) {
+    $("#stateHistoryList").innerHTML = '<div class="empty-state"><strong>暂无版本快照</strong></div>';
+    return;
+  }
+  $("#stateHistoryList").innerHTML = stateHistoryEntries.map((entry) => {
+    const current = entry.status === "accepted" && entry.revision === cloudRevision;
+    const badgeClass = entry.status === "conflict" ? "conflict" : current ? "current" : "";
+    const badge = entry.status === "conflict" ? "冲突副本" : current ? "当前版本" : `版本 ${entry.revision}`;
+    const title = entry.status === "conflict"
+      ? `来自版本 ${entry.baseRevision ?? "未知"} 的候选`
+      : `版本 ${entry.revision}`;
+    return `
+      <button class="state-history-card ${entry.status === "conflict" ? "conflict" : ""} ${entry.id === stateHistorySelectedId ? "active" : ""}" type="button" data-state-snapshot-id="${escapeAttribute(entry.id)}">
+        <span class="state-history-card-head">
+          <strong>${escapeHtml(title)}</strong>
+          <span class="state-history-badge ${badgeClass}">${escapeHtml(badge)}</span>
+        </span>
+        <span class="state-history-card-summary">${escapeHtml(formatStateChangeSummary(entry.summary))}</span>
+        <span class="state-history-card-meta">
+          <span>${escapeHtml(formatStateSnapshotTime(entry.savedAt))}</span>
+          <span>${escapeHtml(entry.clientLabel || stateSaveReasonLabel(entry.saveReason))}</span>
+        </span>
+      </button>
+    `;
+  }).join("");
+}
+
+async function selectStateSnapshot(snapshotId) {
+  stateHistorySelectedId = snapshotId;
+  stateHistorySelectedSnapshot = null;
+  renderStateHistoryList();
+  $("#stateHistoryDetail").innerHTML = '<div class="empty-state"><strong>正在读取快照...</strong></div>';
+  try {
+    const response = await fetch(`${STATE_HISTORY_URL}/${encodeURIComponent(snapshotId)}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    stateHistorySelectedSnapshot = payload.snapshot;
+    renderStateHistoryDetail(payload.snapshot);
+  } catch (error) {
+    $("#stateHistoryDetail").innerHTML = `<div class="empty-state"><strong>快照读取失败</strong><span>${escapeHtml(error.message || "请稍后重试")}</span></div>`;
+  }
+}
+
+function renderStateHistoryDetail(snapshot) {
+  const current = snapshot.status === "accepted" && snapshot.revision === cloudRevision;
+  const title = snapshot.status === "conflict"
+    ? "冲突候选快照"
+    : current ? `当前版本 ${snapshot.revision}` : `历史版本 ${snapshot.revision}`;
+  const groups = stateHistoryChangeGroups(snapshot.summary);
+  $("#stateHistoryDetail").innerHTML = `
+    <div class="state-history-detail-content">
+      <div>
+        <span class="step">${snapshot.status === "conflict" ? "CONFLICT" : "SNAPSHOT"}</span>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <div class="state-history-detail-meta">
+        <div><span>保存时间</span><strong>${escapeHtml(formatStateSnapshotTime(snapshot.savedAt))}</strong></div>
+        <div><span>保存来源</span><strong>${escapeHtml(snapshot.clientLabel || "未标记设备")} · ${escapeHtml(stateSaveReasonLabel(snapshot.saveReason))}</strong></div>
+        <div><span>基于版本</span><strong>${snapshot.baseRevision ?? "初始版本"}</strong></div>
+        <div><span>快照大小</span><strong>${escapeHtml(formatStateSnapshotBytes(snapshot.byteSize))}</strong></div>
+      </div>
+      <div class="state-history-changes">
+        ${groups.length ? groups.map((group) => `
+          <div class="state-history-change-group">
+            <span>${escapeHtml(group.label)}</span>
+            <strong>${escapeHtml(group.counts)}</strong>
+            ${group.items ? `<div class="state-history-change-items">${escapeHtml(group.items)}</div>` : ""}
+          </div>
+        `).join("") : '<div class="state-history-change-group"><strong>内容无变化</strong></div>'}
+      </div>
+      ${snapshot.status === "conflict" ? '<p class="form-note danger">该快照来自过期 revision，已被安全保留，但从未覆盖云端当前版本。</p>' : ""}
+      <div class="state-history-detail-actions">
+        <button class="button subtle" type="button" data-download-state-snapshot>导出此快照</button>
+        <button class="button primary" type="button" data-revert-state-snapshot>${current ? "重新载入此版本" : "回溯为当前版本"}</button>
+      </div>
+    </div>
+  `;
+}
+
+function stateHistoryChangeGroups(summary = {}) {
+  const labels = {
+    issuers: "主体库",
+    absCreditApprovals: "50217 批单",
+    projects: "项目台账",
+    protocolTransfers: "协议转让",
+    secondaryInventoryPositions: "二级库存",
+    secondaryOrders: "二级挂单",
+    secondaryTrades: "二级成交",
+  };
+  const groups = Object.entries(labels).flatMap(([key, label]) => {
+    const change = summary?.collections?.[key] || {};
+    const counts = [];
+    if (change.added) counts.push(`新增 ${change.added}`);
+    if (change.updated) counts.push(`修改 ${change.updated}`);
+    if (change.removed) counts.push(`删除 ${change.removed}`);
+    if (!counts.length) return [];
+    return [{
+      label,
+      counts: counts.join(" / "),
+      items: (change.items || []).map((item) => `${stateChangeTypeLabel(item.type)} ${item.label}`).join("、"),
+    }];
+  });
+  if (summary?.settings?.length) {
+    groups.push({ label: "其他设置", counts: summary.settings.map((item) => item.label).join("、") + "有改动", items: "" });
+  }
+  return groups;
+}
+
+function downloadSelectedStateSnapshot() {
+  const snapshot = stateHistorySelectedSnapshot;
+  if (!snapshot?.data) return;
+  const blob = new Blob([JSON.stringify(snapshot.data, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `credit-bond-snapshot-${snapshot.revision ?? "conflict"}-${snapshot.savedAt.slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+async function revertSelectedStateSnapshot() {
+  const snapshot = stateHistorySelectedSnapshot;
+  if (!snapshot) return;
+  const confirmed = window.confirm("确定使用这个快照创建新的当前版本吗？现有版本会保留在历史中。");
+  if (!confirmed) return;
+  try {
+    const response = await fetch(`${STATE_HISTORY_URL}/${encodeURIComponent(snapshot.id)}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({
+        action: "revert",
+        expectedRevision: cloudRevision,
+        meta: stateSaveMeta("revert"),
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 409) handleStateConflict(payload);
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    state = normalizeLoadedState(payload.data);
+    cloudRevision = Number(payload.revision || 0);
+    localBaseRevision = cloudRevision;
+    cloudUpdatedAt = payload.updatedAt || state.updatedAt || null;
+    localStateDirty = false;
+    localDirtyAt = null;
+    syncConflictActive = false;
+    cloudAvailable = true;
+    persistLocal();
+    renderStateDependentViews();
+    setCloudGate(false, { state: "success" });
+    setSyncStatus("D1 已回溯", `云端版本 ${cloudRevision} 已确认`);
+    showToast(`已创建云端版本 ${cloudRevision}，原版本仍保留。`);
+    await loadStateHistory({ selectId: payload.snapshot?.id || snapshot.id });
+  } catch (error) {
+    showToast(`回溯失败：${error.message}`);
+  }
+}
+
+function stateSaveReasonLabel(reason) {
+  return ({
+    autosave: "自动保存",
+    manual: "手动同步",
+    import: "导入资料库",
+    idle: "空闲退出保存",
+    revert: "版本回溯",
+    migration: "历史迁移",
+  })[reason] || "保存";
+}
+
+function stateChangeTypeLabel(type) {
+  return ({ added: "新增", updated: "修改", removed: "删除" })[type] || "变更";
+}
+
+function formatStateSnapshotTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+function formatStateSnapshotBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${round(bytes / 1024, 1)} KB`;
+  return `${round(bytes / 1024 / 1024, 2)} MB`;
+}
+
+function initializeIdleExit() {
+  if (isLocalApiMode()) {
+    $("#idleLogoutDetail").textContent = "本地开发模式不会自动退出";
+    return;
+  }
+  if ("BroadcastChannel" in window) {
+    bondActivityChannel = new BroadcastChannel("tempest07-bond-centre-activity");
+    bondActivityChannel.addEventListener("message", (event) => {
+      if (event.data?.type === "activity" && Number.isFinite(event.data.at)) {
+        registerIdleActivity({ at: event.data.at, broadcast: false });
+      }
+    });
+  }
+  ["pointerdown", "keydown", "input", "touchstart"].forEach((eventName) => {
+    window.addEventListener(eventName, () => registerIdleActivity(), { passive: true });
+  });
+  window.addEventListener("focus", () => registerIdleActivity());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) registerIdleActivity();
+  });
+  window.addEventListener("pagehide", flushProjectDraftToLocal);
+  $("#idleContinueButton").addEventListener("click", () => registerIdleActivity());
+  $("#idleExitNowButton").addEventListener("click", () => void performIdleSaveAndLogout());
+  scheduleIdleWarning();
+}
+
+function registerIdleActivity({ at = Date.now(), broadcast = true } = {}) {
+  if (idleExitInProgress) return;
+  idleLastActivityAt = Math.max(idleLastActivityAt, at);
+  hideIdleWarning();
+  scheduleIdleWarning();
+  if (broadcast) bondActivityChannel?.postMessage({ type: "activity", at: idleLastActivityAt });
+}
+
+function scheduleIdleWarning() {
+  clearTimeout(idleWarningTimer);
+  const remaining = Math.max(1000, IDLE_WARNING_AFTER_MS - (Date.now() - idleLastActivityAt));
+  idleWarningTimer = setTimeout(showIdleWarning, remaining);
+}
+
+function showIdleWarning() {
+  if (idleExitInProgress || !getCurrentUser()) return scheduleIdleWarning();
+  if (document.hidden || !document.hasFocus()) {
+    idleWarningTimer = setTimeout(showIdleWarning, 60_000);
+    return;
+  }
+  idleCountdownRemaining = IDLE_EXIT_COUNTDOWN_SECONDS;
+  $("#idleExitTitle").textContent = "即将自动保存并退出";
+  $("#idleExitCountdown").textContent = String(idleCountdownRemaining);
+  $("#idleContinueButton").disabled = false;
+  $("#idleExitNowButton").disabled = false;
+  $("#idleExitPanel").hidden = false;
+  syncModalOpenState();
+  clearInterval(idleCountdownTimer);
+  idleCountdownTimer = setInterval(() => {
+    idleCountdownRemaining -= 1;
+    $("#idleExitCountdown").textContent = String(Math.max(0, idleCountdownRemaining));
+    if (idleCountdownRemaining <= 0) void performIdleSaveAndLogout();
+  }, 1000);
+}
+
+function hideIdleWarning() {
+  clearInterval(idleCountdownTimer);
+  idleCountdownTimer = null;
+  if ($("#idleExitPanel")) $("#idleExitPanel").hidden = true;
+  syncModalOpenState();
+}
+
+function flushProjectDraftToLocal() {
+  if (!projectAutoSaveTimer) return;
+  clearTimeout(projectAutoSaveTimer);
+  projectAutoSaveTimer = null;
+  saveProjectDraftNow();
+}
+
+async function flushStateBeforeIdleExit() {
+  flushProjectDraftToLocal();
+  const pendingSaved = await saveSecondaryPendingDraft({ silent: true });
+  if (!pendingSaved) return false;
+  const ledgerSaved = await saveSecondaryLedgerDraft({ silent: true });
+  if (!ledgerSaved) return false;
+  return saveCloudState({ source: "idle", markChange: false });
+}
+
+async function performIdleSaveAndLogout() {
+  if (idleExitInProgress || isLocalApiMode()) return;
+  idleExitInProgress = true;
+  clearTimeout(idleWarningTimer);
+  clearInterval(idleCountdownTimer);
+  $("#idleExitTitle").textContent = "正在保存并安全退出";
+  $("#idleExitCountdown").textContent = "…";
+  $("#idleContinueButton").disabled = true;
+  $("#idleExitNowButton").disabled = true;
+  setSyncStatus("正在保存", "等待云端版本确认后退出");
+
+  try {
+    const saved = await flushStateBeforeIdleExit();
+    if (!saved || syncConflictActive) throw new Error("云端保存未确认；已暂停自动退出，数据仍保留在本机");
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    const response = await fetch("/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Accept": "application/json" },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok !== true) throw new Error(payload.error || "统一退出失败");
+    location.replace("/login/?next=%2Fbond-centre%2F");
+  } catch (error) {
+    idleExitInProgress = false;
+    $("#idleExitTitle").textContent = "自动退出已暂停";
+    $("#idleExitCountdown").textContent = "!";
+    $("#idleContinueButton").disabled = false;
+    $("#idleExitNowButton").disabled = false;
+    showToast(error.message || "自动退出失败，请稍后重试。");
+    idleLastActivityAt = Date.now();
+    scheduleIdleWarning();
+  }
 }
 
 function getCurrentUser() {
@@ -12868,11 +13279,21 @@ async function loadCloudState() {
       throw new Error(`HTTP ${response.status}`);
     }
     const remote = await response.json();
-    const shouldMigrateFtpCurve = ftpCurveNeedsMigration(remote.data?.ftpCurve);
-    const shouldMigrateIssuerBranch = issuerBranchNeedsMigration(remote.data);
-    const shouldMigrateCreditModel = creditModelNeedsMigration(remote.data);
-    if (remote.data?.issuers) {
-      state = normalizeLoadedState(remote.data);
+    const remoteState = remote.data?.issuers ? normalizeLoadedState(remote.data) : structuredClone(DEFAULT_STATE);
+    const remoteRevision = Number(remote.revision || 0);
+    const localCandidate = state;
+    const preserveDirtyLocal = localStateDirty && !statePayloadEquals(localCandidate, remoteState);
+    const migrationSource = preserveDirtyLocal ? localCandidate : remote.data;
+    const shouldMigrateFtpCurve = ftpCurveNeedsMigration(migrationSource?.ftpCurve);
+    const shouldMigrateIssuerBranch = issuerBranchNeedsMigration(migrationSource);
+    const shouldMigrateCreditModel = creditModelNeedsMigration(migrationSource);
+    cloudRevision = remoteRevision;
+    cloudUpdatedAt = remote.updatedAt || remoteState.updatedAt || null;
+    if (!preserveDirtyLocal) {
+      state = remoteState;
+      localBaseRevision = remoteRevision;
+      localStateDirty = false;
+      localDirtyAt = null;
     }
     if (remote.user) {
       setCurrentUser(remote.user);
@@ -12880,26 +13301,44 @@ async function loadCloudState() {
     }
     cloudAvailable = true;
     persistLocal();
-    setSyncStatus(isLocalApiMode() ? "本地 D1 已连接" : "D1 已连接", `${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目`);
+    setSyncStatus(
+      preserveDirtyLocal ? "发现本机待同步数据" : isLocalApiMode() ? "本地 D1 已连接" : "D1 已连接",
+      preserveDirtyLocal
+        ? `正在基于云端版本 ${localBaseRevision} 安全上传；不会直接覆盖版本 ${remoteRevision}`
+        : `${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目`,
+    );
     setCloudGate(true, {
-      state: "success",
-      title: isLocalApiMode() ? "本地 D1 连接成功" : "D1 连接成功",
-      detail: `已载入 ${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目。`,
+      state: preserveDirtyLocal ? "connecting" : "success",
+      title: preserveDirtyLocal ? "正在保护并上传本机数据" : isLocalApiMode() ? "本地 D1 连接成功" : "D1 连接成功",
+      detail: preserveDirtyLocal
+        ? "检测到尚未确认的本机副本。系统将使用 revision 校验；若云端已变化，本机内容会保留为冲突快照。"
+        : `已载入 ${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目。`,
     });
-    window.setTimeout(() => {
-      setCloudGate(false, { state: "success" });
-      restoreLedgerMobileViewport();
-    }, 850);
-    if (shouldMigrateFtpCurve || shouldMigrateIssuerBranch || shouldMigrateCreditModel) await saveCloudState();
-  } catch {
+    renderStateDependentViews();
+    if (preserveDirtyLocal) {
+      await saveCloudState({ source: "autosave", markChange: false });
+    } else {
+      window.setTimeout(() => {
+        setCloudGate(false, { state: "success" });
+        restoreLedgerMobileViewport();
+      }, 850);
+      if (shouldMigrateFtpCurve || shouldMigrateIssuerBranch || shouldMigrateCreditModel) {
+        await saveCloudState({ source: "autosave", markChange: true });
+      }
+    }
+  } catch (error) {
     cloudAvailable = false;
     setSyncStatus(isLocalApiMode() ? "本地 D1 未连接" : "D1 未连接", isLocalApiMode() ? "请确认本地 wrangler 正在运行" : "请检查登录状态或重新登录");
     setCloudGate(true, {
       state: "error",
       title: isLocalApiMode() ? "本地 D1 连接失败" : "D1 连接失败",
-      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : "D1 暂时无法连接。请在下方重新登录或稍后再试。",
+      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : `D1 暂时无法连接，本机副本仍保留。${error?.message ? `（${error.message}）` : ""}`,
     });
   }
+  renderStateDependentViews();
+}
+
+function renderStateDependentViews() {
   renderIssuerOptions();
   renderIssuerList();
   renderAbsCreditEnhancerOptions();
@@ -12913,59 +13352,128 @@ async function loadCloudState() {
   if (batchItems.length) renderBatchResults();
 }
 
-function saveCloudState() {
+function saveCloudState({ source = "autosave", markChange = true } = {}) {
+  if (syncConflictActive) return Promise.resolve(false);
+  if (markChange) markLocalStateDirty();
   persistLocal();
   const snapshot = structuredClone(state);
+  const generation = localChangeGeneration;
   cloudSaveQueue = cloudSaveQueue
     .catch(() => false)
-    .then(() => saveCloudStateSnapshot(snapshot));
+    .then(() => syncConflictActive ? false : saveCloudStateSnapshot(snapshot, { generation, source }));
   return cloudSaveQueue;
 }
 
-async function saveCloudStateSnapshot(snapshot) {
+async function saveCloudStateSnapshot(snapshot, { generation, source }) {
   try {
+    setSyncStatus("正在上传", `基于云端版本 ${localBaseRevision} 保存本机修改`);
     const response = await fetch(API_URL, {
       method: "PUT",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ data: snapshot }),
+      body: JSON.stringify({
+        data: snapshot,
+        expectedRevision: localBaseRevision,
+        meta: stateSaveMeta(source),
+      }),
     });
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) {
         clearAuthSession();
         redirectToGatewayLogin();
       }
-      throw new Error(`HTTP ${response.status}`);
+      if (response.status === 409) {
+        handleStateConflict(payload);
+        return false;
+      }
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+    cloudRevision = Number(payload.revision || cloudRevision || 0);
+    cloudUpdatedAt = payload.updatedAt || cloudUpdatedAt;
+    localBaseRevision = cloudRevision;
+    activeStateSnapshotId = payload.snapshot?.id || activeStateSnapshotId;
+    if (localChangeGeneration === generation) {
+      localStateDirty = false;
+      localDirtyAt = null;
     }
     cloudAvailable = true;
-    setSyncStatus(isLocalApiMode() ? "本地 D1 已同步" : "D1 已同步", `${state.issuers.length} 个主体 / ${(state.absCreditApprovals || []).length} 张 50217 / ${(state.projects || []).length} 个项目`);
+    persistLocal();
+    setSyncStatus(
+      localStateDirty ? "本机仍有待同步修改" : isLocalApiMode() ? "本地 D1 已同步" : "D1 已确认",
+      localStateDirty ? `云端版本 ${cloudRevision} 已确认，继续上传较新的本机修改` : `云端版本 ${cloudRevision} · ${formatStateSnapshotTime(cloudUpdatedAt)}`,
+    );
     setCloudGate(false, { state: "success" });
+    if ($("#projectAutosaveStatus") && !$("#projectForm")?.hidden) {
+      $("#projectAutosaveStatus").textContent = localStateDirty ? "已保存到本机，正在上传" : "云端已确认";
+    }
     return true;
-  } catch {
+  } catch (error) {
     cloudAvailable = false;
-    setSyncStatus("D1 同步失败", "请检查网络或登录状态");
+    localStateDirty = true;
+    persistLocal();
+    setSyncStatus("D1 同步失败", error.message || "请检查网络或登录状态");
     setCloudGate(true, {
       state: "error",
       title: "D1 同步失败",
-      detail: "为避免本机数据覆盖云端，请重新连接后再继续使用。",
+      detail: `${error.message || "请检查网络或登录状态"}。本机数据仍保留，可导出备份或重试同步。`,
     });
     return false;
   }
 }
 
-function persistState() {
-  state.updatedAt = new Date().toISOString();
+function handleStateConflict(payload = {}) {
+  syncConflictActive = true;
+  cloudAvailable = false;
+  cloudRevision = Number(payload.revision || cloudRevision || 0);
+  cloudUpdatedAt = payload.updatedAt || cloudUpdatedAt;
+  localStateDirty = true;
   persistLocal();
-  if (cloudAvailable) void saveCloudState();
+  setSyncStatus("检测到版本冲突", `云端当前为版本 ${cloudRevision}；本机内容已保留为冲突快照`);
+  setCloudGate(true, {
+    state: "error",
+    title: "另一来源已先保存",
+    detail: "本机内容没有覆盖云端，且已保留为冲突快照。请打开“版本历史”查看改动，并选择要恢复为当前版本的快照。",
+  });
+  if ($("#projectAutosaveStatus")) $("#projectAutosaveStatus").textContent = "存在冲突，已保留快照";
+}
+
+function persistState({ source = "autosave" } = {}) {
+  markLocalStateDirty();
+  persistLocal();
+  if (cloudAvailable) void saveCloudState({ source, markChange: false });
+}
+
+function markLocalStateDirty() {
+  state.updatedAt = new Date().toISOString();
+  localStateDirty = true;
+  localDirtyAt = state.updatedAt;
+  localChangeGeneration += 1;
 }
 
 function loadLocalState() {
   try {
     const value = JSON.parse(localStorage.getItem(LOCAL_KEY));
-    return value?.issuers ? normalizeLoadedState(value) : structuredClone(DEFAULT_STATE);
+    if (value?.cacheVersion === LOCAL_CACHE_VERSION && value.data?.issuers) {
+      return {
+        data: normalizeLoadedState(value.data),
+        dirty: Boolean(value.dirty),
+        baseRevision: Number.isInteger(value.baseRevision) ? value.baseRevision : 0,
+        dirtyAt: value.dirtyAt || null,
+      };
+    }
+    if (value?.issuers) {
+      return {
+        data: normalizeLoadedState(value),
+        dirty: true,
+        baseRevision: 0,
+        dirtyAt: value.updatedAt || new Date().toISOString(),
+      };
+    }
   } catch {
-    return structuredClone(DEFAULT_STATE);
+    // Fall through to an empty local cache.
   }
+  return { data: structuredClone(DEFAULT_STATE), dirty: false, baseRevision: 0, dirtyAt: null };
 }
 
 function enterpriseTypeOptions(selected = "") {
@@ -13035,12 +13543,23 @@ function calculateRevenueBpFromFtpRate(winningRate, ftpRatePercent) {
 }
 
 function persistLocal() {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(state));
+  localStorage.setItem(LOCAL_KEY, JSON.stringify({
+    cacheVersion: LOCAL_CACHE_VERSION,
+    data: state,
+    dirty: localStateDirty,
+    baseRevision: localBaseRevision,
+    dirtyAt: localDirtyAt,
+  }));
 }
 
 function setSyncStatus(status, detail) {
   $("#syncStatus").textContent = status;
   $("#syncDetail").textContent = detail;
+  const revision = $("#syncRevision");
+  if (revision) {
+    const dirtyLabel = syncConflictActive ? " · 存在冲突" : localStateDirty ? " · 本机待同步" : " · 云端已确认";
+    revision.textContent = `云端版本 ${cloudRevision}${dirtyLabel}`;
+  }
 }
 
 function setCloudGate(locked, options = {}) {
@@ -13052,8 +13571,8 @@ function setCloudGate(locked, options = {}) {
   gate.hidden = !locked;
   gate.classList.remove("cloud-gate-idle", "cloud-gate-connecting", "cloud-gate-success", "cloud-gate-error");
   gate.classList.add(`cloud-gate-${stateName}`);
-  $("#saveCloudButton").disabled = Boolean(locked);
-  $("#exportDataButton").disabled = Boolean(locked);
+  $("#saveCloudButton").disabled = Boolean(locked) && (stateName !== "error" || syncConflictActive);
+  $("#exportDataButton").disabled = Boolean(locked) && stateName !== "error";
   $("#importDataInput").disabled = Boolean(locked);
   $("#importDataInput").closest(".file-button")?.classList.toggle("unavailable", Boolean(locked));
   const gatewayLoginLink = $("#gatewayLoginLink");
@@ -13062,6 +13581,40 @@ function setCloudGate(locked, options = {}) {
   if (config.detail) $("#cloudGateDetail").textContent = config.detail;
   $("#cloudGateStep").textContent = stateName === "error" ? "ERR" : stateName === "success" ? "OK" : stateName === "connecting" ? "WAIT" : "LOGIN";
   $("#cloudGateSymbol").textContent = stateName === "error" ? "!" : stateName === "success" ? "✓" : stateName === "connecting" ? "..." : "T7";
+}
+
+function loadStateClientId() {
+  try {
+    const existing = localStorage.getItem(CLIENT_ID_KEY);
+    if (existing) return existing;
+    const id = crypto.randomUUID ? crypto.randomUUID() : randomClientId();
+    localStorage.setItem(CLIENT_ID_KEY, id);
+    return id;
+  } catch {
+    return randomClientId();
+  }
+}
+
+function randomClientId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function stateSaveMeta(source) {
+  return {
+    source,
+    clientId: stateClientId,
+    clientLabel: stateClientLabel(),
+  };
+}
+
+function stateClientLabel() {
+  if (navigator.userAgent.includes("Tempest07Android/")) return "Bond Centre Android";
+  if (/Windows/i.test(navigator.userAgent)) return "Windows 浏览器";
+  if (/Macintosh|Mac OS/i.test(navigator.userAgent)) return "Mac 浏览器";
+  if (/iPhone|iPad/i.test(navigator.userAgent)) return "iOS 浏览器";
+  return "浏览器";
 }
 
 function authHeaders() {

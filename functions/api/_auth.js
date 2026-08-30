@@ -43,9 +43,14 @@ export async function ensureAuthSchema(db) {
     CREATE TABLE IF NOT EXISTS user_app_state (
       user_id TEXT PRIMARY KEY,
       data TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0
     )
   `).run();
+  const stateColumns = await db.prepare("PRAGMA table_info(user_app_state)").all();
+  if (!(stateColumns.results || []).some((column) => column.name === "revision")) {
+    await db.prepare("ALTER TABLE user_app_state ADD COLUMN revision INTEGER NOT NULL DEFAULT 0").run();
+  }
 
   await ensureAdminUser(db);
   await migrateLegacyStateToAdmin(db);
@@ -53,13 +58,14 @@ export async function ensureAuthSchema(db) {
 
 export async function readUserAppState(db, userId) {
   const row = await db.prepare(`
-    SELECT data, updated_at
+    SELECT data, updated_at, revision
     FROM user_app_state
     WHERE user_id = ?1
   `).bind(userId).first();
   return {
     data: row?.data ? JSON.parse(row.data) : { ...EMPTY_APP_STATE },
     updatedAt: row?.updated_at || null,
+    revision: Number(row?.revision || 0),
   };
 }
 
@@ -148,8 +154,8 @@ async function migrateLegacyStateToAdmin(db) {
   const updatedAt = legacy?.updated_at || new Date().toISOString();
   const data = legacy?.data || JSON.stringify({ ...EMPTY_APP_STATE, updatedAt });
   await db.prepare(`
-    INSERT INTO user_app_state (user_id, data, updated_at)
-    VALUES (?1, ?2, ?3)
+    INSERT INTO user_app_state (user_id, data, updated_at, revision)
+    VALUES (?1, ?2, ?3, 0)
   `).bind(ADMIN_USER_ID, data, updatedAt).run();
 }
 
