@@ -705,7 +705,7 @@ test("parses issuance advertisements and infers payment month", () => {
     marginalMultiple: 1,
     couponRate: 1.7,
     durationText: "",
-    paymentDate: "",
+    paymentDate: "2026-08-05",
     startDate: "",
     allocationNote: "",
   });
@@ -743,6 +743,101 @@ test("parses issuance advertisements and infers payment month", () => {
   assert.equal(bracketed.items[0].durationText, "10年");
   assert.equal(bracketed.items[0].couponRate, 2.24);
   assert.equal(bracketed.items[0].paymentDate, "2026-06-18");
+});
+
+const metricFirstAdvertisement = `【截标通知】
+【边际1.59%，边际2.86倍，全场3.86倍】26苏元禾MTN002A(科创债) ，代码102683475，5.00亿，国企AAA，3年；
+【边际1.70%，边际1倍，全场3.26倍】26苏元禾MTN002B(科创债) ，代码102683476，5.00亿，国企AAA，5年；
+项目负责人：测试联系人，QT号：1234567890。明天缴款，感谢！`;
+
+test("parses metric-first notices into isolated tranche results and shared payment dates", () => {
+  const referenceDate = new Date("2026-09-02T18:00:00+08:00");
+  for (const advertisement of [
+    metricFirstAdvertisement,
+    metricFirstAdvertisement.replace("【截标通知】\n", ""),
+    metricFirstAdvertisement.replace("；\n【边际1.70", "; 【边际1.70"),
+  ]) {
+    const parsed = parseIssuanceAdvertisement(advertisement, referenceDate);
+    assert.deepEqual(parsed.items, [
+      {
+        shortName: "26苏元禾MTN002A", securityCode: "102683475",
+        issueScale: 5, durationText: "3年", couponRate: 1.59,
+        marginalMultiple: 2.86, fullMarketMultiple: 3.86,
+        paymentDate: "2026-09-03", startDate: "", allocationNote: "",
+      },
+      {
+        shortName: "26苏元禾MTN002B", securityCode: "102683476",
+        issueScale: 5, durationText: "5年", couponRate: 1.7,
+        marginalMultiple: 1, fullMarketMultiple: 3.26,
+        paymentDate: "2026-09-03", startDate: "", allocationNote: "",
+      },
+    ]);
+  }
+});
+
+test("applies metric-first results by tranche identity even when project order differs", () => {
+  const project = normalizeProjectRecord({
+    shortName: "26苏元禾MTN002A/B(科创债)",
+    venue: "银行间",
+    cutoffAt: "2026-09-02T18:00",
+    tranches: [
+      { shortName: "26苏元禾MTN002B(科创债)", durationText: "5Y", ratioLimit: 10,
+        bidLevels: [{ bidRate: 1.68, bidAmount: 0.5 }], valuation: 1.9, pricingRate: 1.91 },
+      { shortName: "26苏元禾MTN002A(科创债)", durationText: "3Y", ratioLimit: 10,
+        bidLevels: [{ bidRate: 1.56, bidAmount: 0.5 }], valuation: 1.75, pricingRate: 1.76 },
+    ],
+  });
+  const applied = applyIssuanceAdvertisement(project, metricFirstAdvertisement, new Date("2026-09-02T18:00:00+08:00"));
+  assert.equal(applied.resultAdvertisement, metricFirstAdvertisement);
+  assert.deepEqual(applied.tranches.map((tranche) => ({
+    code: tranche.securityCode, rate: tranche.winningRate, scale: tranche.issueScale,
+    marginal: tranche.marginalMultiple, full: tranche.fullMarketMultiple,
+    amount: tranche.winningAmountWan, status: tranche.resultStatus, paymentDate: tranche.paymentDate,
+  })), [
+    { code: "102683476", rate: 1.7, scale: 5, marginal: 1, full: 3.26, amount: 5000, status: "中标", paymentDate: "2026-09-03" },
+    { code: "102683475", rate: 1.59, scale: 5, marginal: 2.86, full: 3.86, amount: 5000, status: "中标", paymentDate: "2026-09-03" },
+  ]);
+  assert.equal(applied.tranches[0].pricingRate, project.tranches[0].pricingRate);
+  assert.equal(applied.tranches[1].pricingRate, project.tranches[1].pricingRate);
+  assert.equal(project.tranches[0].winningRate, null);
+});
+
+test("parses a single metric-first result without mistaking multiples for the bond name", () => {
+  const parsed = parseIssuanceAdvertisement(
+    "【票面1.59%，全场3.86倍，边际2.86倍】26苏元禾MTN002A(科创债)，代码 102683475，5亿，3年；",
+  );
+  assert.equal(parsed.items.length, 1);
+  assert.equal(parsed.items[0].shortName, "26苏元禾MTN002A");
+  assert.equal(parsed.items[0].securityCode, "102683475");
+  assert.equal(parsed.items[0].durationText, "3年");
+  assert.equal(parsed.items[0].couponRate, 1.59);
+  assert.equal(parsed.items[0].marginalMultiple, 2.86);
+});
+
+test("shared result footer dates do not override explicit dates or copy tranche-specific fields", () => {
+  const parsed = parseIssuanceAdvertisement(`【边际1.59%，全场3.86倍】26苏元禾MTN002A，代码102683475，5亿，3年，缴款日期：9月4日；
+【边际1.70%，全场3.26倍】26苏元禾MTN002B，代码102683476，5亿，5年；
+边际倍数：1.2倍
+明天缴款，感谢！`, new Date("2026-09-02T18:00:00+08:00"));
+  assert.equal(parsed.items.length, 2);
+  assert.equal(parsed.items[0].paymentDate, "2026-09-04");
+  assert.equal(parsed.items[0].marginalMultiple, null);
+  assert.equal(parsed.items[1].paymentDate, "2026-09-03");
+  assert.equal(parsed.items[1].marginalMultiple, 1.2);
+
+  const explicitLastDate = parseIssuanceAdvertisement(
+    metricFirstAdvertisement.replace("5年；", "5年，缴款日期：9月5日；"),
+    new Date("2026-09-02T18:00:00+08:00"),
+  );
+  assert.equal(explicitLastDate.items[0].paymentDate, "2026-09-03");
+  assert.equal(explicitLastDate.items[1].paymentDate, "2026-09-05");
+
+  const trancheSpecificDate = parseIssuanceAdvertisement(
+    metricFirstAdvertisement.replace("项目负责人：测试联系人，QT号：1234567890。明天缴款，感谢！", "B品种明天缴款"),
+    new Date("2026-09-02T18:00:00+08:00"),
+  );
+  assert.equal(trancheSpecificDate.items[0].paymentDate, "");
+  assert.equal(trancheSpecificDate.items[1].paymentDate, "2026-09-03");
 });
 
 test("parses slash-delimited exchange result headers and applies every result field", () => {

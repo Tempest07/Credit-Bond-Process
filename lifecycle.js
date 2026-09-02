@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260830-state-history";
+} from "./core.js?v=20260903-metric-first-results";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -514,7 +514,12 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
 }
 
 export function parseIssuanceAdvertisement(text, referenceDate = new Date()) {
-  const normalized = String(text || "").replace(/\r\n?/g, "\n").trim();
+  // Canonicalize metric-first rows before splitting; keep the original notice in the project.
+  const normalized = String(text || "").replace(/\r\n?/g, "\n").trim()
+    .replace(
+      /(【(?:边际(?:利率|倍数)?|票面(?:利率)?|全场(?:倍数)?)[^】\n]+】)\s*((?!20\d{2}年)\d{2}[^\s，,；;：:【】\n]{2,64})\s*([，,：:])/g,
+      "$2$3$1，",
+    );
   const headers = [...normalized.matchAll(/【([^】]+)】/g)]
     .filter((header) => isAdvertisementBlockHeader(header[1]));
   const items = [];
@@ -534,9 +539,14 @@ function parseAdvertisementBlockItems(block, headerText, referenceDate) {
   if (numberedRows.length > 1) {
     return numberedRows.map((itemBlock) => parseAdvertisementBlock(itemBlock, headerText, referenceDate));
   }
-  const unnumberedRows = splitUnnumberedAdvertisementRows(block);
+  const { rows: unnumberedRows, sharedDateText } = splitUnnumberedAdvertisementRows(block);
   if (unnumberedRows.length > 1) {
-    return unnumberedRows.map((itemBlock) => parseAdvertisementBlock(itemBlock, headerText, referenceDate));
+    const paymentDate = parseLabeledDate(sharedDateText, "缴款", referenceDate);
+    const startDate = parseLabeledDate(sharedDateText, "起息", referenceDate);
+    return unnumberedRows.map((itemBlock) => {
+      const item = parseAdvertisementBlock(itemBlock, headerText, referenceDate);
+      return { ...item, paymentDate: item.paymentDate || paymentDate, startDate: item.startDate || startDate };
+    });
   }
   return [parseAdvertisementBlock(block, headerText, referenceDate)];
 }
@@ -575,12 +585,25 @@ function splitUnnumberedAdvertisementRows(block) {
   lines.forEach((line, index) => {
     if (isUnnumberedAdvertisementRowStart(line)) rowIndexes.push(index);
   });
-  if (rowIndexes.length <= 1) return [];
+  if (rowIndexes.length <= 1) return { rows: [], sharedDateText: "" };
 
-  return rowIndexes.map((lineIndex, index) => {
+  // Share standalone closing date clauses, not the last tranche's other fields.
+  const sharedDateClauses = [];
+  for (let index = rowIndexes.at(-1) + 1; index < lines.length; index += 1) {
+    lines[index] = lines[index].replace(
+      /(^|[。；;])\s*((?:今天|今日|明天|明日)(?:配售)?(?:缴款|起息))(?=[，,。；;！!\s]|$)/g,
+      (_, boundary, clause) => {
+        sharedDateClauses.push(clause);
+        return boundary;
+      },
+    );
+  }
+
+  const rows = rowIndexes.map((lineIndex, index) => {
     const nextIndex = rowIndexes[index + 1] ?? lines.length;
     return lines.slice(lineIndex, nextIndex).join("\n");
   });
+  return { rows, sharedDateText: sharedDateClauses.join("\n") };
 }
 
 function isUnnumberedAdvertisementRowStart(line = "") {
@@ -1007,7 +1030,7 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
   const securityCode = headerParts.find((part) => /^[A-Z]?\d{6,9}(?:\.[A-Z]{2})?$/.test(part))
     || extractAdvertisementSecurityCode(headerText)
     || block.match(/简称(?:代码)?[：:][^\n（(]*[（(]\s*([0-9]{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
-    || block.match(/代码[：:]\s*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)/i)?.[1]
+    || block.match(/代码[：:\s]*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?!\d)/i)?.[1]
     || block.match(/(?:^|\n)\s*(?!20\d{2}年)\d{2}[^\n，,；;：:]{2,64}[，,]\s*([A-Z]?\d{6,9}(?:\.[A-Z]{2})?)(?=\s*[，,；;\n]|$)/i)?.[1]
     || "";
   const issueScale = numberFrom(block, /(?:发行)?规模(?:调整为|调整至|为|[】：:，,\s])*(?:不超过|约|合计)?\s*(\d+(?:\.\d+)?)\s*亿/)
@@ -1020,7 +1043,7 @@ function parseAdvertisementBlock(block, headerText, referenceDate) {
     ?? numberFrom(block, /(?:^|[\n【\s])利率[】：:，,\s]*(\d+(?:\.\d+)?)\s*%/)
     ?? inferUnlabeledCouponRate(block);
   const durationText = block.match(/(?:债券)?期限[】：:，,\s]*([^，,\n]+?)(?=\s*[，,]?\s*(?:【|规模|发行规模|票面|利率|全场倍数|缴款|$))/)?.[1]?.trim()
-    || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
+    || block.match(/(?:^|[，,\s])(\d+(?:\.\d+)?\s*(?:D|天|日|M|月|Y|年)(?:期)?)(?=[，,；;。\s]|$)/i)?.[1]?.replace(/\s+/g, "").trim()
     || "";
   const allocationNote = extractAllocationNote(block);
   return {

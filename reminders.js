@@ -1,5 +1,5 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260830-state-history";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260830-state-history";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260903-metric-first-results";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260903-metric-first-results";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
 const RESULT_PENDING_STATUS = "已投标待结果";
