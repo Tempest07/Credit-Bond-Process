@@ -891,6 +891,31 @@ label[data-recognition-source="derived"]::after {
 .result-modal-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(180px, .6fr); gap: 12px; }
 .result-modal-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .result-modal-grid input { min-height: 38px; padding: 8px 10px; font-size: 12px; }
+.issuance-help { margin: 6px 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.issuance-status { margin-top: 12px; color: var(--secondary); font-size: 13px; line-height: 1.6; }
+.issuance-status[data-error="true"] { color: var(--danger); }
+.issuance-preview { display: grid; gap: 12px; margin-top: 14px; }
+.issuance-preview[hidden] { display: none; }
+.issuance-review-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); }
+.issuance-review-card h4 { margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
+.issuance-review-card h4 small { display: inline-block; margin-left: 8px; color: var(--secondary); font-size: 12px; }
+.issuance-review-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; margin: 0; }
+.issuance-review-fields > div { min-width: 0; padding: 10px; border-radius: 8px; background: #fff; }
+.issuance-review-fields dt { color: var(--muted); font-size: 11px; }
+.issuance-review-fields dd { margin: 4px 0 0; font-size: 14px; font-weight: 750; overflow-wrap: anywhere; }
+.issuance-review-fields details { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.issuance-review-fields summary { cursor: pointer; }
+.issuance-review-note, .issuance-review-issues { margin: 10px 0 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.issuance-review-issues { padding-left: 20px; color: #8a590f; }
+.issuance-review-issues.errors { color: var(--danger); }
+.issuance-confirm-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.issuance-confirm-bar > span { flex: 1 1 260px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+@media (max-width: 600px) {
+  .result-modal-grid { grid-template-columns: minmax(0, 1fr); }
+  .result-modal-grid .span-2 { grid-column: auto; }
+  #projectResultAdvertisement, #issuanceNoticeDate { font-size: 16px; }
+  .issuance-confirm-bar .button { width: 100%; }
+}
 .quick-abs-credit-panel { position: fixed; inset: 0; z-index: 135; display: grid; place-items: center; padding: 20px; }
 .quick-abs-credit-panel[hidden] { display: none; }
 .quick-abs-credit-backdrop { position: absolute; inset: 0; border: 0; background: rgba(15,23,42,.5); backdrop-filter: blur(7px); }

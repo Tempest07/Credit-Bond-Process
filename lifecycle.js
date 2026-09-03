@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260903-metric-first-results";
+} from "./core.js?v=20260903-semantic-issuance";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -476,17 +476,30 @@ function normalizeAwardShortName(shortName = "") {
 
 export function applyIssuanceAdvertisement(project, advertisement, referenceDate = new Date()) {
   const parsed = parseIssuanceAdvertisement(advertisement, referenceDate);
+  return applyParsedIssuanceResult(project, parsed, advertisement, referenceDate, false);
+}
+
+export function applySemanticIssuanceResult(project, recognition, advertisement) {
+  if (!recognition?.canApply || recognition.errors?.length || !recognition.items?.length) throw new Error("识别结果尚未通过校验。");
+  const ids = recognition.items.map((item) => item.trancheId);
+  if (new Set(ids).size !== ids.length || ids.some((id) => !project.tranches.some((t) => t.id === id))) throw new Error("项目品种已变化，请重新识别。");
+  return applyParsedIssuanceResult(project, recognition, advertisement, new Date(), true);
+}
+
+function applyParsedIssuanceResult(project, parsed, advertisement, referenceDate, strict) {
   const next = {
     ...normalizeProjectRecord({ ...project, resultAdvertisement: advertisement }),
     ftpCurve: project.ftpCurve,
   };
   if (!next.issuerName && parsed.issuerName) next.issuerName = parsed.issuerName;
   next.tranches = next.tranches.map((tranche, index) => {
-    const match = findAdvertisementMatch(next.tranches, tranche, index, parsed.items);
+    const match = strict ? (parsed.items.find((item) => item.trancheId === tranche.id) || {})
+      : findAdvertisementMatch(next.tranches, tranche, index, parsed.items);
     const matched = Object.keys(match).length > 0;
-    const fullyReallocated = /全部回拨/.test(match.allocationNote || "");
+    if (strict && !matched) return tranche;
+    const fullyReallocated = /全部回拨|^取消发行(?:[：:]|$)/.test(match.allocationNote || "");
     const allocationNote = matched
-      ? (match.allocationNote || (/全部回拨/.test(tranche.allocationNote) ? "" : tranche.allocationNote))
+      ? (match.allocationNote || (/全部回拨|^取消发行(?:[：:]|$)/.test(tranche.allocationNote) ? "" : tranche.allocationNote))
       : tranche.allocationNote;
     const awarded = applyAutoAward(normalizeTranche({
       ...tranche,
@@ -505,7 +518,7 @@ export function applyIssuanceAdvertisement(project, advertisement, referenceDate
       paymentCompleted: fullyReallocated ? false : tranche.paymentCompleted,
       allocationNote,
     }), next);
-    if (!awarded.paymentDate && isWinningTranche(awarded)) {
+    if (!strict && !awarded.paymentDate && isWinningTranche(awarded)) {
       awarded.paymentDate = inferDefaultPaymentDate(next, referenceDate);
     }
     return awarded;
@@ -1104,7 +1117,7 @@ function extractAdvertisementSecurityCode(headerText) {
 
 function applyAutoAward(tranche, project = {}) {
   const next = { ...tranche };
-  const forcedNoIssue = /全部回拨/.test(next.allocationNote);
+  const forcedNoIssue = /全部回拨|^取消发行(?:[：:]|$)/.test(next.allocationNote);
   const estimatedOwn = forcedNoIssue
     ? 0
     : estimateOwnWinningAmountWan(next);

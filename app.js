@@ -33,12 +33,12 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260903-metric-first-results";
+} from "./core.js?v=20260903-semantic-issuance";
 import {
   FTP_TENORS,
   appendBidSubmission,
   applyGuidancePricing,
-  applyIssuanceAdvertisement,
+  applySemanticIssuanceResult,
   buildAwardResultText,
   buildBidPositionText,
   buildPrepaymentNumber,
@@ -47,20 +47,20 @@ import {
   dashboardCounts,
   deriveProjectStatus,
   normalizeProjectRecord,
-  parseIssuanceAdvertisement,
   projectMatchesDateFilter,
   removeProject,
   suggestProjectCutoff,
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260903-metric-first-results";
+} from "./lifecycle.js?v=20260903-semantic-issuance";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-semantic-issuance";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260903-metric-first-results";
+} from "./history-parser.js?v=20260903-semantic-issuance";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,23 +76,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260903-metric-first-results";
+} from "./protocol-transfer.js?v=20260903-semantic-issuance";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260903-metric-first-results";
+} from "./protocol-transfer-templates.js?v=20260903-semantic-issuance";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260903-metric-first-results";
+} from "./protocol-transfer-docx.js?v=20260903-semantic-issuance";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260903-metric-first-results";
+} from "./reminders.js?v=20260903-semantic-issuance";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -120,11 +120,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260903-metric-first-results";
+} from "./secondary-inventory.js?v=20260903-semantic-issuance";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260903-metric-first-results";
+} from "./trade-record-converter.js?v=20260903-semantic-issuance";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -135,13 +135,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260903-metric-first-results";
+} from "./trade-record-grid.js?v=20260903-semantic-issuance";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260903-metric-first-results";
-import { initializeDatePickers } from "./date-picker.js?v=20260903-metric-first-results";
+} from "./trade-record-ledger.js?v=20260903-semantic-issuance";
+import { initializeDatePickers } from "./date-picker.js?v=20260903-semantic-issuance";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -150,30 +150,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260903-metric-first-results";
+} from "./project-screenshot-ocr.js?v=20260903-semantic-issuance";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260903-metric-first-results";
+} from "./project-screenshot-layout.js?v=20260903-semantic-issuance";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260903-metric-first-results";
+} from "./project-screenshot-image.js?v=20260903-semantic-issuance";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260903-metric-first-results";
+} from "./payment-receipts.js?v=20260903-semantic-issuance";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260903-metric-first-results";
+} from "./issuer-search.js?v=20260903-semantic-issuance";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260903-metric-first-results";
+} from "./state-history.js?v=20260903-semantic-issuance";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -337,6 +337,7 @@ let projectAutoSaveTimer = null;
 let projectRecognitionMarks = {};
 let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
+const issuanceReviewSession = createIssuanceReviewSession();
 let activePrepaymentTarget = null;
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
@@ -4592,11 +4593,13 @@ function bindLedger() {
     saveProjectDraftNow();
   });
   $("#projectForm").addEventListener("input", (event) => {
+    if (event.target.closest("#resultEntryPanel")) return;
     clearRecognitionForInput(event.target);
     updateProjectPreviews();
     scheduleProjectAutoSave();
   });
   $("#projectForm").addEventListener("change", (event) => {
+    if (event.target.closest("#resultEntryPanel")) return;
     clearRecognitionForInput(event.target);
     updateProjectPreviews();
     scheduleProjectAutoSave();
@@ -4646,25 +4649,11 @@ function bindLedger() {
     await navigator.clipboard.writeText($("#projectResultSummary").value);
     showToast("中标汇报已复制。");
   });
-  $("#parseAdvertisementButton").addEventListener("click", () => {
-    clearTimeout(projectAutoSaveTimer);
-    const draft = readProjectForm();
-    const advertisement = $("#projectResultAdvertisement").value;
-    if (!advertisement.trim()) {
-      showToast("请先粘贴发行结果广告。");
-      return;
-    }
-    const parsedAdvertisement = parseIssuanceAdvertisement(advertisement);
-    const parsed = applyIssuanceAdvertisement({ ...draft, ftpCurve: state.ftpCurve, resultConfirmed: true }, advertisement);
-    parsed.resultConfirmed = true;
-    parsed.status = deriveProjectStatus(parsed);
-    resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, parsedAdvertisement);
-    resultRecognitionProjectId = parsed.id || draft.id || "";
-    saveProjectRecordNow(parsed);
-    fillProjectForm(parsed);
-    setResultEntryFieldsVisible(true);
-    showToast("已解析发行结果，并按标位自动推算中标量和营收，请复核明细。");
-  });
+  $("#parseAdvertisementButton").addEventListener("click", recognizeIssuanceResult);
+  $("#confirmIssuanceResultButton").addEventListener("click", confirmIssuanceResult);
+  for (const selector of ["#projectResultAdvertisement", "#issuanceNoticeDate"]) {
+    for (const event of ["input", "change"]) $(selector).addEventListener(event, () => resetIssuanceReview("原文或日期已变化，请重新识别。"));
+  }
   $("#editProjectOpinionButton").addEventListener("click", () => {
     const record = readProjectForm();
     const recordTranches = isAbsProject(record) ? [] : (record.tranches || []);
@@ -9954,6 +9943,7 @@ function renderProjectList() {
 }
 
 function clearProjectForm() {
+  closeResultEntryPanel();
   $("#projectEmpty").hidden = false;
   $("#projectForm").hidden = true;
   resultRecognitionMarks = {};
@@ -10226,20 +10216,20 @@ function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertis
     const hasIssueScale = Number.isFinite(numberOrNull(item?.issueScale));
     const hasPaymentDate = valueHasContent(item?.paymentDate);
     const hasStartDate = valueHasContent(item?.startDate);
-    const fullyReallocated = /全部回拨/.test(item?.allocationNote || "");
+    const fullyReallocated = /全部回拨|^取消发行(?:[：:]|$)/.test(item?.allocationNote || "");
 
     marks[`${base}.resultStatus`] = fullyReallocated
-      ? recognitionMark("success", "已识别为全部回拨，本品种未发行")
+      ? recognitionMark("success", "已识别为取消/全部回拨，本品种未发行")
       : tranche.resultStatus && tranche.resultStatus !== "待出结果"
       ? recognitionMark("success", "截标结果已按票面和标位推算")
       : recognitionMark("attention", "截标结果需要复核或补充标位");
     marks[`${base}.winningRate`] = fullyReallocated
-      ? recognitionMark("success", "本品种全部回拨，无票面利率")
+      ? recognitionMark("success", "本品种未发行，无票面利率")
       : hasCoupon
       ? recognitionMark("success", "票面/中标利率已识别")
       : recognitionMark("error", "票面/中标利率未识别，请补充");
     marks[`${base}.winningAmountWan`] = fullyReallocated
-      ? recognitionMark("success", "本品种全部回拨，中标量为 0")
+      ? recognitionMark("success", "本品种未发行，中标量为 0")
       : Number.isFinite(numberOrNull(tranche.winningAmountWan))
       ? recognitionMark("success", "表内中标量已自动推算")
       : recognitionMark("attention", "表内中标量需复核或补充投标标位");
@@ -10261,12 +10251,12 @@ function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertis
       ? recognitionMark("success", "债券代码已识别")
       : recognitionMark("attention", "债券代码未识别，必要时补充");
     marks[`${base}.issueScale`] = fullyReallocated
-      ? recognitionMark("success", "本品种全部回拨，无实际发行规模")
+      ? recognitionMark("success", "本品种未发行，无实际发行规模")
       : hasIssueScale
       ? recognitionMark("success", "发行规模已识别")
       : recognitionMark("error", "发行规模未识别，请补充");
     marks[`${base}.fullMarketMultiple`] = fullyReallocated
-      ? recognitionMark("success", "本品种全部回拨，无全场倍数")
+      ? recognitionMark("success", "本品种未发行，无全场倍数")
       : Number.isFinite(numberOrNull(item?.fullMarketMultiple))
       ? recognitionMark("success", "全场倍数已识别")
       : recognitionMark("attention", "全场倍数未披露或未识别");
@@ -10276,12 +10266,12 @@ function buildResultRecognitionMarks(beforeProject, afterProject, parsedAdvertis
       marks[`${base}.marginalMultiple`] = recognitionMark("attention", "标位在边际上，未识别边际倍数时按全中处理，请复核");
     }
     marks[`${base}.startDate`] = fullyReallocated
-      ? recognitionMark("success", "本品种全部回拨，无需起息")
+      ? recognitionMark("success", "本品种未发行，无需起息")
       : hasStartDate
       ? recognitionMark("success", "起息日期已识别")
       : recognitionMark("attention", "起息日期未识别，必要时补充");
     marks[`${base}.paymentDate`] = fullyReallocated
-      ? recognitionMark("success", "本品种全部回拨，无需缴款")
+      ? recognitionMark("success", "本品种未发行，无需缴款")
       : hasPaymentDate
       ? recognitionMark("success", "缴款日期已识别")
       : valueHasContent(tranche.paymentDate)
@@ -10330,6 +10320,7 @@ function applyResultRecognitionMarks(record) {
 }
 
 function matchAdvertisementItemForRecognition(tranche, index, items) {
+  if (items.some((item) => item.trancheId)) return items.find((item) => item.trancheId === tranche.id) || {};
   const trancheShortName = resultRecognitionShortNameKey(tranche.shortName);
   const exact = items.find((item) => item?.shortName && resultRecognitionShortNameKey(item.shortName) === trancheShortName);
   if (exact) return exact;
@@ -10441,7 +10432,8 @@ function readProjectForm() {
     notes: existing.notes,
     sourceText: $("#projectSourceText").value,
     opinion: $("#projectOpinion").value,
-    resultAdvertisement: $("#projectResultAdvertisement").value,
+    // The result modal is a separate draft; only its confirmation handler persists it.
+    resultAdvertisement: existing.resultAdvertisement || "",
     ftpCost: numberOrNull($("#projectFtpCost").value),
     tranches,
   }));
@@ -10676,6 +10668,12 @@ function formatBidSubmissionTime(value) {
 }
 
 function openResultEntryPanel(shouldFocus = true) {
+  if ($("#resultEntryPanel").hidden) {
+    resetIssuanceReview();
+    const current = readProjectForm();
+    $("#projectResultAdvertisement").value = current.resultAdvertisement || "";
+    $("#issuanceNoticeDate").value = (current.cutoffAt || "").slice(0, 10);
+  }
   $("#resultEntryPanel").hidden = false;
   syncModalOpenState();
   setResultEntryFieldsVisible(true);
@@ -10684,9 +10682,97 @@ function openResultEntryPanel(shouldFocus = true) {
 }
 
 function closeResultEntryPanel() {
+  resetIssuanceReview();
   $("#resultEntryPanel").hidden = true;
   syncModalOpenState();
   if (isCompactLedger()) $("#openResultButton")?.focus({ preventScroll: true });
+}
+
+function resetIssuanceReview(message = "") {
+  issuanceReviewSession.invalidate();
+  $("#issuanceRecognitionPreview").hidden = true;
+  $("#issuanceRecognitionPreview").replaceChildren();
+  $("#confirmIssuanceResultButton").disabled = true;
+  $("#confirmIssuanceResultButton").textContent = "确认写入并生成汇报";
+  $("#parseAdvertisementButton").disabled = false;
+  $("#parseAdvertisementButton").textContent = "语义识别";
+  $("#issuanceRecognitionStatus").textContent = message;
+  $("#issuanceRecognitionStatus").dataset.error = "false";
+}
+
+function issuanceReviewSnapshot() {
+  const draft = readProjectForm();
+  return { projectId: draft.id, tranches: draft.tranches, cutoffAt: draft.cutoffAt,
+    text: $("#projectResultAdvertisement").value, noticeDate: $("#issuanceNoticeDate").value };
+}
+
+async function recognizeIssuanceResult() {
+  resetIssuanceReview();
+  try {
+    const snapshot = issuanceReviewSnapshot();
+    const request = validateRecognitionRequest(snapshot);
+    $("#parseAdvertisementButton").disabled = true;
+    $("#parseAdvertisementButton").textContent = "识别中…";
+    $("#issuanceRecognitionStatus").textContent = "正在由云端模型逐品种识别，通常需要数秒至数十秒；可以取消。";
+    const result = await issuanceReviewSession.recognize(snapshot, async (signal) => {
+      const response = await fetch("./api/issuance-results/recognize", {
+        method: "POST", credentials: "same-origin", signal,
+        headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(request),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "语义识别请求失败。");
+      return payload;
+    });
+    if (!result) return;
+    if ($("#resultEntryPanel").hidden || JSON.stringify(snapshot) !== JSON.stringify(issuanceReviewSnapshot())) {
+      resetIssuanceReview("项目或标位已变化，请重新识别。"); return;
+    }
+    renderIssuanceReview(result);
+    $("#parseAdvertisementButton").disabled = false;
+    $("#parseAdvertisementButton").textContent = "重新识别";
+  } catch (error) {
+    resetIssuanceReview(error.message || "语义识别失败，本次未改动项目。");
+    $("#issuanceRecognitionStatus").dataset.error = "true";
+  }
+}
+
+function renderIssuanceReview(result) {
+  const preview = $("#issuanceRecognitionPreview");
+  preview.hidden = false;
+  preview.innerHTML = (result.items || []).map((item) => `
+    <section class="issuance-review-card">
+      <h4>${escapeHtml(item.shortName)}<small>${escapeHtml(ISSUANCE_OUTCOMES[item.outcome] || "待核对")}</small></h4>
+      <dl class="issuance-review-fields">${Object.entries(ISSUANCE_FIELDS).map(([field, label]) => `
+        <div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(item[field] === null || item[field] === "" || item[field] === undefined ? "未识别" : String(item[field]))}</dd>
+        ${item.evidence?.[field] ? `<details><summary>原文依据</summary>${escapeHtml(item.evidence[field])}</details>` : ""}</div>`).join("")}</dl>
+      ${item.allocationNote ? `<p class="issuance-review-note">${escapeHtml(item.allocationNote)}（将清空该品种发行数据，中标量归零）</p>` : ""}
+    </section>`).join("")
+    + ["errors", "warnings"].map((kind) => result[kind]?.length ? `<ul class="issuance-review-issues ${kind}">${result[kind].map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : "").join("");
+  $("#confirmIssuanceResultButton").disabled = !result.canApply;
+  $("#confirmIssuanceResultButton").textContent = result.items?.some((item) => ["cancelled", "reallocated"].includes(item.outcome))
+    ? "确认取消/回拨并写入" : "确认写入并生成汇报";
+  $("#issuanceRecognitionStatus").dataset.error = String(!result.canApply);
+  $("#issuanceRecognitionStatus").textContent = result.canApply
+    ? `已识别 ${result.items.length} 个品种 · ${result.model || "云端语义模型"} · 尚未保存，请核对后确认。空缺字段保留原值；取消/回拨除外。`
+    : "识别结果有待核对项，暂不能写入。请补充或修正原文/通知日期，再重新识别。";
+}
+
+function confirmIssuanceResult() {
+  const snapshot = issuanceReviewSnapshot();
+  const result = issuanceReviewSession.take(snapshot);
+  if (!result) { resetIssuanceReview("预览已失效，请重新识别。"); return; }
+  try {
+    const draft = readProjectForm();
+    const parsed = applySemanticIssuanceResult({ ...draft, ftpCurve: state.ftpCurve }, result, snapshot.text);
+    parsed.resultConfirmed = true;
+    parsed.status = deriveProjectStatus(parsed);
+    resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, result);
+    resultRecognitionProjectId = parsed.id;
+    saveProjectRecordNow(parsed);
+    fillProjectForm(parsed);
+    setResultEntryFieldsVisible(true);
+    showToast("已确认发行结果并生成汇报；中标量和营收为标位推算值，请复核。");
+  } catch (error) { resetIssuanceReview(error.message); }
 }
 
 function syncModalOpenState() {
