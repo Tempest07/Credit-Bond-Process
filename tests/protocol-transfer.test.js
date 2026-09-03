@@ -7,6 +7,7 @@ import {
   markProtocolTransferStep,
   normalizeProtocolTransfer,
   parseProtocolTransferText,
+  parseProtocolTransferTradeDate,
   protocolTransferApplicationParties,
   protocolTransferFromSecondaryTrade,
   protocolTransferStatus,
@@ -75,6 +76,54 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.match(parsed.remarks, /华创证券发 101\.033\/101\.031/);
   assert.doesNotMatch(parsed.remarks, /过桥费/);
   assert.match(parsed.remarks, /南方基金 呼啸 3005263171/);
+});
+
+const shortTenorElements = `【国利】 2.9Y(休2) 283353.SH 26苏水01 1.74 2000 09.07交易所 兴业银行 出给 广发证券投顾业务部 99.826/99.824
+//联系
+中信建投 测试联系人 3000000001
+广发证券投顾
+兴业银行 测试联系人 3000000002`;
+const septemberReference = new Date("2026-09-03T09:00:00+08:00");
+
+test("does not read 2.9Y as February 9 or roll its seal dates into next year", () => {
+  const parsed = parseProtocolTransferText(shortTenorElements, septemberReference);
+  assert.equal(parsed.tradeDate, "2026-09-07");
+  assert.equal(parsed.counterpartySealDate, "2026-09-03");
+  assert.equal(parsed.ownSealDate, "2026-09-04");
+  assert.equal(parsed.exchangeSubmitDate, "2026-09-07");
+  assert.equal(parsed.code, "283353.SH");
+  assert.equal(parsed.shortName, "26苏水01");
+  assert.equal(parsed.price, 99.824);
+  assert.equal(parsed.amountTenThousand, 2000);
+  assert.equal(parsed.marketMaker, "中信建投");
+  assert.equal(parseProtocolTransferTradeDate(shortTenorElements, septemberReference), "2026-09-07");
+});
+
+test("uses short trade-date context despite date-like tenors and yields", () => {
+  for (const tenor of ["2.9Y(休2)", "2.09y", "2.9 Y", "2.9年", "2.9+1Y"]) {
+    for (const date of ["09.07交易所", "9.7 交易所", "9/7上交所", "交易日：9.7"]) {
+      const text = shortTenorElements.replace("2.9Y(休2)", tenor).replace("1.74", "1.23").replace("09.07交易所", date);
+      assert.equal(parseProtocolTransferText(text, septemberReference).tradeDate, "2026-09-07", `${tenor} / ${date}`);
+    }
+  }
+});
+
+test("does not infer an unlabelled trade date from yields, tenors or quote fragments", () => {
+  const text = shortTenorElements.replace("1.74", "1.23").replace("09.07交易所", "").replace("99.826/99.824", "99.9/99.8");
+  assert.equal(parseProtocolTransferTradeDate(text, septemberReference), null);
+  assert.equal(parseProtocolTransferText(text, septemberReference).tradeDate, "2026-09-03");
+  assert.equal(parseProtocolTransferText(text.replace("2.9Y(休2)", "2.9 年"), septemberReference).tradeDate, "2026-09-03");
+});
+
+test("keeps explicit, Chinese and year-crossing trade dates working", () => {
+  for (const date of ["2026-09-07交易所", "9月7日交易所", "成交日：2026/09/07"]) {
+    assert.equal(parseProtocolTransferText(shortTenorElements.replace("09.07交易所", date), septemberReference).tradeDate, "2026-09-07");
+  }
+  assert.equal(parseProtocolTransferText("交易日：9/7", septemberReference).tradeDate, "2026-09-07");
+  assert.equal(parseProtocolTransferText("09.07", septemberReference).tradeDate, "2026-09-07");
+  assert.equal(parseProtocolTransferText(shortTenorElements.replace("09.07交易所", "01.07交易所"), new Date("2026-12-30T09:00:00+08:00")).tradeDate, "2027-01-07");
+  assert.equal(parseProtocolTransferText(shortTenorElements.replace("09.07交易所", "02.30交易所"), septemberReference).tradeDate, "2026-09-03");
+  assert.equal(parseProtocolTransferTradeDate(shortTenorElements.replace("09.07交易所", "02.30交易所"), septemberReference), null);
 });
 
 test("uses contact list to identify the bridge party when no sent-by quote exists", () => {

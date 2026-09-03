@@ -7,7 +7,7 @@ import {
 const DEFAULT_TYPE = "商业银行";
 const DATE_PATTERN = /(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/;
 const CHINESE_MONTH_DAY_PATTERN = /(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
-const NUMERIC_MONTH_DAY_PATTERN = /(?:^|[^\d])(\d{1,2})[./](\d{1,2})(?!\d)/g;
+const NUMERIC_MONTH_DAY_PATTERN = /(?<![\dA-Za-z./])(\d{1,2})[./](\d{1,2})(?![\dA-Za-z./%％])/g;
 const BOND_SHORT_NAME_PATTERN = /^[0-9]{2}[\u4e00-\u9fa5A-Za-z]{1,12}[0-9A-Za-z]{1,4}$/;
 
 export function normalizeProtocolTransfers(input = []) {
@@ -142,10 +142,19 @@ export function parseProtocolTransferText(rawText = "", referenceDate = new Date
   }, referenceDate);
 }
 
-function parseChatStyleTradeElements(text, referenceDate) {
-  const line = String(text || "").split(/\n/).map((item) => item.trim()).find((item) =>
+function chatStyleTradeLine(text) {
+  return String(text || "").split(/\n/).map((item) => item.trim()).find((item) =>
     /\b\d{6}(?:\.(?:SH|SZ|IB))?\b/i.test(item) && /(出给|to|发)/i.test(item),
   );
+}
+
+export function parseProtocolTransferTradeDate(rawText = "", referenceDate = new Date()) {
+  const text = normalizeText(rawText);
+  return parseDateFromText(chatStyleTradeLine(text) || text.replace(/\s+/g, " "), referenceDate);
+}
+
+function parseChatStyleTradeElements(text, referenceDate) {
+  const line = chatStyleTradeLine(text);
   if (!line) return null;
 
   const codeMatch = line.match(/\b(\d{6})(?:\.(SH|SZ|IB))?\b/i);
@@ -592,7 +601,7 @@ function parseDateFromText(text, referenceDate) {
   if (labelled) {
     const tail = text.slice(labelled.index + labelled[0].length);
     return normalizeDate(firstDateText(tail))
-      || parseMonthDay(tail, referenceDate)
+      || parseMonthDay(tail, referenceDate, true)
       || (/今天|今日/.test(tail) ? localDate(referenceDate) : null);
   }
   return normalizeDate(firstDateText(text))
@@ -600,12 +609,21 @@ function parseDateFromText(text, referenceDate) {
     || (/今天|今日/.test(text) ? localDate(referenceDate) : null);
 }
 
-function parseMonthDay(text, referenceDate) {
+function parseMonthDay(text, referenceDate, labelled = false) {
   const chinese = String(text || "").match(CHINESE_MONTH_DAY_PATTERN);
   if (chinese) return localDateFromParts(referenceDate.getFullYear(), Number(chinese[1]), Number(chinese[2]), referenceDate);
 
   const source = String(text || "");
   for (const match of source.matchAll(NUMERIC_MONTH_DAY_PATTERN)) {
+    const before = source.slice(0, match.index).trim();
+    const after = source.slice(match.index + match[0].length).trimStart();
+    // A decimal tenor/yield/quote is not a date. Require a date label, market
+    // suffix (e.g. 09.07交易所), or a standalone date instead of taking the first decimal.
+    if (/^(?:[YDMKWE]\b|年|个月|月|天|%|％|万|亿|手|张)/i.test(after)) continue;
+    const hasDateContext = (labelled && !before)
+      || /^(?:日|交易所|上交所|深交所|北交所|交易|成交|交割|结算)/.test(after)
+      || (!before && !after);
+    if (!hasDateContext) continue;
     const date = localDateFromParts(referenceDate.getFullYear(), Number(match[1]), Number(match[2]), referenceDate);
     if (date) return date;
   }

@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260903-cutoff-preview";
+} from "./core.js?v=20260903-protocol-date";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,14 +60,14 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260903-cutoff-preview";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-cutoff-preview";
+} from "./lifecycle.js?v=20260903-protocol-date";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-protocol-date";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260903-cutoff-preview";
+} from "./history-parser.js?v=20260903-protocol-date";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,6 +76,7 @@ import {
   normalizeProtocolTransfer,
   normalizeProtocolTransfers,
   parseProtocolTransferText,
+  parseProtocolTransferTradeDate,
   protocolTransferApplicationParties,
   protocolTransferFromSecondaryTrade,
   protocolTransferStatus,
@@ -83,23 +84,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260903-cutoff-preview";
+} from "./protocol-transfer.js?v=20260903-protocol-date";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260903-cutoff-preview";
+} from "./protocol-transfer-templates.js?v=20260903-protocol-date";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260903-cutoff-preview";
+} from "./protocol-transfer-docx.js?v=20260903-protocol-date";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260903-cutoff-preview";
+} from "./reminders.js?v=20260903-protocol-date";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -127,11 +128,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260903-cutoff-preview";
+} from "./secondary-inventory.js?v=20260903-protocol-date";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260903-cutoff-preview";
+} from "./trade-record-converter.js?v=20260903-protocol-date";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -142,13 +143,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260903-cutoff-preview";
+} from "./trade-record-grid.js?v=20260903-protocol-date";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260903-cutoff-preview";
-import { initializeDatePickers } from "./date-picker.js?v=20260903-cutoff-preview";
+} from "./trade-record-ledger.js?v=20260903-protocol-date";
+import { initializeDatePickers } from "./date-picker.js?v=20260903-protocol-date";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -157,30 +158,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260903-cutoff-preview";
+} from "./project-screenshot-ocr.js?v=20260903-protocol-date";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260903-cutoff-preview";
+} from "./project-screenshot-layout.js?v=20260903-protocol-date";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260903-cutoff-preview";
+} from "./project-screenshot-image.js?v=20260903-protocol-date";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260903-cutoff-preview";
+} from "./payment-receipts.js?v=20260903-protocol-date";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260903-cutoff-preview";
+} from "./issuer-search.js?v=20260903-protocol-date";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260903-cutoff-preview";
+} from "./state-history.js?v=20260903-protocol-date";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -8017,7 +8018,7 @@ function fillProtocolTransferForm(input) {
 function buildProtocolTransferRecognitionMarks(record, rawText = "") {
   const marks = {};
   const text = String(rawText || "");
-  const tradeDateRecognized = protocolTextHasDate(text);
+  const tradeDateRecognized = Boolean(parseProtocolTransferTradeDate(text));
   const markRequired = (field, label, sourceValue = record[field]) => {
     marks[field] = valueHasContent(sourceValue)
       ? recognitionMark("success", `${label}已识别`)
@@ -8076,12 +8077,6 @@ function protocolTransferInputIds() {
     ownSealDate: "protocolTransferOwnSealDate",
     remarks: "protocolTransferRemarks",
   };
-}
-
-function protocolTextHasDate(text = "") {
-  return /(20\d{2})\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}/.test(text)
-    || /(?:^|[^\d])\d{1,2}[./]\d{1,2}(?!\d)/.test(text)
-    || /\d{1,2}\s*月\s*\d{1,2}\s*日/.test(text);
 }
 
 function clearProtocolTransferForm(resetInput = true) {
