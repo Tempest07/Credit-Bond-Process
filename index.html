@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="4.0.0">
-  <meta name="application-build-version" content="4.0.0.1">
-  <meta name="application-build" content="20260903-semantic-issuance">
+  <meta name="application-build-version" content="4.0.0.2">
+  <meta name="application-build" content="20260903-bid-finalization">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260903-semantic-issuance"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260903-semantic-issuance">
+  <script src="./app-shell-mode.js?v=20260903-bid-finalization"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260903-bid-finalization">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 4.0.0.1 · 2026-09-03 更新">v4.0.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 4.0.0.2 · 2026-09-03 更新">v4.0.0</span></small>
         </span>
       </a>
 
@@ -347,16 +347,16 @@
                   <span>全部项目</span><strong id="dashboardAll">0</strong>
                 </button>
                 <button class="ledger-filter-chip" data-ledger-filter="toBid" type="button" aria-pressed="false">
-                  <span>待投标</span><strong id="dashboardToBid">0</strong>
+                  <span>未投标</span><strong id="dashboardToBid">0</strong>
                 </button>
-                <button class="ledger-filter-chip" data-ledger-filter="awaitingResult" type="button" aria-pressed="false">
-                  <span>等待结果</span><strong id="dashboardAwaitingResult">0</strong>
+                <button class="ledger-filter-chip" data-ledger-filter="bidding" type="button" aria-pressed="false">
+                  <span>已投标</span><strong id="dashboardBidding">0</strong>
                 </button>
-                <button class="ledger-filter-chip" data-ledger-filter="won" type="button" aria-pressed="false">
-                  <span>中标项目</span><strong id="dashboardWon">0</strong>
+                <button class="ledger-filter-chip" data-ledger-filter="bidFinal" type="button" aria-pressed="false">
+                  <span>已投标结束</span><strong id="dashboardBidFinal">0</strong>
                 </button>
-                <button class="ledger-filter-chip" data-ledger-filter="notWon" type="button" aria-pressed="false">
-                  <span>未中标</span><strong id="dashboardNotWon">0</strong>
+                <button class="ledger-filter-chip" data-ledger-filter="resulted" type="button" aria-pressed="false">
+                  <span>已出结果</span><strong id="dashboardResulted">0</strong>
                 </button>
               </div>
             </div>
@@ -403,14 +403,18 @@
               <input class="search-input" id="projectSearch" type="search" placeholder="搜索简称、主体、联动分行或主承">
               <select id="projectStatusFilter">
                 <option value="">全部状态</option>
-                <option>未投标</option>
-                <option>已投标待结果</option>
-                <option>部分中标</option>
-                <option>已中标</option>
-                <option>未中标</option>
-                <option>待缴款</option>
-                <option>已缴款</option>
-                <option>已结束</option>
+                <option value="toBid">未投标</option>
+                <option value="bidding">已投标</option>
+                <option value="bidFinal">已投标结束</option>
+                <option value="resulted">已出结果</option>
+                <optgroup label="结果与缴款明细">
+                  <option>部分中标</option>
+                  <option>已中标</option>
+                  <option>未中标</option>
+                  <option>待缴款</option>
+                  <option>已缴款</option>
+                </optgroup>
+                <option value="已结束">不投标终止</option>
               </select>
               <div class="project-list-date-tools">
                 <input id="projectDateFilter" type="date" aria-label="按日期筛选项目">
@@ -445,6 +449,8 @@
                   <button class="button subtle" id="markUnbidButton" type="button">撤回</button>
                   <button class="button subtle danger-button" id="terminateProjectButton" type="button">不投标终止</button>
                   <button class="button primary" id="markBidButton" type="button">提交第 1 次标</button>
+                  <button class="button bid-final-action" id="finalizeBidButton" type="button" hidden>确认最终标位</button>
+                  <button class="button subtle" id="reopenBidButton" type="button" hidden>继续改标</button>
                   <button class="button result-action" id="openResultButton" type="button">结果</button>
                 </div>
                 <div class="bid-submission-history" id="bidSubmissionHistory" hidden></div>
@@ -1332,6 +1338,6 @@
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
   <script src="./vendor/pinyin-pro.min.js?v=3.29.3"></script>
-  <script type="module" src="./app.js?v=20260903-semantic-issuance"></script>
+  <script type="module" src="./app.js?v=20260903-bid-finalization"></script>
 </body>
 </html>

@@ -767,6 +767,7 @@ label[data-recognition-source="derived"]::after {
 .status-badge { padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius: 4px; color: var(--accent); background: var(--accent-soft); font-size: 9px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
 .status-badge.warning { border-color: color-mix(in srgb, var(--warning) 28%, var(--line)); color: var(--warning); background: var(--warning-soft); }
 .status-badge.muted { border-color: var(--line); color: var(--muted); background: var(--panel-soft); }
+.status-badge.bid-final, .pill.bid-final { border-color: color-mix(in srgb, var(--secondary) 35%, var(--line)); color: var(--secondary); background: var(--secondary-soft); }
 .project-empty { display: grid; place-items: center; min-height: 180px; padding: 28px; border: 1px dashed rgba(205,214,230,.92); border-radius: 15px; color: #7f899d; background: radial-gradient(circle at 50% 34%, rgba(91,108,255,.06), transparent 28%), linear-gradient(180deg, #fbfcfe, #f8f9fc); text-align: center; }
 .project-empty[hidden] { display: none; }
 @media (min-width: 761px) {
@@ -785,6 +786,8 @@ label[data-recognition-source="derived"]::after {
 .project-action-bar strong { font-size: 11px; }
 .project-action-bar span { color: var(--muted); font-size: 9px; line-height: 1.5; }
 .project-action-buttons { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+.project-action-buttons > [hidden] { display: none; }
+.bid-final-action { border-color: var(--secondary); color: #fff; background: var(--secondary); }
 .bid-submission-history { flex: 1 0 100%; display: grid; overflow: hidden; border-top: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line)); }
 .bid-submission-history[hidden] { display: none; }
 .bid-submission-row { display: grid; grid-template-columns: 52px 76px 76px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 7px 2px; border-bottom: 1px solid color-mix(in srgb, var(--accent) 10%, var(--line)); }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260903-semantic-issuance";
+const VERSION = "20260903-bid-finalization";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.1">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.1 · 2026-09-03 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.2">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.2 · 2026-09-03 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -78,7 +78,13 @@ test("keeps repeated bid rounds visible and submit-ready in project details", as
   assert.match(html, /id="markBidButton"[^>]*>提交第 1 次标</);
   assert.match(app, /markBidButton"\)\.addEventListener\("click", submitProjectBidRound\)/);
   assert.match(app, /appendBidSubmission\(readProjectForm\(\)\)/);
-  assert.match(app, /\["未投标", "已投标待结果"\]\.includes\(status\)/);
+  assert.match(app, /\["未投标", "已投标"\]\.includes\(status\)/);
+  assert.match(html, /id="finalizeBidButton"[^>]*>确认最终标位</);
+  assert.match(html, /id="reopenBidButton"[^>]*>继续改标</);
+  assert.match(app, /finalizeBidButton"\)\.addEventListener\("click", \(\) => changeProjectBidFinalization\(false\)/);
+  assert.match(app, /reopenBidButton"\)\.addEventListener\("click", \(\) => changeProjectBidFinalization\(true\)/);
+  assert.match(app, /finalBidSubmissionId: existing\.finalBidSubmissionId/);
+  assert.match(app, /bidSubmissions: existing\.bidSubmissions/);
   assert.match(styles, /\.bid-submission-row\s*\{/);
   assert.match(styles, /\.bid-submission-current\s*\{/);
 });
@@ -528,14 +534,20 @@ test("ships liquid selection motion with accessible fallback", async () => {
   ]);
 
   assert.match(html, /data-ledger-filter="all"[^>]+aria-pressed="true"/);
-  assert.match(html, /data-ledger-filter="awaitingResult"/);
-  assert.match(html, /data-ledger-filter="won"/);
-  assert.match(html, /data-ledger-filter="notWon"/);
+  assert.match(html, /data-ledger-filter="bidding"/);
+  assert.match(html, /data-ledger-filter="bidFinal"/);
+  assert.match(html, /data-ledger-filter="resulted"/);
+  for (const filter of ["toBid", "bidding", "bidFinal", "resulted"]) {
+    assert.match(html, new RegExp(`<option value="${filter}">`));
+  }
+  assert.match(app, /projectStatusFilter"\)\.addEventListener\("change", \(event\) => setLedgerFilter\(event\.target\.value/);
+  assert.match(app, /projectMatchesStatusFilter\(item, ledgerFilter\)/);
+  assert.doesNotMatch(app, /statusFilter && item\.status !== statusFilter/);
   assert.doesNotMatch(html, /ledgerFilterSelect|ledgerFilterLabel/);
   assert.doesNotMatch(app, /LEDGER_FILTER_SELECT_VALUES|ledgerFilterSelect|ledgerFilterLabel/);
-  assert.match(app, /dashboardAwaitingResult/);
-  assert.match(app, /dashboardWon/);
-  assert.match(app, /dashboardNotWon/);
+  assert.match(app, /dashboardBidding/);
+  assert.match(app, /dashboardBidFinal/);
+  assert.match(app, /dashboardResulted/);
   assert.match(app, /function initializeLiquidMotion/);
   assert.match(app, /function syncLiquidTrack/);
   assert.match(app, /item\.setAttribute\("aria-pressed", String\(active\)\)/);

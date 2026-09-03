@@ -215,7 +215,7 @@ test("derives bidding, award and payment statuses from tranche records", () => {
     tranches: [{ shortName: "A", bidRate: 1.8, bidAmount: 1 }, { shortName: "B", bidRate: 2, bidAmount: 1 }],
   });
   assert.equal(deriveProjectStatus(base), "未投标");
-  assert.equal(deriveProjectStatus({ ...base, status: "已投标待结果" }), "已投标待结果");
+  assert.equal(deriveProjectStatus({ ...base, status: "已投标待结果" }), "已投标");
   assert.equal(deriveProjectStatus({
     ...base,
     resultConfirmed: true,
@@ -289,6 +289,9 @@ test("calculates dashboard counts including payment reminders", () => {
     dueToday: 1,
     toBid: 1,
     awaitingResult: 1,
+    bidding: 1,
+    bidFinal: 0,
+    resulted: 3,
     won: 3,
     notWon: 0,
     duePayment: 2,
@@ -530,7 +533,7 @@ test("records repeated bid submissions and makes the latest round effective", ()
   assert.equal(first.issues.length, 0);
   assert.equal(first.submission.sequence, 1);
   assert.equal(first.submission.tranches[0].bidAction, "投标");
-  assert.equal(first.project.status, "已投标待结果");
+  assert.equal(first.project.status, "已投标");
   assert.equal(first.project.bidSubmissions.length, 1);
 
   const revisedDraft = normalizeProjectRecord({

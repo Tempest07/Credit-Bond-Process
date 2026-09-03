@@ -33,9 +33,10 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260903-semantic-issuance";
+} from "./core.js?v=20260903-bid-finalization";
 import {
   FTP_TENORS,
+  PROJECT_STATUS_OPTIONS,
   appendBidSubmission,
   applyGuidancePricing,
   applySemanticIssuanceResult,
@@ -46,21 +47,25 @@ import {
   createProjectRecord,
   dashboardCounts,
   deriveProjectStatus,
+  finalizeProjectBid,
+  hasUnsubmittedBidChanges,
   normalizeProjectRecord,
   projectMatchesDateFilter,
+  projectMatchesStatusFilter,
   removeProject,
+  reopenProjectBid,
   suggestProjectCutoff,
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260903-semantic-issuance";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-semantic-issuance";
+} from "./lifecycle.js?v=20260903-bid-finalization";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-bid-finalization";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260903-semantic-issuance";
+} from "./history-parser.js?v=20260903-bid-finalization";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -76,23 +81,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260903-semantic-issuance";
+} from "./protocol-transfer.js?v=20260903-bid-finalization";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260903-semantic-issuance";
+} from "./protocol-transfer-templates.js?v=20260903-bid-finalization";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260903-semantic-issuance";
+} from "./protocol-transfer-docx.js?v=20260903-bid-finalization";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260903-semantic-issuance";
+} from "./reminders.js?v=20260903-bid-finalization";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -120,11 +125,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260903-semantic-issuance";
+} from "./secondary-inventory.js?v=20260903-bid-finalization";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260903-semantic-issuance";
+} from "./trade-record-converter.js?v=20260903-bid-finalization";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -135,13 +140,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260903-semantic-issuance";
+} from "./trade-record-grid.js?v=20260903-bid-finalization";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260903-semantic-issuance";
-import { initializeDatePickers } from "./date-picker.js?v=20260903-semantic-issuance";
+} from "./trade-record-ledger.js?v=20260903-bid-finalization";
+import { initializeDatePickers } from "./date-picker.js?v=20260903-bid-finalization";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -150,30 +155,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260903-semantic-issuance";
+} from "./project-screenshot-ocr.js?v=20260903-bid-finalization";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260903-semantic-issuance";
+} from "./project-screenshot-layout.js?v=20260903-bid-finalization";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260903-semantic-issuance";
+} from "./project-screenshot-image.js?v=20260903-bid-finalization";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260903-semantic-issuance";
+} from "./payment-receipts.js?v=20260903-bid-finalization";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260903-semantic-issuance";
+} from "./issuer-search.js?v=20260903-bid-finalization";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260903-semantic-issuance";
+} from "./state-history.js?v=20260903-bid-finalization";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -395,12 +400,10 @@ let cloudSaveQueue = Promise.resolve(true);
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
-  toBid: "待投标",
-  awaitingResult: "等待结果",
-  won: "中标项目",
-  notWon: "未中标",
-  dueToday: "今日待投标",
-  paymentToday: "今日缴款",
+  toBid: "未投标",
+  bidding: "已投标",
+  bidFinal: "已投标结束",
+  resulted: "已出结果",
 };
 const LEDGER_MOBILE_BREAKPOINT = "(max-width: 760px)";
 const LEDGER_MOBILE_PANES = new Set(["list", "detail", "overview"]);
@@ -4503,6 +4506,8 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
         notes: existing.notes,
         resultAdvertisement: existing.resultAdvertisement,
         resultConfirmed: existing.resultConfirmed,
+        bidSubmissions: existing.bidSubmissions,
+        finalBidSubmissionId: existing.finalBidSubmissionId,
         comprehensivePricing: existing.comprehensivePricing,
         pricingUnit: existing.pricingUnit,
         afterTaxRevenue: existing.afterTaxRevenue,
@@ -4566,7 +4571,7 @@ function bindLedger() {
   });
   $("#mobileProjectBackButton")?.addEventListener("click", closeLedgerProjectDetail);
   $("#projectSearch").addEventListener("input", renderProjectList);
-  $("#projectStatusFilter").addEventListener("change", renderProjectList);
+  $("#projectStatusFilter").addEventListener("change", (event) => setLedgerFilter(event.target.value || "all"));
   $("#projectDateFilter").addEventListener("change", renderProjectList);
   $("#projectTodayFilterButton").addEventListener("click", () => {
     $("#projectDateFilter").value = localDate(new Date());
@@ -4622,6 +4627,8 @@ function bindLedger() {
   });
   $("#markUnbidButton").addEventListener("click", () => setProjectActionStatus("未投标"));
   $("#markBidButton").addEventListener("click", submitProjectBidRound);
+  $("#finalizeBidButton").addEventListener("click", () => changeProjectBidFinalization(false));
+  $("#reopenBidButton").addEventListener("click", () => changeProjectBidFinalization(true));
   $("#terminateProjectButton").addEventListener("click", () => setProjectActionStatus("已结束"));
   $("#openResultButton").addEventListener("click", () => openResultEntryPanel());
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
@@ -6867,9 +6874,9 @@ function renderDashboard() {
   const counts = dashboardCounts(state.projects || []);
   $("#dashboardAll").textContent = counts.all;
   $("#dashboardToBid").textContent = counts.toBid;
-  $("#dashboardAwaitingResult").textContent = counts.awaitingResult;
-  $("#dashboardWon").textContent = counts.won;
-  $("#dashboardNotWon").textContent = counts.notWon;
+  $("#dashboardBidding").textContent = counts.bidding;
+  $("#dashboardBidFinal").textContent = counts.bidFinal;
+  $("#dashboardResulted").textContent = counts.resulted;
 }
 
 function renderUnifiedReminders() {
@@ -9875,14 +9882,17 @@ function completePaymentTodo(value) {
 }
 
 function setLedgerFilter(nextFilter) {
-  ledgerFilter = LEDGER_FILTER_LABELS[nextFilter] ? nextFilter : "all";
+  ledgerFilter = LEDGER_FILTER_LABELS[nextFilter] || PROJECT_STATUS_OPTIONS.includes(nextFilter) ? nextFilter : "all";
   syncLedgerFilterControls();
   renderProjectList();
 }
 
 function syncLedgerFilterControls() {
+  $("#projectStatusFilter").value = ledgerFilter === "all" ? "" : ledgerFilter;
+  const activeFilter = LEDGER_FILTER_LABELS[ledgerFilter] ? ledgerFilter
+    : projectMatchesStatusFilter({ status: ledgerFilter }, "resulted") ? "resulted" : ledgerFilter;
   $$("[data-ledger-filter]").forEach((item) => {
-    const active = item.dataset.ledgerFilter === ledgerFilter;
+    const active = item.dataset.ledgerFilter === activeFilter;
     item.classList.toggle("active", active);
     item.setAttribute("aria-pressed", String(active));
   });
@@ -9891,19 +9901,11 @@ function syncLedgerFilterControls() {
 function renderProjectList() {
   syncLedgerFilterControls();
   const query = $("#projectSearch").value.trim().toLowerCase();
-  const statusFilter = $("#projectStatusFilter").value;
   const dateFilter = $("#projectDateFilter").value;
-  const today = localDate(new Date());
   const projects = (state.projects || [])
     .filter((item) => {
-      if (statusFilter && item.status !== statusFilter) return false;
+      if (!projectMatchesStatusFilter(item, ledgerFilter)) return false;
       if (dateFilter && !projectMatchesDateFilter(item, dateFilter)) return false;
-      if (ledgerFilter === "dueToday" && !(["未投标", "待投标"].includes(item.status) && item.cutoffAt?.slice(0, 10) === today)) return false;
-      if (ledgerFilter === "toBid" && !["未投标", "待投标"].includes(item.status)) return false;
-      if (ledgerFilter === "awaitingResult" && item.status !== "已投标待结果") return false;
-      if (ledgerFilter === "won" && !["部分中标", "已中标", "待缴款", "已缴款"].includes(item.status)) return false;
-      if (ledgerFilter === "notWon" && item.status !== "未中标") return false;
-      if (ledgerFilter === "paymentToday" && !(item.resultConfirmed && item.tranches?.some((tranche) => tranche.paymentDate === today && trancheNeedsPayment(tranche, today)))) return false;
       return `${item.shortName} ${item.issuerName} ${item.branch} ${item.leadUnderwriter}`.toLowerCase().includes(query);
     })
     .sort(compareProjects);
@@ -9982,6 +9984,7 @@ function fillProjectForm(input) {
   $("#projectResultSummary").value = buildAwardResultText(record);
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = record.status;
+  $("#projectStatusPill").classList.toggle("bid-final", record.status === "已投标结束");
   $("#projectAutosaveStatus").textContent = localStateDirty ? "已保存到本机，正在上传" : "云端已确认";
   updateProjectActionButtons(record);
   renderBidSubmissionHistory(record);
@@ -10555,6 +10558,7 @@ function saveProjectRecordNow(record) {
   if (isCurrentProject) {
     $("#projectStatus").value = normalized.status;
     $("#projectStatusPill").textContent = normalized.status;
+    $("#projectStatusPill").classList.toggle("bid-final", normalized.status === "已投标结束");
     $("#projectAutosaveStatus").textContent = "已保存到本机，正在上传";
     $("#projectBidPosition").value = buildBidPositionText(normalized);
     updateProjectActionButtons(normalized);
@@ -10570,17 +10574,17 @@ function saveProjectRecordNow(record) {
 function setProjectActionStatus(status) {
   const draft = readProjectForm();
   draft.status = status;
-  if (["未投标", "已投标待结果", "已结束"].includes(status)) {
+  if (["未投标", "已投标", "已结束"].includes(status)) {
     draft.resultConfirmed = false;
   }
   saveProjectRecordNow(draft);
-  if (["未投标", "已投标待结果", "已结束"].includes(status)) {
+  if (["未投标", "已投标", "已结束"].includes(status)) {
     closeResultEntryPanel();
     setResultEntryFieldsVisible(false);
   }
   const messages = {
     未投标: "项目已撤回为未投标。",
-    已投标待结果: "项目已确认投标，等待发行结果。",
+    已投标: "项目已确认投标，可以继续改标。",
     已结束: "项目已终止，不再进入待投标流程。",
   };
   showToast(messages[status] || "项目状态已更新。");
@@ -10599,6 +10603,19 @@ function submitProjectBidRound() {
   showToast(`第 ${result.submission.sequence} 次标位已记录，当前有效标已更新。`);
 }
 
+function changeProjectBidFinalization(reopen) {
+  const draft = readProjectForm();
+  const result = reopen ? reopenProjectBid(draft) : finalizeProjectBid(draft);
+  if (result.issues.length) {
+    showToast(result.issues[0]);
+    return;
+  }
+  saveProjectRecordNow(result.project);
+  showToast(reopen
+    ? "已恢复为已投标，可以继续改标；已有标位和提交记录已保留。"
+    : "最终标位已确认，项目已移至已投标结束，等待录入结果。");
+}
+
 function updateProjectActionButtons(projectOrStatus) {
   const projectValue = typeof projectOrStatus === "string"
     ? { status: projectOrStatus, bidSubmissions: [] }
@@ -10606,11 +10623,14 @@ function updateProjectActionButtons(projectOrStatus) {
   const status = projectValue.status || "未投标";
   const bidCount = projectValue.bidSubmissions?.length || 0;
   const resultStatuses = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款"]);
-  const hasResult = resultStatuses.has(status);
-  $("#markUnbidButton").disabled = status === "未投标" || hasResult;
+  const hasResult = projectValue.resultConfirmed || resultStatuses.has(status);
+  $("#markUnbidButton").disabled = status === "未投标" || status === "已投标结束" || hasResult;
   $("#terminateProjectButton").disabled = status !== "未投标";
-  $("#markBidButton").disabled = !["未投标", "已投标待结果"].includes(status);
+  $("#markBidButton").disabled = hasResult || !["未投标", "已投标"].includes(status);
   $("#markBidButton").textContent = `提交第 ${bidCount + 1} 次标`;
+  $("#finalizeBidButton").hidden = status !== "已投标" || hasResult;
+  $("#finalizeBidButton").disabled = !bidCount;
+  $("#reopenBidButton").hidden = status !== "已投标结束" || hasResult;
   $("#openResultButton").disabled = status === "未投标" || status === "已结束";
 }
 
@@ -10626,7 +10646,9 @@ function renderBidSubmissionHistory(projectValue) {
   }
 
   const latest = submissions[submissions.length - 1];
-  summary.textContent = `已提交 ${submissions.length} 次 · 当前有效：第 ${latest.sequence} 次`;
+  const isFinal = latest.id === projectValue.finalBidSubmissionId;
+  const hasDraftChanges = !projectValue.resultConfirmed && hasUnsubmittedBidChanges(projectValue);
+  summary.textContent = `已提交 ${submissions.length} 次 · ${isFinal ? "最终标位" : "最近提交"}：第 ${latest.sequence} 次${hasDraftChanges ? " · 有修改未提交" : ""}`;
   history.hidden = false;
   history.innerHTML = [...submissions].reverse().map((submission) => {
     const isLatest = submission.id === latest.id;
@@ -10638,7 +10660,7 @@ function renderBidSubmissionHistory(projectValue) {
         <time>${escapeHtml(formatBidSubmissionTime(submission.submittedAt))}</time>
         <span class="bid-submission-action">${escapeHtml(actions || "投标")}</span>
         <span class="bid-submission-positions">${escapeHtml(positions || "标位待补")}</span>
-        ${isLatest ? '<span class="bid-submission-current">当前有效</span>' : ""}
+        ${isLatest ? `<span class="bid-submission-current">${isFinal ? "最终标位" : "最近提交"}</span>` : ""}
       </div>
     `;
   }).join("");
@@ -10906,7 +10928,8 @@ function projectOfferingBadgeClass(projectValue) {
 }
 
 function statusBadgeClass(status) {
-  if (["未投标", "待投标", "已投标待结果"].includes(status)) return "warning";
+  if (["未投标", "待投标", "已投标", "已投标待结果"].includes(status)) return "warning";
+  if (status === "已投标结束") return "bid-final";
   if (["未中标", "已结束"].includes(status)) return "muted";
   return "";
 }

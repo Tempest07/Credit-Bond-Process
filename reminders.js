@@ -1,8 +1,8 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260903-semantic-issuance";
-import { protocolTransferTodos } from "./protocol-transfer.js?v=20260903-semantic-issuance";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20260903-bid-finalization";
+import { protocolTransferTodos } from "./protocol-transfer.js?v=20260903-bid-finalization";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);
-const RESULT_PENDING_STATUS = "已投标待结果";
+const RESULT_PENDING_STATUSES = new Set(["已投标", "已投标结束", "已投标待结果"]);
 const PAYMENT_ESCALATE_HOUR = 15;
 const PAYMENT_ESCALATE_MINUTE = 30;
 
@@ -152,7 +152,7 @@ function collectProjectBidReminders(reminders, project, referenceDate) {
 }
 
 function collectProjectResultReminders(reminders, project, referenceDate) {
-  if (project.status !== RESULT_PENDING_STATUS || !project.cutoffAt) return;
+  if (!RESULT_PENDING_STATUSES.has(project.status) || project.resultConfirmed || !project.cutoffAt) return;
   const cutoff = new Date(project.cutoffAt);
   if (Number.isNaN(cutoff.getTime()) || cutoff.getTime() > referenceDate.getTime()) return;
   const minutes = (referenceDate.getTime() - cutoff.getTime()) / 60000;

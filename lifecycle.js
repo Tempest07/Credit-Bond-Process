@@ -3,11 +3,12 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260903-semantic-issuance";
+} from "./core.js?v=20260903-bid-finalization";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
-  "已投标待结果",
+  "已投标",
+  "已投标结束",
   "部分中标",
   "已中标",
   "未中标",
@@ -17,6 +18,7 @@ const PROJECT_STATUSES = new Set([
 ]);
 
 export const PROJECT_STATUS_OPTIONS = [...PROJECT_STATUSES];
+const RESULT_STATUSES = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款"]);
 const EXCHANGE_VENUES = new Set(["上交所", "深交所", "北交所"]);
 const RATE_EPSILON = 0.00001;
 const BID_ACTIONS = new Set(["投标", "改标", "参团+投标"]);
@@ -85,7 +87,8 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
 }
 
 export function normalizeProjectRecord(input = {}) {
-  const migratedStatus = input.status === "待投标" ? "未投标" : input.status;
+  const migratedStatus = input.status === "待投标" ? "未投标"
+    : input.status === "已投标待结果" ? "已投标" : input.status;
   const status = PROJECT_STATUSES.has(migratedStatus) ? migratedStatus : "未投标";
   const afterTaxRevenue = numberOrNull(input.afterTaxRevenue);
   const ftpCost = numberOrNull(input.ftpCost);
@@ -122,6 +125,7 @@ export function normalizeProjectRecord(input = {}) {
     bidSubmissions: Array.isArray(input.bidSubmissions)
       ? input.bidSubmissions.map(normalizeBidSubmission)
       : [],
+    finalBidSubmissionId: String(input.finalBidSubmissionId || "").trim(),
     resultAdvertisement: String(input.resultAdvertisement || "").trim(),
     resultConfirmed: Boolean(input.resultConfirmed || ["部分中标", "已中标", "未中标", "待缴款", "已缴款"].includes(status)),
     comprehensivePricing: Boolean(input.comprehensivePricing),
@@ -137,7 +141,7 @@ export function normalizeProjectRecord(input = {}) {
   if (normalized.instrumentType) {
     normalized.shortName = compactSelectedAbsShortNames(normalized.absInfo.tranches, normalized.shortName);
   }
-  if (!normalized.bidSubmissions.length && status === "已投标待结果") {
+  if (!normalized.bidSubmissions.length && status === "已投标") {
     const legacyTranches = snapshotBidSubmissionTranches(normalized, false);
     if (legacyTranches.length) {
       normalized.bidSubmissions = [normalizeBidSubmission({
@@ -147,6 +151,14 @@ export function normalizeProjectRecord(input = {}) {
         tranches: legacyTranches,
       })];
     }
+  }
+  if (!normalized.resultConfirmed) {
+    if (status === "已投标结束" && (
+      !normalized.finalBidSubmissionId
+      || normalized.finalBidSubmissionId !== normalized.bidSubmissions.at(-1)?.id
+      || hasUnsubmittedBidChanges(normalized)
+    )) normalized.status = "已投标";
+    if (normalized.status !== "已投标结束") normalized.finalBidSubmissionId = "";
   }
   return fillMissingDefaultPaymentDates(normalized);
 }
@@ -194,9 +206,10 @@ export function deriveProjectStatus(project, referenceDate = new Date()) {
   const date = referenceDateKey(referenceDate);
   if (project.status === "已结束") return "已结束";
   if (!project.resultConfirmed) {
-    return project.status === "已投标待结果" ? "已投标待结果" : "未投标";
+    if (project.status === "已投标结束") return "已投标结束";
+    return ["已投标", "已投标待结果"].includes(project.status) ? "已投标" : "未投标";
   }
-  if (!tranches.length) return project.status || "已投标待结果";
+  if (!tranches.length) return project.status || "已投标";
   const results = tranches.map((tranche) => tranche.resultStatus);
   const notWonCount = results.filter((status) => status === "未中标").length;
   const winningTranches = tranches.filter(isWinningTranche);
@@ -205,7 +218,19 @@ export function deriveProjectStatus(project, referenceDate = new Date()) {
   if (winningTranches.length && notWonCount && winningTranches.length < tranches.length) return "部分中标";
   if (winningTranches.length === tranches.length) return "已中标";
   if (notWonCount && notWonCount === tranches.length) return "未中标";
-  return project.status === "已结束" ? "已结束" : "已投标待结果";
+  return project.status === "已投标结束" ? "已投标结束" : "已投标";
+}
+
+export function projectMatchesStatusFilter(project, filter) {
+  const status = project.status === "已投标待结果" ? "已投标"
+    : project.status === "待投标" ? "未投标" : project.status;
+  const hasResult = project.resultConfirmed || RESULT_STATUSES.has(status);
+  if (!filter || filter === "all") return true;
+  if (filter === "toBid") return status === "未投标" && !hasResult;
+  if (filter === "bidding") return status === "已投标" && !hasResult;
+  if (filter === "bidFinal") return status === "已投标结束" && !hasResult;
+  if (filter === "resulted") return status !== "已结束" && Boolean(hasResult);
+  return status === filter;
 }
 
 export function trancheNeedsPayment(tranche, referenceDate = new Date()) {
@@ -240,7 +265,10 @@ export function dashboardCounts(projects = [], now = new Date()) {
     all: projects.length,
     dueToday: projects.filter((project) => ["未投标", "待投标"].includes(project.status) && project.cutoffAt?.slice(0, 10) === date).length,
     toBid: projects.filter((project) => ["未投标", "待投标"].includes(project.status)).length,
-    awaitingResult: projects.filter((project) => project.status === "已投标待结果").length,
+    awaitingResult: projects.filter((project) => projectMatchesStatusFilter(project, "bidding") || projectMatchesStatusFilter(project, "bidFinal")).length,
+    bidding: projects.filter((project) => projectMatchesStatusFilter(project, "bidding")).length,
+    bidFinal: projects.filter((project) => projectMatchesStatusFilter(project, "bidFinal")).length,
+    resulted: projects.filter((project) => projectMatchesStatusFilter(project, "resulted")).length,
     won: projects.filter((project) => ["部分中标", "已中标", "待缴款", "已缴款"].includes(project.status)).length,
     notWon: projects.filter((project) => project.status === "未中标").length,
     duePayment: duePaymentProjects.length,
@@ -362,7 +390,10 @@ export function resolveBidAction(project = {}, tranche = {}, hasPreviousSubmissi
 }
 
 export function validateBidSubmission(input = {}) {
-  const project = normalizeProjectRecord(input);
+  return validateNormalizedBidSubmission(normalizeProjectRecord(input));
+}
+
+function validateNormalizedBidSubmission(project) {
   const issues = [];
   let completePositionCount = 0;
 
@@ -392,6 +423,9 @@ export function validateBidSubmission(input = {}) {
 
 export function appendBidSubmission(input = {}, submittedAt = new Date().toISOString()) {
   const project = normalizeProjectRecord(input);
+  if (project.resultConfirmed || project.status === "已结束") {
+    return { project, submission: null, issues: ["已出结果或已终止的项目不能继续提交标位。"] };
+  }
   const validation = validateBidSubmission(project);
   if (!validation.valid) return { project, submission: null, issues: validation.issues };
 
@@ -407,13 +441,55 @@ export function appendBidSubmission(input = {}, submittedAt = new Date().toISOSt
   return {
     project: normalizeProjectRecord({
       ...project,
-      status: "已投标待结果",
+      status: "已投标",
+      finalBidSubmissionId: "",
       resultConfirmed: false,
       bidSubmissions: [...previousSubmissions, submission],
     }),
     submission,
     issues: [],
   };
+}
+
+export function hasUnsubmittedBidChanges(project = {}) {
+  const latest = project.bidSubmissions?.at(-1);
+  if (!latest) return true;
+  // Compare submitted business terms, not result fields or newly generated IDs.
+  // Resolve AUTO as it was for the latest round, not as a prospective next round.
+  const current = snapshotBidSubmissionTranches(project, latest.sequence > 1);
+  const terms = (tranches) => tranches.map((tranche) => ({
+    trancheId: tranche.trancheId,
+    shortName: tranche.shortName,
+    durationText: tranche.durationText,
+    suggestedRatio: tranche.suggestedRatio,
+    bidAction: tranche.bidAction,
+    bidLevels: (tranche.bidLevels || []).map(({ bidRate, bidAmount }) => ({ bidRate, bidAmount })),
+    outsourcedBids: (tranche.outsourcedBids || []).map(({ managerName, bidRate, bidAmount }) => ({ managerName, bidRate, bidAmount })),
+  }));
+  return !validateNormalizedBidSubmission(project).valid || JSON.stringify(terms(current)) !== JSON.stringify(terms(latest.tranches));
+}
+
+export function finalizeProjectBid(input = {}) {
+  const project = normalizeProjectRecord(input);
+  if (project.status !== "已投标" || project.resultConfirmed) {
+    return { project, issues: ["只有尚未出结果的已投标项目可以确认最终标位。"] };
+  }
+  const latest = project.bidSubmissions.at(-1);
+  if (!latest || hasUnsubmittedBidChanges(project)) {
+    return { project, issues: ["当前标位尚未提交，请先提交本次标位，再确认最终标位。"] };
+  }
+  return {
+    project: normalizeProjectRecord({ ...project, status: "已投标结束", finalBidSubmissionId: latest.id }),
+    issues: [],
+  };
+}
+
+export function reopenProjectBid(input = {}) {
+  const project = normalizeProjectRecord(input);
+  if (project.status !== "已投标结束" || project.resultConfirmed) {
+    return { project, issues: ["只有尚未出结果的已投标结束项目可以恢复改标。"] };
+  }
+  return { project: normalizeProjectRecord({ ...project, status: "已投标", finalBidSubmissionId: "" }), issues: [] };
 }
 
 export function buildAwardResultText(project) {
