@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260903-bid-card-summary";
+const VERSION = "20260903-cutoff-preview";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.3">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.3 · 2026-09-03 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.4">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.4 · 2026-09-03 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -333,9 +333,17 @@ test("lets new projects choose a smart, same-day or next-business-day cutoff", a
   assert.match(html, /data-new-project-cutoff-mode="auto"/);
   assert.match(html, /data-new-project-cutoff-mode="today"/);
   assert.match(html, /data-new-project-cutoff-mode="next-business-day"/);
-  assert.match(app, /cutoffDayMode:\s*newProjectCutoffMode/);
+  assert.match(app, /dayMode:\s*newProjectCutoffMode/);
   assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "subscribeDate", normalized\.subscribeDate \|\| issueGroup\?\.subscribeDate\)/);
-  assert.match(app, /suggestProjectCutoff\(project, issuer, referenceDate, \{ dayMode: newProjectCutoffMode \}\)/);
+  assert.match(app, /resolveNewProjectCutoff\(project, issuer, referenceDate, \{/);
+  assert.match(app, /existingProject: existing/);
+  assert.match(app, /newProjectCutoffPreview = suggestion/);
+  assert.match(app, /upsertParsedProjectToLedger\(project, issuer, generated, newProjectCutoffPreview\)/);
+  assert.match(app, /const cutoff = cutoffPreview \|\| resolveNewProjectCutoff/);
+  assert.doesNotMatch(app, /cutoffAt: existing.cutoffAt \|\| created.cutoffAt/);
+  assert.match(html, /id="newProjectCutoffHint"/);
+  assert.match(app, /dayMode: existing \? "auto" : newProjectCutoffMode/);
+  assert.match(app, /editProjectOpinionButton"\)\.addEventListener\("click", \(\) => \{\s*const record = readProjectForm\(\);\s*\/\/[^\n]+\n\s*newProjectCutoffMode = "auto"/);
   assert.match(styles, /\.new-project-cutoff-modes button\.active\s*\{/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.new-project-cutoff-modes\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
 });

@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260903-bid-card-summary";
+} from "./core.js?v=20260903-cutoff-preview";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -55,18 +55,19 @@ import {
   projectMatchesStatusFilter,
   removeProject,
   reopenProjectBid,
+  resolveNewProjectCutoff,
   suggestProjectCutoff,
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260903-bid-card-summary";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-bid-card-summary";
+} from "./lifecycle.js?v=20260903-cutoff-preview";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-cutoff-preview";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260903-bid-card-summary";
+} from "./history-parser.js?v=20260903-cutoff-preview";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -82,23 +83,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260903-bid-card-summary";
+} from "./protocol-transfer.js?v=20260903-cutoff-preview";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260903-bid-card-summary";
+} from "./protocol-transfer-templates.js?v=20260903-cutoff-preview";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260903-bid-card-summary";
+} from "./protocol-transfer-docx.js?v=20260903-cutoff-preview";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260903-bid-card-summary";
+} from "./reminders.js?v=20260903-cutoff-preview";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -126,11 +127,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260903-bid-card-summary";
+} from "./secondary-inventory.js?v=20260903-cutoff-preview";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260903-bid-card-summary";
+} from "./trade-record-converter.js?v=20260903-cutoff-preview";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -141,13 +142,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260903-bid-card-summary";
+} from "./trade-record-grid.js?v=20260903-cutoff-preview";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260903-bid-card-summary";
-import { initializeDatePickers } from "./date-picker.js?v=20260903-bid-card-summary";
+} from "./trade-record-ledger.js?v=20260903-cutoff-preview";
+import { initializeDatePickers } from "./date-picker.js?v=20260903-cutoff-preview";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -156,30 +157,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260903-bid-card-summary";
+} from "./project-screenshot-ocr.js?v=20260903-cutoff-preview";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260903-bid-card-summary";
+} from "./project-screenshot-layout.js?v=20260903-cutoff-preview";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260903-bid-card-summary";
+} from "./project-screenshot-image.js?v=20260903-cutoff-preview";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260903-bid-card-summary";
+} from "./payment-receipts.js?v=20260903-cutoff-preview";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260903-bid-card-summary";
+} from "./issuer-search.js?v=20260903-cutoff-preview";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260903-bid-card-summary";
+} from "./state-history.js?v=20260903-cutoff-preview";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -298,6 +299,7 @@ let bondActivityChannel = null;
 const stateClientId = loadStateClientId();
 let project = parseProjectBrief("");
 let newProjectCutoffMode = "auto";
+let newProjectCutoffPreview = null;
 let selectedIssuerId = "";
 let databaseCreditModule = "";
 let issuerSearchEntries = [];
@@ -4265,7 +4267,7 @@ function saveCurrentProject() {
     return;
   }
   const generated = { ...generateOpinion(project, issuer), opinion: $("#opinionOutput").value };
-  const result = upsertParsedProjectToLedger(project, issuer, generated);
+  const result = upsertParsedProjectToLedger(project, issuer, generated, newProjectCutoffPreview);
   if (!result) return;
   persistState();
   openLedgerProject(result.record.id);
@@ -4438,13 +4440,17 @@ function clonePlain(value) {
   return JSON.parse(JSON.stringify(value || {}));
 }
 
-function upsertParsedProjectToLedger(projectValue, issuer, generated) {
+function findExistingLedgerProject(projectValue) {
+  const activeProjects = (state.projects || []).filter((item) => item.status !== "已结束");
+  return activeProjects.find((item) => item.shortName === projectValue.shortName)
+    || (isAbsProject(projectValue) ? findExistingAbsProject(activeProjects, projectValue) : null);
+}
+
+function upsertParsedProjectToLedger(projectValue, issuer, generated, cutoffPreview = null) {
   if (!projectValue?.shortName) return null;
   if (!projectIssuerSaveStatus(projectValue, issuer).ok) return null;
-  const activeProjects = (state.projects || []).filter((item) => item.status !== "已结束");
-  const existing = activeProjects.find((item) => item.shortName === projectValue.shortName)
-    || (isAbsProject(projectValue) ? findExistingAbsProject(activeProjects, projectValue) : null);
-  const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing);
+  const existing = findExistingLedgerProject(projectValue);
+  const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing, cutoffPreview);
   state = upsertProject(state, record);
   state = linkAbsCreditApprovalToProject(state, record);
   return { record, isUpdate: Boolean(existing) };
@@ -4484,15 +4490,20 @@ function missingRequiredProjectIssuerFields(draft = {}) {
   return REQUIRED_PROJECT_ISSUER_FIELDS.filter((field) => !String(draft[field.key] || "").trim());
 }
 
-function buildLedgerProjectRecord(projectValue, issuer, generated, existing = null) {
+function buildLedgerProjectRecord(projectValue, issuer, generated, existing = null, cutoffPreview = null) {
   const suggestedRatios = generated.suggestion.trancheSuggestions.map((item) => item.suggestedRatio);
+  const cutoff = cutoffPreview || resolveNewProjectCutoff(projectValue, issuer, new Date(), {
+    // Batch updates have no displayed single-project date choice to confirm.
+    dayMode: existing ? "auto" : newProjectCutoffMode,
+    existingProject: existing,
+  });
   const created = createProjectRecord({
     ...projectValue,
     leadUnderwriter: projectValue.sponsorStatus === "牵头" ? "兴业银行" : projectValue.leadUnderwriter,
     suggestedRatios,
   }, issuer, generated, {
     id: existing?.id,
-    cutoffDayMode: newProjectCutoffMode,
+    ...cutoff,
   });
   return existing
     ? normalizeProjectRecord({
@@ -4500,10 +4511,6 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
         status: existing.status,
         instrumentType: created.instrumentType,
         absInfo: created.absInfo,
-        cutoffAt: existing.cutoffAt || created.cutoffAt,
-        cutoffTimeConfirmed: existing.cutoffAt ? existing.cutoffTimeConfirmed : created.cutoffTimeConfirmed,
-        cutoffSource: existing.cutoffAt ? existing.cutoffSource : created.cutoffSource,
-        cutoffHistory: existing.cutoffHistory || [],
         notes: existing.notes,
         resultAdvertisement: existing.resultAdvertisement,
         resultConfirmed: existing.resultConfirmed,
@@ -4664,6 +4671,8 @@ function bindLedger() {
   }
   $("#editProjectOpinionButton").addEventListener("click", () => {
     const record = readProjectForm();
+    // Entering an existing project must not reuse another project's explicit date choice.
+    newProjectCutoffMode = "auto";
     const recordTranches = isAbsProject(record) ? [] : (record.tranches || []);
     project = {
       ...parseProjectBrief(record.sourceText),
@@ -6582,7 +6591,13 @@ function setNewProjectCutoffMode(mode) {
 function renderNewProjectCutoffControl(issuer = null, referenceDate = new Date()) {
   const preview = $("#newProjectCutoffPreview");
   if (!preview) return;
-  const suggestion = suggestProjectCutoff(project, issuer, referenceDate, { dayMode: newProjectCutoffMode });
+  const existing = findExistingLedgerProject(project);
+  const suggestion = resolveNewProjectCutoff(project, issuer, referenceDate, {
+    dayMode: newProjectCutoffMode,
+    existingProject: existing,
+  });
+  // Save exactly the deadline currently displayed, including across a time/day boundary.
+  newProjectCutoffPreview = suggestion;
   const date = suggestion.cutoffAt?.slice(0, 10) || "";
   const time = suggestion.cutoffAt?.slice(11, 16) || "";
   const today = localDate(referenceDate);
@@ -6591,7 +6606,9 @@ function renderNewProjectCutoffControl(issuer = null, referenceDate = new Date()
     : /^\d{4}-\d{2}-\d{2}$/.test(date)
       ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`
       : "日期待确认";
-  const sourcePrefix = suggestion.cutoffSource === "项目简表"
+  const sourcePrefix = existing?.cutoffAt && newProjectCutoffMode === "auto"
+    ? "台账已存"
+    : suggestion.cutoffSource === "项目简表"
     ? "简表"
     : suggestion.cutoffSource === "簿记日期"
       ? "簿记日"
@@ -6601,6 +6618,13 @@ function renderNewProjectCutoffControl(issuer = null, referenceDate = new Date()
           ? "已选今天"
           : "已选下一工作日";
   preview.textContent = `${sourcePrefix} · ${dayLabel}${time ? ` ${time}` : ""}`;
+  const hint = $("#newProjectCutoffHint");
+  hint.hidden = !existing;
+  hint.textContent = existing
+    ? newProjectCutoffMode === "auto" && existing.cutoffAt
+      ? "同名项目已存在，保留已存截标时间；选择今天或下一工作日可改期。"
+      : "将按上方时间更新已有项目，并保留改期记录。"
+    : "";
   $$('[data-new-project-cutoff-mode]').forEach((button) => {
     const active = button.dataset.newProjectCutoffMode === newProjectCutoffMode;
     button.classList.toggle("active", active);

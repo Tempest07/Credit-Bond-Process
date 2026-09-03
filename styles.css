@@ -313,6 +313,7 @@ label[data-recognition-source="derived"]::after {
 .new-project-cutoff-copy { display: grid; gap: 3px; min-width: 0; }
 .new-project-cutoff-copy span { color: var(--muted); font-size: 11px; font-weight: 800; }
 .new-project-cutoff-copy strong { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.new-project-cutoff-copy small { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .new-project-cutoff-modes { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid rgba(210,217,232,.88); border-radius: 10px; background: rgba(247,249,253,.9); }
 .new-project-cutoff-modes button { min-height: 34px; padding: 0 11px; border: 1px solid transparent; border-radius: 7px; color: #657187; background: transparent; font: inherit; font-size: 11px; font-weight: 850; cursor: pointer; white-space: nowrap; }
 .new-project-cutoff-modes button.active { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); color: var(--accent); background: #fff; box-shadow: 0 5px 14px rgba(74,88,210,.12); }

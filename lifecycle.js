@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260903-bid-card-summary";
+} from "./core.js?v=20260903-cutoff-preview";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -340,6 +340,25 @@ export function suggestProjectCutoff(project = {}, issuer = null, referenceDate 
             ? "银行间默认18:00"
             : "默认18:00，场所待确认",
   };
+}
+
+export function resolveNewProjectCutoff(project = {}, issuer = null, referenceDate = new Date(), options = {}) {
+  const existing = options.existingProject;
+  const dayMode = ["today", "next-business-day"].includes(options.dayMode) ? options.dayMode : "auto";
+  // Updating a known project must preview its saved deadline, not a new-project default.
+  if (dayMode === "auto" && existing?.cutoffAt) {
+    return {
+      cutoffAt: existing.cutoffAt,
+      cutoffTimeConfirmed: existing.cutoffTimeConfirmed,
+      cutoffSource: existing.cutoffSource,
+      cutoffHistory: existing.cutoffHistory || [],
+    };
+  }
+  const suggestion = suggestProjectCutoff(project, issuer, referenceDate, { dayMode });
+  const cutoffHistory = existing
+    ? updateProjectCutoff(existing, suggestion.cutoffAt, suggestion.cutoffSource, suggestion.cutoffTimeConfirmed).cutoffHistory
+    : [];
+  return { ...suggestion, cutoffHistory };
 }
 
 export function updateProjectCutoff(project, cutoffAt, reason = "手工调整", confirmed = true) {

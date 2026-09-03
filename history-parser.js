@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260903-bid-card-summary";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260903-cutoff-preview";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
