@@ -5,15 +5,20 @@ import test from "node:test";
 const VERSION = "20260903-semantic-issuance";
 
 test("exposes a readable product version consistent with package metadata", async () => {
-  const [html, packageText] = await Promise.all([
+  const [html, packageText, lockText] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ]);
   const packageVersion = JSON.parse(packageText).version;
+  const lock = JSON.parse(lockText);
   const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
 
+  assert.equal(lock.version, packageVersion);
+  assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="3\.3\.0\.32">/);
+  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.1">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.1 · 2026-09-03 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });

@@ -1,5 +1,14 @@
 # 发行结果语义识别
 
+## v4.0.0 大版本标记（2026-09-03）
+
+按用户要求，将本功能标为产品大版本 `4.0.0`，内部构建 `4.0.0.1`。首次上线的 `3.3.0.32` 验收记录保留在下文，避免把历史部署误记为新版本。
+
+- 修改：`index.html` 的页面版本与构建号、`package.json` / `package-lock.json` 的产品版本、`README.md` 的版本说明及 `tests/assets.test.js` 的一致性断言。
+- 范围：仅版本与说明；模型配置、业务逻辑、数据格式与浏览器模块均未变，资源缓存标记继续使用 `20260903-semantic-issuance`。
+- 验证：`node --test --test-name-pattern='exposes a readable product version|versions all first-party browser modules together' tests/assets.test.js`，2/2 通过；`git diff --check` 通过。未重跑云端模型验收，无新增推理调用。
+- 发布检查：推送后核对 Cloudflare Pages check 与生产页面 `v4.0.0` / `4.0.0.1` 标记，无需写入真实项目。
+
 ## 工作方式
 
 通知原文与当前项目的品种名称交给 Workers AI；内部标位、估值、综合定价和整本台账不发给模型。模型负责识别品种、发行状态和字段含义，程序负责原文证据、身份、单位及日期校验。
