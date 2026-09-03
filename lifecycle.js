@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260903-bid-finalization";
+} from "./core.js?v=20260903-bid-card-summary";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -490,6 +490,30 @@ export function reopenProjectBid(input = {}) {
     return { project, issues: ["只有尚未出结果的已投标结束项目可以恢复改标。"] };
   }
   return { project: normalizeProjectRecord({ ...project, status: "已投标", finalBidSubmissionId: "" }), issues: [] };
+}
+
+export function projectCardBidSummary(project = {}) {
+  if (["未投标", "待投标", "已结束", "已缴款"].includes(project.status)) return null;
+  if (project.resultConfirmed && deriveProjectStatus(project) === "已缴款") return null;
+  const latest = project.bidSubmissions?.at(-1);
+  // Older resulted projects can predate submission history; label these as records,
+  // never as a particular submitted round or as newly confirmed final bids.
+  const recordedTranches = latest?.tranches
+    || (project.resultConfirmed ? snapshotBidSubmissionTranches(project) : []);
+  const tranches = recordedTranches.flatMap((tranche) => {
+    const positions = [
+      ...(tranche.bidLevels || []).filter(hasCompleteBidLevel).map(bid => ({ ...bid, label: "表内" })),
+      ...(tranche.outsourcedBids || []).filter(hasCompleteOutsourcedBid).map(bid => ({ ...bid, label: `委外 · ${bid.managerName}` })),
+    ].map(({ label, bidRate, bidAmount }) => ({ label, rate: `${formatNumber(bidRate)}%`, amount: `${formatNumber(bidAmount)}亿` }));
+    return positions.length ? [{ shortName: tranche.shortName || project.shortName || "未命名品种", duration: formatDuration(tranche.durationText), positions }] : [];
+  });
+  if (!tranches.length) return null;
+  return {
+    sequence: latest?.sequence || null,
+    isFinal: Boolean(latest && latest.id === project.finalBidSubmissionId),
+    hasDraftChanges: Boolean(latest && !project.resultConfirmed && hasUnsubmittedBidChanges(project)),
+    tranches,
+  };
 }
 
 export function buildAwardResultText(project) {

@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260903-bid-finalization";
+} from "./core.js?v=20260903-bid-card-summary";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -50,6 +50,7 @@ import {
   finalizeProjectBid,
   hasUnsubmittedBidChanges,
   normalizeProjectRecord,
+  projectCardBidSummary,
   projectMatchesDateFilter,
   projectMatchesStatusFilter,
   removeProject,
@@ -58,14 +59,14 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260903-bid-finalization";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-bid-finalization";
+} from "./lifecycle.js?v=20260903-bid-card-summary";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-bid-card-summary";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260903-bid-finalization";
+} from "./history-parser.js?v=20260903-bid-card-summary";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -81,23 +82,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260903-bid-finalization";
+} from "./protocol-transfer.js?v=20260903-bid-card-summary";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260903-bid-finalization";
+} from "./protocol-transfer-templates.js?v=20260903-bid-card-summary";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260903-bid-finalization";
+} from "./protocol-transfer-docx.js?v=20260903-bid-card-summary";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260903-bid-finalization";
+} from "./reminders.js?v=20260903-bid-card-summary";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -125,11 +126,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260903-bid-finalization";
+} from "./secondary-inventory.js?v=20260903-bid-card-summary";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260903-bid-finalization";
+} from "./trade-record-converter.js?v=20260903-bid-card-summary";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -140,13 +141,13 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260903-bid-finalization";
+} from "./trade-record-grid.js?v=20260903-bid-card-summary";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260903-bid-finalization";
-import { initializeDatePickers } from "./date-picker.js?v=20260903-bid-finalization";
+} from "./trade-record-ledger.js?v=20260903-bid-card-summary";
+import { initializeDatePickers } from "./date-picker.js?v=20260903-bid-card-summary";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -155,30 +156,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260903-bid-finalization";
+} from "./project-screenshot-ocr.js?v=20260903-bid-card-summary";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260903-bid-finalization";
+} from "./project-screenshot-layout.js?v=20260903-bid-card-summary";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260903-bid-finalization";
+} from "./project-screenshot-image.js?v=20260903-bid-card-summary";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260903-bid-finalization";
+} from "./payment-receipts.js?v=20260903-bid-card-summary";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260903-bid-finalization";
+} from "./issuer-search.js?v=20260903-bid-card-summary";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260903-bid-finalization";
+} from "./state-history.js?v=20260903-bid-card-summary";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -9932,6 +9933,7 @@ function renderProjectList() {
             <span class="project-offering-badge ${projectOfferingBadgeClass(item)}">${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
             <span class="project-party-badge">${escapeHtml(formatProjectVenueLead(item))}</span>
           </span>
+          ${renderProjectCardBidSummary(item)}
         </button>
       `;
     }).join("")
@@ -9942,6 +9944,28 @@ function renderProjectList() {
       openLedgerProject(button.dataset.projectId);
     });
   });
+}
+
+function renderProjectCardBidSummary(project) {
+  const summary = projectCardBidSummary(project);
+  if (!summary) return "";
+  const label = summary.isFinal ? "最终标位" : summary.sequence ? "当前标位" : "投标记录";
+  return `<span class="project-bid-summary" aria-label="${label}">
+    <span class="project-bid-summary-head">
+      <span>${label}${summary.sequence ? ` · 第 ${summary.sequence} 次提交` : ""}</span>
+      ${summary.hasDraftChanges ? '<span class="project-bid-draft">有修改未提交</span>' : ""}
+    </span>
+    ${summary.tranches.map(tranche => {
+      const showParticipation = tranche.positions.some(position => position.label !== "表内");
+      return `<span class="project-bid-tranche">
+        ${summary.tranches.length > 1 ? `<span class="project-bid-tranche-name">${escapeHtml(tranche.shortName)}${tranche.duration ? ` · ${escapeHtml(tranche.duration)}` : ""}</span>` : ""}
+        <span class="project-bid-positions">${tranche.positions.map(position => `<span class="project-bid-position">
+          ${showParticipation ? `<span class="project-bid-participation">${escapeHtml(position.label)}</span>` : ""}
+          <span><strong>${escapeHtml(position.rate)}</strong> 投 ${escapeHtml(position.amount)}</span>
+        </span>`).join("")}</span>
+      </span>`;
+    }).join("")}
+  </span>`;
 }
 
 function clearProjectForm() {

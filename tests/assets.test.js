@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260903-bid-finalization";
+const VERSION = "20260903-bid-card-summary";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.2">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.2 · 2026-09-03 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.3">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.3 · 2026-09-03 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -305,6 +305,21 @@ test("wraps complete venue and lead-underwriter details on project cards", async
   assert.doesNotMatch(app, /project-venue-badge|project-lead-badge/);
   assert.match(styles, /\.project-item-facts \.project-party-badge\s*\{[^}]*flex:\s*1 1 100%;[^}]*width:\s*100%;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*line-height:\s*1\.45;/s);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.project-item-facts span\s*\{[^}]*min-height:\s*26px;[^}]*font-size:\s*11px;/s);
+});
+
+test("renders compact submitted bid positions below card facts with wrapping and escaped labels", async () => {
+  const [app, styles] = await Promise.all([
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(app, /\$\{renderProjectCardBidSummary\(item\)\}/);
+  assert.match(app, /const summary = projectCardBidSummary\(project\)/);
+  assert.match(app, /escapeHtml\(tranche.shortName\)/);
+  assert.match(app, /escapeHtml\(position.label\)/);
+  assert.match(app, /escapeHtml\(position.rate\)/);
+  assert.match(app, /有修改未提交/);
+  assert.match(styles, /\.project-bid-positions\s*\{[^}]*flex-wrap:\s*wrap;/s);
+  assert.match(styles, /\.project-bid-position\s*\{[^}]*max-width:\s*100%;[^}]*flex-wrap:\s*wrap;[^}]*overflow-wrap:\s*anywhere;/s);
 });
 
 test("lets new projects choose a smart, same-day or next-business-day cutoff", async () => {

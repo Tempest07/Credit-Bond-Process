@@ -761,6 +761,15 @@ label[data-recognition-source="derived"]::after {
 .project-item-facts .project-valuation-badge { border-color: rgba(14,165,183,.34); color: #087f8d; background: linear-gradient(135deg, #e9fbfd, #f8feff); }
 .project-item-facts .project-offering-badge { padding-inline: 8px; border-width: 1px; font-size: 10px; box-shadow: inset 0 -1px 0 rgba(255,255,255,.55); }
 .project-item-facts .project-party-badge { flex: 1 1 100%; width: 100%; min-height: 28px; justify-content: flex-start; overflow: visible; padding-block: 5px; color: #56627a; background: linear-gradient(135deg, #f8f9ff, #fff); text-align: left; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.project-bid-summary { display: grid; min-width: 0; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.5; }
+.project-bid-summary-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; color: var(--muted); font-size: 10px; }
+.project-bid-draft { color: var(--warning); }
+.project-bid-tranche { display: grid; min-width: 0; gap: 3px; }
+.project-bid-tranche-name { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.project-bid-positions { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px 6px; }
+.project-bid-position { display: inline-flex; max-width: 100%; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding: 3px 7px; border-radius: 5px; background: var(--secondary-soft); overflow-wrap: anywhere; }
+.project-bid-position strong { color: var(--secondary); font-weight: 750; font-variant-numeric: tabular-nums; }
+.project-bid-participation { min-width: 0; color: var(--muted); font-size: 10px; }
 .project-offering-badge.is-public { border-color: color-mix(in srgb, #16a34a 44%, var(--line)); color: #137333; background: linear-gradient(135deg, #e9fbe9, #f8fff9); }
 .project-offering-badge.is-private { border-color: color-mix(in srgb, #dc2626 48%, var(--line)); color: #b91c1c; background: linear-gradient(135deg, #fee2e2, #fff7ed); }
 .project-offering-badge.is-structured { border-color: color-mix(in srgb, #7c3aed 36%, var(--line)); color: #6d28d9; background: linear-gradient(135deg, #f1eaff, #fff); }
