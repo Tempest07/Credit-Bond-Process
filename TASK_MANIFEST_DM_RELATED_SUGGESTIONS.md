@@ -19,9 +19,10 @@
 ## Verification
 
 - `node --test tests/assets.test.js tests/dm-lookup.test.js`: 85/85 通过。
-- `npm test`: 488/488 通过。
+- `npm test`: 490/490 通过。
 - 固定回归：`26佛水环境GN002` 可返回 `26佛水环境MTN001(绿色)`、`26佛水环境MTN002(绿色)`。
+- 正式站点：输入 `26佛水环境GN002` 后显示上述 2 个候选；点击 `26佛水环境MTN001(绿色)` 可重新读取 DM 并带入新增项目。
 
 ## Next
 
-- 部署后在统一入口使用真实 DM 数据复核候选名称与点击读取链路。
+- None.
