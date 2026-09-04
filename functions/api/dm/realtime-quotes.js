@@ -136,12 +136,11 @@ async function resolveQueries(dm, queries, signal) {
   const seenSecurities = new Set();
   for (const query of queries) {
     const matchingRows = basicRows.filter((row) => basicRowMatchesQuery(row, query));
-    if (!matchingRows.length && looksLikeSecurityId(query)) {
-      addResolved({ query, securityId: normalizeSecurityId(query), basic: null }, resolved, seenSecurities);
-      continue;
-    }
     if (!matchingRows.length) {
-      unresolved.push({ query, reason: "DM 基础资料未匹配到精确简称" });
+      unresolved.push({
+        query,
+        reason: looksLikeSecurityId(query) ? "DM 基础资料未匹配到证券代码" : "DM 基础资料未匹配到精确简称",
+      });
       continue;
     }
     for (const basic of matchingRows) {
