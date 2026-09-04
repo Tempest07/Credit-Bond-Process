@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-column-resize";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-dm-related-suggestions";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

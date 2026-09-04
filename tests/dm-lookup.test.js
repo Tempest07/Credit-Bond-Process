@@ -2416,6 +2416,96 @@ test("DM lookup uses prior short-name family only to identify the cloud issuer",
   }
 });
 
+test("DM no-bond fallback returns selectable outstanding bonds from the matched cloud issuer", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const issuerName = "广东粤海水务环境控股集团股份有限公司";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    calls.push({ url, request });
+    let data;
+    if (url.includes("/bond/basic-info/info")) {
+      data = [];
+    } else if (url.includes("/bond/primary/data")) {
+      data = { list: [] };
+    } else if (url.includes("/bond/basic-info/outstanding-bonds")) {
+      assert.equal(request.issuerFullName, issuerName);
+      data = {
+        list: [
+          {
+            security_id: "102681901.IB",
+            sec_short_name: "26佛水环境MTN001(绿色)",
+            issuer_name: issuerName,
+            bond_issue_tenor: "3Y",
+          },
+          {
+            security_id: "102681902.IB",
+            sec_short_name: "26佛水环境MTN002(绿色)",
+            issuer_name: issuerName,
+            bond_issue_tenor: "5Y",
+          },
+        ],
+      };
+    } else {
+      throw new Error(`unexpected DM path: ${url}`);
+    }
+    const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+    return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+  };
+
+  const DB = {
+    prepare(sql) {
+      assert.match(sql, /SELECT data FROM app_state/);
+      return {
+        async first() {
+          return {
+            data: JSON.stringify({
+              issuers: [{
+                legalName: issuerName,
+                linkedBranch: "广州分行",
+                subjectRating: "AAA",
+                ratingAgency: "中诚信国际",
+              }],
+              projects: [{
+                id: "project-foshan-water",
+                shortName: "26佛水环境GN002",
+                issuerName,
+                tranches: [{ shortName: "26佛水环境GN002", durationText: "3Y" }],
+              }],
+            }),
+          };
+        },
+      };
+    },
+  };
+
+  try {
+    const response = await onRequestGet({
+      env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret, DB },
+      request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26%E4%BD%9B%E6%B0%B4%E7%8E%AF%E5%A2%83GN002", {
+        headers: { Authorization: "Bearer pw" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.noDmBondResult, true);
+    assert.equal(payload.normalized.issuerName, issuerName);
+    assert.deepEqual(
+      new Set(payload.suggestions.map((item) => item.shortName)),
+      new Set(["26佛水环境MTN001(绿色)", "26佛水环境MTN002(绿色)"]),
+    );
+    assert.ok(payload.suggestions.every((item) => /同发行人/.test(item.matchReason)));
+    assert.ok(payload.suggestions.every((item) => item.score >= 78));
+    assert.equal(payload.diagnostic.nearMatches.issuerName, issuerName);
+    assert.ok(payload.diagnostic.nearMatches.sources.some((item) => item.name === "outstandingBondsByIssuer" && item.rowCount === 2));
+    assert.equal(calls.filter((call) => call.url.includes("/bond/basic-info/outstanding-bonds")).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("DM no-result lookup never borrows ratings from an unrelated historical project", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";

@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-column-resize";
+} from "./core.js?v=20260904-dm-related-suggestions";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-column-resize";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-column-resize";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-column-resize";
+} from "./lifecycle.js?v=20260904-dm-related-suggestions";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-dm-related-suggestions";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-dm-related-suggestions";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-column-resize";
+} from "./history-parser.js?v=20260904-dm-related-suggestions";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-column-resize";
+} from "./protocol-transfer.js?v=20260904-dm-related-suggestions";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-column-resize";
+} from "./protocol-transfer-templates.js?v=20260904-dm-related-suggestions";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-column-resize";
+} from "./protocol-transfer-docx.js?v=20260904-dm-related-suggestions";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-column-resize";
+} from "./reminders.js?v=20260904-dm-related-suggestions";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-column-resize";
+} from "./secondary-inventory.js?v=20260904-dm-related-suggestions";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-column-resize";
+} from "./trade-record-converter.js?v=20260904-dm-related-suggestions";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-column-resize";
+} from "./trade-record-grid.js?v=20260904-dm-related-suggestions";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-column-resize";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-column-resize";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-column-resize";
+} from "./trade-record-ledger.js?v=20260904-dm-related-suggestions";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-dm-related-suggestions";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-dm-related-suggestions";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-column-resize";
+} from "./project-screenshot-ocr.js?v=20260904-dm-related-suggestions";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-column-resize";
+} from "./project-screenshot-layout.js?v=20260904-dm-related-suggestions";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-column-resize";
+} from "./project-screenshot-image.js?v=20260904-dm-related-suggestions";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-column-resize";
+} from "./payment-receipts.js?v=20260904-dm-related-suggestions";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-column-resize";
+} from "./issuer-search.js?v=20260904-dm-related-suggestions";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-column-resize";
+} from "./state-history.js?v=20260904-dm-related-suggestions";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -4809,13 +4809,16 @@ async function runProjectDmLookup(queryOverride = "") {
     }
     applyDmLookupToCurrentProject(payload);
     const sourceLabel = dmPayloadSourceLabel(payload);
+    const suggestionCount = Array.isArray(payload.suggestions) ? payload.suggestions.length : 0;
     $("#projectDmStatus").textContent = payload.noDmBondResult
-      ? "DM 无本期数据 · 已读主体库"
+      ? `DM 无本期数据 · ${suggestionCount ? `${suggestionCount} 个候选` : "已读主体库"}`
       : `已读取 ${sourceLabel}`;
     $("#projectDmStatus").className = payload.noDmBondResult ? "pill warning" : "pill accent";
     pushProjectDmHistoryFromCurrent();
     showToast(payload.noDmBondResult
-      ? "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
+      ? suggestionCount
+        ? `DM 未返回本期债券，已找到 ${suggestionCount} 个同主体候选，请选择后重新读取。`
+        : "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
       : `已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
   } catch (error) {
     renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });
@@ -5349,6 +5352,7 @@ function renderProjectDmAssist(payload) {
   const issueGroup = payload.issueGroup || payload.normalized?.issueGroup || null;
   const normalized = payload.normalized || {};
   if (payload.noDmBondResult) {
+    const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
     const filled = [
       normalized.subjectRating ? `主体评级 ${normalized.subjectRating}` : "",
       normalized.ratingAgency ? `评级机构 ${normalized.ratingAgency}` : "",
@@ -5363,6 +5367,13 @@ function renderProjectDmAssist(payload) {
           "本期债券要素未沿用历史项目，请继续填写",
         ].join(" · "))}</span>
       </div>
+      ${suggestions.length ? `
+        <div class="project-dm-assist-head compact">
+          <strong>同主体债券候选</strong>
+          <span>点击候选后按该债券重新读取 DM</span>
+        </div>
+        <div class="dm-suggestion-list">${suggestions.map(renderProjectDmSuggestion).join("")}</div>
+      ` : ""}
     `;
     return;
   }

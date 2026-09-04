@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-column-resize";
+const VERSION = "20260904-dm-related-suggestions";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.4">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.4 · 2026-09-04 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.5">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.5 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -298,6 +298,20 @@ test("ships project guarantor entry, DM mapping and ledger detail display", asyn
   assert.match(dmLookup, /"guarantor"/);
   assert.match(dmLookup, /lookupDmGuarantorRatings/);
   assert.match(styles, /\.guarantor-row\s*\{/);
+});
+
+test("shows selectable same-issuer DM candidates when the requested issue has no bond record", async () => {
+  const [app, dmLookup] = await Promise.all([
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../functions/api/dm/lookup.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(dmLookup, /lookupDmNearMatchSuggestions\(dm,/);
+  assert.match(dmLookup, /OUTSTANDING_BONDS_PATH, \{ issuerFullName: issuerName \}/);
+  assert.match(dmLookup, /suggestions: noDmBondResult \? nearMatches\.suggestions : \[\]/);
+  assert.match(app, /<strong>同主体债券候选<\/strong>/);
+  assert.match(app, /suggestions\.map\(renderProjectDmSuggestion\)/);
+  assert.match(app, /data-project-dm-query=/);
 });
 
 test("keeps the desktop sidebar rail continuous and the empty detail state compact", async () => {
