@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260903-protocol-date";
+} from "./core.js?v=20260904-result-queue";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,14 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260903-protocol-date";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, createIssuanceReviewSession, validateRecognitionRequest } from "./issuance-recognition.js?v=20260903-protocol-date";
+} from "./lifecycle.js?v=20260904-result-queue";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-queue";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-queue";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260903-protocol-date";
+} from "./history-parser.js?v=20260904-result-queue";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -84,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260903-protocol-date";
+} from "./protocol-transfer.js?v=20260904-result-queue";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260903-protocol-date";
+} from "./protocol-transfer-templates.js?v=20260904-result-queue";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260903-protocol-date";
+} from "./protocol-transfer-docx.js?v=20260904-result-queue";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260903-protocol-date";
+} from "./reminders.js?v=20260904-result-queue";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -128,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260903-protocol-date";
+} from "./secondary-inventory.js?v=20260904-result-queue";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260903-protocol-date";
+} from "./trade-record-converter.js?v=20260904-result-queue";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -143,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260903-protocol-date";
+} from "./trade-record-grid.js?v=20260904-result-queue";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260903-protocol-date";
-import { initializeDatePickers } from "./date-picker.js?v=20260903-protocol-date";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260903-protocol-date";
+} from "./trade-record-ledger.js?v=20260904-result-queue";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-result-queue";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-queue";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -159,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260903-protocol-date";
+} from "./project-screenshot-ocr.js?v=20260904-result-queue";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260903-protocol-date";
+} from "./project-screenshot-layout.js?v=20260904-result-queue";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260903-protocol-date";
+} from "./project-screenshot-image.js?v=20260904-result-queue";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260903-protocol-date";
+} from "./payment-receipts.js?v=20260904-result-queue";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260903-protocol-date";
+} from "./issuer-search.js?v=20260904-result-queue";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260903-protocol-date";
+} from "./state-history.js?v=20260904-result-queue";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -347,7 +348,10 @@ let projectAutoSaveTimer = null;
 let projectRecognitionMarks = {};
 let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
-const issuanceReviewSession = createIssuanceReviewSession();
+const issuanceQueueAnnouncedStatus = new Map();
+const dismissedIssuanceQueueTaskIds = new Set();
+let activeIssuanceQueueTaskId = "";
+const issuanceRecognitionQueue = createSequentialIssuanceQueue(requestQueuedIssuanceRecognition, handleIssuanceQueueChange);
 let activePrepaymentTarget = null;
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
@@ -4647,9 +4651,9 @@ function bindLedger() {
   $("#terminateProjectButton").addEventListener("click", () => setProjectActionStatus("已结束"));
   $("#openResultButton").addEventListener("click", () => openResultEntryPanel());
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
-  $("#resultEntryPanel").addEventListener("click", (event) => {
-    if (event.target.closest("[data-close-result]")) closeResultEntryPanel();
-  });
+  document.addEventListener("pointerdown", handleResultEntryOutsidePointer);
+  window.addEventListener("resize", positionResultEntryPanel, { passive: true });
+  window.addEventListener("scroll", positionResultEntryPanel, { passive: true, capture: true });
   $("#prepaymentEntryForm").addEventListener("submit", savePrepaymentEntry);
   $("#prepaymentEntryPanel").addEventListener("click", (event) => {
     if (event.target.closest("[data-close-prepayment]")) closePrepaymentEntry();
@@ -4671,10 +4675,11 @@ function bindLedger() {
     await navigator.clipboard.writeText($("#projectResultSummary").value);
     showToast("中标汇报已复制。");
   });
-  $("#parseAdvertisementButton").addEventListener("click", recognizeIssuanceResult);
+  $("#parseAdvertisementButton").addEventListener("click", queueIssuanceResultRecognition);
   $("#confirmIssuanceResultButton").addEventListener("click", confirmIssuanceResult);
+  $("#issuanceQueueNotifications").addEventListener("click", handleIssuanceQueueNotificationClick);
   for (const selector of ["#projectResultAdvertisement", "#issuanceNoticeDate"]) {
-    for (const event of ["input", "change"]) $(selector).addEventListener(event, () => resetIssuanceReview("原文或日期已变化，请重新识别。"));
+    for (const event of ["input", "change"]) $(selector).addEventListener(event, () => resetIssuanceReview());
   }
   $("#editProjectOpinionButton").addEventListener("click", () => {
     const record = readProjectForm();
@@ -10681,6 +10686,7 @@ function updateProjectActionButtons(projectOrStatus) {
   $("#finalizeBidButton").disabled = !bidCount;
   $("#reopenBidButton").hidden = status !== "已投标结束" || hasResult;
   $("#openResultButton").disabled = status === "未投标" || status === "已结束";
+  updateProjectResultQueueState();
 }
 
 function renderBidSubmissionHistory(projectValue) {
@@ -10738,37 +10744,46 @@ function formatBidSubmissionTime(value) {
   }).format(date);
 }
 
-function openResultEntryPanel(shouldFocus = true) {
-  if ($("#resultEntryPanel").hidden) {
-    resetIssuanceReview();
-    const current = readProjectForm();
+function openResultEntryPanel(shouldFocus = true, requestedTaskId = "") {
+  resetIssuanceReview();
+  const current = readProjectForm();
+  const task = issuanceQueueTaskForProject(current.id, requestedTaskId);
+  if (task) loadIssuanceQueueTask(task);
+  else {
+    activeIssuanceQueueTaskId = "";
     $("#projectResultAdvertisement").value = current.resultAdvertisement || "";
     $("#issuanceNoticeDate").value = (current.cutoffAt || "").slice(0, 10);
   }
   $("#resultEntryPanel").hidden = false;
+  positionResultEntryPanel();
+  requestAnimationFrame(positionResultEntryPanel);
   syncModalOpenState();
-  setResultEntryFieldsVisible(true);
-  if (isCompactLedger()) requestAnimationFrame(() => $("#resultEntryDialog")?.focus({ preventScroll: true }));
-  else if (shouldFocus) $("#projectResultAdvertisement").focus();
+  if (shouldFocus && (!task || task.status === ISSUANCE_QUEUE_STATUS.ERROR)) {
+    $("#projectResultAdvertisement").focus({ preventScroll: true });
+  } else {
+    $("#resultEntryDialog")?.focus({ preventScroll: true });
+  }
 }
 
 function closeResultEntryPanel() {
   resetIssuanceReview();
+  activeIssuanceQueueTaskId = "";
   $("#resultEntryPanel").hidden = true;
   syncModalOpenState();
   if (isCompactLedger()) $("#openResultButton")?.focus({ preventScroll: true });
 }
 
 function resetIssuanceReview(message = "") {
-  issuanceReviewSession.invalidate();
   $("#issuanceRecognitionPreview").hidden = true;
   $("#issuanceRecognitionPreview").replaceChildren();
+  $("#issuanceConfirmBar").hidden = true;
   $("#confirmIssuanceResultButton").disabled = true;
   $("#confirmIssuanceResultButton").textContent = "确认写入并生成汇报";
   $("#parseAdvertisementButton").disabled = false;
-  $("#parseAdvertisementButton").textContent = "语义识别";
+  $("#parseAdvertisementButton").textContent = "确认并排队";
   $("#issuanceRecognitionStatus").textContent = message;
   $("#issuanceRecognitionStatus").dataset.error = "false";
+  updateIssuanceQueueSummary();
 }
 
 function issuanceReviewSnapshot() {
@@ -10777,39 +10792,201 @@ function issuanceReviewSnapshot() {
     text: $("#projectResultAdvertisement").value, noticeDate: $("#issuanceNoticeDate").value };
 }
 
-async function recognizeIssuanceResult() {
+function queueIssuanceResultRecognition() {
   resetIssuanceReview();
   try {
     const snapshot = issuanceReviewSnapshot();
     const request = validateRecognitionRequest(snapshot);
-    $("#parseAdvertisementButton").disabled = true;
-    $("#parseAdvertisementButton").textContent = "识别中…";
-    $("#issuanceRecognitionStatus").textContent = "正在由云端模型逐品种识别，通常需要数秒至数十秒；可以取消。";
-    const result = await issuanceReviewSession.recognize(snapshot, async (signal) => {
-      const response = await fetch("./api/issuance-results/recognize", {
-        method: "POST", credentials: "same-origin", signal,
-        headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(request),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "语义识别请求失败。");
-      return payload;
-    });
-    if (!result) return;
-    if ($("#resultEntryPanel").hidden || JSON.stringify(snapshot) !== JSON.stringify(issuanceReviewSnapshot())) {
-      resetIssuanceReview("项目或标位已变化，请重新识别。"); return;
+    const current = (state.projects || []).find((item) => item.id === snapshot.projectId);
+    if (!current) throw new Error("当前项目已不存在，不能加入识别队列。");
+    const alreadyRunning = issuanceRecognitionQueue.list().find((task) =>
+      task.payload.projectId === snapshot.projectId
+      && [ISSUANCE_QUEUE_STATUS.QUEUED, ISSUANCE_QUEUE_STATUS.PROCESSING].includes(task.status));
+    if (alreadyRunning) {
+      throw new Error(`${current.shortName || "当前项目"}已经在识别队列中，请等待本次完成。`);
     }
-    renderIssuanceReview(result);
-    $("#parseAdvertisementButton").disabled = false;
-    $("#parseAdvertisementButton").textContent = "重新识别";
+    if (activeIssuanceQueueTaskId) {
+      issuanceRecognitionQueue.remove(activeIssuanceQueueTaskId);
+      dismissedIssuanceQueueTaskIds.add(activeIssuanceQueueTaskId);
+    }
+    const task = issuanceRecognitionQueue.enqueue({
+      projectId: current.id,
+      projectName: current.shortName || "未命名项目",
+      text: request.text,
+      noticeDate: request.noticeDate,
+      request,
+    });
+    closeResultEntryPanel();
+    showToast(`${current.shortName || "项目"}已加入后台识别队列。`);
+    return task;
   } catch (error) {
-    resetIssuanceReview(error.message || "语义识别失败，本次未改动项目。");
+    resetIssuanceReview(error.message || "无法加入识别队列，本次未改动项目。");
     $("#issuanceRecognitionStatus").dataset.error = "true";
   }
+}
+
+async function requestQueuedIssuanceRecognition(payload) {
+  const response = await fetch("./api/issuance-results/recognize", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(payload.request),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "语义识别请求失败。");
+  return result;
+}
+
+function handleIssuanceQueueChange(task) {
+  const previousStatus = issuanceQueueAnnouncedStatus.get(task.id);
+  issuanceQueueAnnouncedStatus.set(task.id, task.status);
+  const completed = [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status);
+  if (completed && previousStatus !== task.status) dismissedIssuanceQueueTaskIds.delete(task.id);
+  updateIssuanceQueueSummary();
+  renderIssuanceQueueNotifications();
+  updateProjectResultQueueState();
+  if (task.id === activeIssuanceQueueTaskId && !$("#resultEntryPanel").hidden) loadIssuanceQueueTask(task);
+}
+
+function issuanceQueueTaskForProject(projectId, preferredId = "") {
+  const tasks = issuanceRecognitionQueue.list();
+  if (preferredId) return tasks.find((task) => task.id === preferredId && task.payload.projectId === projectId) || null;
+  return [...tasks].reverse().find((task) => task.payload.projectId === projectId) || null;
+}
+
+function loadIssuanceQueueTask(task) {
+  resetIssuanceReview();
+  activeIssuanceQueueTaskId = task.id;
+  $("#projectResultAdvertisement").value = task.payload.text;
+  $("#issuanceNoticeDate").value = task.payload.noticeDate;
+  if (task.status === ISSUANCE_QUEUE_STATUS.QUEUED || task.status === ISSUANCE_QUEUE_STATUS.PROCESSING) {
+    $("#parseAdvertisementButton").disabled = true;
+    $("#parseAdvertisementButton").textContent = task.status === ISSUANCE_QUEUE_STATUS.QUEUED ? "排队中…" : "识别中…";
+    $("#issuanceRecognitionStatus").textContent = task.status === ISSUANCE_QUEUE_STATUS.QUEUED
+      ? "已进入后台队列，前序项目完成后自动开始。"
+      : "正在后台识别；可以收起窗口并继续录入其他项目。";
+    return;
+  }
+  if (task.status === ISSUANCE_QUEUE_STATUS.ERROR) {
+    $("#parseAdvertisementButton").textContent = "重新排队";
+    $("#issuanceRecognitionStatus").textContent = task.error || "识别失败，请重新排队。";
+    $("#issuanceRecognitionStatus").dataset.error = "true";
+    return;
+  }
+  $("#parseAdvertisementButton").textContent = "重新排队";
+  renderIssuanceReview(task.result);
+}
+
+function updateIssuanceQueueSummary() {
+  const summary = $("#issuanceQueueSummary");
+  if (!summary) return;
+  const tasks = issuanceRecognitionQueue.list();
+  const running = tasks.filter((task) => [ISSUANCE_QUEUE_STATUS.QUEUED, ISSUANCE_QUEUE_STATUS.PROCESSING].includes(task.status)).length;
+  const review = tasks.filter((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status)).length;
+  summary.dataset.busy = String(running > 0);
+  summary.textContent = running
+    ? `后台识别中 ${running} 项${review ? ` · 待核对 ${review} 项` : ""}`
+    : review
+      ? `待核对 ${review} 项识别结果`
+      : "后台识别队列空闲";
+}
+
+function renderIssuanceQueueNotifications() {
+  const container = $("#issuanceQueueNotifications");
+  if (!container) return;
+  const visible = issuanceRecognitionQueue.list()
+    .filter((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status)
+      && !dismissedIssuanceQueueTaskIds.has(task.id))
+    .slice(-4)
+    .reverse();
+  container.innerHTML = visible.map((task) => {
+    const ready = task.status === ISSUANCE_QUEUE_STATUS.READY;
+    const message = ready ? "已识别完成，等待人工核对"
+      : task.status === ISSUANCE_QUEUE_STATUS.REVIEW ? "识别完成，有字段需要核对"
+        : "识别失败，可重新提交";
+    return `<article class="issuance-queue-notification" data-status="${escapeAttribute(task.status)}">
+      <div class="issuance-queue-notification-copy"><strong>${escapeHtml(task.payload.projectName)}</strong><span>${escapeHtml(message)}</span></div>
+      <div class="issuance-queue-notification-actions">
+        <button type="button" data-review-issuance-task="${escapeAttribute(task.id)}">${ready ? "核对并写入" : "查看"}</button>
+        <button type="button" data-dismiss-issuance-task="${escapeAttribute(task.id)}" aria-label="关闭通知">×</button>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function handleIssuanceQueueNotificationClick(event) {
+  const dismiss = event.target.closest("[data-dismiss-issuance-task]");
+  if (dismiss) {
+    dismissedIssuanceQueueTaskIds.add(dismiss.dataset.dismissIssuanceTask);
+    renderIssuanceQueueNotifications();
+    return;
+  }
+  const review = event.target.closest("[data-review-issuance-task]");
+  if (!review) return;
+  openIssuanceQueueTask(review.dataset.reviewIssuanceTask);
+}
+
+function openIssuanceQueueTask(taskId) {
+  const task = issuanceRecognitionQueue.get(taskId);
+  if (!task) return;
+  const projectExists = (state.projects || []).some((item) => item.id === task.payload.projectId);
+  if (!projectExists) {
+    showToast("对应项目已不存在，无法核对该识别结果。");
+    return;
+  }
+  dismissedIssuanceQueueTaskIds.add(task.id);
+  renderIssuanceQueueNotifications();
+  openLedgerProject(task.payload.projectId);
+  requestAnimationFrame(() => openResultEntryPanel(true, task.id));
+}
+
+function updateProjectResultQueueState() {
+  const button = $("#openResultButton");
+  if (!button) return;
+  const projectId = $("#projectId")?.value || selectedProjectId;
+  const tasks = issuanceRecognitionQueue.list().filter((task) => task.payload.projectId === projectId);
+  const ready = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status));
+  const processing = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.QUEUED, ISSUANCE_QUEUE_STATUS.PROCESSING].includes(task.status));
+  if (ready) button.dataset.queueStatus = "ready";
+  else if (processing) button.dataset.queueStatus = "processing";
+  else delete button.dataset.queueStatus;
+  button.title = ready ? "有识别结果待核对" : processing ? "发行结果正在后台识别" : "";
+}
+
+function handleResultEntryOutsidePointer(event) {
+  const panel = $("#resultEntryPanel");
+  if (!panel || panel.hidden || panel.contains(event.target) || $("#openResultButton")?.contains(event.target)) return;
+  closeResultEntryPanel();
+}
+
+function positionResultEntryPanel() {
+  const panel = $("#resultEntryPanel");
+  const anchor = $("#openResultButton");
+  if (!panel || panel.hidden || !anchor) return;
+  const margin = 12;
+  const gap = 9;
+  const anchorRect = anchor.getBoundingClientRect();
+  const width = Math.min(460, Math.max(280, window.innerWidth - margin * 2));
+  const dialogHeight = Math.min($("#resultEntryDialog")?.scrollHeight || 360, window.innerHeight - margin * 2);
+  const belowSpace = window.innerHeight - anchorRect.bottom - gap - margin;
+  const aboveSpace = anchorRect.top - gap - margin;
+  const placeAbove = belowSpace < Math.min(300, dialogHeight) && aboveSpace > belowSpace;
+  const availableHeight = Math.max(190, placeAbove ? aboveSpace : belowSpace);
+  const top = placeAbove
+    ? Math.max(margin, anchorRect.top - gap - Math.min(dialogHeight, availableHeight))
+    : Math.max(margin, anchorRect.bottom + gap);
+  const left = Math.min(window.innerWidth - width - margin, Math.max(margin, anchorRect.right - width));
+  panel.dataset.placement = placeAbove ? "above" : "below";
+  panel.style.setProperty("--result-entry-top", `${Math.round(top)}px`);
+  panel.style.setProperty("--result-entry-left", `${Math.round(left)}px`);
+  panel.style.width = `${Math.round(width)}px`;
+  panel.style.maxHeight = `${Math.round(availableHeight)}px`;
 }
 
 function renderIssuanceReview(result) {
   const preview = $("#issuanceRecognitionPreview");
   preview.hidden = false;
+  $("#issuanceConfirmBar").hidden = false;
   preview.innerHTML = (result.items || []).map((item) => `
     <section class="issuance-review-card">
       <h4>${escapeHtml(item.shortName)}<small>${escapeHtml(ISSUANCE_OUTCOMES[item.outcome] || "待核对")}</small></h4>
@@ -10829,19 +11006,43 @@ function renderIssuanceReview(result) {
 }
 
 function confirmIssuanceResult() {
-  const snapshot = issuanceReviewSnapshot();
-  const result = issuanceReviewSession.take(snapshot);
-  if (!result) { resetIssuanceReview("预览已失效，请重新识别。"); return; }
+  const task = issuanceRecognitionQueue.get(activeIssuanceQueueTaskId);
+  if (!task?.result || ![ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW].includes(task.status)) {
+    resetIssuanceReview("识别结果已失效，请重新排队。"); return;
+  }
+  if ($("#projectId").value !== task.payload.projectId
+    || $("#projectResultAdvertisement").value.trim() !== task.payload.text
+    || $("#issuanceNoticeDate").value !== task.payload.noticeDate) {
+    activeIssuanceQueueTaskId = "";
+    resetIssuanceReview("项目、原文或通知日期已变化，请重新排队。"); return;
+  }
   try {
     const draft = readProjectForm();
-    const parsed = applySemanticIssuanceResult({ ...draft, ftpCurve: state.ftpCurve }, result, snapshot.text);
+    const currentRequest = validateRecognitionRequest({
+      projectId: draft.id,
+      tranches: draft.tranches,
+      text: task.payload.text,
+      noticeDate: task.payload.noticeDate,
+    });
+    if (JSON.stringify(currentRequest.tranches) !== JSON.stringify(task.payload.request.tranches)) {
+      activeIssuanceQueueTaskId = "";
+      resetIssuanceReview("项目品种结构已变化，旧识别结果不能写入，请重新排队。");
+      return;
+    }
+    const parsed = applySemanticIssuanceResult({ ...draft, ftpCurve: state.ftpCurve }, task.result, task.payload.text);
     parsed.resultConfirmed = true;
     parsed.status = deriveProjectStatus(parsed);
-    resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, result);
+    resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, task.result);
     resultRecognitionProjectId = parsed.id;
+    issuanceRecognitionQueue.remove(task.id);
+    dismissedIssuanceQueueTaskIds.add(task.id);
+    issuanceQueueAnnouncedStatus.delete(task.id);
+    activeIssuanceQueueTaskId = "";
     saveProjectRecordNow(parsed);
     fillProjectForm(parsed);
     setResultEntryFieldsVisible(true);
+    updateIssuanceQueueSummary();
+    renderIssuanceQueueNotifications();
     showToast("已确认发行结果并生成汇报；中标量和营收为标位推算值，请复核。");
   } catch (error) { resetIssuanceReview(error.message); }
 }
@@ -10849,8 +11050,7 @@ function confirmIssuanceResult() {
 function syncModalOpenState() {
   document.body.classList.toggle(
     "modal-open",
-    !$("#resultEntryPanel").hidden
-      || !$("#prepaymentEntryPanel").hidden
+    !$("#prepaymentEntryPanel").hidden
       || !$("#paymentReceiptRegroupPanel").hidden
       || !$("#paymentReceiptExplorerPanel").hidden
       || !$("#stateHistoryPanel").hidden

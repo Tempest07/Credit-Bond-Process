@@ -110,6 +110,20 @@ export function validateSemanticResult(request, result) {
         item.evidence[field] = cell.evidence;
       } catch (error) { errors.push(`${prefix}${label}：${error.message}`); }
     }
+    if (!noIssue && !item.paymentDate) {
+      const scopedNoticeEvidence = request.text
+        .split(/[\r\n。；;！？!?]+/)
+        .map((quote) => quote.trim())
+        .filter((quote) => quote && isSharedFor(quote, target, request.tranches));
+      const inferredPayment = explicitPaymentDateFromEvidence(
+        [source, ...shared.filter((quote) => isSharedFor(quote, target, request.tranches)), ...scopedNoticeEvidence],
+        request.noticeDate,
+      );
+      if (inferredPayment) {
+        item.paymentDate = inferredPayment.date;
+        item.evidence.paymentDate = inferredPayment.evidence;
+      }
+    }
     if (outcome === "unknown" || (!noIssue && item.couponRate == null)) errors.push(`${prefix}尚无明确最终票息，不能确认中标结果。`);
     if (!noIssue && !item.paymentDate) warnings.push(`${prefix}未识别出明确缴款日，不会自动补造日期。`);
     if (!noIssue && item.issueScale == null) warnings.push(`${prefix}未识别出实际发行规模，保留现有值，请核对。`);
@@ -128,6 +142,28 @@ function isSharedFor(quote, target, tranches) {
   const alias = compact(quote).match(/^([A-Z])(?:品种)?(?:于|的|缴款|起息)/)?.[1];
   if (alias && !nameKey(target.shortName).endsWith(alias)) return false;
   return true;
+}
+
+function explicitPaymentDateFromEvidence(sources, noticeDate) {
+  if (!validDate(noticeDate)) return null;
+  const relative = "(?:今天|今日|明天|明日|次日|后天|后日|(?:(?:本|这|下)?周|星期)[一二三四五六日天])";
+  const patterns = [
+    new RegExp(`(${relative})(?:为|是|进行|安排)?(?:缴款|缴付|付款|到账)`, "g"),
+    new RegExp(`(?:缴款|缴付|付款|到账)(?:日|日期|时间)?(?:为|是|安排在|定于)?(${relative})`, "g"),
+  ];
+  const matches = [];
+  for (const source of [...new Set(sources.filter(Boolean))]) {
+    for (const pattern of patterns) {
+      pattern.lastIndex = 0;
+      for (const match of source.matchAll(pattern)) {
+        try {
+          matches.push({ date: resolveNoticeDate(match[1], noticeDate), evidence: match[0] });
+        } catch { /* Keep the model field empty when the phrase cannot be anchored safely. */ }
+      }
+    }
+  }
+  const dates = [...new Set(matches.map((item) => item.date))];
+  return dates.length === 1 ? matches.find((item) => item.date === dates[0]) : null;
 }
 
 function validateEvidenceUnit(field, raw, evidence) {
@@ -181,11 +217,27 @@ function chineseNumber(text) {
 
 export function resolveNoticeDate(raw, reference) {
   const value = compact(raw);
-  const offset = { 今天: 0, 今日: 0, 明天: 1, 明日: 1, 次日: 1, 后天: 2, 后日: 2 }[value];
+  const relativeValue = value.match(/^(?:于)?(今天|今日|明天|明日|次日|后天|后日)(?:缴款|缴付|付款|到账)?(?:日)?$/)?.[1] || value;
+  const offset = { 今天: 0, 今日: 0, 明天: 1, 明日: 1, 次日: 1, 后天: 2, 后日: 2 }[relativeValue];
   if (offset != null) {
     if (!validDate(reference)) throw new Error("请先填写原通知日期，不能按录入日猜测。");
     const date = new Date(`${reference}T00:00:00Z`);
     date.setUTCDate(date.getUTCDate() + offset);
+    return date.toISOString().slice(0, 10);
+  }
+  const weekday = value.match(/^(?:于)?((?:本|这|下)?周|星期)([一二三四五六日天])(?:缴款|缴付|付款|到账)?(?:日)?$/);
+  if (weekday) {
+    if (!validDate(reference)) throw new Error("请先填写原通知日期，不能按录入日猜测。");
+    const targetIsoDay = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 }[weekday[2]];
+    const date = new Date(`${reference}T00:00:00Z`);
+    const currentIsoDay = date.getUTCDay() || 7;
+    const prefix = weekday[1];
+    const dayOffset = prefix === "下周"
+      ? 7 - currentIsoDay + targetIsoDay
+      : ["本周", "这周"].includes(prefix)
+        ? targetIsoDay - currentIsoDay
+        : (targetIsoDay - currentIsoDay + 7) % 7;
+    date.setUTCDate(date.getUTCDate() + dayOffset);
     return date.toISOString().slice(0, 10);
   }
   const match = value.match(/^(?:(\d{4})[年/.-])?(\d{1,2})[月/.-](\d{1,2})日?$/);

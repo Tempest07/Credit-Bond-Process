@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260903-protocol-date";
+const VERSION = "20260904-result-queue";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.0\.0\.5">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.0\.0\.5 · 2026-09-03 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.1">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.1 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -36,6 +36,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`issuance-queue\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`history-parser\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`protocol-transfer-templates\\.js\\?v=${VERSION}`));
@@ -55,6 +56,26 @@ test("versions all first-party browser modules together", async () => {
   assert.match(lifecycle, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+});
+
+test("queues compact issuance-result entry without blocking the project workspace", async () => {
+  const [html, app, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="resultEntryPanel" role="dialog" aria-labelledby="resultEntryTitle" hidden/);
+  assert.doesNotMatch(html, /result-entry-backdrop|id="resultEntryPanel"[^>]*aria-modal="true"/);
+  assert.match(html, /id="parseAdvertisementButton"[^>]*>确认并排队</);
+  assert.match(html, /id="issuanceQueueNotifications"[^>]*aria-live="polite"/);
+  assert.match(app, /createSequentialIssuanceQueue\(requestQueuedIssuanceRecognition, handleIssuanceQueueChange\)/);
+  assert.match(app, /function queueIssuanceResultRecognition/);
+  assert.match(app, /function renderIssuanceQueueNotifications/);
+  assert.match(app, /function positionResultEntryPanel/);
+  assert.doesNotMatch(app, /modal-open",\s*!\$\("#resultEntryPanel"\)\.hidden/);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*fixed;[^}]*width:\s*min\(460px/s);
+  assert.match(styles, /\.issuance-queue-notifications\s*\{[^}]*position:\s*fixed;[^}]*right:\s*22px;/s);
 });
 
 test("ships a dark DM realtime quote tab without a large text-entry surface", async () => {
@@ -522,15 +543,16 @@ test("uses single-pane project navigation on compact screens", async () => {
   assert.match(app, /function restoreLedgerMobileViewport/);
   assert.match(app, /querySelector\("\.project-list-panel"\)\?\.scrollIntoView/);
   assert.match(app, /element\.inert = !visible/);
-  assert.match(app, /if \(isCompactLedger\(\)\) requestAnimationFrame\(\(\) => \$\("#resultEntryDialog"\)\?\.focus/);
+  assert.match(app, /positionResultEntryPanel\(\)/);
+  assert.match(app, /\$\("#resultEntryDialog"\)\?\.focus\(\{ preventScroll: true \}\)/);
   assert.match(app, /route\.target === selected\.id[\s\S]+route\.kind === "project-result"/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.view\[data-view="ledger"\] > \.ledger-mobile-nav\s*\{[^}]*position:\s*fixed;[^}]*right:\s*14px;[^}]*left:\s*14px;[^}]*width:\s*auto;[^}]*max-width:\s*430px;/s);
   assert.match(styles, /data-mobile-pane="list"[\s\S]+\.project-detail-panel/);
   assert.match(styles, /data-mobile-pane="detail"[\s\S]+\.project-list-panel/);
   assert.match(styles, /data-mobile-pane="overview"[^\n]+\.ledger-grid\s*\{\s*display:\s*none;/);
   assert.match(styles, /\.ledger-mobile-back\s*\{[^}]*min-height:\s*44px;/s);
-  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*place-items:\s*end stretch;/s);
-  assert.match(styles, /\.result-entry-dialog\s*\{[^}]*max-height:\s*calc\(100dvh/);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*top:\s*var\(--result-entry-top/);
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.result-entry-panel\s*\{[^}]*max-height:\s*min\(68dvh/s);
   assert.match(styles, /\.view\.active\s*\{[^}]*animation:\s*workspaceSurfaceIn \.28s ease backwards;/);
 });
 

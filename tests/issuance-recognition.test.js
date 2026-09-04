@@ -64,10 +64,69 @@ test("shared footer can supply the same date, but not invented evidence", () => 
 
 test("relative dates use the notice date, never the machine clock", () => {
   assert.equal(resolveNoticeDate("明天", "2026-12-31"), "2027-01-01");
+  assert.equal(resolveNoticeDate("明天缴款", "2026-09-03"), "2026-09-04");
+  assert.equal(resolveNoticeDate("周一", "2026-09-04"), "2026-09-07");
+  assert.equal(resolveNoticeDate("下周一缴款", "2026-09-04"), "2026-09-07");
   assert.equal(resolveNoticeDate("8月5日", "2026-08-01"), "2026-08-05");
   assert.throws(() => resolveNoticeDate("明天", ""));
   assert.throws(() => resolveNoticeDate("2026年2月30日", "2026-09-02"));
   assert.throws(() => resolveNoticeDate("1月2日", "2026-12-31"));
+});
+
+test("recovers one explicit weekday payment phrase when the model omits the field", () => {
+  for (const [phrase, noticeDate, expected] of [
+    ["周一缴款", "2026-09-04", "2026-09-07"],
+    ["下周一缴款", "2026-09-04", "2026-09-07"],
+    ["明天缴款", "2026-09-03", "2026-09-04"],
+  ]) {
+    const input = { ...request, noticeDate, text: text.replace("2026年9月3日缴款", phrase) };
+    const model = extracted();
+    model.items[0].sourceText = input.text;
+    model.items[0].fields.paymentDate = { raw: null, evidence: "" };
+    const parsed = validateSemanticResult(input, model);
+    assert.equal(parsed.canApply, true, parsed.errors.join("；"));
+    assert.equal(parsed.items[0].paymentDate, expected);
+    assert.match(parsed.items[0].evidence.paymentDate, /缴款/);
+  }
+});
+
+test("does not guess between conflicting relative payment weekdays", () => {
+  const input = { ...request, noticeDate: "2026-09-04", text: text.replace("2026年9月3日缴款", "A周一缴款，B周二缴款") };
+  const model = extracted();
+  model.items[0].sourceText = input.text;
+  model.items[0].fields.paymentDate = { raw: null, evidence: "" };
+  const parsed = validateSemanticResult(input, model);
+  assert.equal(parsed.items[0].paymentDate, "");
+  assert.match(parsed.warnings.join("；"), /未识别出明确缴款日/);
+});
+
+test("does not copy a tranche-scoped relative payment date to its sibling", () => {
+  const dualRequest = validateRecognitionRequest({
+    noticeDate: "2026-09-04",
+    text: "26测试MTN001A，票面利率1.70%，周一缴款；26测试MTN001B，票面利率1.80%。",
+    tranches: [
+      { id: "a", shortName: "26测试MTN001A" },
+      { id: "b", shortName: "26测试MTN001B" },
+    ],
+  });
+  const item = (id, shortName, sourceText, couponRate) => ({
+    id,
+    shortName,
+    sourceText,
+    outcome: "issued",
+    outcomeEvidence: "",
+    fields: {
+      securityCode: { raw: null, evidence: "" }, durationText: { raw: null, evidence: "" }, issueScale: { raw: null, evidence: "" },
+      couponRate: { raw: couponRate, evidence: sourceText }, fullMarketMultiple: { raw: null, evidence: "" }, marginalMultiple: { raw: null, evidence: "" },
+      paymentDate: { raw: null, evidence: "" }, startDate: { raw: null, evidence: "" },
+    },
+  });
+  const parsed = validateSemanticResult(dualRequest, { items: [
+    item("a", "26测试MTN001A", "26测试MTN001A，票面利率1.70%，周一缴款", "1.70%"),
+    item("b", "26测试MTN001B", "26测试MTN001B，票面利率1.80%", "1.80%"),
+  ], sharedEvidence: [] });
+  assert.equal(parsed.items[0].paymentDate, "2026-09-07");
+  assert.equal(parsed.items[1].paymentDate, "");
 });
 
 test("unit and Chinese-number conversion is deterministic, not done by the model", () => {
