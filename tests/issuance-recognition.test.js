@@ -207,7 +207,9 @@ test("endpoint calls the real binding contract and returns validated evidence wi
     calls++; assert.equal(model, ISSUANCE_MODEL); assert.ok(options.signal); assert.equal(input.stream, false); return modelResponse();
   } } }));
   assert.equal(response.status, 200); assert.equal(calls, 1);
-  assert.equal((await response.json()).canApply, true);
+  const payload = await response.json();
+  assert.equal(payload.canApply, true);
+  assert.equal(payload.provider, "workers-ai");
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
 

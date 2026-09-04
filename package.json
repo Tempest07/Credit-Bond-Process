@@ -6,6 +6,8 @@
   "scripts": {
     "prepare:local": "node tools/prepare-local-dev.mjs",
     "dev:local": "npm run prepare:local && npx --yes wrangler@latest pages dev . --port 8788 --persist-to .wrangler/state --show-interactive-dev-session=false",
+    "eval:issuance:local": "node tools/eval-local-issuance-recognition.mjs",
+    "serve:issuance:local": "node tools/serve-local-issuance-ai.mjs",
     "receipts:preflight": "node tools/check-payment-receipt-readiness.mjs",
     "test": "node --test"
   },
