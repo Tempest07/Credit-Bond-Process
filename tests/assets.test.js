@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-result-queue";
+const VERSION = "20260904-realtime-v2";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.1">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.1 · 2026-09-04 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.2">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.2 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -78,12 +78,13 @@ test("queues compact issuance-result entry without blocking the project workspac
   assert.match(styles, /\.issuance-queue-notifications\s*\{[^}]*position:\s*fixed;[^}]*right:\s*22px;/s);
 });
 
-test("ships a dark DM realtime quote tab without a large text-entry surface", async () => {
-  const [html, app, realtime, endpoint, styles] = await Promise.all([
+test("ships a configurable dark DM realtime quote tab without a large text-entry surface", async () => {
+  const [html, app, realtime, endpoint, valuationEndpoint, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
     readFile(new URL("../realtime-quotes.js", import.meta.url), "utf8"),
     readFile(new URL("../functions/api/dm/realtime-quotes.js", import.meta.url), "utf8"),
+    readFile(new URL("../functions/api/dm/realtime-valuations.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
@@ -92,11 +93,21 @@ test("ships a dark DM realtime quote tab without a large text-entry surface", as
   assert.match(html, /id="realtimeQuoteImportInput" type="text"/);
   assert.doesNotMatch(html, /<textarea[^>]*realtimeQuote/i);
   assert.match(html, /id="realtimeQuoteInterval"[\s\S]*15 秒[\s\S]*20 秒[\s\S]*30 秒/);
+  assert.match(html, /id="realtimeQuoteColumnButton"/);
+  assert.match(html, /id="realtimeQuoteNotificationButton"/);
+  assert.match(html, /id="realtimeQuoteUnreadCount"/);
+  assert.match(html, /id="realtimeQuoteTableHead"/);
   assert.match(app, /realtimeQuoteController\?\.setActive\(viewName === "realtime-quotes"\)/);
   assert.match(realtime, /document\.addEventListener\("visibilitychange"/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v1/);
+  assert.match(realtime, /credit-bond-process-realtime-watchlist-v2/);
+  assert.match(realtime, /data-copy-quote-side/);
+  assert.match(realtime, /continue|继续轮询/);
   assert.match(endpoint, /bond\/market-data\/realtime-quote/);
   assert.match(endpoint, /brokerBreakdownAvailable: false/);
+  assert.match(valuationEndpoint, /bond\/market-data\/date/);
+  assert.match(valuationEndpoint, /cbYtm/);
+  assert.match(valuationEndpoint, /csYte/);
   assert.match(styles, /\.view\[data-view="realtime-quotes"\][^{]*\{[^}]*background:[^}]*#070a10/s);
 });
 

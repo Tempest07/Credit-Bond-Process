@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="4.2.0">
-  <meta name="application-build-version" content="4.2.0.1">
-  <meta name="application-build" content="20260904-result-queue">
+  <meta name="application-build-version" content="4.2.0.2">
+  <meta name="application-build" content="20260904-realtime-v2">
   <title>信用债项目中心 - Tempest07</title>
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260904-result-queue"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260904-result-queue">
+  <script src="./app-shell-mode.js?v=20260904-realtime-v2"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260904-realtime-v2">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +19,7 @@
         <span class="brand-mark">T7</span>
         <span class="brand-copy">
           <strong>Tempest07</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 4.2.0.1 · 2026-09-04 更新">v4.2.0</span></small>
+          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 4.2.0.2 · 2026-09-04 更新">v4.2.0</span></small>
         </span>
       </a>
 
@@ -949,6 +949,15 @@
               </label>
               <button class="realtime-button ghost" id="realtimeQuotePauseButton" type="button" disabled>暂停轮询</button>
               <button class="realtime-button ghost" id="realtimeQuoteRefreshButton" type="button" disabled>立即刷新</button>
+              <button class="realtime-button ghost" id="realtimeQuoteNotificationButton" type="button">系统提醒</button>
+              <div class="realtime-column-menu-wrap">
+                <button class="realtime-button ghost" id="realtimeQuoteColumnButton" type="button" aria-haspopup="true" aria-expanded="false">列设置</button>
+                <section class="realtime-column-menu" id="realtimeQuoteColumnMenu" aria-label="行情列设置" hidden>
+                  <header><strong>显示与排序列</strong><button type="button" id="realtimeQuoteColumnReset">恢复默认</button></header>
+                  <div id="realtimeQuoteColumnList"></div>
+                  <p>拖动表头可调整顺序，点击表头可升序、降序或取消排序。</p>
+                </section>
+              </div>
               <button class="realtime-button primary" id="realtimeQuoteImportButton" type="button">
                 <span aria-hidden="true">＋</span> 导入券池
               </button>
@@ -960,27 +969,20 @@
             <div><span>双边报价</span><strong id="realtimeQuoteTwoSidedCount">0</strong></div>
             <div><span>单边报价</span><strong id="realtimeQuoteOneSidedCount">0</strong></div>
             <div><span>暂无报价</span><strong id="realtimeQuoteNoPriceCount">0</strong></div>
+            <div class="realtime-unread-stat"><span>未读变动</span><strong id="realtimeQuoteUnreadCount">0</strong><button type="button" id="realtimeQuoteClearChanges" hidden>清除</button></div>
             <div class="realtime-tape-time"><span>上次采集</span><strong id="realtimeQuoteLastRefresh">--</strong></div>
             <div class="realtime-tape-time"><span>下次刷新</span><strong id="realtimeQuoteCountdown">--</strong></div>
           </div>
 
+          <section class="realtime-alert-tray" id="realtimeQuoteAlertTray" aria-live="assertive" hidden>
+            <header><strong>到价提醒</strong><button type="button" id="realtimeQuoteClearAlerts">全部清除</button></header>
+            <div id="realtimeQuoteAlertList"></div>
+          </section>
+
           <div class="realtime-quote-surface">
             <div class="realtime-table-scroll">
               <table class="realtime-quote-table" id="realtimeQuoteTable" hidden>
-                <thead>
-                  <tr>
-                    <th>债券</th>
-                    <th>剩余期限</th>
-                    <th>行情源</th>
-                    <th class="bid-column">买量（万）</th>
-                    <th class="bid-column">BID</th>
-                    <th>价差</th>
-                    <th class="ofr-column">OFR</th>
-                    <th class="ofr-column">卖量（万）</th>
-                    <th>报价时间</th>
-                    <th><span class="visually-hidden">操作</span></th>
-                  </tr>
-                </thead>
+                <thead id="realtimeQuoteTableHead"></thead>
                 <tbody id="realtimeQuoteTableBody"></tbody>
               </table>
             </div>
@@ -995,8 +997,9 @@
           <footer class="realtime-footnote">
             <span>来源：DM · /bond/market-data/realtime-quote</span>
             <span>口径：当日经纪商聚合最优报价</span>
+            <span id="realtimeQuoteValuationStatus">DM估值：待首次行情解析</span>
             <span>DM 当前接口不提供逐中介名称</span>
-            <span>页面转入后台时自动暂停</span>
+            <span>离开本 Tab 后继续轮询并累计未读变动</span>
           </footer>
         </section>
       </section>
@@ -1269,9 +1272,9 @@
       </header>
       <div class="realtime-import-body">
         <div class="realtime-import-entry">
-          <label for="realtimeQuoteImportInput">券码或券名</label>
+          <label for="realtimeQuoteImportInput">券码、券名或带方向的目标价</label>
           <div>
-            <input id="realtimeQuoteImportInput" type="text" autocomplete="off" placeholder="例如：102482906.IB 或 24山东机场MTN001">
+            <input id="realtimeQuoteImportInput" type="text" autocomplete="off" placeholder="例如：102482906.IB 24山东机场MTN001 买入 2.34%">
             <button class="realtime-button primary" id="realtimeQuoteImportAddButton" type="button">加入</button>
           </div>
         </div>
@@ -1280,7 +1283,7 @@
           <label class="realtime-button ghost file-button">选择 TXT / CSV<input id="realtimeQuoteFileInput" type="file" accept=".txt,.csv,text/plain,text/csv"></label>
           <label class="realtime-replace-option"><input id="realtimeQuoteReplaceExisting" type="checkbox">替换现有券池</label>
         </div>
-        <div class="realtime-import-status" id="realtimeQuoteImportStatus" data-state="idle">逐只输入，或从剪贴板 / TXT / CSV 导入。</div>
+        <div class="realtime-import-status" id="realtimeQuoteImportStatus" data-state="idle">支持：券码/简称；或 券码 简称 买入/卖出 目标收益率。</div>
         <div class="realtime-import-list-head"><strong>待导入</strong><span id="realtimeQuotePendingCount">0 / 200</span></div>
         <div class="realtime-import-list" id="realtimeQuotePendingList">
           <div class="realtime-import-empty">待导入列表为空</div>
@@ -1449,6 +1452,6 @@
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
   <script src="./vendor/pinyin-pro.min.js?v=3.29.3"></script>
-  <script type="module" src="./app.js?v=20260904-result-queue"></script>
+  <script type="module" src="./app.js?v=20260904-realtime-v2"></script>
 </body>
 </html>
