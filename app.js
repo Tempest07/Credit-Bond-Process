@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-dm-related-suggestions";
+} from "./core.js?v=20260904-result-popover-layer";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-dm-related-suggestions";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-dm-related-suggestions";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-dm-related-suggestions";
+} from "./lifecycle.js?v=20260904-result-popover-layer";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-popover-layer";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-popover-layer";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-dm-related-suggestions";
+} from "./history-parser.js?v=20260904-result-popover-layer";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-dm-related-suggestions";
+} from "./protocol-transfer.js?v=20260904-result-popover-layer";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-dm-related-suggestions";
+} from "./protocol-transfer-templates.js?v=20260904-result-popover-layer";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-dm-related-suggestions";
+} from "./protocol-transfer-docx.js?v=20260904-result-popover-layer";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-dm-related-suggestions";
+} from "./reminders.js?v=20260904-result-popover-layer";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-dm-related-suggestions";
+} from "./secondary-inventory.js?v=20260904-result-popover-layer";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-dm-related-suggestions";
+} from "./trade-record-converter.js?v=20260904-result-popover-layer";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-dm-related-suggestions";
+} from "./trade-record-grid.js?v=20260904-result-popover-layer";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-dm-related-suggestions";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-dm-related-suggestions";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-dm-related-suggestions";
+} from "./trade-record-ledger.js?v=20260904-result-popover-layer";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-result-popover-layer";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-popover-layer";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-dm-related-suggestions";
+} from "./project-screenshot-ocr.js?v=20260904-result-popover-layer";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-dm-related-suggestions";
+} from "./project-screenshot-layout.js?v=20260904-result-popover-layer";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-dm-related-suggestions";
+} from "./project-screenshot-image.js?v=20260904-result-popover-layer";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-dm-related-suggestions";
+} from "./payment-receipts.js?v=20260904-result-popover-layer";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-dm-related-suggestions";
+} from "./issuer-search.js?v=20260904-result-popover-layer";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-dm-related-suggestions";
+} from "./state-history.js?v=20260904-result-popover-layer";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -10764,7 +10764,10 @@ function openResultEntryPanel(shouldFocus = true, requestedTaskId = "") {
     $("#projectResultAdvertisement").value = current.resultAdvertisement || "";
     $("#issuanceNoticeDate").value = (current.cutoffAt || "").slice(0, 10);
   }
-  $("#resultEntryPanel").hidden = false;
+  const panel = $("#resultEntryPanel");
+  const anchor = $("#openResultButton")?.closest(".result-entry-anchor");
+  panel.hidden = false;
+  anchor?.classList.add("is-open");
   positionResultEntryPanel();
   requestAnimationFrame(positionResultEntryPanel);
   syncModalOpenState();
@@ -10779,6 +10782,7 @@ function closeResultEntryPanel() {
   resetIssuanceReview();
   activeIssuanceQueueTaskId = "";
   $("#resultEntryPanel").hidden = true;
+  $("#openResultButton")?.closest(".result-entry-anchor")?.classList.remove("is-open");
   syncModalOpenState();
   if (isCompactLedger()) $("#openResultButton")?.focus({ preventScroll: true });
 }

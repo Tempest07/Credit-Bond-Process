@@ -1102,6 +1102,7 @@ body.realtime-import-open { overflow: hidden; }
 .idle-exit-dialog p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .idle-exit-dialog .result-actions { justify-content: flex-end; margin-top: 4px; }
 .result-entry-anchor { position: relative; display: inline-flex; isolation: isolate; }
+.result-entry-anchor.is-open { z-index: 130; }
 .result-entry-anchor::before,
 .result-entry-anchor::after { position: absolute; z-index: 0; inset: -2px; border: 2px solid rgba(81,225,231,.66); border-radius: 14px; opacity: 0; box-shadow: 0 0 18px rgba(34,194,205,.18); content: ""; pointer-events: none; transform: scale(.98); }
 .result-entry-anchor > .result-action { z-index: 1; }
