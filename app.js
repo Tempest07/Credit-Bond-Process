@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-quote-abbrev";
+} from "./core.js?v=20260904-result-aura";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-quote-abbrev";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-quote-abbrev";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-quote-abbrev";
+} from "./lifecycle.js?v=20260904-result-aura";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-aura";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-aura";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-quote-abbrev";
+} from "./history-parser.js?v=20260904-result-aura";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-quote-abbrev";
+} from "./protocol-transfer.js?v=20260904-result-aura";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-quote-abbrev";
+} from "./protocol-transfer-templates.js?v=20260904-result-aura";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-quote-abbrev";
+} from "./protocol-transfer-docx.js?v=20260904-result-aura";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-quote-abbrev";
+} from "./reminders.js?v=20260904-result-aura";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-quote-abbrev";
+} from "./secondary-inventory.js?v=20260904-result-aura";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-quote-abbrev";
+} from "./trade-record-converter.js?v=20260904-result-aura";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-quote-abbrev";
+} from "./trade-record-grid.js?v=20260904-result-aura";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-quote-abbrev";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-quote-abbrev";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-quote-abbrev";
+} from "./trade-record-ledger.js?v=20260904-result-aura";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-result-aura";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-aura";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-quote-abbrev";
+} from "./project-screenshot-ocr.js?v=20260904-result-aura";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-quote-abbrev";
+} from "./project-screenshot-layout.js?v=20260904-result-aura";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-quote-abbrev";
+} from "./project-screenshot-image.js?v=20260904-result-aura";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-quote-abbrev";
+} from "./payment-receipts.js?v=20260904-result-aura";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-quote-abbrev";
+} from "./issuer-search.js?v=20260904-result-aura";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-quote-abbrev";
+} from "./state-history.js?v=20260904-result-aura";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -10942,13 +10942,16 @@ function openIssuanceQueueTask(taskId) {
 function updateProjectResultQueueState() {
   const button = $("#openResultButton");
   if (!button) return;
+  const anchor = button.closest(".result-entry-anchor");
   const projectId = $("#projectId")?.value || selectedProjectId;
   const tasks = issuanceRecognitionQueue.list().filter((task) => task.payload.projectId === projectId);
   const ready = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status));
   const processing = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.QUEUED, ISSUANCE_QUEUE_STATUS.PROCESSING].includes(task.status));
-  if (ready) button.dataset.queueStatus = "ready";
-  else if (processing) button.dataset.queueStatus = "processing";
-  else delete button.dataset.queueStatus;
+  const queueStatus = ready ? "ready" : processing ? "processing" : "";
+  if (queueStatus) anchor?.setAttribute("data-queue-status", queueStatus);
+  else anchor?.removeAttribute("data-queue-status");
+  button.removeAttribute("data-queue-status");
+  button.setAttribute("aria-busy", processing ? "true" : "false");
   button.title = ready ? "有识别结果待核对" : processing ? "发行结果正在后台识别" : "";
 }
 

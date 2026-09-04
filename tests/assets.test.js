@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-quote-abbrev";
+const VERSION = "20260904-result-aura";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.3">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.3 · 2026-09-04 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.4">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.4 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -77,6 +77,12 @@ test("queues compact issuance-result entry without blocking the project workspac
   assert.doesNotMatch(app, /modal-open",\s*!\$\("#resultEntryPanel"\)\.hidden/);
   assert.match(html, /class="result-entry-anchor"[\s\S]*id="openResultButton"[\s\S]*id="resultEntryPanel"/);
   assert.match(styles, /\.result-entry-anchor\s*\{[^}]*position:\s*relative;/s);
+  assert.match(app, /anchor\?\.setAttribute\("data-queue-status", queueStatus\)/);
+  assert.match(app, /button\.setAttribute\("aria-busy", processing \? "true" : "false"\)/);
+  assert.doesNotMatch(styles, /\.result-action\[data-queue-status=/);
+  assert.match(styles, /\.result-entry-anchor\[data-queue-status="processing"\]::before,[\s\S]*animation:\s*resultQueueWave/);
+  assert.match(styles, /@keyframes resultQueueWave/);
+  assert.match(styles, /@keyframes resultQueueReadyGlow/);
   assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(100% \+ 9px\);[^}]*width:\s*min\(460px/s);
   assert.match(styles, /\.issuance-queue-notifications\s*\{[^}]*position:\s*fixed;[^}]*right:\s*22px;/s);
 });

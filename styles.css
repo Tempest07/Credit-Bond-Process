@@ -1095,7 +1095,15 @@ body.realtime-import-open { overflow: hidden; }
 .idle-exit-dialog h2 { margin: 0; font-size: 19px; }
 .idle-exit-dialog p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .idle-exit-dialog .result-actions { justify-content: flex-end; margin-top: 4px; }
-.result-entry-anchor { position: relative; display: inline-flex; }
+.result-entry-anchor { position: relative; display: inline-flex; isolation: isolate; }
+.result-entry-anchor::before,
+.result-entry-anchor::after { position: absolute; z-index: 0; inset: -2px; border: 2px solid rgba(81,225,231,.66); border-radius: 14px; opacity: 0; box-shadow: 0 0 18px rgba(34,194,205,.18); content: ""; pointer-events: none; transform: scale(.98); }
+.result-entry-anchor > .result-action { z-index: 1; }
+.result-entry-anchor[data-queue-status="processing"]::before,
+.result-entry-anchor[data-queue-status="processing"]::after { animation: resultQueueWave 1.8s cubic-bezier(.2,.68,.3,1) infinite; }
+.result-entry-anchor[data-queue-status="processing"]::after { animation-delay: .9s; }
+.result-entry-anchor[data-queue-status="ready"]::before { border-color: rgba(91,227,231,.6); opacity: .62; box-shadow: 0 0 0 2px rgba(91,227,231,.12), 0 0 22px rgba(38,197,207,.36); animation: resultQueueReadyGlow 2.3s ease-in-out infinite; transform: scale(1.035); }
+.result-entry-anchor[data-queue-status="ready"]::after { display: none; }
 .result-entry-panel { position: absolute; z-index: 120; top: calc(100% + 9px); left: var(--result-entry-offset-x, auto); width: min(460px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 24px)); padding: 0; }
 .result-entry-panel[hidden] { display: none; }
 .result-entry-dialog { position: relative; width: 100%; max-height: inherit; overflow: auto; padding: 16px; border: 1px solid color-mix(in srgb, var(--secondary) 34%, var(--line)); border-radius: 17px; background: rgba(255,255,255,.98); box-shadow: 0 22px 54px rgba(15,23,42,.2), 0 3px 12px rgba(15,23,42,.08); overscroll-behavior: contain; }
@@ -1564,11 +1572,16 @@ body.realtime-import-open { overflow: hidden; }
 .issuance-queue-notification-actions { display: flex; align-items: center; gap: 5px; }
 .issuance-queue-notification-actions button { min-height: 32px; padding: 0 9px; border: 1px solid rgba(93,108,224,.22); border-radius: 9px; color: #4355cf; background: #fff; font: inherit; font-size: 10px; font-weight: 850; cursor: pointer; }
 .issuance-queue-notification-actions button[data-dismiss-issuance-task] { width: 30px; padding: 0; color: #7b879d; }
-.result-action[data-queue-status="processing"]::after, .result-action[data-queue-status="ready"]::after { display: inline-block; width: 7px; height: 7px; margin-left: 7px; border-radius: 999px; content: ""; }
-.result-action[data-queue-status="processing"]::after { background: #f0a52d; box-shadow: 0 0 0 4px rgba(240,165,45,.14); animation: queueStatusPulse 1.2s ease-in-out infinite; }
-.result-action[data-queue-status="ready"]::after { background: #25b1b7; box-shadow: 0 0 0 4px rgba(37,177,183,.14); }
 @keyframes issuanceQueueNoticeIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes queueStatusPulse { 50% { opacity: .42; transform: scale(.78); } }
+@keyframes resultQueueWave {
+  0% { opacity: .72; box-shadow: 0 0 16px rgba(47,207,216,.32); transform: scale(.98); }
+  72% { opacity: .12; }
+  100% { opacity: 0; box-shadow: 0 0 28px rgba(47,207,216,0); transform: scale(1.27); }
+}
+@keyframes resultQueueReadyGlow {
+  0%, 100% { opacity: .48; box-shadow: 0 0 0 2px rgba(91,227,231,.1), 0 0 16px rgba(38,197,207,.24); transform: scale(1.02); }
+  50% { opacity: .82; box-shadow: 0 0 0 3px rgba(91,227,231,.16), 0 0 28px rgba(38,197,207,.42); transform: scale(1.055); }
+}
 
 /* Unified command-center surfaces */
 .history-import-panel,
@@ -1815,6 +1828,8 @@ body.realtime-import-open { overflow: hidden; }
   .policy-curve-placeholder { animation: none; }
   .liquid-track::before { transition: none; }
   .liquid-track.is-liquid-moving::before,
+  .result-entry-anchor[data-queue-status]::before,
+  .result-entry-anchor[data-queue-status]::after,
   .view[data-view="ledger"] .button:active:not(:disabled)::after,
   .cloud-gate::before,
   .cloud-orb-ring,
@@ -1828,6 +1843,8 @@ body.realtime-import-open { overflow: hidden; }
   label[data-recognition-status="attention"] textarea {
     animation: none;
   }
+  .result-entry-anchor[data-queue-status="processing"]::before { opacity: .52; transform: scale(1.035); }
+  .result-entry-anchor[data-queue-status="processing"]::after { display: none; }
 }
 
 @media (max-width: 1380px) {
