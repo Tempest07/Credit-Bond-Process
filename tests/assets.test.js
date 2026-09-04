@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-realtime-v2";
+const VERSION = "20260904-result-anchor";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.2">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.2 · 2026-09-04 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.3">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.3 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -73,8 +73,11 @@ test("queues compact issuance-result entry without blocking the project workspac
   assert.match(app, /function queueIssuanceResultRecognition/);
   assert.match(app, /function renderIssuanceQueueNotifications/);
   assert.match(app, /function positionResultEntryPanel/);
+  assert.doesNotMatch(app, /addEventListener\("scroll", positionResultEntryPanel/);
   assert.doesNotMatch(app, /modal-open",\s*!\$\("#resultEntryPanel"\)\.hidden/);
-  assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*fixed;[^}]*width:\s*min\(460px/s);
+  assert.match(html, /class="result-entry-anchor"[\s\S]*id="openResultButton"[\s\S]*id="resultEntryPanel"/);
+  assert.match(styles, /\.result-entry-anchor\s*\{[^}]*position:\s*relative;/s);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(100% \+ 9px\);[^}]*width:\s*min\(460px/s);
   assert.match(styles, /\.issuance-queue-notifications\s*\{[^}]*position:\s*fixed;[^}]*right:\s*22px;/s);
 });
 
@@ -562,7 +565,7 @@ test("uses single-pane project navigation on compact screens", async () => {
   assert.match(styles, /data-mobile-pane="detail"[\s\S]+\.project-list-panel/);
   assert.match(styles, /data-mobile-pane="overview"[^\n]+\.ledger-grid\s*\{\s*display:\s*none;/);
   assert.match(styles, /\.ledger-mobile-back\s*\{[^}]*min-height:\s*44px;/s);
-  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*top:\s*var\(--result-entry-top/);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*top:\s*calc\(100% \+ 9px\)/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.result-entry-panel\s*\{[^}]*max-height:\s*min\(68dvh/s);
   assert.match(styles, /\.view\.active\s*\{[^}]*animation:\s*workspaceSurfaceIn \.28s ease backwards;/);
 });

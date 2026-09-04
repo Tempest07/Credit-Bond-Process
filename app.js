@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-realtime-v2";
+} from "./core.js?v=20260904-result-anchor";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-realtime-v2";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-realtime-v2";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-realtime-v2";
+} from "./lifecycle.js?v=20260904-result-anchor";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-anchor";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-anchor";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-realtime-v2";
+} from "./history-parser.js?v=20260904-result-anchor";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-realtime-v2";
+} from "./protocol-transfer.js?v=20260904-result-anchor";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-realtime-v2";
+} from "./protocol-transfer-templates.js?v=20260904-result-anchor";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-realtime-v2";
+} from "./protocol-transfer-docx.js?v=20260904-result-anchor";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-realtime-v2";
+} from "./reminders.js?v=20260904-result-anchor";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-realtime-v2";
+} from "./secondary-inventory.js?v=20260904-result-anchor";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-realtime-v2";
+} from "./trade-record-converter.js?v=20260904-result-anchor";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-realtime-v2";
+} from "./trade-record-grid.js?v=20260904-result-anchor";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-realtime-v2";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-realtime-v2";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-realtime-v2";
+} from "./trade-record-ledger.js?v=20260904-result-anchor";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-result-anchor";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-anchor";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-realtime-v2";
+} from "./project-screenshot-ocr.js?v=20260904-result-anchor";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-realtime-v2";
+} from "./project-screenshot-layout.js?v=20260904-result-anchor";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-realtime-v2";
+} from "./project-screenshot-image.js?v=20260904-result-anchor";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-realtime-v2";
+} from "./payment-receipts.js?v=20260904-result-anchor";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-realtime-v2";
+} from "./issuer-search.js?v=20260904-result-anchor";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-realtime-v2";
+} from "./state-history.js?v=20260904-result-anchor";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -4653,7 +4653,6 @@ function bindLedger() {
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
   document.addEventListener("pointerdown", handleResultEntryOutsidePointer);
   window.addEventListener("resize", positionResultEntryPanel, { passive: true });
-  window.addEventListener("scroll", positionResultEntryPanel, { passive: true, capture: true });
   $("#prepaymentEntryForm").addEventListener("submit", savePrepaymentEntry);
   $("#prepaymentEntryPanel").addEventListener("click", (event) => {
     if (event.target.closest("[data-close-prepayment]")) closePrepaymentEntry();
@@ -10962,25 +10961,18 @@ function handleResultEntryOutsidePointer(event) {
 function positionResultEntryPanel() {
   const panel = $("#resultEntryPanel");
   const anchor = $("#openResultButton");
-  if (!panel || panel.hidden || !anchor) return;
+  const host = anchor?.closest(".result-entry-anchor");
+  if (!panel || panel.hidden || !anchor || !host) return;
   const margin = 12;
-  const gap = 9;
   const anchorRect = anchor.getBoundingClientRect();
+  const hostRect = host.getBoundingClientRect();
   const width = Math.min(460, Math.max(280, window.innerWidth - margin * 2));
-  const dialogHeight = Math.min($("#resultEntryDialog")?.scrollHeight || 360, window.innerHeight - margin * 2);
-  const belowSpace = window.innerHeight - anchorRect.bottom - gap - margin;
-  const aboveSpace = anchorRect.top - gap - margin;
-  const placeAbove = belowSpace < Math.min(300, dialogHeight) && aboveSpace > belowSpace;
-  const availableHeight = Math.max(190, placeAbove ? aboveSpace : belowSpace);
-  const top = placeAbove
-    ? Math.max(margin, anchorRect.top - gap - Math.min(dialogHeight, availableHeight))
-    : Math.max(margin, anchorRect.bottom + gap);
-  const left = Math.min(window.innerWidth - width - margin, Math.max(margin, anchorRect.right - width));
-  panel.dataset.placement = placeAbove ? "above" : "below";
-  panel.style.setProperty("--result-entry-top", `${Math.round(top)}px`);
-  panel.style.setProperty("--result-entry-left", `${Math.round(left)}px`);
+  const viewportLeft = Math.min(window.innerWidth - width - margin, Math.max(margin, anchorRect.right - width));
+  const arrowCenter = anchorRect.left + anchorRect.width / 2 - viewportLeft;
+  const arrowRight = Math.min(width - 20, Math.max(20, width - arrowCenter - 6.5));
+  panel.style.setProperty("--result-entry-offset-x", `${Math.round(viewportLeft - hostRect.left)}px`);
+  panel.style.setProperty("--result-entry-arrow-right", `${Math.round(arrowRight)}px`);
   panel.style.width = `${Math.round(width)}px`;
-  panel.style.maxHeight = `${Math.round(availableHeight)}px`;
 }
 
 function renderIssuanceReview(result) {
