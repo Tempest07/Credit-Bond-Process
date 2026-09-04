@@ -9,10 +9,11 @@
 - `realtime-quotes.js`：列排序/拖动/隐藏、后台轮询、变动轨迹、目标价和复制话术。
 - `functions/api/dm/realtime-valuations.js`：低频读取 DM 最新可用中债/中证 YTM/YTE 与净价。
 - `index.html`、`styles.css`：可配置深色行情表、到价提醒栏及变化闪烁样式。
+- `styles.css`：将状态圆点、`LIVE` 与轮询说明收拢为一组，避免宽容器把 `LIVE` 推到标题区右侧。
 
 ## Verification
 
-- `npm test`：479 passed，0 failed；targeted realtime tests 51 passed，0 failed。
+- `npm test`：485 passed，0 failed；targeted realtime tests 51 passed，0 failed。
 - Wrangler Pages 本地预览：桌面端与 390×844 移动端已检查，控制台无错误。
 - 本机未配置 `INNO_APP_KEY` / `INNO_APP_SECRET`，真实 DM 估值与行情仍需在生产环境验收。
 
