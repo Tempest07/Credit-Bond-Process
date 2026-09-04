@@ -1109,8 +1109,12 @@ body.realtime-import-open { overflow: hidden; }
 .result-entry-anchor[data-queue-status="processing"]::before,
 .result-entry-anchor[data-queue-status="processing"]::after { animation: resultQueueWave 1.8s cubic-bezier(.2,.68,.3,1) infinite; }
 .result-entry-anchor[data-queue-status="processing"]::after { animation-delay: .9s; }
-.result-entry-anchor[data-queue-status="ready"]::before { border-color: rgba(91,227,231,.6); opacity: .62; box-shadow: 0 0 0 2px rgba(91,227,231,.12), 0 0 22px rgba(38,197,207,.36); animation: resultQueueReadyGlow 2.3s ease-in-out infinite; transform: scale(1.035); }
-.result-entry-anchor[data-queue-status="ready"]::after { display: none; }
+.result-entry-anchor[data-queue-status="ready"]::before,
+.result-entry-anchor[data-queue-status="error"]::before { z-index: 2; inset: -7px -7px auto auto; display: grid; place-items: center; width: 21px; height: 21px; border: 2px solid #fff; border-radius: 999px; color: #fff; box-shadow: 0 4px 13px rgba(15,23,42,.2); font-size: 13px; font-weight: 900; line-height: 1; opacity: 1; transform: scale(1); }
+.result-entry-anchor[data-queue-status="ready"]::before { background: #20b981; box-shadow: 0 4px 13px rgba(16,185,129,.38); content: "✓"; animation: resultQueueCheckIn .46s cubic-bezier(.18,.89,.32,1.28) both; }
+.result-entry-anchor[data-queue-status="error"]::before { background: #f59e0b; content: "!"; animation: resultQueueCheckIn .46s cubic-bezier(.18,.89,.32,1.28) both; }
+.result-entry-anchor[data-queue-status="ready"]::after,
+.result-entry-anchor[data-queue-status="error"]::after { display: none; }
 .result-entry-panel { position: absolute; z-index: 120; top: calc(100% + 9px); left: var(--result-entry-offset-x, auto); width: min(460px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 24px)); padding: 0; }
 .result-entry-panel[hidden] { display: none; }
 .result-entry-dialog { position: relative; width: 100%; max-height: inherit; overflow: auto; padding: 16px; border: 1px solid color-mix(in srgb, var(--secondary) 34%, var(--line)); border-radius: 17px; background: rgba(255,255,255,.98); box-shadow: 0 22px 54px rgba(15,23,42,.2), 0 3px 12px rgba(15,23,42,.08); overscroll-behavior: contain; }
@@ -1585,9 +1589,10 @@ body.realtime-import-open { overflow: hidden; }
   72% { opacity: .12; }
   100% { opacity: 0; box-shadow: 0 0 28px rgba(47,207,216,0); transform: scale(1.27); }
 }
-@keyframes resultQueueReadyGlow {
-  0%, 100% { opacity: .48; box-shadow: 0 0 0 2px rgba(91,227,231,.1), 0 0 16px rgba(38,197,207,.24); transform: scale(1.02); }
-  50% { opacity: .82; box-shadow: 0 0 0 3px rgba(91,227,231,.16), 0 0 28px rgba(38,197,207,.42); transform: scale(1.055); }
+@keyframes resultQueueCheckIn {
+  0% { opacity: 0; transform: scale(.25) rotate(-24deg); }
+  68% { opacity: 1; transform: scale(1.16) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
 }
 
 /* Unified command-center surfaces */

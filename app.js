@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-result-popover-layer";
+} from "./core.js?v=20260904-result-ready-check";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-result-popover-layer";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-popover-layer";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-popover-layer";
+} from "./lifecycle.js?v=20260904-result-ready-check";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-ready-check";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-ready-check";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-result-popover-layer";
+} from "./history-parser.js?v=20260904-result-ready-check";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-result-popover-layer";
+} from "./protocol-transfer.js?v=20260904-result-ready-check";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-result-popover-layer";
+} from "./protocol-transfer-templates.js?v=20260904-result-ready-check";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-result-popover-layer";
+} from "./protocol-transfer-docx.js?v=20260904-result-ready-check";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-result-popover-layer";
+} from "./reminders.js?v=20260904-result-ready-check";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-result-popover-layer";
+} from "./secondary-inventory.js?v=20260904-result-ready-check";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-result-popover-layer";
+} from "./trade-record-converter.js?v=20260904-result-ready-check";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-result-popover-layer";
+} from "./trade-record-grid.js?v=20260904-result-ready-check";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-result-popover-layer";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-result-popover-layer";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-popover-layer";
+} from "./trade-record-ledger.js?v=20260904-result-ready-check";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-result-ready-check";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-ready-check";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-result-popover-layer";
+} from "./project-screenshot-ocr.js?v=20260904-result-ready-check";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-result-popover-layer";
+} from "./project-screenshot-layout.js?v=20260904-result-ready-check";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-result-popover-layer";
+} from "./project-screenshot-image.js?v=20260904-result-ready-check";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-result-popover-layer";
+} from "./payment-receipts.js?v=20260904-result-ready-check";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-result-popover-layer";
+} from "./issuer-search.js?v=20260904-result-ready-check";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-result-popover-layer";
+} from "./state-history.js?v=20260904-result-ready-check";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -10960,14 +10960,15 @@ function updateProjectResultQueueState() {
   const anchor = button.closest(".result-entry-anchor");
   const projectId = $("#projectId")?.value || selectedProjectId;
   const tasks = issuanceRecognitionQueue.list().filter((task) => task.payload.projectId === projectId);
-  const ready = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status));
+  const ready = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW].includes(task.status));
+  const failed = tasks.some((task) => task.status === ISSUANCE_QUEUE_STATUS.ERROR);
   const processing = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.QUEUED, ISSUANCE_QUEUE_STATUS.PROCESSING].includes(task.status));
-  const queueStatus = ready ? "ready" : processing ? "processing" : "";
+  const queueStatus = ready ? "ready" : failed ? "error" : processing ? "processing" : "";
   if (queueStatus) anchor?.setAttribute("data-queue-status", queueStatus);
   else anchor?.removeAttribute("data-queue-status");
   button.removeAttribute("data-queue-status");
   button.setAttribute("aria-busy", processing ? "true" : "false");
-  button.title = ready ? "有识别结果待核对" : processing ? "发行结果正在后台识别" : "";
+  button.title = ready ? "识别完成，结果待核对" : failed ? "识别失败，请打开重试" : processing ? "发行结果正在后台识别" : "";
 }
 
 function handleResultEntryOutsidePointer(event) {

@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260904-result-popover-layer";
+} from "./core.js?v=20260904-result-ready-check";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
