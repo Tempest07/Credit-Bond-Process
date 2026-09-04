@@ -19,6 +19,32 @@ test("accepts multiple short names separated by whitespace", () => {
   assert.deepEqual(parseRealtimeQuoteImportText("26测试MTN001 26测试SCP002"), ["26测试MTN001", "26测试SCP002"]);
 });
 
+test("filters obvious region headings without rejecting valid bond short names", () => {
+  assert.deepEqual(parseRealtimeQuoteImportText(`
+陕西（西安）
+山东（青岛）
+华东地区
+24国开10
+大秦转债
+26测试MTN001
+  `), ["24国开10", "大秦转债", "26测试MTN001"]);
+  assert.deepEqual(__test__.mergeWatchItems([], ["江苏", "广东（广州）", "浦发转债"]), [{
+    query: "浦发转债",
+    label: "",
+    alerts: [],
+  }]);
+});
+
+test("removes exact DM-unmatched names from the live watchlist", () => {
+  const result = __test__.pruneUnresolvedWatchItems([
+    { query: "24国开10", label: "", alerts: [] },
+    { query: "疑似简称", label: "疑似简称", alerts: [] },
+  ], [{ query: "疑似简称", reason: "DM 基础资料未匹配到精确简称" }]);
+
+  assert.deepEqual(result.watchlist.map((item) => item.query), ["24国开10"]);
+  assert.deepEqual(result.removed.map((item) => item.query), ["疑似简称"]);
+});
+
 test("keeps imported short name, buy/sell direction and target on the same bond", () => {
   const result = parseRealtimeQuoteImportEntries(`
 102482906.IB 24山东机场MTN001 买入 2.34%

@@ -57,12 +57,14 @@ export function parseRealtimeQuoteImportEntries(value = "") {
     }
     if (side) {
       const query = extractImportLabel(line);
-      if (query) entries.push({ query, label: query, alerts: alert ? [alert] : [] });
+      if (query && !isObviousNonBondImportCandidate(query)) entries.push({ query, label: query, alerts: alert ? [alert] : [] });
       continue;
     }
     const hasDelimitedCells = /[\t,，]/.test(line);
     const cells = line.split(hasDelimitedCells ? /[\t,，]+/ : /\s+/).map(cleanImportToken).filter(Boolean);
-    for (const candidate of cells) entries.push({ query: candidate, label: "", alerts: [] });
+    for (const candidate of cells) {
+      if (!isObviousNonBondImportCandidate(candidate)) entries.push({ query: candidate, label: "", alerts: [] });
+    }
   }
   return mergeWatchItems([], entries).slice(0, MAX_SECURITIES);
 }
@@ -388,15 +390,22 @@ class RealtimeQuoteController {
       if (!response.ok || payload.ok !== true) throw new Error(payload.error || `HTTP ${response.status}`);
       if (sequence !== this.requestSequence) return;
       const nextRows = (Array.isArray(payload.rows) ? payload.rows : []).map((row) => this.attachValuation(row));
+      const unmatched = pruneUnresolvedWatchItems(this.watchlist, payload.unresolved);
       this.captureQuoteChanges(this.rows, nextRows);
       this.rows = nextRows;
-      this.unresolved = Array.isArray(payload.unresolved) ? payload.unresolved : [];
+      this.watchlist = unmatched.watchlist;
+      this.unresolved = [];
       this.lastFetchedAt = payload.fetchedAt || new Date().toISOString();
       this.error = "";
       this.evaluateAlerts(nextRows);
+      if (unmatched.removed.length) this.save();
       this.render();
       void this.maybeRefreshValuations(nextRows);
-      if (manual) this.onToast(`已刷新 ${this.rows.length} 只债券`);
+      if (unmatched.removed.length) {
+        const labels = unmatched.removed.slice(0, 3).map((item) => item.label || item.query).join("、");
+        const more = unmatched.removed.length > 3 ? ` 等 ${unmatched.removed.length} 项` : "";
+        this.onToast(`已移除非债券或 DM 未匹配内容：${labels}${more}`);
+      } else if (manual) this.onToast(`已刷新 ${this.rows.length} 只债券`);
     } catch (error) {
       if (error?.name === "AbortError" || sequence !== this.requestSequence) return;
       this.error = error.message || "实时行情刷新失败";
@@ -982,7 +991,7 @@ function mergeWatchItems(existing, incoming) {
 function normalizeWatchItem(value) {
   const source = typeof value === "string" ? { query: value } : value;
   const query = cleanImportToken(source?.query || source?.securityId || source?.shortName || "");
-  if (!query) return null;
+  if (!query || isObviousNonBondImportCandidate(query)) return null;
   const alerts = (Array.isArray(source?.alerts) ? source.alerts : []).map(normalizeAlert).filter(Boolean);
   const legacyAlert = normalizeAlert({ side: source?.targetSide, metric: source?.targetMetric, target: source?.targetValue });
   return { query, label: cleanImportLabel(source?.label || ""), alerts: mergeAlerts(alerts, legacyAlert ? [legacyAlert] : []) };
@@ -1068,6 +1077,30 @@ function cleanImportLabel(value = "") {
   return text.length <= 80 ? text : "";
 }
 
+function isObviousNonBondImportCandidate(value = "") {
+  const text = cleanImportLabel(value).replace(/\s+/g, "");
+  if (!text || /\d/.test(text) || /(?:债|票据|MTN|SCP|CP|PPN|ABN|ABS|GN|NCD|CD)/i.test(text)) return false;
+  if (/^[\p{Script=Han}]{2,12}[（(][\p{Script=Han}]{2,12}[）)]$/u.test(text)) return true;
+  if (/^(?:北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|广西|西藏|宁夏|新疆|香港|澳门)$/.test(text)) return true;
+  return /^(?:华北|华东|华南|华中|东北|西北|西南|全国|其他|全部)(?:地区|区域|团队)?$/.test(text)
+    || /(?:省|市|自治区|地区|区域|分行|团队|名单)$/.test(text);
+}
+
+function pruneUnresolvedWatchItems(watchlist = [], unresolved = []) {
+  const unresolvedKeys = new Set((Array.isArray(unresolved) ? unresolved : [])
+    .map((item) => normalizeQueryKey(item?.query || item))
+    .filter(Boolean));
+  const kept = [];
+  const removed = [];
+  for (const raw of Array.isArray(watchlist) ? watchlist : []) {
+    const item = normalizeWatchItem(raw);
+    if (!item) continue;
+    if (unresolvedKeys.has(normalizeQueryKey(item.query))) removed.push(item);
+    else kept.push(item);
+  }
+  return { watchlist: kept, removed };
+}
+
 function normalizeQueryKey(value) {
   return String(value || "").trim().replace(/\s+/g, "").toUpperCase();
 }
@@ -1141,7 +1174,9 @@ export const __test__ = {
   buildQuoteCopyText,
   describeQuoteChange,
   detectIntentTarget,
+  isObviousNonBondImportCandidate,
   mergeWatchItems,
   parseRealtimeQuoteImportEntries,
+  pruneUnresolvedWatchItems,
   targetIsMet,
 };
