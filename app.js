@@ -150,6 +150,7 @@ import {
   buildTradeRecordTableText,
 } from "./trade-record-ledger.js?v=20260903-protocol-date";
 import { initializeDatePickers } from "./date-picker.js?v=20260903-protocol-date";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260903-protocol-date";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -401,6 +402,7 @@ let secondaryLedgerDmLoading = false;
 let secondaryLedgerDmAttemptKey = "";
 let secondaryLedgerSavePending = false;
 let cloudSaveQueue = Promise.resolve(true);
+let realtimeQuoteController = null;
 
 const LEDGER_FILTER_LABELS = {
   all: "全部项目",
@@ -424,6 +426,7 @@ async function initialize() {
   initializeAndroidAppShell();
   bindPlaceholderSelection();
   bindNavigation();
+  realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast });
   bindRouteHashNavigation();
   bindProjectScreenshotTool();
   bindIssuerPicker();
@@ -1854,6 +1857,9 @@ function switchView(viewName, options = {}) {
     }
   });
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
+  $(".main")?.classList.toggle("realtime-mode", viewName === "realtime-quotes");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", viewName === "realtime-quotes" ? "#070a10" : "#f4f6fb");
+  realtimeQuoteController?.setActive(viewName === "realtime-quotes");
   if (button) $("#pageTitle").textContent = button.dataset.viewLabel || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
   if (viewName === "payment-receipts") renderPaymentReceiptArchive();

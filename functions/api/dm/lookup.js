@@ -2975,7 +2975,7 @@ export function makeDmClient(env, request) {
   const appSecret = env.INNO_APP_SECRET || env.INNO_SM4_KEY;
   const baseUrl = (env.INNO_BASE_URL || DM_BASE_URL).replace(/\/+$/, "");
   return {
-    async post(path, data) {
+    async post(path, data, options = {}) {
       const payload = sm4EncryptToBase64Url(JSON.stringify(data), appSecret);
       const response = await fetch(`${baseUrl}${path}`, {
         method: "POST",
@@ -2985,6 +2985,7 @@ export function makeDmClient(env, request) {
           "X-Dm-App-Key": appKey,
         },
         body: payload,
+        signal: options.signal,
       });
       const text = await response.text();
       if (!response.ok) throw new Error(`DM HTTP ${response.status}: ${text.slice(0, 300)}`);

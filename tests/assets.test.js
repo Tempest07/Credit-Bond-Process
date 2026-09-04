@@ -46,6 +46,7 @@ test("versions all first-party browser modules together", async () => {
   assert.match(app, new RegExp(`trade-record-grid\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`trade-record-ledger\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`date-picker\\.js\\?v=${VERSION}`));
+  assert.match(app, new RegExp(`realtime-quotes\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-ocr\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-layout\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`project-screenshot-image\\.js\\?v=${VERSION}`));
@@ -54,6 +55,28 @@ test("versions all first-party browser modules together", async () => {
   assert.match(lifecycle, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(reminders, new RegExp(`protocol-transfer\\.js\\?v=${VERSION}`));
+});
+
+test("ships a dark DM realtime quote tab without a large text-entry surface", async () => {
+  const [html, app, realtime, endpoint, styles] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../realtime-quotes.js", import.meta.url), "utf8"),
+    readFile(new URL("../functions/api/dm/realtime-quotes.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /data-view-target="realtime-quotes">实时行情</);
+  assert.match(html, /id="realtimeQuoteImportButton"[^>]*>\s*<span[^>]*>＋<\/span> 导入券池/);
+  assert.match(html, /id="realtimeQuoteImportInput" type="text"/);
+  assert.doesNotMatch(html, /<textarea[^>]*realtimeQuote/i);
+  assert.match(html, /id="realtimeQuoteInterval"[\s\S]*15 秒[\s\S]*20 秒[\s\S]*30 秒/);
+  assert.match(app, /realtimeQuoteController\?\.setActive\(viewName === "realtime-quotes"\)/);
+  assert.match(realtime, /document\.addEventListener\("visibilitychange"/);
+  assert.match(realtime, /credit-bond-process-realtime-watchlist-v1/);
+  assert.match(endpoint, /bond\/market-data\/realtime-quote/);
+  assert.match(endpoint, /brokerBreakdownAvailable: false/);
+  assert.match(styles, /\.view\[data-view="realtime-quotes"\][^{]*\{[^}]*background:[^}]*#070a10/s);
 });
 
 test("starts the application only after module constants are initialized", async () => {

@@ -26,6 +26,7 @@
       <nav class="nav">
         <button class="nav-item" data-view-target="reminders">待办中心</button>
         <button class="nav-item active" data-view-target="ledger">项目中心</button>
+        <button class="nav-item" data-view-target="realtime-quotes">实时行情</button>
         <button class="nav-item" data-view-target="payment-receipts">缴款单</button>
         <button class="nav-item" data-view-target="secondary-trading">二级交易</button>
         <button class="nav-item" data-view-target="generator">新增项目</button>
@@ -929,6 +930,78 @@
         </div>
       </section>
 
+      <section class="view realtime-quotes-view" data-view="realtime-quotes">
+        <section class="realtime-terminal" aria-labelledby="realtimeQuoteTitle">
+          <header class="realtime-command-bar">
+            <div class="realtime-title-block">
+              <span class="realtime-kicker"><i></i> DM MARKET DATA</span>
+              <h2 id="realtimeQuoteTitle">实时行情</h2>
+              <div class="realtime-live-state" id="realtimeQuoteLiveState" data-state="idle">
+                <span></span><strong>待导入</strong><small id="realtimeQuoteStatusDetail">导入券池后开始轮询</small>
+              </div>
+            </div>
+            <div class="realtime-command-actions">
+              <label class="realtime-interval-control">轮询
+                <select id="realtimeQuoteInterval" aria-label="实时行情轮询间隔">
+                  <option value="15">15 秒</option>
+                  <option value="20" selected>20 秒</option>
+                  <option value="30">30 秒</option>
+                </select>
+              </label>
+              <button class="realtime-button ghost" id="realtimeQuotePauseButton" type="button" disabled>暂停轮询</button>
+              <button class="realtime-button ghost" id="realtimeQuoteRefreshButton" type="button" disabled>立即刷新</button>
+              <button class="realtime-button primary" id="realtimeQuoteImportButton" type="button">
+                <span aria-hidden="true">＋</span> 导入券池
+              </button>
+            </div>
+          </header>
+
+          <div class="realtime-tape" aria-label="实时行情状态概览">
+            <div><span>监控券数</span><strong id="realtimeQuoteUniverseCount">0</strong></div>
+            <div><span>双边报价</span><strong id="realtimeQuoteTwoSidedCount">0</strong></div>
+            <div><span>单边报价</span><strong id="realtimeQuoteOneSidedCount">0</strong></div>
+            <div><span>暂无报价</span><strong id="realtimeQuoteNoPriceCount">0</strong></div>
+            <div class="realtime-tape-time"><span>上次采集</span><strong id="realtimeQuoteLastRefresh">--</strong></div>
+            <div class="realtime-tape-time"><span>下次刷新</span><strong id="realtimeQuoteCountdown">--</strong></div>
+          </div>
+
+          <div class="realtime-quote-surface">
+            <div class="realtime-table-scroll">
+              <table class="realtime-quote-table" id="realtimeQuoteTable" hidden>
+                <thead>
+                  <tr>
+                    <th>债券</th>
+                    <th>剩余期限</th>
+                    <th>行情源</th>
+                    <th class="bid-column">买量（万）</th>
+                    <th class="bid-column">BID</th>
+                    <th>价差</th>
+                    <th class="ofr-column">OFR</th>
+                    <th class="ofr-column">卖量（万）</th>
+                    <th>报价时间</th>
+                    <th><span class="visually-hidden">操作</span></th>
+                  </tr>
+                </thead>
+                <tbody id="realtimeQuoteTableBody"></tbody>
+              </table>
+            </div>
+            <div class="realtime-empty-state" id="realtimeQuoteEmptyState">
+              <div class="realtime-empty-radar" aria-hidden="true"><span></span><i></i></div>
+              <strong>券池为空</strong>
+              <p>导入券码或券名后，系统将读取 DM 当日经纪商聚合最优 Bid / Ofr。</p>
+              <button class="realtime-button primary" id="realtimeQuoteEmptyImportButton" type="button">导入第一批债券</button>
+            </div>
+          </div>
+
+          <footer class="realtime-footnote">
+            <span>来源：DM · /bond/market-data/realtime-quote</span>
+            <span>口径：当日经纪商聚合最优报价</span>
+            <span>DM 当前接口不提供逐中介名称</span>
+            <span>页面转入后台时自动暂停</span>
+          </footer>
+        </section>
+      </section>
+
       <section class="view" data-view="dm-test">
         <section class="panel dm-test-panel">
           <div class="panel-head">
@@ -1151,6 +1224,7 @@
           </header>
           <nav class="android-more-links" aria-label="更多业务页面">
             <button class="nav-item android-more-link" type="button" data-view-target="database" data-view-label="主体与授信库">主体与授信库</button>
+            <button class="nav-item android-more-link" type="button" data-view-target="realtime-quotes" data-view-label="实时行情">实时行情</button>
             <button class="nav-item android-more-link" type="button" data-view-target="dm-test" data-view-label="DM 测试">DM 测试</button>
             <button class="nav-item android-more-link" type="button" data-view-target="rules" data-view-label="规则说明">规则说明</button>
           </nav>
@@ -1183,6 +1257,42 @@
       </nav>
     </main>
   </div>
+
+  <section class="realtime-import-panel" id="realtimeQuoteImportDialog" role="dialog" aria-modal="true" aria-labelledby="realtimeQuoteImportTitle" hidden>
+    <button class="realtime-import-backdrop" type="button" data-close-realtime-import aria-label="关闭券池导入"></button>
+    <div class="realtime-import-dialog" tabindex="-1">
+      <header class="realtime-import-head">
+        <div>
+          <span>WATCHLIST</span>
+          <h2 id="realtimeQuoteImportTitle">导入实时行情券池</h2>
+        </div>
+        <button type="button" data-close-realtime-import aria-label="关闭">×</button>
+      </header>
+      <div class="realtime-import-body">
+        <div class="realtime-import-entry">
+          <label for="realtimeQuoteImportInput">券码或券名</label>
+          <div>
+            <input id="realtimeQuoteImportInput" type="text" autocomplete="off" placeholder="例如：102482906.IB 或 24山东机场MTN001">
+            <button class="realtime-button primary" id="realtimeQuoteImportAddButton" type="button">加入</button>
+          </div>
+        </div>
+        <div class="realtime-import-tools">
+          <button class="realtime-button ghost" id="realtimeQuoteClipboardButton" type="button">从剪贴板导入</button>
+          <label class="realtime-button ghost file-button">选择 TXT / CSV<input id="realtimeQuoteFileInput" type="file" accept=".txt,.csv,text/plain,text/csv"></label>
+          <label class="realtime-replace-option"><input id="realtimeQuoteReplaceExisting" type="checkbox">替换现有券池</label>
+        </div>
+        <div class="realtime-import-status" id="realtimeQuoteImportStatus" data-state="idle">逐只输入，或从剪贴板 / TXT / CSV 导入。</div>
+        <div class="realtime-import-list-head"><strong>待导入</strong><span id="realtimeQuotePendingCount">0 / 200</span></div>
+        <div class="realtime-import-list" id="realtimeQuotePendingList">
+          <div class="realtime-import-empty">待导入列表为空</div>
+        </div>
+      </div>
+      <footer class="realtime-import-actions">
+        <button class="realtime-button ghost" type="button" data-close-realtime-import>取消</button>
+        <button class="realtime-button primary" id="realtimeQuoteImportConfirm" type="button" disabled>确认导入</button>
+      </footer>
+    </div>
+  </section>
 
   <section class="quick-abs-credit-panel" id="quickAbsCreditPanel" role="dialog" aria-modal="true" aria-labelledby="quickAbsCreditTitle" hidden>
     <button class="quick-abs-credit-backdrop" type="button" data-close-quick-abs-credit aria-label="关闭 50217 即时录入"></button>
