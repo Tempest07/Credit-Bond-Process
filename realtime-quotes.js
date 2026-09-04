@@ -404,7 +404,7 @@ class RealtimeQuoteController {
       if (unmatched.removed.length) {
         const labels = unmatched.removed.slice(0, 3).map((item) => item.label || item.query).join("、");
         const more = unmatched.removed.length > 3 ? ` 等 ${unmatched.removed.length} 项` : "";
-        this.onToast(`已移除非债券或 DM 未匹配内容：${labels}${more}`);
+        this.onToast(`已移除非债券或未匹配内容：${labels}${more}`);
       } else if (manual) this.onToast(`已刷新 ${this.rows.length} 只债券`);
     } catch (error) {
       if (error?.name === "AbortError" || sequence !== this.requestSequence) return;
@@ -709,7 +709,7 @@ class RealtimeQuoteController {
     if (this.loading) {
       label = "刷新中";
       status = "loading";
-      detailText = "正在读取 DM 当日最优报价";
+      detailText = "正在读取当日最优报价";
     } else if (this.error) {
       label = "连接异常";
       status = "error";
@@ -725,7 +725,7 @@ class RealtimeQuoteController {
     } else if (this.watchlist.length) {
       label = "LIVE";
       status = "live";
-      detailText = `每 ${this.intervalMs / 1_000} 秒读取 DM`;
+      detailText = `每 ${this.intervalMs / 1_000} 秒自动刷新`;
     }
     if (state) {
       state.dataset.state = status;
@@ -764,7 +764,7 @@ class RealtimeQuoteController {
     const element = this.root.querySelector("#realtimeQuoteValuationStatus");
     if (!element) return;
     element.dataset.state = this.valuationError ? "error" : this.valuationLoading ? "loading" : "idle";
-    element.textContent = this.valuationError ? `DM估值：${this.valuationError}` : this.valuationLoading ? "DM估值：更新中" : this.valuationFetchedAt ? `DM估值快照：${formatChinaDateTime(this.valuationFetchedAt)}` : "DM估值：待首次行情解析";
+    element.textContent = this.valuationError ? `估值：${this.valuationError}` : this.valuationLoading ? "估值：更新中" : this.valuationFetchedAt ? `估值快照：${formatChinaDateTime(this.valuationFetchedAt)}` : "估值：待首次行情解析";
   }
 
   save() {
@@ -803,7 +803,7 @@ function renderQuoteCell(columnId, row, controller) {
   if (columnId === "chinaSecurities") return `<td data-column="chinaSecurities" class="quote-valuation-cell china-securities-valuation">${renderValuation(row.valuation?.chinaSecurities)}</td>`;
   if (columnId === "source") {
     const sourceLabel = row.placeholderStatus === "pending" ? "待查询" : row.placeholderStatus === "unresolved" ? "基础资料" : "经纪商聚合";
-    return `<td data-column="source" class="quote-source-cell"><span>DM</span><small>${sourceLabel}</small></td>`;
+    return `<td data-column="source" class="quote-source-cell" title="数据来源：DM"><span>聚合</span><small>${sourceLabel}</small></td>`;
   }
   if (columnId === "bidVolume") return `<td data-column="bidVolume" class="quote-volume-cell bid-volume">${formatQuoteNumber(row.bid?.volumeWan, 0)}</td>`;
   if (columnId === "bid") return renderPriceCell(row, "bid", controller.changeFor(row, "bid"));

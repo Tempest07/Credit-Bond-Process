@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-bond-name-wrap";
+const VERSION = "20260904-market-copy";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -100,12 +100,20 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(html, /id="realtimeQuoteNotificationButton"/);
   assert.match(html, /id="realtimeQuoteUnreadCount"/);
   assert.match(html, /id="realtimeQuoteTableHead"/);
+  const realtimeSection = html.match(/<section class="view realtime-quotes-view"[\s\S]*?<section class="view" data-view="dm-test">/)?.[0] || "";
+  assert.match(realtimeSection, /realtime-kicker[^>]*>[\s\S]*MARKET DATA/);
+  assert.equal((realtimeSection.match(/\bDM\b/g) || []).length, 1);
+  assert.match(realtimeSection, /来源：DM · \/bond\/market-data\/realtime-quote/);
+  assert.doesNotMatch(realtimeSection, /DM MARKET DATA|读取 DM|DM估值|DM 当前接口/);
   assert.match(app, /realtimeQuoteController\?\.setActive\(viewName === "realtime-quotes"\)/);
   assert.match(realtime, /document\.addEventListener\("visibilitychange"/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v1/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v2/);
   assert.match(realtime, /data-copy-quote-side/);
   assert.match(realtime, /continue|继续轮询/);
+  assert.doesNotMatch(realtime, /读取 DM|DM估值|<span>DM<\/span>|非债券或 DM 未匹配/);
+  assert.match(realtime, /每 \$\{this\.intervalMs \/ 1_000\} 秒自动刷新/);
+  assert.match(realtime, /title="数据来源：DM"><span>聚合<\/span>/);
   assert.match(realtime, /\{ id: "identity", label: "债券", width: 240,/);
   assert.match(endpoint, /bond\/market-data\/realtime-quote/);
   assert.match(endpoint, /brokerBreakdownAvailable: false/);

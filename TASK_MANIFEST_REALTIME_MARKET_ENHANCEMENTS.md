@@ -13,6 +13,7 @@
 - `realtime-quotes.js`：导入时过滤地区/分组标题，并在 DM 精确匹配失败后自动移除无效项。
 - `functions/api/dm/realtime-quotes.js`：纯数字代码也必须由 DM 基础资料确认，不再把未知编号强行保留为债券。
 - `realtime-quotes.js`、`styles.css`：债券列加宽，简称完整换行显示，不再被省略号截断；券码保持单行。
+- `index.html`、`realtime-quotes.js`：实时行情页仅在底部保留一次 `DM` 来源标识，其余标题、状态和逐行标签使用通用行情文案。
 
 ## Verification
 

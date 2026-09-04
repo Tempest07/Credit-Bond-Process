@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-bond-name-wrap";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-market-copy";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
