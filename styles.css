@@ -377,6 +377,7 @@ label[data-recognition-source="derived"]::after {
 .project-dm-assist-head.compact { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; }
 .project-dm-assist-head strong { color: var(--text); font-size: 12px; }
 .project-dm-assist-head span { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.input-panel .project-dm-assist .dm-suggestion-list { grid-template-columns: 1fr; }
 .project-dm-issue-group { display: grid; gap: 8px; }
 
 .issuer-list-panel { min-height: 610px; }

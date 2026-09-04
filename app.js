@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-result-ready-check";
+} from "./core.js?v=20260904-dm-candidates-left";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-result-ready-check";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-result-ready-check";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-result-ready-check";
+} from "./lifecycle.js?v=20260904-dm-candidates-left";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-dm-candidates-left";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-dm-candidates-left";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-result-ready-check";
+} from "./history-parser.js?v=20260904-dm-candidates-left";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-result-ready-check";
+} from "./protocol-transfer.js?v=20260904-dm-candidates-left";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-result-ready-check";
+} from "./protocol-transfer-templates.js?v=20260904-dm-candidates-left";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-result-ready-check";
+} from "./protocol-transfer-docx.js?v=20260904-dm-candidates-left";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-result-ready-check";
+} from "./reminders.js?v=20260904-dm-candidates-left";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-result-ready-check";
+} from "./secondary-inventory.js?v=20260904-dm-candidates-left";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-result-ready-check";
+} from "./trade-record-converter.js?v=20260904-dm-candidates-left";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-result-ready-check";
+} from "./trade-record-grid.js?v=20260904-dm-candidates-left";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-result-ready-check";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-result-ready-check";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-result-ready-check";
+} from "./trade-record-ledger.js?v=20260904-dm-candidates-left";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-dm-candidates-left";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-dm-candidates-left";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-result-ready-check";
+} from "./project-screenshot-ocr.js?v=20260904-dm-candidates-left";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-result-ready-check";
+} from "./project-screenshot-layout.js?v=20260904-dm-candidates-left";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-result-ready-check";
+} from "./project-screenshot-image.js?v=20260904-dm-candidates-left";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-result-ready-check";
+} from "./payment-receipts.js?v=20260904-dm-candidates-left";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-result-ready-check";
+} from "./issuer-search.js?v=20260904-dm-candidates-left";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-result-ready-check";
+} from "./state-history.js?v=20260904-dm-candidates-left";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";

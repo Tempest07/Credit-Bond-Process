@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-result-ready-check";
+const VERSION = "20260904-dm-candidates-left";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.7">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.7 · 2026-09-04 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.8">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.8 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -307,8 +307,10 @@ test("ships project guarantor entry, DM mapping and ledger detail display", asyn
 });
 
 test("shows selectable same-issuer DM candidates when the requested issue has no bond record", async () => {
-  const [app, dmLookup] = await Promise.all([
+  const [html, app, styles, dmLookup] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
     readFile(new URL("../functions/api/dm/lookup.js", import.meta.url), "utf8"),
   ]);
 
@@ -318,6 +320,10 @@ test("shows selectable same-issuer DM candidates when the requested issue has no
   assert.match(app, /<strong>同主体债券候选<\/strong>/);
   assert.match(app, /suggestions\.map\(renderProjectDmSuggestion\)/);
   assert.match(app, /data-project-dm-query=/);
+  assert.ok(html.indexOf('id="valuationAssist"') < html.indexOf('id="projectDmAssist"'));
+  assert.ok(html.indexOf('id="projectDmAssist"') < html.indexOf('id="warningBox"'));
+  assert.ok(html.indexOf('id="projectDmAssist"') < html.indexOf('class="panel fields-panel"'));
+  assert.match(styles, /\.input-panel \.project-dm-assist \.dm-suggestion-list\s*\{\s*grid-template-columns:\s*1fr;/);
 });
 
 test("keeps the desktop sidebar rail continuous and the empty detail state compact", async () => {
