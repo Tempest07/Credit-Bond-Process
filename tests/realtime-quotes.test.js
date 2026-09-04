@@ -101,3 +101,11 @@ test("copies OFR as TKN and BID as GVN", () => {
   assert.equal(__test__.buildQuoteCopyText(takenRow, "ofr"), "042680222.IB 26陕西建工CP005 TKN 5.5500");
   assert.equal(__test__.buildQuoteCopyText(givenRow, "bid"), "102682494.IB 26长电MTN004 GVN 2.0550");
 });
+
+test("clamps and restores persisted realtime column widths", () => {
+  assert.equal(__test__.clampColumnWidth("identity", 80), 120);
+  assert.equal(__test__.clampColumnWidth("identity", 360), 360);
+  assert.equal(__test__.clampColumnWidth("identity", 900), 720);
+  assert.deepEqual(__test__.normalizeColumnWidths({ identity: "360", bid: 20, unknown: 200 }), { identity: 360, bid: 64 });
+  assert.deepEqual(__test__.normalizeColumnWidths(null), {});
+});

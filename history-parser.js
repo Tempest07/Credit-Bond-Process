@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-result-aura";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-column-resize";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

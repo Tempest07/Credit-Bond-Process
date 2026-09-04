@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260904-result-aura";
+} from "./core.js?v=20260904-column-resize";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

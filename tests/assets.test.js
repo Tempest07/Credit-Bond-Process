@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-result-aura";
+const VERSION = "20260904-column-resize";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -103,6 +103,7 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.doesNotMatch(html, /<textarea[^>]*realtimeQuote/i);
   assert.match(html, /id="realtimeQuoteInterval"[\s\S]*15 秒[\s\S]*20 秒[\s\S]*30 秒/);
   assert.match(html, /id="realtimeQuoteColumnButton"/);
+  assert.match(html, /拖动表头右边缘调整列宽/);
   assert.match(html, /id="realtimeQuoteNotificationButton"/);
   assert.match(html, /id="realtimeQuoteUnreadCount"/);
   assert.match(html, /id="realtimeQuoteTableHead"/);
@@ -116,6 +117,9 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v1/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v2/);
   assert.match(realtime, /data-copy-quote-side/);
+  assert.match(realtime, /data-resize-realtime-column/);
+  assert.match(realtime, /setPointerCapture/);
+  assert.match(realtime, /widths:\s*normalizeColumnWidths\(saved\?\.widths\)/);
   assert.match(realtime, /side === "ofr" \? "TKN" : "GVN"/);
   assert.doesNotMatch(realtime, /side === "ofr" \? "taken" : "given"/);
   assert.match(realtime, /continue|继续轮询/);
@@ -129,8 +133,8 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(valuationEndpoint, /cbYtm/);
   assert.match(valuationEndpoint, /csYte/);
   assert.match(styles, /\.view\[data-view="realtime-quotes"\][^{]*\{[^}]*background:[^}]*#070a10/s);
-  assert.match(styles, /\.quote-identity-cell strong\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*word-break:\s*break-word;/s);
-  assert.doesNotMatch(styles, /\.quote-identity-cell strong\s*\{[^}]*text-overflow:\s*ellipsis;/s);
+  assert.match(styles, /\.quote-identity-cell strong\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+  assert.match(styles, /\.realtime-column-resizer\s*\{[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/s);
   assert.match(styles, /\.quote-identity-cell span\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 

@@ -10,9 +10,11 @@ const CHANGE_HIGHLIGHT_MS = 6_000;
 const SUPPORTED_INTERVALS = new Set([15_000, 20_000, 30_000]);
 const MAX_SECURITIES = 200;
 const MAX_CHANGE_HISTORY = 8;
+const MIN_COLUMN_WIDTH = 64;
+const MAX_COLUMN_WIDTH = 720;
 
 const COLUMN_DEFINITIONS = [
-  { id: "identity", label: "债券", width: 240, required: true, sortValue: (row) => row.shortName || row.query || "" },
+  { id: "identity", label: "债券", width: 240, minWidth: 120, required: true, sortValue: (row) => row.shortName || row.query || "" },
   { id: "tenor", label: "剩余期限", width: 78, sortValue: (row) => tenorYears(row.remainingTenor) },
   { id: "chinaBond", label: "中债估值", width: 128, sortValue: (row) => row.valuation?.chinaBond?.yield },
   { id: "chinaSecurities", label: "中证估值", width: 128, sortValue: (row) => row.valuation?.chinaSecurities?.yield },
@@ -101,6 +103,7 @@ class RealtimeQuoteController {
     this.requestSequence = 0;
     this.sortState = { columnId: "", direction: "" };
     this.draggedColumnId = "";
+    this.columnResize = null;
     this.liveChanges = new Map();
     this.unseenChanges = new Map();
     this.alertStates = new Map();
@@ -140,6 +143,10 @@ class RealtimeQuoteController {
       if (button) this.cycleSort(button.dataset.sortRealtimeColumn);
     });
     head?.addEventListener("dragstart", (event) => {
+      if (this.columnResize || event.target.closest("[data-resize-realtime-column]")) {
+        event.preventDefault();
+        return;
+      }
       const cell = event.target.closest("[data-realtime-column-id]");
       if (!cell) return;
       this.draggedColumnId = cell.dataset.realtimeColumnId;
@@ -161,6 +168,22 @@ class RealtimeQuoteController {
     head?.addEventListener("dragend", () => {
       this.draggedColumnId = "";
       head.querySelectorAll(".is-dragging").forEach((element) => element.classList.remove("is-dragging"));
+    });
+    head?.addEventListener("pointerdown", (event) => {
+      const handle = event.target.closest("[data-resize-realtime-column]");
+      if (handle && event.button === 0) this.startColumnResize(event, handle);
+    });
+    head?.addEventListener("pointermove", (event) => this.moveColumnResize(event));
+    head?.addEventListener("pointerup", (event) => this.finishColumnResize(event));
+    head?.addEventListener("pointercancel", (event) => this.finishColumnResize(event));
+    head?.addEventListener("keydown", (event) => {
+      const handle = event.target.closest("[data-resize-realtime-column]");
+      if (!handle || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const step = event.shiftKey ? 32 : 8;
+      this.setColumnWidth(handle.dataset.resizeRealtimeColumn, this.columnWidth(handle.dataset.resizeRealtimeColumn) + (direction * step));
     });
 
     this.root.querySelector("#realtimeQuoteTableBody")?.addEventListener("click", (event) => {
@@ -223,6 +246,7 @@ class RealtimeQuoteController {
     window.clearInterval(this.ticker);
     this.fetchController?.abort();
     this.valuationController?.abort();
+    this.root.classList.remove("is-resizing-columns");
   }
 
   openImportDialog() {
@@ -584,7 +608,63 @@ class RealtimeQuoteController {
   }
 
   visibleColumns() {
-    return this.columnState.order.filter((id) => this.columnState.visible.includes(id)).map((id) => COLUMN_BY_ID.get(id)).filter(Boolean);
+    return this.columnState.order.filter((id) => this.columnState.visible.includes(id)).map((id) => {
+      const column = COLUMN_BY_ID.get(id);
+      return column ? { ...column, width: this.columnWidth(id) } : null;
+    }).filter(Boolean);
+  }
+
+  columnWidth(columnId) {
+    return clampColumnWidth(columnId, this.columnState.widths?.[columnId] ?? COLUMN_BY_ID.get(columnId)?.width);
+  }
+
+  setColumnWidth(columnId, width, { persist = true } = {}) {
+    const nextWidth = clampColumnWidth(columnId, width);
+    if (!nextWidth) return 0;
+    this.columnState.widths = { ...(this.columnState.widths || {}), [columnId]: nextWidth };
+    const head = this.root.querySelector("#realtimeQuoteTableHead");
+    const cell = [...(head?.querySelectorAll("[data-realtime-column-id]") || [])].find((item) => item.dataset.realtimeColumnId === columnId);
+    if (cell) cell.style.width = `${nextWidth}px`;
+    const handle = cell?.querySelector("[data-resize-realtime-column]");
+    handle?.setAttribute("aria-valuenow", String(nextWidth));
+    const table = this.root.querySelector("#realtimeQuoteTable");
+    if (table) table.style.minWidth = `${this.visibleColumns().reduce((sum, column) => sum + column.width, 0) + 42}px`;
+    if (persist) saveColumnState(this.columnState);
+    return nextWidth;
+  }
+
+  startColumnResize(event, handle) {
+    const columnId = handle.dataset.resizeRealtimeColumn;
+    const cell = handle.closest("[data-realtime-column-id]");
+    if (!columnId || !cell || !COLUMN_BY_ID.has(columnId)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    cell.draggable = false;
+    cell.classList.add("is-resizing");
+    this.root.classList.add("is-resizing-columns");
+    this.columnResize = { columnId, pointerId: event.pointerId, startX: event.clientX, startWidth: this.columnWidth(columnId), cell, handle };
+    try { handle.setPointerCapture(event.pointerId); } catch { /* Pointer capture is an enhancement. */ }
+  }
+
+  moveColumnResize(event) {
+    const resize = this.columnResize;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    this.setColumnWidth(resize.columnId, resize.startWidth + event.clientX - resize.startX, { persist: false });
+  }
+
+  finishColumnResize(event) {
+    const resize = this.columnResize;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    try {
+      if (resize.handle.hasPointerCapture?.(event.pointerId)) resize.handle.releasePointerCapture(event.pointerId);
+    } catch { /* The pointer may already be released. */ }
+    resize.cell.draggable = true;
+    resize.cell.classList.remove("is-resizing");
+    this.root.classList.remove("is-resizing-columns");
+    this.columnResize = null;
+    saveColumnState(this.columnState);
   }
 
   setColumnVisible(columnId, visible) {
@@ -779,7 +859,9 @@ class RealtimeQuoteController {
 function renderColumnHeader(column, sortState) {
   const active = sortState.columnId === column.id;
   const ariaSort = active ? (sortState.direction === "asc" ? "ascending" : "descending") : "none";
-  return `<th draggable="true" data-realtime-column-id="${escapeAttribute(column.id)}" data-column="${escapeAttribute(column.id)}" data-tone="${escapeAttribute(column.tone || "")}" style="width:${column.width}px" aria-sort="${ariaSort}"><button type="button" data-sort-realtime-column="${escapeAttribute(column.id)}"><span>${escapeHtml(column.label)}</span><i aria-hidden="true">${active ? (sortState.direction === "asc" ? "↑" : "↓") : "↕"}</i></button><b aria-hidden="true">⋮⋮</b></th>`;
+  const minWidth = column.minWidth || MIN_COLUMN_WIDTH;
+  const maxWidth = column.maxWidth || MAX_COLUMN_WIDTH;
+  return `<th draggable="true" data-realtime-column-id="${escapeAttribute(column.id)}" data-column="${escapeAttribute(column.id)}" data-tone="${escapeAttribute(column.tone || "")}" style="width:${column.width}px" aria-sort="${ariaSort}"><button type="button" data-sort-realtime-column="${escapeAttribute(column.id)}"><span>${escapeHtml(column.label)}</span><i aria-hidden="true">${active ? (sortState.direction === "asc" ? "↑" : "↓") : "↕"}</i></button><b aria-hidden="true">⋮⋮</b><span class="realtime-column-resizer" data-resize-realtime-column="${escapeAttribute(column.id)}" role="separator" aria-orientation="vertical" aria-label="调整${escapeAttribute(column.label)}列宽" aria-valuemin="${minWidth}" aria-valuemax="${maxWidth}" aria-valuenow="${column.width}" tabindex="0"></span></th>`;
 }
 
 function renderQuoteRow(row, columns, controller) {
@@ -796,7 +878,8 @@ function renderQuoteCell(columnId, row, controller) {
   const watchItem = controller.watchItemForRow(row) || controller.watchlist.find((item) => item.query === row.query);
   if (columnId === "identity") {
     const secondary = row.placeholderStatus ? row.placeholderReason : (row.securityId || row.query || "--");
-    return `<td data-column="identity" class="quote-identity-cell"><strong>${escapeHtml(row.shortName || row.query || "未命名")}</strong><span>${escapeHtml(secondary)}</span></td>`;
+    const name = row.shortName || row.query || "未命名";
+    return `<td data-column="identity" class="quote-identity-cell"><strong title="${escapeAttribute(name)}">${escapeHtml(name)}</strong><span>${escapeHtml(secondary)}</span></td>`;
   }
   if (columnId === "tenor") return `<td data-column="tenor" class="quote-tenor-cell">${escapeHtml(row.remainingTenor || "--")}</td>`;
   if (columnId === "chinaBond") return `<td data-column="chinaBond" class="quote-valuation-cell china-bond-valuation">${renderValuation(row.valuation?.chinaBond)}</td>`;
@@ -947,7 +1030,7 @@ function normalizeSavedState(value) {
 }
 
 function defaultColumnState() {
-  return { order: [...DEFAULT_COLUMN_ORDER], visible: [...DEFAULT_COLUMN_ORDER] };
+  return { order: [...DEFAULT_COLUMN_ORDER], visible: [...DEFAULT_COLUMN_ORDER], widths: {} };
 }
 
 function loadColumnState() {
@@ -955,10 +1038,28 @@ function loadColumnState() {
     const saved = JSON.parse(localStorage.getItem(COLUMN_STORAGE_KEY));
     const order = unique([...(Array.isArray(saved?.order) ? saved.order : []), ...DEFAULT_COLUMN_ORDER]).filter((id) => COLUMN_BY_ID.has(id));
     const requestedVisible = new Set(Array.isArray(saved?.visible) ? saved.visible : DEFAULT_COLUMN_ORDER);
-    return { order, visible: order.filter((id) => requestedVisible.has(id) || COLUMN_BY_ID.get(id)?.required) };
+    return { order, visible: order.filter((id) => requestedVisible.has(id) || COLUMN_BY_ID.get(id)?.required), widths: normalizeColumnWidths(saved?.widths) };
   } catch {
     return defaultColumnState();
   }
+}
+
+function clampColumnWidth(columnId, value) {
+  const column = COLUMN_BY_ID.get(columnId);
+  if (!column) return 0;
+  const numeric = Number(value);
+  const width = Number.isFinite(numeric) ? numeric : column.width;
+  return Math.round(Math.min(column.maxWidth || MAX_COLUMN_WIDTH, Math.max(column.minWidth || MIN_COLUMN_WIDTH, width)));
+}
+
+function normalizeColumnWidths(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const widths = {};
+  for (const column of COLUMN_DEFINITIONS) {
+    if (!Object.prototype.hasOwnProperty.call(value, column.id)) continue;
+    widths[column.id] = clampColumnWidth(column.id, value[column.id]);
+  }
+  return widths;
 }
 
 function saveColumnState(state) {
@@ -1172,10 +1273,12 @@ function escapeAttribute(value = "") {
 export const __test__ = {
   buildAlertText,
   buildQuoteCopyText,
+  clampColumnWidth,
   describeQuoteChange,
   detectIntentTarget,
   isObviousNonBondImportCandidate,
   mergeWatchItems,
+  normalizeColumnWidths,
   parseRealtimeQuoteImportEntries,
   pruneUnresolvedWatchItems,
   targetIsMet,

@@ -561,21 +561,27 @@ label[data-recognition-source="derived"]::after {
 .realtime-quote-table[hidden] { display: none; }
 .realtime-quote-table th { position: sticky; z-index: 2; top: 0; height: 38px; padding: 0 7px; border-right: 1px solid var(--rt-line-soft); border-bottom: 1px solid var(--rt-line); color: #738095; background: #0e141d; text-align: right; font-size: 9px; font-weight: 800; letter-spacing: .035em; white-space: nowrap; cursor: grab; }
 .realtime-quote-table th.is-dragging { opacity: .35; }
+.realtime-quote-table th.is-resizing { z-index: 4; }
 .realtime-quote-table th[data-column="identity"], .realtime-quote-table th[data-column="source"] { text-align: left; }
 .realtime-quote-table th[data-tone="bid"] { color: #b97948; }
 .realtime-quote-table th[data-tone="ofr"] { color: #578ec8; }
-.realtime-quote-table th > button { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; width: calc(100% - 12px); height: 100%; padding: 0; border: 0; color: inherit; background: transparent; text-align: inherit; font: inherit; letter-spacing: inherit; }
+.realtime-quote-table th > button { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; width: calc(100% - 18px); height: 100%; padding: 0; border: 0; color: inherit; background: transparent; text-align: inherit; font: inherit; letter-spacing: inherit; }
 .realtime-quote-table th[data-column="identity"] > button, .realtime-quote-table th[data-column="source"] > button { justify-content: flex-start; }
 .realtime-quote-table th > button i { color: #465469; font-style: normal; font-size: 8px; }
 .realtime-quote-table th[aria-sort="ascending"] > button i, .realtime-quote-table th[aria-sort="descending"] > button i { color: #5eb9ae; }
-.realtime-quote-table th > b { float: right; color: #384456; font-size: 7px; letter-spacing: -2px; }
+.realtime-quote-table th > b { position: absolute; top: 50%; right: 10px; color: #384456; font-size: 7px; letter-spacing: -2px; pointer-events: none; transform: translateY(-50%); }
+.realtime-column-resizer { position: absolute; z-index: 5; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; touch-action: none; }
+.realtime-column-resizer::after { content: ""; position: absolute; top: 6px; right: 4px; bottom: 6px; width: 1px; opacity: 0; background: #31d7c1; box-shadow: 0 0 8px rgba(49,215,193,.55); transition: opacity .12s ease; }
+.realtime-column-resizer:hover::after, .realtime-column-resizer:focus-visible::after, .realtime-quote-table th.is-resizing .realtime-column-resizer::after { opacity: 1; }
+.realtime-column-resizer:focus-visible { outline: 0; }
+.realtime-quotes-view.is-resizing-columns, .realtime-quotes-view.is-resizing-columns * { cursor: col-resize !important; user-select: none !important; }
 .realtime-quote-table th.quote-action-head { width: 42px; cursor: default; }
 .realtime-quote-table td { height: 58px; padding: 7px 12px; border-right: 1px solid var(--rt-line-soft); border-bottom: 1px solid var(--rt-line-soft); color: #9facbd; background: rgba(10,14,21,.84); text-align: right; font-family: "Cascadia Mono", Consolas, "Microsoft YaHei", monospace; font-size: 11px; line-height: 1.25; vertical-align: middle; }
 .realtime-quote-table tbody tr:nth-child(even) td { background: rgba(13,18,27,.9); }
 .realtime-quote-table tbody tr:hover td { background: #131b27; }
 .realtime-quote-table td[data-column="identity"], .realtime-quote-table td[data-column="source"] { text-align: left; }
 .quote-identity-cell strong, .quote-identity-cell span, .quote-source-cell span, .quote-source-cell small, .quote-price-cell strong, .quote-price-cell span, .quote-time-cell strong, .quote-time-cell span, .quote-valuation-cell strong, .quote-valuation-cell span { display: block; min-width: 0; }
-.quote-identity-cell strong { color: #e4ebf4; white-space: normal; overflow-wrap: anywhere; word-break: break-word; font-family: Inter, "Microsoft YaHei", sans-serif; font-size: 12px; font-weight: 760; line-height: 1.35; }
+.quote-identity-cell strong { overflow: hidden; color: #e4ebf4; text-overflow: ellipsis; white-space: nowrap; font-family: Inter, "Microsoft YaHei", sans-serif; font-size: 12px; font-weight: 760; line-height: 1.35; }
 .quote-identity-cell span { margin-top: 4px; color: #68768a; white-space: nowrap; font-size: 9px; letter-spacing: .025em; }
 .quote-tenor-cell { color: #b5c0ce !important; }
 .quote-source-cell span { display: inline-grid; place-items: center; min-width: 28px; height: 18px; border: 1px solid #1c706b; border-radius: 3px; color: #67d9c9; background: rgba(16,116,106,.12); text-align: center; font-size: 9px; font-weight: 900; }

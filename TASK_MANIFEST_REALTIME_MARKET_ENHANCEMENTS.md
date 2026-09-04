@@ -15,10 +15,12 @@
 - `realtime-quotes.js`、`styles.css`：债券列加宽，简称完整换行显示，不再被省略号截断；券码保持单行。
 - `index.html`、`realtime-quotes.js`：实时行情页仅在底部保留一次 `DM` 来源标识，其余标题、状态和逐行标签使用通用行情文案。
 - `realtime-quotes.js`：点击 OFR/BID 复制的交易方向统一使用大写台面缩写 `TKN` / `GVN`。
+- `realtime-quotes.js`、`styles.css`：券名恢复单行显示；表头右边缘支持拖动调整列宽，宽度持久化并可随列设置恢复默认。
 
 ## Verification
 
-- `npm test`：487 passed，0 failed；实时行情与页面资产针对性测试 47 passed，0 failed。
+- `npm test`：488 passed，0 failed；实时行情与页面资产针对性测试 48 passed，0 failed。
+- 浏览器交互：债券列由 240px 拖至 423px 后券名保持单行，刷新后宽度仍为 423px。
 - Wrangler Pages 本地预览：桌面端与 390×844 移动端已检查，控制台无错误。
 - 本机未配置 `INNO_APP_KEY` / `INNO_APP_SECRET`，真实 DM 估值与行情仍需在生产环境验收。
 
