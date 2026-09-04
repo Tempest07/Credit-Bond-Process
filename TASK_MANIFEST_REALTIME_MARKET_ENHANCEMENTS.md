@@ -11,6 +11,7 @@
 - `index.html`、`styles.css`：可配置深色行情表、到价提醒栏及变化闪烁样式。
 - `styles.css`：将状态圆点、`LIVE` 与轮询说明收拢为一组，避免宽容器把 `LIVE` 推到标题区右侧。
 - `realtime-quotes.js`：导入时过滤地区/分组标题，并在 DM 精确匹配失败后自动移除无效项。
+- `functions/api/dm/realtime-quotes.js`：纯数字代码也必须由 DM 基础资料确认，不再把未知编号强行保留为债券。
 
 ## Verification
 
