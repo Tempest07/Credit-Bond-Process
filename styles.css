@@ -575,8 +575,8 @@ label[data-recognition-source="derived"]::after {
 .realtime-quote-table tbody tr:hover td { background: #131b27; }
 .realtime-quote-table td[data-column="identity"], .realtime-quote-table td[data-column="source"] { text-align: left; }
 .quote-identity-cell strong, .quote-identity-cell span, .quote-source-cell span, .quote-source-cell small, .quote-price-cell strong, .quote-price-cell span, .quote-time-cell strong, .quote-time-cell span, .quote-valuation-cell strong, .quote-valuation-cell span { display: block; min-width: 0; }
-.quote-identity-cell strong { overflow: hidden; color: #e4ebf4; text-overflow: ellipsis; white-space: nowrap; font-family: Inter, "Microsoft YaHei", sans-serif; font-size: 12px; font-weight: 760; }
-.quote-identity-cell span { margin-top: 4px; color: #68768a; font-size: 9px; letter-spacing: .025em; }
+.quote-identity-cell strong { color: #e4ebf4; white-space: normal; overflow-wrap: anywhere; word-break: break-word; font-family: Inter, "Microsoft YaHei", sans-serif; font-size: 12px; font-weight: 760; line-height: 1.35; }
+.quote-identity-cell span { margin-top: 4px; color: #68768a; white-space: nowrap; font-size: 9px; letter-spacing: .025em; }
 .quote-tenor-cell { color: #b5c0ce !important; }
 .quote-source-cell span { display: inline-grid; place-items: center; min-width: 28px; height: 18px; border: 1px solid #1c706b; border-radius: 3px; color: #67d9c9; background: rgba(16,116,106,.12); text-align: center; font-size: 9px; font-weight: 900; }
 .quote-source-cell small { margin-top: 4px; color: #68768a; font-family: Inter, "Microsoft YaHei", sans-serif; font-size: 8px; }

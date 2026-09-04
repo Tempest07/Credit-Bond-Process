@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-result-anchor";
+const VERSION = "20260904-bond-name-wrap";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -106,12 +106,16 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v2/);
   assert.match(realtime, /data-copy-quote-side/);
   assert.match(realtime, /continue|继续轮询/);
+  assert.match(realtime, /\{ id: "identity", label: "债券", width: 240,/);
   assert.match(endpoint, /bond\/market-data\/realtime-quote/);
   assert.match(endpoint, /brokerBreakdownAvailable: false/);
   assert.match(valuationEndpoint, /bond\/market-data\/date/);
   assert.match(valuationEndpoint, /cbYtm/);
   assert.match(valuationEndpoint, /csYte/);
   assert.match(styles, /\.view\[data-view="realtime-quotes"\][^{]*\{[^}]*background:[^}]*#070a10/s);
+  assert.match(styles, /\.quote-identity-cell strong\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;[^}]*word-break:\s*break-word;/s);
+  assert.doesNotMatch(styles, /\.quote-identity-cell strong\s*\{[^}]*text-overflow:\s*ellipsis;/s);
+  assert.match(styles, /\.quote-identity-cell span\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 
 test("starts the application only after module constants are initialized", async () => {

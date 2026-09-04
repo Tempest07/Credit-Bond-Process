@@ -12,7 +12,7 @@ const MAX_SECURITIES = 200;
 const MAX_CHANGE_HISTORY = 8;
 
 const COLUMN_DEFINITIONS = [
-  { id: "identity", label: "债券", width: 190, required: true, sortValue: (row) => row.shortName || row.query || "" },
+  { id: "identity", label: "债券", width: 240, required: true, sortValue: (row) => row.shortName || row.query || "" },
   { id: "tenor", label: "剩余期限", width: 78, sortValue: (row) => tenorYears(row.remainingTenor) },
   { id: "chinaBond", label: "中债估值", width: 128, sortValue: (row) => row.valuation?.chinaBond?.yield },
   { id: "chinaSecurities", label: "中证估值", width: 128, sortValue: (row) => row.valuation?.chinaSecurities?.yield },
