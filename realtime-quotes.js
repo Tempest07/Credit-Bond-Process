@@ -823,7 +823,7 @@ function renderPriceCell(row, side, change) {
   const quote = row[side] || {};
   const hasValue = Number.isFinite(quote.yield) || Number.isFinite(quote.netPrice);
   const changeClass = change ? ` quote-change-${change.quality}${change.count ? " quote-cell-unread" : ""}` : "";
-  const action = side === "ofr" ? "taken" : "given";
+  const action = side === "ofr" ? "TKN" : "GVN";
   const content = `${renderPrice(quote)}${renderChangeIndicator(change)}`;
   return `<td data-column="${side}" class="quote-price-cell ${side}-price${changeClass}"${change ? ` title="${escapeAttribute(changeTitle(change))}"` : ""}>${hasValue && row.securityId ? `<button type="button" data-copy-quote-side="${side}" data-copy-security-id="${escapeAttribute(row.securityId)}" aria-label="复制 ${escapeAttribute(action)} 报价">${content}</button>` : content}</td>`;
 }
@@ -924,7 +924,7 @@ function buildQuoteCopyText(row, side) {
   if (!row || !["bid", "ofr"].includes(side)) return "";
   const quote = row[side] || {};
   const value = Number.isFinite(quote.yield) ? formatDeskNumber(quote.yield) : Number.isFinite(quote.netPrice) ? `净价${formatDeskNumber(quote.netPrice)}` : "";
-  return value ? [row.securityId, row.shortName, side === "ofr" ? "taken" : "given", value].filter(Boolean).join(" ") : "";
+  return value ? [row.securityId, row.shortName, side === "ofr" ? "TKN" : "GVN", value].filter(Boolean).join(" ") : "";
 }
 
 function formatDeskNumber(value) {

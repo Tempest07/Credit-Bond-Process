@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-market-copy";
+const VERSION = "20260904-quote-abbrev";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -110,6 +110,8 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v1/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v2/);
   assert.match(realtime, /data-copy-quote-side/);
+  assert.match(realtime, /side === "ofr" \? "TKN" : "GVN"/);
+  assert.doesNotMatch(realtime, /side === "ofr" \? "taken" : "given"/);
   assert.match(realtime, /continue|继续轮询/);
   assert.doesNotMatch(realtime, /读取 DM|DM估值|<span>DM<\/span>|非债券或 DM 未匹配/);
   assert.match(realtime, /每 \$\{this\.intervalMs \/ 1_000\} 秒自动刷新/);

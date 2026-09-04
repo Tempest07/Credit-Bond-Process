@@ -87,13 +87,17 @@ test("classifies quote improvements with side-aware bond yield logic", () => {
   assert.equal(__test__.describeQuoteChange({ netPrice: 100 }, { netPrice: 99.9 }, "ofr").quality, "improved");
 });
 
-test("copies OFR as taken and BID as given", () => {
-  const row = {
-    securityId: "102482906.IB",
-    shortName: "24山东机场MTN001",
-    bid: { yield: 2.31 },
-    ofr: { yield: 2.32 },
+test("copies OFR as TKN and BID as GVN", () => {
+  const takenRow = {
+    securityId: "042680222.IB",
+    shortName: "26陕西建工CP005",
+    ofr: { yield: 5.55 },
   };
-  assert.equal(__test__.buildQuoteCopyText(row, "ofr"), "102482906.IB 24山东机场MTN001 taken 2.3200");
-  assert.equal(__test__.buildQuoteCopyText(row, "bid"), "102482906.IB 24山东机场MTN001 given 2.3100");
+  const givenRow = {
+    securityId: "102682494.IB",
+    shortName: "26长电MTN004",
+    bid: { yield: 2.055 },
+  };
+  assert.equal(__test__.buildQuoteCopyText(takenRow, "ofr"), "042680222.IB 26陕西建工CP005 TKN 5.5500");
+  assert.equal(__test__.buildQuoteCopyText(givenRow, "bid"), "102682494.IB 26长电MTN004 GVN 2.0550");
 });
