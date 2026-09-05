@@ -10704,6 +10704,11 @@ function saveProjectRecordNow(record) {
 
 function setProjectActionStatus(status) {
   const draft = readProjectForm();
+  const actions = projectActionAvailability(draft);
+  if ((status === "未投标" && !actions.canWithdraw) || (status === "已结束" && !actions.canTerminate)) {
+    showToast("当前项目状态不支持此操作。");
+    return;
+  }
   draft.status = status;
   if (["未投标", "已投标", "已结束"].includes(status)) {
     draft.resultConfirmed = false;
@@ -10747,16 +10752,25 @@ function changeProjectBidFinalization(reopen) {
     : "最终标位已确认，项目已移至已投标结束，等待录入结果。");
 }
 
+function projectActionAvailability(projectValue) {
+  const status = projectValue.status || "未投标";
+  const hasResult = Boolean(projectValue.resultConfirmed || ["部分中标", "已中标", "未中标", "待缴款", "已缴款"].includes(status));
+  return {
+    hasResult,
+    canWithdraw: !hasResult && ["已投标", "已结束"].includes(status),
+    canTerminate: !hasResult && ["未投标", "已投标", "已投标结束"].includes(status),
+  };
+}
+
 function updateProjectActionButtons(projectOrStatus) {
   const projectValue = typeof projectOrStatus === "string"
     ? { status: projectOrStatus, bidSubmissions: [] }
     : projectOrStatus || {};
   const status = projectValue.status || "未投标";
   const bidCount = projectValue.bidSubmissions?.length || 0;
-  const resultStatuses = new Set(["部分中标", "已中标", "未中标", "待缴款", "已缴款"]);
-  const hasResult = projectValue.resultConfirmed || resultStatuses.has(status);
-  $("#markUnbidButton").disabled = status === "未投标" || status === "已投标结束" || hasResult;
-  $("#terminateProjectButton").disabled = status !== "未投标";
+  const { hasResult, canWithdraw, canTerminate } = projectActionAvailability(projectValue);
+  $("#markUnbidButton").disabled = !canWithdraw;
+  $("#terminateProjectButton").disabled = !canTerminate;
   $("#markBidButton").disabled = hasResult || !["未投标", "已投标"].includes(status);
   $("#markBidButton").textContent = `提交第 ${bidCount + 1} 次标`;
   $("#finalizeBidButton").hidden = status !== "已投标" || hasResult;
