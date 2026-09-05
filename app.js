@@ -4667,6 +4667,10 @@ function bindLedger() {
     $("#projectDateFilter").value = localDate(new Date());
     renderProjectList();
   });
+  $("#projectClearDateFilterButton").addEventListener("click", () => {
+    $("#projectDateFilter").value = "";
+    renderProjectList();
+  });
   $("#previewMailButton").addEventListener("click", () => callMailer("preview"));
   $("#sendMailButton").addEventListener("click", () => callMailer("send"));
   $("#collapseMailOutputButton").addEventListener("click", hideMailOutput);
