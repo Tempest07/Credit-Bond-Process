@@ -1751,6 +1751,7 @@ function openLedgerProject(projectId, options = {}) {
 }
 
 function closeLedgerProjectDetail({ restoreFocus = true } = {}) {
+  flushProjectDraftToLocal();
   setProjectWorkspaceOpen(false);
   navigateLedgerMobilePane("list", { replace: true, focusSelected: restoreFocus });
 }
@@ -1773,6 +1774,8 @@ function setProjectWorkspaceOpen(open) {
 function bindWorkspaceChrome() {
   const tools = $("#workspaceTools");
   $("#closeProjectWorkspaceButton")?.addEventListener("click", closeLedgerProjectDetail);
+  // Run before the clicked control opens another project or changes the view.
+  document.addEventListener("click", handleProjectWorkspaceOutsideClick, true);
   document.addEventListener("click", (event) => {
     if (tools?.open && !tools.contains(event.target)) tools.open = false;
   });
@@ -1793,6 +1796,14 @@ function bindWorkspaceChrome() {
       if ($("#projectWorkspace")?.dataset.open === "true") closeLedgerProjectDetail();
     }
   });
+}
+
+function handleProjectWorkspaceOutsideClick(event) {
+  const workspace = $("#projectWorkspace");
+  if (workspace?.dataset.open !== "true" || workspace.contains(event.target)) return;
+  // Date pickers and other project dialogs can be mounted outside the workspace.
+  if (event.target.closest?.('[role="dialog"], .date-picker-backdrop')) return;
+  closeLedgerProjectDetail({ restoreFocus: false });
 }
 
 function restoreLedgerMobileViewport() {
