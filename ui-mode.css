@@ -1,0 +1,21 @@
+.ui-beta-control{display:inline-flex;align-items:center;gap:8px;flex-shrink:0;color:#555;font:500 12px/1.4 Arial,"Microsoft YaHei",sans-serif;white-space:nowrap}
+.ui-beta-switch{position:relative;display:inline-block;width:34px;min-width:34px;height:20px;padding:0;border:1px solid #bbb;border-radius:20px;background:#ddd;cursor:pointer;transition:background-color .18s,border-color .18s}
+.ui-beta-switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .18s}
+.ui-beta-switch[aria-checked=true]{border-color:#111;background:#111}
+.ui-beta-switch[aria-checked=true]::after{transform:translateX(14px)}
+.ui-beta-switch:focus-visible{outline:2px solid #6875d9;outline-offset:3px}
+html[data-ui=legacy] :is(.workspace-tools,.ledger-search,.project-ledger-toolbar,.project-workspace-toolbar,.reminder-summary-breakdown){display:none!important}
+html[data-ui=legacy] .topbar>.top-actions{flex-wrap:wrap;justify-content:flex-end}
+html[data-ui=legacy] .project-ledger-title h2{margin:0}
+html[data-ui=legacy] .project-list-date-tools{grid-template-columns:minmax(0,1fr) auto auto}
+html[data-ui=beta] .ui-beta-control{order:4}
+html[data-ui=beta] .sidebar.site-header{gap:20px}
+@media(max-width:1180px){html[data-ui=beta] .ui-beta-control{order:1}}
+@media(max-width:760px){
+  html[data-ui=legacy] .topbar>.ui-beta-control{margin-left:auto}
+  html[data-ui=beta] .sidebar.site-header{gap:10px}
+  .ui-beta-control{font-size:11px;gap:6px}
+}
+html.android-app .topbar>.ui-beta-control{display:inline-flex;margin-left:auto}
+html.android-app[data-ui=beta] .topbar{flex-wrap:wrap}
+@media(prefers-reduced-motion:reduce){.ui-beta-switch,.ui-beta-switch::after{transition:none}}

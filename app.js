@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-dm-candidates-left";
+} from "./core.js?v=20260905-ui-beta-50120";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-dm-candidates-left";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-dm-candidates-left";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-dm-candidates-left";
+} from "./lifecycle.js?v=20260905-ui-beta-50120";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260905-ui-beta-50120";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260905-ui-beta-50120";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-dm-candidates-left";
+} from "./history-parser.js?v=20260905-ui-beta-50120";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-dm-candidates-left";
+} from "./protocol-transfer.js?v=20260905-ui-beta-50120";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-dm-candidates-left";
+} from "./protocol-transfer-templates.js?v=20260905-ui-beta-50120";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-dm-candidates-left";
+} from "./protocol-transfer-docx.js?v=20260905-ui-beta-50120";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-dm-candidates-left";
+} from "./reminders.js?v=20260905-ui-beta-50120";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-dm-candidates-left";
+} from "./secondary-inventory.js?v=20260905-ui-beta-50120";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-dm-candidates-left";
+} from "./trade-record-converter.js?v=20260905-ui-beta-50120";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-dm-candidates-left";
+} from "./trade-record-grid.js?v=20260905-ui-beta-50120";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-dm-candidates-left";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-dm-candidates-left";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-dm-candidates-left";
+} from "./trade-record-ledger.js?v=20260905-ui-beta-50120";
+import { initializeDatePickers } from "./date-picker.js?v=20260905-ui-beta-50120";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260905-ui-beta-50120";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-dm-candidates-left";
+} from "./project-screenshot-ocr.js?v=20260905-ui-beta-50120";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-dm-candidates-left";
+} from "./project-screenshot-layout.js?v=20260905-ui-beta-50120";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-dm-candidates-left";
+} from "./project-screenshot-image.js?v=20260905-ui-beta-50120";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-dm-candidates-left";
+} from "./payment-receipts.js?v=20260905-ui-beta-50120";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-dm-candidates-left";
+} from "./issuer-search.js?v=20260905-ui-beta-50120";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-dm-candidates-left";
+} from "./state-history.js?v=20260905-ui-beta-50120";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -379,8 +379,8 @@ let liquidMotionObserver = null;
 let liquidResizeObserver = null;
 
 const LIQUID_TRACK_CONFIGS = [
-  { container: ".site-header .nav", active: ".nav-item.active" },
-  { container: ".secondary-workspace-nav", active: ".secondary-workspace-tab.active" },
+  { container: ".sidebar > .nav", active: ".nav-item.active", betaOnly: true },
+  { container: ".secondary-workspace-nav", active: ".secondary-workspace-tab.active", betaOnly: true },
   { container: "#ledgerMobileNav", active: ".ledger-mobile-tab[aria-pressed=\"true\"]" },
   { container: ".ledger-filter-tabs", active: ".ledger-filter-chip.active" },
   { container: ".reminder-filter-tabs", active: ".reminder-filter.active" },
@@ -518,7 +518,7 @@ function initializeAndroidAppShell() {
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.viewTarget === "ledger") {
+      if (button.dataset.viewTarget === "ledger" && (isUiBeta() || isCompactLedger())) {
         closeLedgerProjectDetail();
         return;
       }
@@ -563,8 +563,14 @@ function scheduleLiquidMotionSync() {
   });
 }
 
-function syncLiquidTrack({ container: containerSelector, active: activeSelector }) {
+function syncLiquidTrack({ container: containerSelector, active: activeSelector, betaOnly = false }) {
   const container = $(containerSelector);
+  if (betaOnly && !isUiBeta()) {
+    container?.classList.remove("liquid-track", "liquid-ready", "is-liquid-moving");
+    if (container) delete container.dataset.liquidPosition;
+    return;
+  }
+  container?.classList.add("liquid-track");
   const active = container?.querySelector(activeSelector);
   if (!container || !active || !active.offsetWidth || !active.offsetHeight) {
     container?.classList.remove("liquid-ready", "is-liquid-moving");
@@ -1704,7 +1710,7 @@ function isCompactLedger() {
 }
 
 function ledgerMobilePaneFromRoute(route = {}) {
-  if (route.target === "mail") return "list";
+  if (route.target === "mail") return isUiBeta() ? "list" : "overview";
   if (LEDGER_MOBILE_PANES.has(route.pane)) return route.pane;
   return route.target ? "detail" : "list";
 }
@@ -1758,9 +1764,18 @@ function closeLedgerProjectDetail({ restoreFocus = true } = {}) {
   navigateLedgerMobilePane("list", { replace: true, focusSelected: restoreFocus });
 }
 
+function isUiBeta() {
+  return document.documentElement.dataset.ui === "beta";
+}
+
 function setProjectWorkspaceOpen(open) {
   const workspace = $("#projectWorkspace");
   if (!workspace) return;
+  if (!isUiBeta()) {
+    workspace.dataset.open = "false";
+    workspace.inert = isCompactLedger() && ledgerMobilePane !== "detail";
+    return;
+  }
   const wasOpen = workspace.dataset.open === "true";
   workspace.dataset.open = String(open);
   workspace.inert = !open;
@@ -1773,8 +1788,20 @@ function setProjectWorkspaceOpen(open) {
   }
 }
 
+function handleUiModeChange(event) {
+  const viewName = $(".view.active")?.dataset.view || "ledger";
+  // A retained selection is not an instruction to open the detail pane.
+  setProjectWorkspaceOpen(event.detail.enabled && viewName === "ledger" && ledgerMobilePane === "detail" && Boolean(selectedProjectId));
+  syncLedgerMobilePane();
+  switchView(viewName);
+  renderProtocolTransferList();
+  scheduleLiquidMotionSync();
+  requestAnimationFrame(positionResultEntryPanel);
+}
+
 function bindWorkspaceChrome() {
   const tools = $("#workspaceTools");
+  document.addEventListener("bond-ui-change", handleUiModeChange);
   $("#closeProjectWorkspaceButton")?.addEventListener("click", closeLedgerProjectDetail);
   $("#projectWorkspace")?.addEventListener("transitionend", (event) => {
     if (event.target.id === "projectWorkspace" && event.propertyName === "transform") positionResultEntryPanel();
@@ -1804,10 +1831,11 @@ function bindWorkspaceChrome() {
 }
 
 function handleProjectWorkspaceOutsideClick(event) {
+  if (!isUiBeta()) return;
   const workspace = $("#projectWorkspace");
   if (workspace?.dataset.open !== "true" || workspace.contains(event.target)) return;
   // Date pickers and other project dialogs can be mounted outside the workspace.
-  if (event.target.closest?.('[role="dialog"], .date-picker-backdrop')) return;
+  if (event.target.closest?.('[role="dialog"], .date-picker-backdrop, #uiBetaControl')) return;
   closeLedgerProjectDetail({ restoreFocus: false });
 }
 
@@ -1860,7 +1888,7 @@ function syncLedgerMobilePane() {
   setLedgerMobileSectionVisibility(ledgerView.querySelector(".project-list-panel"), pane === "list", compact);
   setLedgerMobileSectionVisibility(ledgerView.querySelector(".project-detail-panel"), pane === "detail", compact);
   const workspace = $("#projectWorkspace");
-  if (workspace) workspace.inert = workspace.dataset.open !== "true" || (compact && pane !== "detail");
+  if (workspace) workspace.inert = (isUiBeta() && workspace.dataset.open !== "true") || (compact && pane !== "detail");
 
   const selected = (state.projects || []).find((item) => item.id === selectedProjectId);
   const detailTitle = $("#mobileProjectDetailTitle");
@@ -1933,9 +1961,9 @@ function switchView(viewName, options = {}) {
   });
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   $(".main")?.classList.toggle("realtime-mode", viewName === "realtime-quotes");
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#ffffff");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isUiBeta() ? "#ffffff" : viewName === "realtime-quotes" ? "#070a10" : "#f4f6fb");
   realtimeQuoteController?.setActive(viewName === "realtime-quotes");
-  if (button) $("#pageTitle").textContent = button.dataset.viewLabel || button.textContent.trim();
+  if (button) $("#pageTitle").textContent = (isUiBeta() && button.dataset.viewLabel) || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
   if (viewName === "payment-receipts") renderPaymentReceiptArchive();
   if (viewName === "ledger") syncLedgerMobilePane();
@@ -7017,8 +7045,10 @@ function renderUnifiedReminders() {
   const dailyCount = reminders.filter((item) => item.pushPolicy === "daily").length;
   const focusReminder = reminders[0] || null;
   $("#reminderDateLabel").textContent = formatReminderDateLabel(referenceDate);
-  $("#unifiedReminderSummary").textContent = `${reminders.length} 项`;
-  $("#reminderSummaryBreakdown").hidden = !urgentCount && !warningCount;
+  $("#unifiedReminderSummary").textContent = isUiBeta() ? `${reminders.length} 项` : [
+    `${reminders.length} 项`, urgentCount ? `${urgentCount} 急` : "", warningCount ? `${warningCount} 需关注` : "",
+  ].filter(Boolean).join(" · ");
+  $("#reminderSummaryBreakdown").hidden = !isUiBeta() || (!urgentCount && !warningCount);
   $("#reminderSummaryUrgent").hidden = !urgentCount;
   $("#reminderSummaryUrgent").textContent = `${urgentCount} 项紧急`;
   $("#reminderSummaryWarning").hidden = !warningCount;
@@ -7801,6 +7831,7 @@ function renderProtocolTransferList() {
             </span>
             <span class="project-item-meta project-item-primary">
               <span>${escapeHtml(formatProtocolTransferFlow(record))}</span>
+              ${isUiBeta() ? "" : `<span class="project-item-schedule">${escapeHtml(record.tradeDate)}</span>`}
             </span>
             <span class="project-item-facts">
               <span>${escapeHtml(record.code || "代码待补")}</span>
@@ -11068,6 +11099,7 @@ function updateProjectResultQueueState() {
 function handleResultEntryOutsidePointer(event) {
   const panel = $("#resultEntryPanel");
   if (!panel || panel.hidden || panel.contains(event.target) || $("#openResultButton")?.contains(event.target)) return;
+  if (event.target.closest?.("#uiBetaControl")) return;
   closeResultEntryPanel();
 }
 

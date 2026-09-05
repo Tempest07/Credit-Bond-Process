@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260904-dm-candidates-left";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20260905-ui-beta-50120";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],

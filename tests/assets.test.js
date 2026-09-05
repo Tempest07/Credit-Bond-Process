@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-dm-candidates-left";
+const VERSION = "20260905-ui-beta-50120";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -10,15 +10,15 @@ test("exposes a readable product version consistent with package metadata", asyn
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../package-lock.json", import.meta.url), "utf8"),
   ]);
-  const packageVersion = JSON.parse(packageText).version;
+  const { version: packageVersion, buildVersion } = JSON.parse(packageText);
   const lock = JSON.parse(lockText);
-  const visibleVersion = packageVersion.split(".").slice(0, 3).join(".");
+  const visibleVersion = buildVersion;
 
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
-  assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.8">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.8 · 2026-09-04 更新"/);
+  assert.match(html, new RegExp(`<meta name="application-version" content="${buildVersion.replaceAll(".", "\\.")}">`));
+  assert.match(html, /<meta name="application-build-version" content="5\.0\.1\.20">/);
+  assert.match(html, /class="brand-version" title="内部构建 5\.0\.1\.20 · 2026-09-05 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -103,7 +103,7 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /data-view-target="realtime-quotes">(?:<svg\b[^>]*>[\s\S]*?<\/svg>)?实时行情<\/button>/);
+  assert.match(html, /data-view-target="realtime-quotes"[^>]*>(?:<svg\b[^>]*>[\s\S]*?<\/svg>)?实时行情<\/button>/);
   assert.match(html, /id="realtimeQuoteImportButton"[^>]*>\s*<span[^>]*>＋<\/span> 导入券池/);
   assert.match(html, /id="realtimeQuoteImportInput" type="text"/);
   assert.doesNotMatch(html, /<textarea[^>]*realtimeQuote/i);

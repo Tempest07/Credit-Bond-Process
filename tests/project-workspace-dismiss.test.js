@@ -9,6 +9,7 @@ function harness({ pending = true, open = true } = {}) {
   const workspace = { dataset: { open: String(open) }, contains: (target) => target.inside };
   const form = { hidden: false };
   const context = vm.createContext({
+    isUiBeta: () => true,
     projectAutoSaveTimer: pending ? 7 : null,
     $: (selector) => ({ "#projectWorkspace": workspace, "#projectForm": form, "#projectId": { value: "p1" } })[selector],
     clearTimeout: (timer) => effects.push(["cancel", timer]),
@@ -50,6 +51,15 @@ test("clicking to open a project is not mistaken for dismissing an existing one"
   const { context, effects } = harness({ open: false });
   context.handleProjectWorkspaceOutsideClick({ target: { closest: () => null } });
   assert.deepEqual(effects, []);
+});
+
+test("the UI switch does not dismiss or refill an open project with pending inputs", () => {
+  const { context, effects, workspace } = harness();
+  context.handleProjectWorkspaceOutsideClick({ target: {
+    closest: selector => selector.includes("#uiBetaControl") ? {} : null,
+  } });
+  assert.deepEqual(effects, []);
+  assert.equal(workspace.dataset.open, "true");
 });
 
 test("explicit close also flushes drafts; unchanged projects do not get redundant saves", () => {
