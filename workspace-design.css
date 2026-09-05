@@ -50,7 +50,7 @@ h1,h2,h3{color:#111;font-family:inherit;font-weight:500;letter-spacing:0}
 .topbar,.main.realtime-mode .topbar{display:flex;align-items:center;justify-content:center;min-height:0;padding:48px 32px 28px;border:0;background:#fff;box-shadow:none;text-align:center;backdrop-filter:none}
 .topbar .eyebrow,.topbar .welcome-line{display:none}
 .topbar h1,.main.realtime-mode .topbar h1{margin:0;color:#111;font-size:42px;font-weight:500;line-height:1.2;letter-spacing:0}
-.main:has(.view[data-view="ledger"].active) .topbar h1{font-family:"Arial Black",Arial,sans-serif;font-weight:900;letter-spacing:-.047619em}
+.main:has(.view[data-view="ledger"].active) .topbar h1{font-family:Arial,sans-serif;font-weight:700;letter-spacing:-.047619em;-webkit-text-stroke:.012em currentColor}
 .view,.view.realtime-quotes-view{max-width:1380px;margin:0 auto;padding:20px 48px 64px;background:#fff}
 .view.active{animation:none}
 .view[data-view="ledger"]{--ledger-ink:#111;--ledger-indigo:#111;--ledger-cyan:#777;background:#fff}
