@@ -430,6 +430,7 @@ async function initialize() {
   initializeAndroidAppShell();
   bindPlaceholderSelection();
   bindNavigation();
+  bindWorkspaceChrome();
   realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast });
   bindRouteHashNavigation();
   bindProjectScreenshotTool();
@@ -515,8 +516,8 @@ function initializeAndroidAppShell() {
 function bindNavigation() {
   $$(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.viewTarget === "ledger" && isCompactLedger()) {
-        navigateLedgerMobilePane("list", { replace: true });
+      if (button.dataset.viewTarget === "ledger") {
+        closeLedgerProjectDetail();
         return;
       }
       switchView(button.dataset.viewTarget, { updateHash: true });
@@ -1663,6 +1664,7 @@ function bindRouteHashNavigation() {
 function applyRouteFromHash() {
   const route = parseRouteFromHash();
   if (!route?.view) {
+    setProjectWorkspaceOpen(false);
     if (isCompactLedger()) {
       ledgerMobilePane = "list";
       switchView("ledger", { updateHash: false });
@@ -1700,7 +1702,7 @@ function isCompactLedger() {
 }
 
 function ledgerMobilePaneFromRoute(route = {}) {
-  if (route.target === "mail") return "overview";
+  if (route.target === "mail") return "list";
   if (LEDGER_MOBILE_PANES.has(route.pane)) return route.pane;
   return route.target ? "detail" : "list";
 }
@@ -1738,16 +1740,59 @@ function openLedgerProject(projectId, options = {}) {
       ledgerMobileListScrollY = window.scrollY;
     }
     navigateLedgerMobilePane("detail", { projectId, kind, step, replace });
+    setProjectWorkspaceOpen(true);
     return;
   }
   switchView("ledger");
   renderProjectWorkspace();
+  setProjectWorkspaceOpen(true);
   if (kind === "project-result" || step === "result") openResultEntryPanel(false);
   if (scrollOnDesktop) $("#projectForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function closeLedgerProjectDetail() {
-  navigateLedgerMobilePane("list", { replace: true, focusSelected: true });
+function closeLedgerProjectDetail({ restoreFocus = true } = {}) {
+  setProjectWorkspaceOpen(false);
+  navigateLedgerMobilePane("list", { replace: true, focusSelected: restoreFocus });
+}
+
+function setProjectWorkspaceOpen(open) {
+  const workspace = $("#projectWorkspace");
+  if (!workspace) return;
+  const wasOpen = workspace.dataset.open === "true";
+  workspace.dataset.open = String(open);
+  workspace.inert = !open;
+  if (open) ledgerMobilePane = "detail";
+  else if (ledgerMobilePane === "detail") ledgerMobilePane = "list";
+  syncLedgerMobilePane();
+  if (open && !wasOpen) {
+    workspace.scrollTop = 0;
+    $("#closeProjectWorkspaceButton")?.focus({ preventScroll: true });
+  }
+}
+
+function bindWorkspaceChrome() {
+  const tools = $("#workspaceTools");
+  $("#closeProjectWorkspaceButton")?.addEventListener("click", closeLedgerProjectDetail);
+  document.addEventListener("click", (event) => {
+    if (tools?.open && !tools.contains(event.target)) tools.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k"
+      && !$(".main")?.classList.contains("cloud-locked")
+      && !$$('[role="dialog"]').some((node) => !node.hidden && node.getClientRects().length)) {
+      event.preventDefault();
+      closeLedgerProjectDetail({ restoreFocus: false });
+      switchView("ledger", { updateHash: true });
+      if (isCompactLedger()) navigateLedgerMobilePane("overview");
+      $("#projectSearch")?.focus();
+    }
+    if (event.key === "Escape") {
+      if (tools?.open) { tools.open = false; tools.querySelector("summary")?.focus(); return; }
+      // Nested result, receipt and history dialogs own Escape while visible.
+      if ($$('[role="dialog"]').some((node) => !node.hidden && node.getClientRects().length)) return;
+      if ($("#projectWorkspace")?.dataset.open === "true") closeLedgerProjectDetail();
+    }
+  });
 }
 
 function restoreLedgerMobileViewport() {
@@ -1798,6 +1843,8 @@ function syncLedgerMobilePane() {
   setLedgerMobileSectionVisibility(ledgerView.querySelector(":scope > .ledger-todo-zone"), pane === "overview", compact);
   setLedgerMobileSectionVisibility(ledgerView.querySelector(".project-list-panel"), pane === "list", compact);
   setLedgerMobileSectionVisibility(ledgerView.querySelector(".project-detail-panel"), pane === "detail", compact);
+  const workspace = $("#projectWorkspace");
+  if (workspace) workspace.inert = workspace.dataset.open !== "true" || (compact && pane !== "detail");
 
   const selected = (state.projects || []).find((item) => item.id === selectedProjectId);
   const detailTitle = $("#mobileProjectDetailTitle");
@@ -1818,8 +1865,14 @@ function applyRouteSelection(route = {}) {
 function applyRouteFocus(route = {}) {
   if (route.view === "ledger") {
     renderProjectWorkspace();
+    if (route.target && route.target !== "mail" && !$("#projectForm").hidden) setProjectWorkspaceOpen(true);
+    else setProjectWorkspaceOpen(false);
     if (isCompactLedger()) {
       const ledgerView = $('.view[data-view="ledger"]');
+      if (route.target === "mail") {
+        requestAnimationFrame(() => $("#mailPanel")?.scrollIntoView({ behavior: "auto", block: "start" }));
+        return;
+      }
       if (ledgerMobilePane === "detail") {
         const opensResultEntry = route.step === "result" || route.kind === "project-result";
         if (opensResultEntry) openResultEntryPanel(false);
@@ -1850,6 +1903,8 @@ function applyRouteFocus(route = {}) {
 }
 
 function switchView(viewName, options = {}) {
+  if (viewName !== "ledger") setProjectWorkspaceOpen(false);
+  if ($("#workspaceTools")) $("#workspaceTools").open = false;
   const buttons = $$(`.nav-item[data-view-target="${viewName}"]`);
   const button = buttons[0];
   $$(".nav-item").forEach((item) => {
@@ -1862,7 +1917,7 @@ function switchView(viewName, options = {}) {
   });
   $$(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === viewName));
   $(".main")?.classList.toggle("realtime-mode", viewName === "realtime-quotes");
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", viewName === "realtime-quotes" ? "#070a10" : "#f4f6fb");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#ffffff");
   realtimeQuoteController?.setActive(viewName === "realtime-quotes");
   if (button) $("#pageTitle").textContent = button.dataset.viewLabel || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
@@ -6857,8 +6912,11 @@ function renderProjectWorkspace() {
   renderPaymentTodo();
   renderProjectList();
   if (selected) fillProjectForm(selected);
-  else clearProjectForm();
+  else { clearProjectForm(); setProjectWorkspaceOpen(false); }
   const route = parseRouteFromHash();
+  if (selected && route?.view === "ledger" && route.target === selected.id) {
+    setProjectWorkspaceOpen(true);
+  }
   if (selected && route?.view === "ledger" && route.target === selected.id
     && (route.step === "result" || route.kind === "project-result")) {
     openResultEntryPanel(false);

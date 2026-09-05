@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f5f4ef">
+  <meta name="theme-color" content="#ffffff">
   <meta name="application-version" content="4.2.0">
   <meta name="application-build-version" content="4.2.0.2">
   <meta name="application-build" content="20260904-realtime-v2">
@@ -11,33 +11,36 @@
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
   <script src="./app-shell-mode.js?v=20260904-realtime-v2"></script>
   <link rel="stylesheet" href="./styles.css?v=20260904-realtime-v2">
-  <link rel="stylesheet" href="./workspace-design.css?v=20260905-preview">
+  <link rel="stylesheet" href="./workspace-design.css?v=20260905-openai">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20260905-openai">
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="https://tempest07.com/gateway/">
-        <span class="brand-mark">07</span>
-        <span class="brand-copy">
-          <strong>TEMPEST</strong>
-          <small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 4.2.0.2 · 2026-09-04 更新">v4.2.0</span></small>
-        </span>
-      </a>
-
-      <nav class="nav">
-        <button class="nav-item" data-view-target="reminders"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-12 5 2 2 5-5"/></svg>待办中心</button>
-        <button class="nav-item active" data-view-target="ledger"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg>项目中心</button>
-        <button class="nav-item" data-view-target="realtime-quotes"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 4v16h18M6 14l5-5 4 3 6-7"/></svg>实时行情</button>
-        <button class="nav-item" data-view-target="payment-receipts"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6"/></svg>缴款单</button>
-        <button class="nav-item" data-view-target="secondary-trading"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 8h17m-4-4 4 4-4 4M21 16H4m4-4-4 4 4 4"/></svg>二级交易</button>
-        <button class="nav-item" data-view-target="generator"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 8v8m-4-4h8"/></svg>新增项目</button>
+    <header class="sidebar site-header">
+      <a class="brand" href="https://tempest07.com/gateway/" aria-label="Bond Centre，返回 Gateway"><strong>Bond Centre</strong></a>
+      <nav class="nav" aria-label="Bond Centre 导航">
+        <button class="nav-item" data-view-target="reminders">待办中心</button>
+        <button class="nav-item active" data-view-target="ledger">项目中心</button>
+        <button class="nav-item" data-view-target="realtime-quotes">实时行情</button>
+        <button class="nav-item" data-view-target="payment-receipts">缴款单</button>
+        <button class="nav-item" data-view-target="secondary-trading">二级交易</button>
+        <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch" hidden>批量撰写</button>
-        <button class="nav-item" data-view-target="database"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 21h18M6 21V7l6-4 6 4v14M9 9h6m-6 4h6m-6 4h6"/></svg>主体与授信库</button>
-        <button class="nav-item" data-view-target="dm-test"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6m-3-3v6"/></svg>DM 测试</button>
-        <button class="nav-item" data-view-target="rules"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1v15"/></svg>规则说明</button>
+        <button class="nav-item" data-view-target="database">主体与授信库</button>
+        <button class="nav-item" data-view-target="dm-test">DM 测试</button>
+        <button class="nav-item" data-view-target="rules">规则说明</button>
       </nav>
-
-      <section class="sidebar-tool project-screenshot-tool" id="projectScreenshotTool" aria-busy="false">
+      <details class="workspace-tools" id="workspaceTools">
+        <summary>工作区 <span aria-hidden="true">⌄</span></summary>
+        <div class="workspace-tools-panel">
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 4.2.0.2 · 2026-09-04 更新">v4.2.0</span></div>
+          <div class="top-actions">
+          <button class="button subtle" id="stateHistoryButton">版本历史</button>
+          <button class="button subtle" id="exportDataButton">导出资料库</button>
+          <label class="button subtle file-button">导入资料库<input id="importDataInput" type="file" accept=".json"></label>
+          <button class="button" id="saveCloudButton">同步资料库</button>
+        </div>
+          <section class="sidebar-tool project-screenshot-tool" id="projectScreenshotTool" aria-busy="false">
         <div class="sidebar-tool-head">
           <span>SHOT</span>
           <strong>项目表截图</strong>
@@ -57,15 +60,16 @@
         <small id="projectScreenshotStatus" role="status" aria-live="polite">未上传</small>
         <div class="project-screenshot-output" id="projectScreenshotOutput" hidden></div>
       </section>
-
-      <div class="sidebar-card">
+          <div class="sidebar-card">
         <span>数据状态</span>
         <strong id="syncStatus">正在载入</strong>
         <small id="syncDetail">优先连接 Cloudflare D1</small>
         <small class="sync-meta" id="syncRevision">云端版本 --</small>
         <small class="sync-meta" id="idleLogoutDetail">本页在前台 15 分钟无操作后将自动保存并退出</small>
       </div>
-    </aside>
+        </div>
+      </details>
+    </header>
 
     <main class="main cloud-locked">
       <header class="topbar">
@@ -74,12 +78,7 @@
           <h1 id="pageTitle">项目中心</h1>
           <p class="welcome-line" id="welcomeLine" hidden>欢迎回来，<strong id="welcomeNickname">管理员</strong></p>
         </div>
-        <div class="top-actions">
-          <button class="button subtle" id="stateHistoryButton">版本历史</button>
-          <button class="button subtle" id="exportDataButton">导出资料库</button>
-          <label class="button subtle file-button">导入资料库<input id="importDataInput" type="file" accept=".json"></label>
-          <button class="button" id="saveCloudButton">同步资料库</button>
-        </div>
+
         <button class="android-more-trigger" id="androidMoreButton" type="button" aria-controls="androidMorePanel" aria-expanded="false" aria-label="打开更多工具">
           <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
         </button>
@@ -322,26 +321,15 @@
         </nav>
         <section class="ledger-command-panel" aria-labelledby="ledgerCommandTitle">
           <div class="ledger-command-heading">
+            <label class="ledger-search" for="projectSearch">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+              <input class="search-input" id="projectSearch" aria-label="搜索债券、主体或联动分行" type="search" placeholder="搜索债券、主体或联动分行">
+              <kbd aria-hidden="true">Ctrl K</kbd>
+            </label>
             <div class="ledger-command-copy">
-              <h2 id="ledgerCommandTitle">项目总览</h2>
+              <h2 id="ledgerCommandTitle" class="visually-hidden">搜索与筛选项目</h2>
             </div>
-            <section class="mail-panel" id="mailPanel" aria-labelledby="mailPanelTitle">
-              <div class="mail-panel-main">
-                <span class="step">MAIL</span>
-                <h3 id="mailPanelTitle">今日流程邮件</h3>
-              </div>
-              <div class="mail-panel-actions">
-                <button class="button subtle" id="previewMailButton" type="button">预览邮件</button>
-                <button class="button primary" id="sendMailButton" type="button">发送今日邮件</button>
-              </div>
-            </section>
-          </div>
-          <div class="mail-output-card" id="mailOutputPanel" aria-live="polite" hidden>
-            <div class="mail-output-head">
-              <span id="mailOutputTitle">邮件输出</span>
-              <button class="text-button" id="collapseMailOutputButton" type="button">收起</button>
-            </div>
-            <pre class="mail-output" id="mailOutput"></pre>
+
           </div>
           <div class="ledger-command-bottom">
             <div class="ledger-filter-bar" id="ledgerFilterBar">
@@ -378,32 +366,33 @@
           </div>
         </section>
 
-        <div class="ledger-todo-zone">
-          <section class="cutoff-todo-panel ledger-command-card" id="cutoffTodoPanel">
-            <div class="payment-todo-head">
-              <div><span class="step">TIME</span><h2>截标待办</h2></div>
-              <span class="command-card-signal cutoff-signal" aria-hidden="true"></span>
-            </div>
-            <div class="cutoff-todo-list" id="cutoffTodoList"></div>
-          </section>
 
-          <section class="payment-todo-panel ledger-command-card" id="paymentTodoPanel">
-            <div class="payment-todo-head">
-              <div><span class="step">TODO</span><h2>缴款待办</h2></div>
-              <span class="command-card-signal payment-signal" aria-hidden="true"></span>
-            </div>
-            <div class="payment-todo-list" id="paymentTodoList"></div>
-          </section>
-        </div>
 
         <div class="ledger-grid">
           <section class="panel project-list-panel">
             <div class="panel-head">
               <div><span class="step">LEDGER</span><h2>项目台账</h2></div>
-              <button class="button primary" id="newProjectButton">新增项目</button>
+              <section class="mail-panel" id="mailPanel" aria-labelledby="mailPanelTitle">
+              <div class="mail-panel-main">
+                <span class="step">MAIL</span>
+                <h3 id="mailPanelTitle">今日流程邮件</h3>
+              </div>
+              <div class="mail-panel-actions">
+                <button class="button subtle" id="previewMailButton" type="button">预览邮件</button>
+                <button class="button primary" id="sendMailButton" type="button">发送今日邮件</button>
+              </div>
+            </section>
+              <button class="button primary" id="newProjectButton">新增项目 <span aria-hidden="true">↗</span></button>
             </div>
+          <div class="mail-output-card" id="mailOutputPanel" aria-live="polite" hidden>
+            <div class="mail-output-head">
+              <span id="mailOutputTitle">邮件输出</span>
+              <button class="text-button" id="collapseMailOutputButton" type="button">收起</button>
+            </div>
+            <pre class="mail-output" id="mailOutput"></pre>
+          </div>
             <div class="project-list-tools">
-              <input class="search-input" id="projectSearch" type="search" placeholder="搜索简称、主体、联动分行或主承">
+
               <select id="projectStatusFilter">
                 <option value="">全部状态</option>
                 <option value="toBid">未投标</option>
@@ -427,7 +416,8 @@
             <div class="project-list" id="projectList"></div>
           </section>
 
-          <section class="panel project-detail-panel">
+          <section class="panel project-detail-panel" id="projectWorkspace" role="region" aria-label="项目详情工作区" data-open="false" inert>
+            <button class="project-workspace-close" id="closeProjectWorkspaceButton" type="button" aria-label="关闭项目详情">×</button>
             <div class="ledger-mobile-detail-head">
               <button class="ledger-mobile-back" id="mobileProjectBackButton" type="button" aria-label="返回项目列表">← 项目列表</button>
               <strong id="mobileProjectDetailTitle" tabindex="-1">项目详情</strong>
@@ -548,6 +538,24 @@
                 <button class="button danger" id="deleteProjectButton" type="button">删除项目</button>
               </div>
             </form>
+          </section>
+        </div>
+
+        <div class="ledger-todo-zone">
+          <section class="cutoff-todo-panel ledger-command-card" id="cutoffTodoPanel">
+            <div class="payment-todo-head">
+              <div><span class="step">TIME</span><h2>截标待办</h2></div>
+              <span class="command-card-signal cutoff-signal" aria-hidden="true"></span>
+            </div>
+            <div class="cutoff-todo-list" id="cutoffTodoList"></div>
+          </section>
+
+          <section class="payment-todo-panel ledger-command-card" id="paymentTodoPanel">
+            <div class="payment-todo-head">
+              <div><span class="step">TODO</span><h2>缴款待办</h2></div>
+              <span class="command-card-signal payment-signal" aria-hidden="true"></span>
+            </div>
+            <div class="payment-todo-list" id="paymentTodoList"></div>
           </section>
         </div>
       </section>
