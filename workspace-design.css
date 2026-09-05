@@ -146,7 +146,7 @@ label{color:#666;font-size:13px;font-weight:400;line-height:1.5}
 .payment-todo-head .step{display:none}
 .payment-todo-item,.cutoff-todo-item{padding:12px;border-radius:8px;border-color:#eee;background:#f8f8f8;box-shadow:none}
 .cutoff-todo-item.today{background:#f8f8f8}
-.payment-todo-main strong{font-size:12px;font-weight:500}
+.payment-todo-main strong{font-size:12px;font-weight:700}
 .payment-todo-main span,.payment-todo-empty{font-size:12px;color:#777}
 #projectWorkspace{position:fixed;z-index:100;inset:86px 22px 22px auto;width:min(780px,calc(100vw - 44px));min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;visibility:hidden;transform:translateX(calc(100% + 30px));padding:34px 28px;border:1px solid #ddd;border-radius:20px;background:#fff;box-shadow:0 12px 60px #0000001a}
 #projectWorkspace[data-open=true]{visibility:visible;transform:none}
