@@ -6999,11 +6999,14 @@ function renderUnifiedReminders() {
   const dailyCount = reminders.filter((item) => item.pushPolicy === "daily").length;
   const focusReminder = reminders[0] || null;
   $("#reminderDateLabel").textContent = formatReminderDateLabel(referenceDate);
-  $("#unifiedReminderSummary").textContent = [
-    `${reminders.length} 项`,
-    urgentCount ? `${urgentCount} 急` : "",
-    warningCount ? `${warningCount} 需关注` : "",
-  ].filter(Boolean).join(" · ");
+  $("#unifiedReminderSummary").textContent = `${reminders.length} 项`;
+  $("#reminderSummaryBreakdown").hidden = !urgentCount && !warningCount;
+  $("#reminderSummaryUrgent").hidden = !urgentCount;
+  $("#reminderSummaryUrgent").textContent = `${urgentCount} 项紧急`;
+  $("#reminderSummaryWarning").hidden = !warningCount;
+  $("#reminderSummaryWarning").textContent = `${warningCount} 项需关注`;
+  $("#reminderFocusPriority").textContent = !focusReminder ? "当前状态"
+    : focusReminder.severity === "critical" ? "立即处理" : "优先处理";
   $("#reminderCriticalCount").textContent = urgentCount;
   $("#reminderWarningCount").textContent = warningCount;
   $("#reminderDailyCount").textContent = dailyCount;
