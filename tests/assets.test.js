@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260904-realtime-v2";
+const VERSION = "20260904-dm-candidates-left";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${packageVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.2">/);
-  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.2 · 2026-09-04 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="4\.2\.0\.8">/);
+  assert.match(html, /class="brand-version" title="内部构建 4\.2\.0\.8 · 2026-09-04 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
@@ -73,8 +73,23 @@ test("queues compact issuance-result entry without blocking the project workspac
   assert.match(app, /function queueIssuanceResultRecognition/);
   assert.match(app, /function renderIssuanceQueueNotifications/);
   assert.match(app, /function positionResultEntryPanel/);
+  assert.doesNotMatch(app, /addEventListener\("scroll", positionResultEntryPanel/);
   assert.doesNotMatch(app, /modal-open",\s*!\$\("#resultEntryPanel"\)\.hidden/);
-  assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*fixed;[^}]*width:\s*min\(460px/s);
+  assert.match(html, /class="result-entry-anchor"[\s\S]*id="openResultButton"[\s\S]*id="resultEntryPanel"/);
+  assert.match(styles, /\.result-entry-anchor\s*\{[^}]*position:\s*relative;/s);
+  assert.match(styles, /\.result-entry-anchor\.is-open\s*\{[^}]*z-index:\s*130;/s);
+  assert.match(app, /panel\.hidden = false;\s*anchor\?\.classList\.add\("is-open"\)/);
+  assert.match(app, /closest\("\.result-entry-anchor"\)\?\.classList\.remove\("is-open"\)/);
+  assert.match(app, /anchor\?\.setAttribute\("data-queue-status", queueStatus\)/);
+  assert.match(app, /button\.setAttribute\("aria-busy", processing \? "true" : "false"\)/);
+  assert.doesNotMatch(styles, /\.result-action\[data-queue-status=/);
+  assert.match(styles, /\.result-entry-anchor\[data-queue-status="processing"\]::before,[\s\S]*animation:\s*resultQueueWave/);
+  assert.match(styles, /@keyframes resultQueueWave/);
+  assert.match(styles, /\.result-entry-anchor\[data-queue-status="ready"\]::before\s*\{[^}]*content:\s*"✓";[^}]*animation:\s*resultQueueCheckIn/s);
+  assert.match(styles, /\.result-entry-anchor\[data-queue-status="error"\]::before\s*\{[^}]*content:\s*"!";/s);
+  assert.match(styles, /@keyframes resultQueueCheckIn/);
+  assert.match(app, /const queueStatus = ready \? "ready" : failed \? "error" : processing \? "processing" : "";/);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(100% \+ 9px\);[^}]*width:\s*min\(460px/s);
   assert.match(styles, /\.issuance-queue-notifications\s*\{[^}]*position:\s*fixed;[^}]*right:\s*22px;/s);
 });
 
@@ -94,21 +109,39 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.doesNotMatch(html, /<textarea[^>]*realtimeQuote/i);
   assert.match(html, /id="realtimeQuoteInterval"[\s\S]*15 秒[\s\S]*20 秒[\s\S]*30 秒/);
   assert.match(html, /id="realtimeQuoteColumnButton"/);
+  assert.match(html, /拖动表头右边缘调整列宽/);
   assert.match(html, /id="realtimeQuoteNotificationButton"/);
   assert.match(html, /id="realtimeQuoteUnreadCount"/);
   assert.match(html, /id="realtimeQuoteTableHead"/);
+  const realtimeSection = html.match(/<section class="view realtime-quotes-view"[\s\S]*?<section class="view" data-view="dm-test">/)?.[0] || "";
+  assert.match(realtimeSection, /realtime-kicker[^>]*>[\s\S]*MARKET DATA/);
+  assert.equal((realtimeSection.match(/\bDM\b/g) || []).length, 1);
+  assert.match(realtimeSection, /来源：DM · \/bond\/market-data\/realtime-quote/);
+  assert.doesNotMatch(realtimeSection, /DM MARKET DATA|读取 DM|DM估值|DM 当前接口/);
   assert.match(app, /realtimeQuoteController\?\.setActive\(viewName === "realtime-quotes"\)/);
   assert.match(realtime, /document\.addEventListener\("visibilitychange"/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v1/);
   assert.match(realtime, /credit-bond-process-realtime-watchlist-v2/);
   assert.match(realtime, /data-copy-quote-side/);
+  assert.match(realtime, /data-resize-realtime-column/);
+  assert.match(realtime, /setPointerCapture/);
+  assert.match(realtime, /widths:\s*normalizeColumnWidths\(saved\?\.widths\)/);
+  assert.match(realtime, /side === "ofr" \? "TKN" : "GVN"/);
+  assert.doesNotMatch(realtime, /side === "ofr" \? "taken" : "given"/);
   assert.match(realtime, /continue|继续轮询/);
+  assert.doesNotMatch(realtime, /读取 DM|DM估值|<span>DM<\/span>|非债券或 DM 未匹配/);
+  assert.match(realtime, /每 \$\{this\.intervalMs \/ 1_000\} 秒自动刷新/);
+  assert.match(realtime, /title="数据来源：DM"><span>聚合<\/span>/);
+  assert.match(realtime, /\{ id: "identity", label: "债券", width: 240,/);
   assert.match(endpoint, /bond\/market-data\/realtime-quote/);
   assert.match(endpoint, /brokerBreakdownAvailable: false/);
   assert.match(valuationEndpoint, /bond\/market-data\/date/);
   assert.match(valuationEndpoint, /cbYtm/);
   assert.match(valuationEndpoint, /csYte/);
   assert.match(styles, /\.view\[data-view="realtime-quotes"\][^{]*\{[^}]*background:[^}]*#070a10/s);
+  assert.match(styles, /\.quote-identity-cell strong\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+  assert.match(styles, /\.realtime-column-resizer\s*\{[^}]*cursor:\s*col-resize;[^}]*touch-action:\s*none;/s);
+  assert.match(styles, /\.quote-identity-cell span\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 
 test("starts the application only after module constants are initialized", async () => {
@@ -271,6 +304,26 @@ test("ships project guarantor entry, DM mapping and ledger detail display", asyn
   assert.match(dmLookup, /"guarantor"/);
   assert.match(dmLookup, /lookupDmGuarantorRatings/);
   assert.match(styles, /\.guarantor-row\s*\{/);
+});
+
+test("shows selectable same-issuer DM candidates when the requested issue has no bond record", async () => {
+  const [html, app, styles, dmLookup] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
+    readFile(new URL("../functions/api/dm/lookup.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(dmLookup, /lookupDmNearMatchSuggestions\(dm,/);
+  assert.match(dmLookup, /OUTSTANDING_BONDS_PATH, \{ issuerFullName: issuerName \}/);
+  assert.match(dmLookup, /suggestions: noDmBondResult \? nearMatches\.suggestions : \[\]/);
+  assert.match(app, /<strong>同主体债券候选<\/strong>/);
+  assert.match(app, /suggestions\.map\(renderProjectDmSuggestion\)/);
+  assert.match(app, /data-project-dm-query=/);
+  assert.ok(html.indexOf('id="valuationAssist"') < html.indexOf('id="projectDmAssist"'));
+  assert.ok(html.indexOf('id="projectDmAssist"') < html.indexOf('id="warningBox"'));
+  assert.ok(html.indexOf('id="projectDmAssist"') < html.indexOf('class="panel fields-panel"'));
+  assert.match(styles, /\.input-panel \.project-dm-assist \.dm-suggestion-list\s*\{\s*grid-template-columns:\s*1fr;/);
 });
 
 test("keeps the desktop sidebar rail continuous and the empty detail state compact", async () => {
@@ -562,7 +615,7 @@ test("uses single-pane project navigation on compact screens", async () => {
   assert.match(styles, /data-mobile-pane="detail"[\s\S]+\.project-list-panel/);
   assert.match(styles, /data-mobile-pane="overview"[^\n]+\.ledger-grid\s*\{\s*display:\s*none;/);
   assert.match(styles, /\.ledger-mobile-back\s*\{[^}]*min-height:\s*44px;/s);
-  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*top:\s*var\(--result-entry-top/);
+  assert.match(styles, /\.result-entry-panel\s*\{[^}]*z-index:\s*120;[^}]*top:\s*calc\(100% \+ 9px\)/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.result-entry-panel\s*\{[^}]*max-height:\s*min\(68dvh/s);
   assert.match(styles, /\.view\.active\s*\{[^}]*animation:\s*workspaceSurfaceIn \.28s ease backwards;/);
 });

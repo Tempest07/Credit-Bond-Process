@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260904-realtime-v2";
+} from "./core.js?v=20260904-dm-candidates-left";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260904-realtime-v2";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-realtime-v2";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-realtime-v2";
+} from "./lifecycle.js?v=20260904-dm-candidates-left";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260904-dm-candidates-left";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260904-dm-candidates-left";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260904-realtime-v2";
+} from "./history-parser.js?v=20260904-dm-candidates-left";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260904-realtime-v2";
+} from "./protocol-transfer.js?v=20260904-dm-candidates-left";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260904-realtime-v2";
+} from "./protocol-transfer-templates.js?v=20260904-dm-candidates-left";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260904-realtime-v2";
+} from "./protocol-transfer-docx.js?v=20260904-dm-candidates-left";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260904-realtime-v2";
+} from "./reminders.js?v=20260904-dm-candidates-left";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260904-realtime-v2";
+} from "./secondary-inventory.js?v=20260904-dm-candidates-left";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260904-realtime-v2";
+} from "./trade-record-converter.js?v=20260904-dm-candidates-left";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260904-realtime-v2";
+} from "./trade-record-grid.js?v=20260904-dm-candidates-left";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260904-realtime-v2";
-import { initializeDatePickers } from "./date-picker.js?v=20260904-realtime-v2";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-realtime-v2";
+} from "./trade-record-ledger.js?v=20260904-dm-candidates-left";
+import { initializeDatePickers } from "./date-picker.js?v=20260904-dm-candidates-left";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260904-dm-candidates-left";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260904-realtime-v2";
+} from "./project-screenshot-ocr.js?v=20260904-dm-candidates-left";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260904-realtime-v2";
+} from "./project-screenshot-layout.js?v=20260904-dm-candidates-left";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260904-realtime-v2";
+} from "./project-screenshot-image.js?v=20260904-dm-candidates-left";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260904-realtime-v2";
+} from "./payment-receipts.js?v=20260904-dm-candidates-left";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260904-realtime-v2";
+} from "./issuer-search.js?v=20260904-dm-candidates-left";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260904-realtime-v2";
+} from "./state-history.js?v=20260904-dm-candidates-left";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -4728,7 +4728,6 @@ function bindLedger() {
   $("#closeResultButton").addEventListener("click", closeResultEntryPanel);
   document.addEventListener("pointerdown", handleResultEntryOutsidePointer);
   window.addEventListener("resize", positionResultEntryPanel, { passive: true });
-  window.addEventListener("scroll", positionResultEntryPanel, { passive: true, capture: true });
   $("#prepaymentEntryForm").addEventListener("submit", savePrepaymentEntry);
   $("#prepaymentEntryPanel").addEventListener("click", (event) => {
     if (event.target.closest("[data-close-prepayment]")) closePrepaymentEntry();
@@ -4885,13 +4884,16 @@ async function runProjectDmLookup(queryOverride = "") {
     }
     applyDmLookupToCurrentProject(payload);
     const sourceLabel = dmPayloadSourceLabel(payload);
+    const suggestionCount = Array.isArray(payload.suggestions) ? payload.suggestions.length : 0;
     $("#projectDmStatus").textContent = payload.noDmBondResult
-      ? "DM 无本期数据 · 已读主体库"
+      ? `DM 无本期数据 · ${suggestionCount ? `${suggestionCount} 个候选` : "已读主体库"}`
       : `已读取 ${sourceLabel}`;
     $("#projectDmStatus").className = payload.noDmBondResult ? "pill warning" : "pill accent";
     pushProjectDmHistoryFromCurrent();
     showToast(payload.noDmBondResult
-      ? "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
+      ? suggestionCount
+        ? `DM 未返回本期债券，已找到 ${suggestionCount} 个同主体候选，请选择后重新读取。`
+        : "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
       : `已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
   } catch (error) {
     renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });
@@ -5425,6 +5427,7 @@ function renderProjectDmAssist(payload) {
   const issueGroup = payload.issueGroup || payload.normalized?.issueGroup || null;
   const normalized = payload.normalized || {};
   if (payload.noDmBondResult) {
+    const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
     const filled = [
       normalized.subjectRating ? `主体评级 ${normalized.subjectRating}` : "",
       normalized.ratingAgency ? `评级机构 ${normalized.ratingAgency}` : "",
@@ -5439,6 +5442,13 @@ function renderProjectDmAssist(payload) {
           "本期债券要素未沿用历史项目，请继续填写",
         ].join(" · "))}</span>
       </div>
+      ${suggestions.length ? `
+        <div class="project-dm-assist-head compact">
+          <strong>同主体债券候选</strong>
+          <span>点击候选后按该债券重新读取 DM</span>
+        </div>
+        <div class="dm-suggestion-list">${suggestions.map(renderProjectDmSuggestion).join("")}</div>
+      ` : ""}
     `;
     return;
   }
@@ -10848,7 +10858,10 @@ function openResultEntryPanel(shouldFocus = true, requestedTaskId = "") {
     $("#projectResultAdvertisement").value = current.resultAdvertisement || "";
     $("#issuanceNoticeDate").value = (current.cutoffAt || "").slice(0, 10);
   }
-  $("#resultEntryPanel").hidden = false;
+  const panel = $("#resultEntryPanel");
+  const anchor = $("#openResultButton")?.closest(".result-entry-anchor");
+  panel.hidden = false;
+  anchor?.classList.add("is-open");
   positionResultEntryPanel();
   requestAnimationFrame(positionResultEntryPanel);
   syncModalOpenState();
@@ -10863,6 +10876,7 @@ function closeResultEntryPanel() {
   resetIssuanceReview();
   activeIssuanceQueueTaskId = "";
   $("#resultEntryPanel").hidden = true;
+  $("#openResultButton")?.closest(".result-entry-anchor")?.classList.remove("is-open");
   syncModalOpenState();
   if (isCompactLedger()) $("#openResultButton")?.focus({ preventScroll: true });
 }
@@ -11037,14 +11051,18 @@ function openIssuanceQueueTask(taskId) {
 function updateProjectResultQueueState() {
   const button = $("#openResultButton");
   if (!button) return;
+  const anchor = button.closest(".result-entry-anchor");
   const projectId = $("#projectId")?.value || selectedProjectId;
   const tasks = issuanceRecognitionQueue.list().filter((task) => task.payload.projectId === projectId);
-  const ready = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status));
+  const ready = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW].includes(task.status));
+  const failed = tasks.some((task) => task.status === ISSUANCE_QUEUE_STATUS.ERROR);
   const processing = tasks.some((task) => [ISSUANCE_QUEUE_STATUS.QUEUED, ISSUANCE_QUEUE_STATUS.PROCESSING].includes(task.status));
-  if (ready) button.dataset.queueStatus = "ready";
-  else if (processing) button.dataset.queueStatus = "processing";
-  else delete button.dataset.queueStatus;
-  button.title = ready ? "有识别结果待核对" : processing ? "发行结果正在后台识别" : "";
+  const queueStatus = ready ? "ready" : failed ? "error" : processing ? "processing" : "";
+  if (queueStatus) anchor?.setAttribute("data-queue-status", queueStatus);
+  else anchor?.removeAttribute("data-queue-status");
+  button.removeAttribute("data-queue-status");
+  button.setAttribute("aria-busy", processing ? "true" : "false");
+  button.title = ready ? "识别完成，结果待核对" : failed ? "识别失败，请打开重试" : processing ? "发行结果正在后台识别" : "";
 }
 
 function handleResultEntryOutsidePointer(event) {
@@ -11056,25 +11074,18 @@ function handleResultEntryOutsidePointer(event) {
 function positionResultEntryPanel() {
   const panel = $("#resultEntryPanel");
   const anchor = $("#openResultButton");
-  if (!panel || panel.hidden || !anchor) return;
+  const host = anchor?.closest(".result-entry-anchor");
+  if (!panel || panel.hidden || !anchor || !host) return;
   const margin = 12;
-  const gap = 9;
   const anchorRect = anchor.getBoundingClientRect();
+  const hostRect = host.getBoundingClientRect();
   const width = Math.min(460, Math.max(280, window.innerWidth - margin * 2));
-  const dialogHeight = Math.min($("#resultEntryDialog")?.scrollHeight || 360, window.innerHeight - margin * 2);
-  const belowSpace = window.innerHeight - anchorRect.bottom - gap - margin;
-  const aboveSpace = anchorRect.top - gap - margin;
-  const placeAbove = belowSpace < Math.min(300, dialogHeight) && aboveSpace > belowSpace;
-  const availableHeight = Math.max(190, placeAbove ? aboveSpace : belowSpace);
-  const top = placeAbove
-    ? Math.max(margin, anchorRect.top - gap - Math.min(dialogHeight, availableHeight))
-    : Math.max(margin, anchorRect.bottom + gap);
-  const left = Math.min(window.innerWidth - width - margin, Math.max(margin, anchorRect.right - width));
-  panel.dataset.placement = placeAbove ? "above" : "below";
-  panel.style.setProperty("--result-entry-top", `${Math.round(top)}px`);
-  panel.style.setProperty("--result-entry-left", `${Math.round(left)}px`);
+  const viewportLeft = Math.min(window.innerWidth - width - margin, Math.max(margin, anchorRect.right - width));
+  const arrowCenter = anchorRect.left + anchorRect.width / 2 - viewportLeft;
+  const arrowRight = Math.min(width - 20, Math.max(20, width - arrowCenter - 6.5));
+  panel.style.setProperty("--result-entry-offset-x", `${Math.round(viewportLeft - hostRect.left)}px`);
+  panel.style.setProperty("--result-entry-arrow-right", `${Math.round(arrowRight)}px`);
   panel.style.width = `${Math.round(width)}px`;
-  panel.style.maxHeight = `${Math.round(availableHeight)}px`;
 }
 
 function renderIssuanceReview(result) {
