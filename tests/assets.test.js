@@ -88,7 +88,7 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /data-view-target="realtime-quotes">实时行情</);
+  assert.match(html, /data-view-target="realtime-quotes">(?:<svg\b[^>]*>[\s\S]*?<\/svg>)?实时行情<\/button>/);
   assert.match(html, /id="realtimeQuoteImportButton"[^>]*>\s*<span[^>]*>＋<\/span> 导入券池/);
   assert.match(html, /id="realtimeQuoteImportInput" type="text"/);
   assert.doesNotMatch(html, /<textarea[^>]*realtimeQuote/i);
