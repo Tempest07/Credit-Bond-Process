@@ -7791,7 +7791,6 @@ function renderProtocolTransferList() {
             </span>
             <span class="project-item-meta project-item-primary">
               <span>${escapeHtml(formatProtocolTransferFlow(record))}</span>
-              <span class="project-item-schedule">${escapeHtml(record.tradeDate)}</span>
             </span>
             <span class="project-item-facts">
               <span>${escapeHtml(record.code || "代码待补")}</span>
