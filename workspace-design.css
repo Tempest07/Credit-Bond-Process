@@ -1,8 +1,8 @@
 /* Bond Centre / monochrome site system, inspired by openai.com. */
-@font-face{font-family:"Bond Centre Chinese";src:local("Noto Sans SC");font-style:normal;font-weight:100 900;font-display:swap}
-:root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-soft:#f5f5f5;--text:#111;--muted:#707070;--line:#e5e5e5;--line-strong:#d2d2d2;--accent:#111;--accent-strong:#333;--accent-soft:#f1f1f1;--secondary:#333;--secondary-soft:#f4f4f4;--warning:#94621c;--warning-soft:#fff5e6;--danger:#bd3838;--shadow:none;--shadow-hover:none;font-family:Arial,"Bond Centre Chinese","PingFang SC","Microsoft YaHei",sans-serif}
+/* Keep the Arial wordmarks; Chinese follows the system-font fallback used by DeepSeek chat. */
+:root{color-scheme:light;--bg:#fff;--panel:#fff;--panel-soft:#f5f5f5;--text:#111;--muted:#707070;--line:#e5e5e5;--line-strong:#d2d2d2;--accent:#111;--accent-strong:#333;--accent-soft:#f1f1f1;--secondary:#333;--secondary-soft:#f4f4f4;--warning:#94621c;--warning-soft:#fff5e6;--danger:#bd3838;--shadow:none;--shadow-hover:none;font-family:Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif}
 *{box-sizing:border-box}
-body{background:#fff;color:#111;font-family:Arial,"Bond Centre Chinese","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.5}
+body{background:#fff;color:#111;font-family:Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;font-size:14px;line-height:1.5}
 [hidden]{display:none!important}
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 button,a,input,select,textarea{touch-action:manipulation}
@@ -49,7 +49,7 @@ h1,h2,h3{color:#111;font-family:inherit;font-weight:500;letter-spacing:0}
 .project-screenshot-correction input,.project-screenshot-correction select{background:#fff;border-color:#ccc;color:#111}
 .topbar,.main.realtime-mode .topbar{display:flex;align-items:center;justify-content:center;min-height:0;padding:48px 32px 28px;border:0;background:#fff;box-shadow:none;text-align:center;backdrop-filter:none}
 .topbar .eyebrow,.topbar .welcome-line{display:none}
-.topbar h1,.main.realtime-mode .topbar h1{margin:0;color:#111;font-size:42px;font-weight:500;line-height:1.2;letter-spacing:0}
+.topbar h1,.main.realtime-mode .topbar h1{margin:0;color:#111;font-size:42px;font-weight:700;line-height:1.2;letter-spacing:0}
 .main:has(.view[data-view="ledger"].active) .topbar h1{font-family:Arial,sans-serif;font-weight:700;letter-spacing:-.047619em;-webkit-text-stroke:.012em currentColor}
 .view,.view.realtime-quotes-view{max-width:1380px;margin:0 auto;padding:20px 48px 64px;background:#fff}
 .view.active{animation:none}
