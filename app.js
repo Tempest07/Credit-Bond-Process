@@ -380,6 +380,7 @@ let liquidResizeObserver = null;
 
 const LIQUID_TRACK_CONFIGS = [
   { container: ".site-header .nav", active: ".nav-item.active" },
+  { container: ".secondary-workspace-nav", active: ".secondary-workspace-tab.active" },
   { container: "#ledgerMobileNav", active: ".ledger-mobile-tab[aria-pressed=\"true\"]" },
   { container: ".ledger-filter-tabs", active: ".ledger-filter-chip.active" },
   { container: ".reminder-filter-tabs", active: ".reminder-filter.active" },
@@ -1775,6 +1776,9 @@ function setProjectWorkspaceOpen(open) {
 function bindWorkspaceChrome() {
   const tools = $("#workspaceTools");
   $("#closeProjectWorkspaceButton")?.addEventListener("click", closeLedgerProjectDetail);
+  $("#projectWorkspace")?.addEventListener("transitionend", (event) => {
+    if (event.target.id === "projectWorkspace" && event.propertyName === "transform") positionResultEntryPanel();
+  });
   // Run before the clicked control opens another project or changes the view.
   document.addEventListener("click", handleProjectWorkspaceOutsideClick, true);
   document.addEventListener("click", (event) => {
