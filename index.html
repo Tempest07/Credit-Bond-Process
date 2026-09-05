@@ -371,8 +371,9 @@
 
         <div class="ledger-grid">
           <section class="panel project-list-panel">
+            <div class="project-ledger-toolbar">
+              <div class="project-ledger-title"><span class="step">LEDGER</span><h2>项目台账</h2></div>
             <div class="panel-head">
-              <div><span class="step">LEDGER</span><h2>项目台账</h2></div>
               <section class="mail-panel" id="mailPanel" aria-labelledby="mailPanelTitle">
               <div class="mail-panel-main">
                 <span class="step">MAIL</span>
@@ -385,13 +386,6 @@
             </section>
               <button class="button primary" id="newProjectButton">新增项目 <span aria-hidden="true">↗</span></button>
             </div>
-          <div class="mail-output-card" id="mailOutputPanel" aria-live="polite" hidden>
-            <div class="mail-output-head">
-              <span id="mailOutputTitle">邮件输出</span>
-              <button class="text-button" id="collapseMailOutputButton" type="button">收起</button>
-            </div>
-            <pre class="mail-output" id="mailOutput"></pre>
-          </div>
             <div class="project-list-tools">
 
               <select id="projectStatusFilter">
@@ -414,6 +408,14 @@
                 <button class="button subtle" id="projectTodayFilterButton" type="button">今日</button>
                 <button class="button subtle" id="projectClearDateFilterButton" type="button">清空日期</button>
               </div>
+            </div>
+            </div>
+            <div class="mail-output-card" id="mailOutputPanel" aria-live="polite" hidden>
+              <div class="mail-output-head">
+                <span id="mailOutputTitle">邮件输出</span>
+                <button class="text-button" id="collapseMailOutputButton" type="button">收起</button>
+              </div>
+              <pre class="mail-output" id="mailOutput"></pre>
             </div>
             <div class="project-list" id="projectList"></div>
           </section>
