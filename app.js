@@ -379,6 +379,7 @@ let liquidMotionObserver = null;
 let liquidResizeObserver = null;
 
 const LIQUID_TRACK_CONFIGS = [
+  { container: ".site-header .nav", active: ".nav-item.active" },
   { container: "#ledgerMobileNav", active: ".ledger-mobile-tab[aria-pressed=\"true\"]" },
   { container: ".ledger-filter-tabs", active: ".ledger-filter-chip.active" },
   { container: ".reminder-filter-tabs", active: ".reminder-filter.active" },
