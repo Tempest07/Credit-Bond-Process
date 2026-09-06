@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260906-release-5021-first-paint";
+} from "./core.js?v=20260906-project-vision-5022";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260906-release-5021-first-paint";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260906-release-5021-first-paint";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260906-release-5021-first-paint";
+} from "./lifecycle.js?v=20260906-project-vision-5022";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260906-project-vision-5022";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260906-project-vision-5022";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260906-release-5021-first-paint";
+} from "./history-parser.js?v=20260906-project-vision-5022";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260906-release-5021-first-paint";
+} from "./protocol-transfer.js?v=20260906-project-vision-5022";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260906-release-5021-first-paint";
+} from "./protocol-transfer-templates.js?v=20260906-project-vision-5022";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260906-release-5021-first-paint";
+} from "./protocol-transfer-docx.js?v=20260906-project-vision-5022";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260906-release-5021-first-paint";
+} from "./reminders.js?v=20260906-project-vision-5022";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260906-release-5021-first-paint";
+} from "./secondary-inventory.js?v=20260906-project-vision-5022";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260906-release-5021-first-paint";
+} from "./trade-record-converter.js?v=20260906-project-vision-5022";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260906-release-5021-first-paint";
+} from "./trade-record-grid.js?v=20260906-project-vision-5022";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260906-release-5021-first-paint";
-import { initializeDatePickers } from "./date-picker.js?v=20260906-release-5021-first-paint";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260906-release-5021-first-paint";
+} from "./trade-record-ledger.js?v=20260906-project-vision-5022";
+import { initializeDatePickers } from "./date-picker.js?v=20260906-project-vision-5022";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260906-project-vision-5022";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260906-release-5021-first-paint";
+} from "./project-screenshot-ocr.js?v=20260906-project-vision-5022";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260906-release-5021-first-paint";
+} from "./project-screenshot-layout.js?v=20260906-project-vision-5022";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260906-release-5021-first-paint";
+} from "./project-screenshot-image.js?v=20260906-project-vision-5022";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260906-release-5021-first-paint";
+} from "./payment-receipts.js?v=20260906-project-vision-5022";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260906-release-5021-first-paint";
+} from "./issuer-search.js?v=20260906-project-vision-5022";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260906-release-5021-first-paint";
+} from "./state-history.js?v=20260906-project-vision-5022";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -214,10 +214,9 @@ const PROJECT_SCREENSHOT_MIN_OCR_WIDTH = 2600;
 const PROJECT_SCREENSHOT_ROW_GAP = 18;
 const PROJECT_SCREENSHOT_MAX_FILE_BYTES = 30 * 1024 * 1024;
 const PROJECT_SCREENSHOT_IMAGE_MIME_TYPES = new Set([
-  "image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff",
-  "image/heic", "image/heif", "image/avif",
+  "image/png", "image/jpeg", "image/webp",
 ]);
-const PROJECT_SCREENSHOT_IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|gif|bmp|tiff?|heic|heif|avif)$/i;
+const PROJECT_SCREENSHOT_IMAGE_EXTENSIONS = /\.(png|jpe?g|webp)$/i;
 const IDLE_WARNING_AFTER_MS = 15 * 60 * 1000;
 const IDLE_EXIT_COUNTDOWN_SECONDS = 60;
 const SAMPLE_BRIEF = `26粤交投SCP002 非我行主承 广州分行
@@ -2078,10 +2077,18 @@ async function processProjectScreenshotFile(file, input = null) {
   const sessionId = ++projectScreenshotSessionId;
   projectScreenshotRows = [];
   renderProjectScreenshotResults(projectScreenshotRows);
-  setProjectScreenshotBusy(true, "正在 OCR 图片...");
+  setProjectScreenshotBusy(true, "视觉模型正在读取图片...");
   try {
-    await ensureTesseractReady();
-    const entries = await recognizeProjectScreenshotEntries(file);
+    const response = await fetch("./api/project-screenshot/recognize", {
+      method: "POST", body: file,
+      headers: { ...authHeaders(), "Content-Type": file.type || (/\.png$/i.test(file.name) ? "image/png" : /\.webp$/i.test(file.name) ? "image/webp" : "image/jpeg") },
+      credentials: "same-origin", signal: AbortSignal.timeout(100000),
+    });
+    const recognition = await response.json();
+    if (!response.ok) throw new Error(recognition.error || "视觉识别失败");
+    const entries = recognition.entries;
+    if (!Array.isArray(entries)) throw new Error("视觉识别返回格式无效");
+    const recognitionWarnings = (recognition.warnings || []).join("；");
     if (!entries.length) {
       projectScreenshotRows = [createManualProjectScreenshotRow(sessionId)];
       renderProjectScreenshotResults(projectScreenshotRows);
@@ -2099,15 +2106,16 @@ async function processProjectScreenshotFile(file, input = null) {
       ocrFullName: entry.fullName,
       draftFullName: entry.fullName,
       verifiedFullName: "",
-      status: "pending",
-      isEditing: false,
+      status: !entry.fullName || !PROJECT_SCREENSHOT_BRANCHES.includes(entry.branch) || recognitionWarnings ? "draft" : "pending",
+      isEditing: !entry.fullName || !PROJECT_SCREENSHOT_BRANCHES.includes(entry.branch) || Boolean(recognitionWarnings),
+      error: recognitionWarnings || (!entry.fullName || !PROJECT_SCREENSHOT_BRANCHES.includes(entry.branch) ? "请核对分行和债券全称后重查。" : ""),
     }));
     renderProjectScreenshotResults(projectScreenshotRows);
     const initialRowIds = projectScreenshotRows.map((row) => row.id);
     for (let index = 0; index < initialRowIds.length; index += 1) {
       setProjectScreenshotStatus(`已识别 ${initialRowIds.length} 条，正在查 DM ${index + 1}/${initialRowIds.length}...`);
       const requested = projectScreenshotRows.find((row) => row.id === initialRowIds[index]);
-      if (!requested) continue;
+      if (!requested || requested.status === "draft") continue;
       const requestedRevision = requested.revision;
       const lookupController = new AbortController();
       requested.lookupController = lookupController;
@@ -2126,15 +2134,13 @@ async function processProjectScreenshotFile(file, input = null) {
     renderProjectScreenshotResults(projectScreenshotRows);
     const copiedCount = projectScreenshotResolvedShortNames().length;
     const finalCount = projectScreenshotRows.length;
-    setProjectScreenshotStatus(copiedCount
-      ? `完成：${copiedCount}/${finalCount} 条已匹配简称。`
-      : `完成：${finalCount} 条均未匹配到 DM 简称。`);
+    setProjectScreenshotStatus(`视觉识别 ${finalCount} 条，DM 已核验 ${copiedCount} 条。${recognitionWarnings ? "部分内容需要人工核对。" : ""}`);
   } catch (error) {
     if (sessionId === projectScreenshotSessionId) {
       projectScreenshotRows = [createManualProjectScreenshotRow(sessionId)];
       renderProjectScreenshotResults(projectScreenshotRows);
       setProjectScreenshotStatus(`${error.message || "截图识别失败"}，可在下方补录。`);
-      showToast("OCR 未完成，已保留手工补录入口。" );
+      showToast("视觉识别未完成，已保留手工补录入口。" );
     }
   } finally {
     setProjectScreenshotBusy(false);
@@ -2164,7 +2170,7 @@ function projectScreenshotImageFileValidationError(file) {
   if (!file || !Number(file.size)) return "图片文件为空，请重新选择。";
   if (Number(file.size) > PROJECT_SCREENSHOT_MAX_FILE_BYTES) return "图片超过 30MB，请先裁剪或分段上传。";
   const type = String(file.type || "").toLowerCase();
-  if (type && !PROJECT_SCREENSHOT_IMAGE_MIME_TYPES.has(type)) return "请上传 PNG、JPEG、WebP、HEIC 等项目表图片。";
+  if (type && !PROJECT_SCREENSHOT_IMAGE_MIME_TYPES.has(type)) return "请上传 PNG、JPEG、WebP 项目表图片。";
   if (!type && !PROJECT_SCREENSHOT_IMAGE_EXTENSIONS.test(file.name || "")) return "无法确认图片格式，请改用 PNG 或 JPEG。";
   return "";
 }
@@ -3686,6 +3692,12 @@ async function handleProjectScreenshotCorrectionSubmit(event) {
   const rowIndex = projectScreenshotRows.findIndex((item) => item.id === rowId);
   if (rowIndex < 0) return;
   const row = projectScreenshotRows[rowIndex];
+  if (!PROJECT_SCREENSHOT_BRANCHES.includes(row.branch)) {
+    row.error = "请先选择正确的所属分行。";
+    row.isEditing = true;
+    renderProjectScreenshotResults();
+    return;
+  }
   if (!row.editSnapshot) row.editSnapshot = projectScreenshotRowSnapshot(row);
   const draft = cleanProjectScreenshotBondFullName(row.draftFullName);
   if (!draft) {
@@ -3772,7 +3784,7 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
     return;
   }
 
-  const groups = PROJECT_SCREENSHOT_BRANCHES
+  const groups = [...new Set([...PROJECT_SCREENSHOT_BRANCHES, ...rows.map((row) => row.branch)])]
     .map((branch) => ({ branch, rows: rows.filter((row) => row.branch === branch) }))
     .filter((group) => group.rows.length);
   const groupHtml = groups.map((group) => {
@@ -3799,6 +3811,7 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
       const correctionForm = showCorrection ? `
         <form class="project-screenshot-correction" data-project-screenshot-correction-form data-project-screenshot-row-id="${escapeAttribute(row.id)}">
           <select aria-label="所属分行" data-project-screenshot-branch-select data-project-screenshot-row-id="${escapeAttribute(row.id)}">
+            ${!PROJECT_SCREENSHOT_BRANCHES.includes(row.branch) ? '<option value="" selected disabled>请选择分行</option>' : ""}
             ${branchOptions}
           </select>
           <input
@@ -3829,7 +3842,7 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
     }).join("");
     return `
       <section class="project-screenshot-branch">
-        <h3>${escapeHtml(group.branch)} <span>${matched}/${group.rows.length}</span></h3>
+        <h3>${escapeHtml(group.branch || "分行待确认")} <span>${matched}/${group.rows.length}</span></h3>
         ${items}
       </section>
     `;

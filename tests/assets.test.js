@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260906-release-5021-first-paint";
+const VERSION = "20260906-project-vision-5022";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -17,8 +17,8 @@ test("exposes a readable product version consistent with package metadata", asyn
   assert.equal(lock.version, packageVersion);
   assert.equal(lock.packages[""].version, packageVersion);
   assert.match(html, new RegExp(`<meta name="application-version" content="${buildVersion.replaceAll(".", "\\.")}">`));
-  assert.match(html, /<meta name="application-build-version" content="5\.0\.2\.1">/);
-  assert.match(html, /class="brand-version" title="内部构建 5\.0\.2\.1 · 2026-09-06 更新"/);
+  assert.match(html, /<meta name="application-build-version" content="5\.0\.2\.2">/);
+  assert.match(html, /class="brand-version" title="内部构建 5\.0\.2\.2 · 2026-09-06 更新"/);
   assert.match(html, new RegExp(`styles\\.css\\?v=${VERSION}`));
   assert.match(html, new RegExp(`class="brand-version"[^>]*>v${visibleVersion.replaceAll(".", "\\.")}<`));
 });
