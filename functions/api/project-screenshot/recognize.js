@@ -24,7 +24,9 @@ export async function onRequestPost(context) {
       headers["CF-Access-Client-Secret"] = local.accessClientSecret;
     }
     const url = new URL("/v1/project-screenshot", local.url);
-    const signal = AbortSignal.any([context.request.signal, AbortSignal.timeout(90000)]);
+    // Pages only supplies an incoming signal when enable_request_signal is enabled.
+    const timeoutSignal = AbortSignal.timeout(90000);
+    const signal = context.request.signal ? AbortSignal.any([context.request.signal, timeoutSignal]) : timeoutSignal;
     const started = Date.now();
     const response = await (context.fetchImpl || fetch)(url, { method: "POST", headers, body: bytes, signal, redirect: "error" });
     if (!response.ok) {

@@ -36,6 +36,17 @@ test("vision API forwards original bytes and server-only credentials; projects o
   assert.equal(body.privateDebug, undefined);
 });
 
+test("vision API supports the Pages runtime without an incoming request signal", async () => {
+  const incoming = request();
+  Object.defineProperty(incoming, "signal", { value: undefined });
+  const response = await onRequestPost({ request: incoming, env, fetchImpl: async (_url, options) => {
+    assert.ok(options.signal instanceof AbortSignal);
+    return Response.json(output);
+  } });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).entries, output.entries);
+});
+
 test("vision API surfaces busy/offline and rejects wrong model or truncated protocol", async () => {
   for (const [upstream, expected] of [[new Response("busy", { status: 429 }), 429], [new Response("offline", { status: 502 }), 503], [Response.json({ ...output, model: "wrong" }), 503], [Response.json({ ...output, entries: [{ branch: 7 }] }), 503]]) {
     assert.equal((await onRequestPost({ request: request(), env, fetchImpl: async () => upstream })).status, expected);
