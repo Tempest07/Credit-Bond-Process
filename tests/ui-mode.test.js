@@ -6,6 +6,36 @@ import vm from "node:vm";
 const preference = await readFile(new URL("../ui-preference.js", import.meta.url), "utf8");
 const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
 
+test("startup login placeholder stays hidden only until the gate receives a real state", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const css = await readFile(new URL("../ui-mode.css", import.meta.url), "utf8");
+  assert.match(html, /id="cloudGate" data-initializing/);
+  assert.match(css, /\.cloud-gate\[data-initializing\]\{visibility:hidden\}/);
+  const start = app.indexOf("function setCloudGate(");
+  const end = app.indexOf("\nfunction ", start + 1);
+  for (const state of ["connecting", "idle", "error", "success"]) {
+    const nodes = new Map();
+    const getNode = selector => {
+      if (!nodes.has(selector)) nodes.set(selector, {
+        dataset: { initializing: "" }, hidden: true,
+        classList: { toggle() {}, remove() {}, add() {} },
+        closest: () => ({ classList: { toggle() {} } }),
+      });
+      return nodes.get(selector);
+    };
+    const context = vm.createContext({
+      $: getNode, syncConflictActive: false, isLocalApiMode: () => false,
+      updateCloudGateCopy() {}, document: { dispatchEvent() {} },
+      CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+    });
+    vm.runInContext(app.slice(start, end), context);
+    context.setCloudGate(true, { state });
+    assert.equal("initializing" in getNode("#cloudGate").dataset, false);
+    assert.equal(getNode("#cloudGate").hidden, false);
+    assert.equal(getNode("#gatewayLoginLink").hidden, state === "connecting" || state === "success");
+  }
+});
+
 test("switching from classic to beta does not open a retained project selection from the list", () => {
   for (const pane of ["list", "overview", "detail"]) {
     const opened = [];

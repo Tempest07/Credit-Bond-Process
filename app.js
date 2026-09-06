@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260906-release-5021";
+} from "./core.js?v=20260906-release-5021-startup";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260906-release-5021";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260906-release-5021";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260906-release-5021";
+} from "./lifecycle.js?v=20260906-release-5021-startup";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260906-release-5021-startup";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260906-release-5021-startup";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260906-release-5021";
+} from "./history-parser.js?v=20260906-release-5021-startup";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260906-release-5021";
+} from "./protocol-transfer.js?v=20260906-release-5021-startup";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260906-release-5021";
+} from "./protocol-transfer-templates.js?v=20260906-release-5021-startup";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260906-release-5021";
+} from "./protocol-transfer-docx.js?v=20260906-release-5021-startup";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260906-release-5021";
+} from "./reminders.js?v=20260906-release-5021-startup";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260906-release-5021";
+} from "./secondary-inventory.js?v=20260906-release-5021-startup";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260906-release-5021";
+} from "./trade-record-converter.js?v=20260906-release-5021-startup";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260906-release-5021";
+} from "./trade-record-grid.js?v=20260906-release-5021-startup";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260906-release-5021";
-import { initializeDatePickers } from "./date-picker.js?v=20260906-release-5021";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260906-release-5021";
+} from "./trade-record-ledger.js?v=20260906-release-5021-startup";
+import { initializeDatePickers } from "./date-picker.js?v=20260906-release-5021-startup";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260906-release-5021-startup";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260906-release-5021";
+} from "./project-screenshot-ocr.js?v=20260906-release-5021-startup";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260906-release-5021";
+} from "./project-screenshot-layout.js?v=20260906-release-5021-startup";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260906-release-5021";
+} from "./project-screenshot-image.js?v=20260906-release-5021-startup";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260906-release-5021";
+} from "./payment-receipts.js?v=20260906-release-5021-startup";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260906-release-5021";
+} from "./issuer-search.js?v=20260906-release-5021-startup";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260906-release-5021";
+} from "./state-history.js?v=20260906-release-5021-startup";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -14061,6 +14061,7 @@ function setSyncStatus(status, detail) {
 function setCloudGate(locked, options = {}) {
   const config = typeof options === "string" ? { detail: options } : options;
   const gate = $("#cloudGate");
+  delete gate.dataset.initializing;
   const stateName = config.state || (locked ? "idle" : "success");
   $(".main").classList.toggle("cloud-locked", Boolean(locked));
   $(".main").classList.toggle("cloud-ready", !locked);
