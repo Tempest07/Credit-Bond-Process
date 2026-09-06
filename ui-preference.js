@@ -1,4 +1,5 @@
-// Read before the body is rendered so returning visitors do not see the wrong UI.
+// The matching stylesheet links before this classic script finish loading first.
+// Disable beta styles for classic users before the parser can render the body.
 (() => {
   const key = "bond-centre-ui-beta";
   let enabled = false;

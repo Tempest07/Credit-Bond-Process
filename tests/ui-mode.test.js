@@ -58,7 +58,7 @@ test("switching from classic to beta does not open a retained project selection 
 test("first visit and invalid preferences retain the classic UI; only an explicit true enables beta", () => {
   for (const stored of [null, "false", "invalid", "true"]) {
     const root = { dataset: {} };
-    const links = [{ media: "not all" }, { media: "not all" }, { media: "not all" }];
+    const links = [{ media: "all" }, { media: "all" }, { media: "all" }];
     const reads = [];
     vm.runInNewContext(preference, {
       document: { documentElement: root, querySelectorAll: () => links },
@@ -68,6 +68,19 @@ test("first visit and invalid preferences retain the classic UI; only an explici
     assert.equal(root.dataset.ui, stored === "true" ? "beta" : "legacy");
     assert.ok(links.every(link => link.media === (stored === "true" ? "all" : "not all")));
   }
+});
+
+test("beta CSS loads before the blocking preference script and first body paint", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const preferenceScript = html.match(/<script src="\.\/ui-preference\.js[^"\n]*"><\/script>/);
+  assert.ok(preferenceScript);
+  const sheets = [...html.matchAll(/<link[^>]*data-ui-beta[^>]*>/g)];
+  assert.equal(sheets.length, 3);
+  for (const sheet of sheets) {
+    assert.match(sheet[0], /media="all"/);
+    assert.ok(sheet.index < preferenceScript.index);
+  }
+  assert.ok(preferenceScript.index < html.indexOf("<body>"));
 });
 
 test("blocked browser storage still starts in the classic UI", () => {
