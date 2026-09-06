@@ -411,3 +411,85 @@
   html.android-app [data-view="rules"] .rule-card { grid-template-columns: minmax(0, 1fr); border-radius: 0; padding: 24px 0; }
   html.android-app [data-view="secondary-trading"] .secondary-ledger-sheet { overflow-x: auto; }
 }
+/* ai.json: original image layers, anchors and 150-frame / 30fps timing. */
+html[data-ui="beta"] .main.cloud-locked > .topbar > div:first-child { display: none; }
+html[data-ui="beta"]:not(.android-app) .main.cloud-locked > .topbar { display: none; }
+html[data-ui="beta"] :is(.cloud-gate-connecting, .cloud-gate-success) {
+  display: block;
+  max-width: 640px;
+  margin: 8px auto 72px;
+  padding: 0 24px 36px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+html[data-ui="beta"] :is(.cloud-gate-connecting, .cloud-gate-success) .cloud-gate-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+html[data-ui="beta"] :is(.cloud-gate-connecting, .cloud-gate-success) :is(.cloud-orb, .cloud-pulse-lines, .step) { display: none; }
+html[data-ui="beta"] :is(.cloud-gate-connecting, .cloud-gate-success) .connection-thinking {
+  display: block;
+  width: min(320px, 74vw);
+  aspect-ratio: 1;
+  filter: grayscale(1) contrast(1.45);
+}
+.connection-thinking svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.connection-thinking :is(.connection-thinking-clockwise, .connection-thinking-counterclockwise) {
+  transform-origin: 0 0;
+  animation: connectionThinkingTurn 5s linear infinite paused;
+}
+.connection-thinking .connection-thinking-counterclockwise { animation-name: connectionThinkingReturn; }
+.connection-link-left { animation: connectionLinkLeft 2.8s ease-in-out infinite paused; }
+.connection-link-right { animation: connectionLinkRight 2.8s ease-in-out infinite paused; }
+html[data-ui="beta"] .cloud-gate-connecting:not([hidden]) .connection-thinking :is(g[class], .connection-link-left, .connection-link-right) { animation-play-state: running; }
+html[data-ui="beta"] .cloud-gate-connecting .cloud-gate-copy { display: grid; gap: 10px; }
+html[data-ui="beta"] .cloud-gate-connecting .cloud-gate-copy h2 {
+  margin: 0;
+  color: #171717;
+  font-size: clamp(20px, 2vw, 24px);
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: .01em;
+  background: linear-gradient(110deg, #171717 30%, #171717 35%, #777 43%, #d8d8d8 48%, #d8d8d8 52%, #777 57%, #171717 65%, #171717 70%);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: connectionTextShimmer 2.4s ease-in-out infinite paused;
+}
+html[data-ui="beta"] .cloud-gate-connecting:not([hidden]) .cloud-gate-copy h2 { animation-play-state: running; }
+html[data-ui="beta"] .cloud-gate-connecting .cloud-gate-copy p { color: #858585; font-size: 13px; line-height: 1.8; }
+@keyframes connectionThinkingTurn { from { transform: rotate(0deg); } 99.333333%, to { transform: rotate(360deg); } }
+@keyframes connectionThinkingReturn { from { transform: rotate(360deg); } 99.333333%, to { transform: rotate(0deg); } }
+@keyframes connectionLinkLeft { 0%, 100% { transform: translate(-3px, 3px); opacity: .45; } 40%, 70% { transform: translate(0, 0); opacity: 1; } }
+@keyframes connectionLinkRight { 0%, 100% { transform: translate(3px, -3px); opacity: .45; } 40%, 70% { transform: translate(0, 0); opacity: 1; } }
+html[data-ui="beta"] .cloud-gate-success::before { display: none; }
+html[data-ui="beta"] .cloud-gate-success .cloud-gate-copy h2 {
+  margin: 0; color: #171717; font-size: clamp(20px, 2vw, 24px); line-height: 1.5;
+  font-weight: 600; letter-spacing: .01em; animation: connectionSuccessText .35s ease both;
+}
+html[data-ui="beta"] .cloud-gate-success .connection-link-left { animation: connectionClaspLeft .65s cubic-bezier(.2,.8,.3,1) both; }
+html[data-ui="beta"] .cloud-gate-success .connection-link-right { animation: connectionClaspRight .65s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes connectionClaspLeft { from { transform: translate(-8px, 0); } to { transform: translate(2px, 0); } }
+@keyframes connectionClaspRight { from { transform: translate(8px, 0); } to { transform: translate(-2px, 0); } }
+@keyframes connectionSuccessText { from { opacity: 0; } to { opacity: 1; } }
+.connection-entry-overlay { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
+.connection-entry-art { position: fixed; display: block; margin: 0; transform-origin: 50% 54.21875%; filter: grayscale(1) contrast(1.45); }
+.connection-entry-art svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.connection-entry-art * { animation: none !important; }
+.connection-entry-title { position: fixed; margin: 0; padding: 0; white-space: pre-wrap; transform-origin: center; }
+.connection-entry-status { position: fixed; transform: translateX(-50%); font: 600 22px/1.5 Arial, sans-serif; }
+html[data-ui="beta"] .main.connection-entering #pageTitle { visibility: hidden; }
+html[data-ui="beta"] .main.connection-entering .view.active { opacity: 0 !important; }
+html[data-ui="beta"] .main.connection-entering.connection-entry-content .view.active { opacity: 1 !important; transition: opacity 220ms ease; }
+@keyframes connectionTextShimmer { 0%, 8% { background-position: 120% 0; } 92%, 100% { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .connection-thinking :is(g[class], .connection-link-left, .connection-link-right) { animation: none !important; }
+  html[data-ui="beta"] .cloud-gate-connecting .cloud-gate-copy h2 { animation: none !important; background: none; -webkit-text-fill-color: #171717; }
+  html[data-ui="beta"] .cloud-gate-success .cloud-gate-copy h2 { animation: none; }
+}
