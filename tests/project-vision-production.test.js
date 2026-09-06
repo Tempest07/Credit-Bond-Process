@@ -28,6 +28,7 @@ test("vision API forwards original bytes and server-only credentials; projects o
     assert.equal(options.headers.Authorization, `Bearer ${token}`);
     assert.equal(options.headers["CF-Access-Client-Secret"], "test-secret");
     assert.deepEqual(options.body, jpeg);
+    assert.equal(options.redirect, "manual");
     return Response.json({ ...output, privateDebug: "must not reach browser" });
   } });
   const body = await response.json();
@@ -48,7 +49,7 @@ test("vision API supports the Pages runtime without an incoming request signal",
 });
 
 test("vision API surfaces busy/offline and rejects wrong model or truncated protocol", async () => {
-  for (const [upstream, expected] of [[new Response("busy", { status: 429 }), 429], [new Response("offline", { status: 502 }), 503], [Response.json({ ...output, model: "wrong" }), 503], [Response.json({ ...output, entries: [{ branch: 7 }] }), 503]]) {
+  for (const [upstream, expected] of [[new Response("redirect", { status: 302, headers: { Location: "https://other.example" } }), 503], [new Response("busy", { status: 429 }), 429], [new Response("offline", { status: 502 }), 503], [Response.json({ ...output, model: "wrong" }), 503], [Response.json({ ...output, entries: [{ branch: 7 }] }), 503]]) {
     assert.equal((await onRequestPost({ request: request(), env, fetchImpl: async () => upstream })).status, expected);
   }
   assert.equal((await onRequestPost({ request: request(), env: {}, fetchImpl: async () => { throw new Error("must not call"); } })).status, 503);

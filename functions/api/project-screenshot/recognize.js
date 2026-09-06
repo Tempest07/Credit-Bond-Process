@@ -28,7 +28,7 @@ export async function onRequestPost(context) {
     const timeoutSignal = AbortSignal.timeout(90000);
     const signal = context.request.signal ? AbortSignal.any([context.request.signal, timeoutSignal]) : timeoutSignal;
     const started = Date.now();
-    const response = await (context.fetchImpl || fetch)(url, { method: "POST", headers, body: bytes, signal, redirect: "error" });
+    const response = await (context.fetchImpl || fetch)(url, { method: "POST", headers, body: bytes, signal, redirect: "manual" });
     if (!response.ok) {
       await response.body?.cancel();
       return json({ error: response.status === 429 ? "本地模型正在处理其他任务，请稍后重试。" : "本地视觉服务暂时不可用，请确认电脑和 Ollama 已启动。" }, response.status === 429 ? 429 : 503);
