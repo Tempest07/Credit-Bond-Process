@@ -156,7 +156,7 @@ label{color:#666;font-size:13px;font-weight:400;line-height:1.5}
 .project-item:not(:has(.project-bid-summary))::before{content:'查看项目 ↗';grid-column:3;grid-row:1/3;justify-self:end;color:#888;font-size:12px}
 #projectList .project-bid-summary::after{content:'查看项目 ↗';display:block;margin-top:8px;color:#888;font-size:12px;text-align:right}
 .project-list.liquid-track .project-item>*{z-index:auto}
-.ledger-todo-zone{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin:48px 0 0;padding:0}
+.ledger-todo-zone{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin:32px 0 48px;padding:0}
 .ledger-command-card,.cutoff-todo-panel,.payment-todo-panel{min-height:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
 .payment-todo-head h2{color:#111;font-size:20px;font-weight:500}
 .payment-todo-head .step{display:none}

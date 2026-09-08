@@ -2881,3 +2881,78 @@ function valuationCandidate(shortName, years, rate, profile) {
     },
   };
 }
+
+
+test("implied rating skips numeric risk metrics and keeps a later valid rating", () => {
+  const result = __test__.normalizeDmLookup({
+    shortName: "26测试SCP001", securityId: "012681111.IB", fullName: "",
+    basic: { rows: [{ security_id: "012681111.IB", sec_short_name: "26测试SCP001",
+      cb_implied_default_rate: 7.173443, implied_tenor: 7.173443, cb_implied_rating: "AA+" }] },
+    primary: [], company: [],
+  });
+  assert.equal(result.impliedRating, "AA+");
+});
+
+test("numeric implied values remain missing instead of becoming a rating", () => {
+  for (const value of [7.173443, "7.173443", "7.173443%", "--"]) {
+    const result = __test__.normalizeDmLookup({
+      shortName: "26测试SCP001", securityId: "012681111.IB", fullName: "",
+      basic: { rows: [{ security_id: "012681111.IB", sec_short_name: "26测试SCP001",
+        implied_rating: value, subject_rating: "AAA" }] }, primary: [], company: [],
+    });
+    assert.equal(result.impliedRating, "");
+    assert.equal(result.subjectRating, "AAA");
+  }
+});
+
+
+test("compatible implied fields use an explicit contract and ChinaBond priority", () => {
+  for (const fields of [
+    { implied_rating_note: "AAA", implied_score: "AAA", cs_implied_rating: "AA", cb_implied_rating: "AA+" },
+    { cbImpliedRating: "AA+", csImpliedRating: "AAA", impliedRating: "AAA" },
+  ]) {
+    const result = __test__.normalizeDmLookup({ shortName: "26测试SCP001", basic: { rows: [fields] } });
+    assert.equal(result.impliedRating, "AA+");
+  }
+  const invalid = __test__.normalizeDmLookup({ basic: { rows: [{ implied_rating_note: "AAA", implied_score: "AA+" }] } });
+  assert.equal(invalid.impliedRating, "");
+});
+
+test("lookup response does not recycle unfiltered dedicated ratings or default rates", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  try {
+    for (const valid of [true, false]) {
+      globalThis.fetch = async (url) => {
+        let data = [];
+        if (url.includes("/bond/basic-info/info")) {
+          data = [{ security_id: "012681111.IB", sec_short_name: "26测试SCP001", issuer_name: "测试公司",
+            subject_rating: "AAA", rating_agency: "中诚信国际", cb_implied_default_rate: 7.173443,
+            implied_rating_description: "AAA", implied_rating: 7.173443 }];
+        } else if (url.includes("/bond/analysis/implied-rating")) {
+          data = [
+            { security_id: "999999999.IB", rating_date: "2026-09-08", cb_implied_rating: "AAA" },
+            { security_id: "012681111.IB", rating_date: "2026-09-09", cb_implied_rating: "AAA" },
+            ...(valid ? [{ security_id: "012681111.IB", rating_date: "2026-09-08", cb_implied_rating: "AA+", cs_implied_rating: "AA" }] : []),
+          ];
+        } else if (url.includes("/bond/default-rate/data")) {
+          data = [{ security_id: "012681111.IB", rating_date: "2026-09-08", cb_implied_default_rate: 7.173443 }];
+        }
+        const encrypted = __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret);
+        return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
+      };
+      const response = await onRequestGet({
+        env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
+        request: new Request("http://localhost/api/dm/lookup?shortName=26测试SCP001&endDate=2026-09-08", { headers: { Authorization: "Bearer pw" } }),
+      });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.normalized.impliedRating, valid ? "AA+" : "");
+      if (valid) {
+        assert.equal(payload.normalized.impliedRatingBasis, "中债");
+        assert.equal(payload.normalized.impliedRatingAsOf, "2026-09-08");
+        assert.equal(payload.normalized.ratingSource.impliedRating, "dm-rating-api");
+      }
+    }
+  } finally { globalThis.fetch = originalFetch; }
+});

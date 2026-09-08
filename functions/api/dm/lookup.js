@@ -959,9 +959,12 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
   ];
   const errors = [];
   const dedicated = await lookupDedicatedDmRatingSources(dm, normalized, { includeImplied, asOfDate });
+  // Dedicated records have already been filtered by bond identity and as-of date.
+  // Do not run their raw rows through the generic discovery path again.
+  const compatible = extractRatingsFromDmSources(sources, { includeImplied });
   sources.push(...dedicated.sources);
   errors.push(...dedicated.errors);
-  const initial = mergeRatingDiscoveries(dedicated, extractRatingsFromDmSources(sources, { includeImplied }));
+  const initial = mergeRatingDiscoveries(dedicated, compatible);
   if (ratingsComplete({ ...normalized, ...initial.values }, { includeImplied })) return { ...initial, sources, errors };
 
   const issuerName = normalized?.issuerName || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
@@ -1393,8 +1396,8 @@ function externalDmRating(row, { requireInstitution = false } = {}) {
 }
 
 function dmImpliedRatingValues(row = {}) {
-  const cbRating = parseRatingWithAgency(pickFirstString(row, ["cb_implied_rating", "cbImpliedRating"])).rating;
-  const csRating = parseRatingWithAgency(pickFirstString(row, ["cs_implied_rating", "csImpliedRating"])).rating;
+  const cbRating = normalizeImpliedRating(pickFirstString(row, ["cb_implied_rating", "cbImpliedRating"]));
+  const csRating = normalizeImpliedRating(pickFirstString(row, ["cs_implied_rating", "csImpliedRating"]));
   return {
     cbRating,
     csRating,
@@ -1420,7 +1423,7 @@ function extractRatingsFromDmSources(sources, { includeImplied = true } = {}) {
   const matches = {};
   for (const source of sources) {
     for (const row of rowsFromDm(source.rows)) {
-      for (const item of flattenDmValues(row)) {
+      for (const item of flattenDmValues(row).sort((a, b) => impliedRatingFieldRank(a.key) - impliedRatingFieldRank(b.key))) {
         applyRatingCandidate(values, matches, item, source.name, { includeImplied });
         if (ratingsComplete(values, { includeImplied })) return { values, matches };
       }
@@ -1458,13 +1461,14 @@ function applyRatingCandidate(values, matches, item, source, { includeImplied = 
     values.ratingAgency = normalizeRatingAgencyName(valueText);
     matches.ratingAgency = { source, path, value: valueText };
   }
-  if (includeImplied && !values.impliedRating && ratingWithAgency.rating && ratingKeyMatches(keyText, "implied")) {
-    values.impliedRating = ratingWithAgency.rating;
+  if (includeImplied && !values.impliedRating && normalizeImpliedRating(valueText) && ratingKeyMatches(keyText, "implied")) {
+    values.impliedRating = normalizeImpliedRating(valueText);
     matches.impliedRating = { source, path, value: valueText };
   }
 }
 
 function ratingKeyMatches(key, kind) {
+  if (kind === "implied") return Number.isFinite(impliedRatingFieldRank(key));
   const text = String(key || "");
   const patterns = {
     subject: [
@@ -1484,15 +1488,6 @@ function ratingKeyMatches(key, kind) {
       /(?:org|inst).*rating/i,
       /评.*机构/i,
       /评级.*公司/i,
-    ],
-    implied: [
-      /implied/i,
-      /hidden.*rating/i,
-      /market.*rating/i,
-      /cbc.*rating/i,
-      /隐含/i,
-      /中债.*评/i,
-      /市场.*评/i,
     ],
   }[kind] || [];
   return patterns.some((pattern) => pattern.test(text));
@@ -2912,11 +2907,33 @@ function collectFieldCandidates(rawItems) {
   return candidates.slice(0, 200);
 }
 
+// Explicit field contract: default rates, tenors, scores and rating dates never qualify.
+function impliedRatingFieldRank(key) {
+  const normalized = String(key).replace(/[_\s-]/g, "").toLowerCase();
+  const groups = [
+    ["cbimpliedrating", "cbcrating", "中债隐含评级"],
+    ["csimpliedrating", "中证隐含评级"],
+    ["impliedrating", "hiddenrating", "marketrating", "marketimpliedrating", "隐含评级", "市场隐含评级"],
+  ];
+  const rank = groups.findIndex((keys) => keys.includes(normalized));
+  return rank < 0 ? Infinity : rank;
+}
+
+function normalizeImpliedRating(value) {
+  const text = String(value ?? "").trim().toUpperCase().replace(/（/g, "(").replace(/）/g, ")");
+  return /^(?:AAA[+-]?|AA(?:[+-]|\(2\))?|A[+-]?|BBB[+-]?|BB[+-]?|B[+-]?|CCC[+-]?|CC|C|D)$/.test(text) ? text : "";
+}
+
 function pickRatingLike(rows, kind) {
+  if (kind === "implied") {
+    const candidates = rows.flatMap((row) => Object.entries(row || {}))
+      .filter(([key, value]) => Number.isFinite(impliedRatingFieldRank(key)) && normalizeImpliedRating(value))
+      .sort(([a], [b]) => impliedRatingFieldRank(a) - impliedRatingFieldRank(b));
+    return candidates.length ? normalizeImpliedRating(candidates[0][1]) : "";
+  }
   const keyPatterns = {
     subject: [/subject.*rating/i, /issuer.*rating/i, /main.*rating/i, /主体.*评/i],
     agency: [/rating.*agency/i, /agency/i, /评.*机构/i],
-    implied: [/implied/i, /隐含/i, /cbc.*rating/i, /中债.*评/i],
   }[kind] || [];
   const valuePattern = /^(?:AAA|AA\+?|AA\(2\)|AA-?|A\+?|A-?|BBB\+?|BBB-?|BB\+?|BB-?|B\+?|B-?)(?:\(.+?\))?$/i;
   for (const row of rows) {
@@ -3333,6 +3350,7 @@ function bytesToHex(bytes) {
 }
 
 export const __test__ = {
+  normalizeDmLookup,
   sm4RoundKeys,
   sm4CryptBlock,
   prepareSm4Key,
