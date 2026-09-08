@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260908-release-503";
+} from "./core.js?v=20260908-release-504";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -442,8 +442,8 @@ function validateNormalizedBidSubmission(project) {
 
 export function appendBidSubmission(input = {}, submittedAt = new Date().toISOString()) {
   const project = normalizeProjectRecord(input);
-  if (project.resultConfirmed || project.status === "已结束") {
-    return { project, submission: null, issues: ["已出结果或已终止的项目不能继续提交标位。"] };
+  if (project.status === "已结束") {
+    return { project, submission: null, issues: ["已终止的项目不能继续提交标位。"] };
   }
   const validation = validateBidSubmission(project);
   if (!validation.valid) return { project, submission: null, issues: validation.issues };
@@ -460,9 +460,9 @@ export function appendBidSubmission(input = {}, submittedAt = new Date().toISOSt
   return {
     project: normalizeProjectRecord({
       ...project,
-      status: "已投标",
-      finalBidSubmissionId: "",
-      resultConfirmed: false,
+      status: project.resultConfirmed ? project.status : "已投标",
+      finalBidSubmissionId: project.resultConfirmed ? submission.id : "",
+      resultConfirmed: project.resultConfirmed,
       bidSubmissions: [...previousSubmissions, submission],
     }),
     submission,

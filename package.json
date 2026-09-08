@@ -1,6 +1,6 @@
 {
   "name": "credit-bond-process",
-  "version": "5.0.3",
+  "version": "5.0.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,5 +16,5 @@
     "pizzip": "3.2.0",
     "postal-mime": "^2.7.5"
   },
-  "buildVersion": "5.0.3"
+  "buildVersion": "5.0.4"
 }

@@ -72,6 +72,10 @@ h1,h2,h3{color:#111;font-family:inherit;font-weight:500;letter-spacing:0}
 input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea{min-height:42px;border:1px solid #dedede;border-radius:8px;background:#fafafa;color:#111;box-shadow:none;font-size:14px;font-weight:400}
 input::placeholder,textarea::placeholder{color:#929292;font-weight:400}
 input:focus,select:focus,textarea:focus{border-color:#777;box-shadow:none}
+.prepayment-number-input{background:#fafafa;box-shadow:none}
+.prepayment-number-input > span{padding-right:8px;white-space:nowrap}
+#prepaymentSuffixInput{border:0;border-radius:0;outline:none;outline-offset:0;background:transparent;padding:0 15px 0 0;font-size:16px;font-weight:700;box-shadow:none}
+.prepayment-number-input:focus-within{border-color:#777;box-shadow:0 0 0 2px #e5e5e5}
 label{color:#666;font-size:13px;font-weight:400;line-height:1.5}
 .pill,.status-badge{padding:4px 9px;border:0;border-radius:20px;background:#eee;color:#555;font-size:11px;font-weight:400}
 .pill.warning,.status-badge.warning{color:#8c601f;background:#fff3dd}
@@ -95,10 +99,14 @@ label{color:#666;font-size:13px;font-weight:400;line-height:1.5}
 .ledger-filter-chip.active,.ledger-filter-tabs.liquid-ready .ledger-filter-chip.active{background:#111;border-color:#111;color:#fff;box-shadow:none}
 .ledger-filter-chip strong,.ledger-filter-chip.active strong{display:inline;min-width:0;height:auto;padding:0;border:0;background:transparent;color:inherit;font-size:12px;font-weight:400;line-height:1;opacity:.65}
 .policy-curve-card{display:grid;grid-template-columns:180px minmax(0,1fr);padding:14px 0;border:0;border-top:1px solid #eee;border-bottom:1px solid #eee;border-radius:0;background:#fff;box-shadow:none}
-.policy-curve-head strong,.policy-curve-point strong,.policy-curve-point.is-key strong{color:#111;font-weight:500}
+.policy-curve-head strong,.policy-curve-point strong{color:#111;font-weight:500}
 .policy-curve-head span{color:#666;background:#f5f5f5;border:0;border-radius:4px;font-weight:400}
-.policy-curve-point,.policy-curve-point.is-key{border:0;border-radius:0;background:#fff}
-.policy-curve-point span,.policy-curve-point.is-key span,.policy-curve-card p{color:#777;font-size:11px;font-weight:400}
+.policy-curve-point{border:0;border-radius:0;background:#fff}
+.policy-curve-point span,.policy-curve-card p{color:#777;font-size:11px;font-weight:400}
+.policy-curve-point.is-key{border-radius:8px;background:#f1f1f1}
+.policy-curve-point.is-key span,.policy-curve-point.is-key strong{color:#111;font-weight:700}
+.policy-curve-point.is-key.is-missing strong{color:#999}
+.policy-curve-point .policy-curve-days{display:inline-block;margin-left:6px;color:#999;font-size:inherit;font-weight:400;line-height:1.3;white-space:nowrap}
 .policy-curve-retry{color:#666;background:none;border:0;box-shadow:none}
 .policy-curve-card[data-curve-state=error],.policy-curve-card[data-curve-state=stale]{background:#fff}
 .policy-curve-message{font-size:12px;font-weight:400;color:#888}
@@ -254,3 +262,5 @@ html.android-app .topbar h1{font-size:24px}
 html.android-app #projectWorkspace{inset:0;width:100%;height:100dvh;z-index:105;border-radius:0}
 
 @media(max-width:760px){body:has(.view.active #projectWorkspace[data-open=true]){overflow:hidden}}
+
+.site-header .header-version{flex-shrink:0;color:#777;font-size:12px;font-weight:400;white-space:nowrap;letter-spacing:0}

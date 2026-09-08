@@ -33,7 +33,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260908-release-503";
+} from "./core.js?v=20260908-release-504";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -60,15 +60,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260908-release-503";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260908-release-503";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260908-release-503";
+} from "./lifecycle.js?v=20260908-release-504";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260908-release-504";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260908-release-504";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260908-release-503";
+} from "./history-parser.js?v=20260908-release-504";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +85,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260908-release-503";
+} from "./protocol-transfer.js?v=20260908-release-504";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260908-release-503";
+} from "./protocol-transfer-templates.js?v=20260908-release-504";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260908-release-503";
+} from "./protocol-transfer-docx.js?v=20260908-release-504";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260908-release-503";
+} from "./reminders.js?v=20260908-release-504";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +129,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260908-release-503";
+} from "./secondary-inventory.js?v=20260908-release-504";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260908-release-503";
+} from "./trade-record-converter.js?v=20260908-release-504";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +144,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260908-release-503";
+} from "./trade-record-grid.js?v=20260908-release-504";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260908-release-503";
-import { initializeDatePickers } from "./date-picker.js?v=20260908-release-503";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260908-release-503";
+} from "./trade-record-ledger.js?v=20260908-release-504";
+import { initializeDatePickers } from "./date-picker.js?v=20260908-release-504";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260908-release-504";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +160,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260908-release-503";
+} from "./project-screenshot-ocr.js?v=20260908-release-504";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260908-release-503";
+} from "./project-screenshot-layout.js?v=20260908-release-504";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260908-release-503";
+} from "./project-screenshot-image.js?v=20260908-release-504";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260908-release-503";
+} from "./payment-receipts.js?v=20260908-release-504";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260908-release-503";
+} from "./issuer-search.js?v=20260908-release-504";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260908-release-503";
+} from "./state-history.js?v=20260908-release-504";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -7357,7 +7357,7 @@ function renderPolicyCurve(payload) {
     const keyTerm = POLICY_CURVE_KEY_TERMS.has(tenor);
     return `
       <span class="policy-curve-point ${available ? "" : "is-missing"} ${derived ? "is-derived" : ""} ${keyTerm ? "is-key" : ""}" data-curve-term="${tenor}">
-        <span>${tenor}</span><strong>${available ? `${derived ? "≈" : ""}${value.toFixed(3)}%` : "—"}</strong>
+        <span>${tenor}<small class="policy-curve-days" title="按一年365天换算，仅供期限对照">${Math.round(Number.parseFloat(tenor) * 365)}D</small></span><strong>${available ? `${derived ? "≈" : ""}${value.toFixed(3)}%` : "—"}</strong>
       </span>
     `;
   }).join("");
@@ -10829,7 +10829,7 @@ function updateProjectActionButtons(projectOrStatus) {
   const { hasResult, canWithdraw, canTerminate } = projectActionAvailability(projectValue);
   $("#markUnbidButton").disabled = !canWithdraw;
   $("#terminateProjectButton").disabled = !canTerminate;
-  $("#markBidButton").disabled = hasResult || !["未投标", "已投标"].includes(status);
+  $("#markBidButton").disabled = status === "已结束" || (!hasResult && !["未投标", "已投标"].includes(status));
   $("#markBidButton").textContent = `提交第 ${bidCount + 1} 次标`;
   $("#finalizeBidButton").hidden = status !== "已投标" || hasResult;
   $("#finalizeBidButton").disabled = !bidCount;
@@ -10851,7 +10851,7 @@ function renderBidSubmissionHistory(projectValue) {
 
   const latest = submissions[submissions.length - 1];
   const isFinal = latest.id === projectValue.finalBidSubmissionId;
-  const hasDraftChanges = !projectValue.resultConfirmed && hasUnsubmittedBidChanges(projectValue);
+  const hasDraftChanges = hasUnsubmittedBidChanges(projectValue);
   summary.textContent = `已提交 ${submissions.length} 次 · ${isFinal ? "最终标位" : "最近提交"}：第 ${latest.sequence} 次${hasDraftChanges ? " · 有修改未提交" : ""}`;
   history.hidden = false;
   history.innerHTML = [...submissions].reverse().map((submission) => {

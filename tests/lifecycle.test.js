@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   appendBidSubmission,
+  hasUnsubmittedBidChanges,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
   buildAwardResultText,
@@ -1372,4 +1373,32 @@ test("upserts project records without affecting issuers", () => {
   const state = upsertProject({ version: 2, issuers: [{ id: "issuer" }], projects: [] }, { shortName: "项目A" });
   assert.equal(state.issuers.length, 1);
   assert.equal(state.projects.length, 1);
+});
+
+
+test("allows post-result bid corrections while preserving results and payment records", () => {
+  for (const status of ["待缴款", "已缴款", "未中标"]) {
+    const first = appendBidSubmission({
+      shortName: "测试补录",
+      tranches: [{ shortName: "测试补录", bidLevels: [{ bidRate: 2.4, bidAmount: 0.5 }] }],
+    });
+    const draft = normalizeProjectRecord({
+      ...first.project, status, resultConfirmed: true,
+      finalBidSubmissionId: first.submission.id,
+      tranches: [{ ...first.project.tranches[0], resultStatus: status === "未中标" ? "未中标" : "中标",
+        winningAmount: 0.3, paymentStatus: status === "已缴款" ? "已缴款" : "待缴款",
+        prepaymentNumber: "W2026090800003",
+        bidLevels: [{ bidRate: 2.4, bidAmount: 0.5 }, { bidRate: 2.45, bidAmount: 0.2 }] }],
+    });
+    const corrected = appendBidSubmission(draft);
+    assert.deepEqual(corrected.issues, []);
+    assert.equal(corrected.submission.sequence, 2);
+    assert.equal(corrected.project.resultConfirmed, true);
+    assert.equal(corrected.project.status, draft.status);
+    assert.deepEqual(corrected.project.tranches, draft.tranches);
+    assert.deepEqual(corrected.project.bidSubmissions[0], draft.bidSubmissions[0]);
+    assert.equal(corrected.project.finalBidSubmissionId, corrected.submission.id);
+    assert.equal(hasUnsubmittedBidChanges(corrected.project), false);
+  }
+  assert.equal(appendBidSubmission({ status: "已结束" }).submission, null);
 });
