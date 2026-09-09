@@ -2956,3 +2956,49 @@ test("lookup response does not recycle unfiltered dedicated ratings or default r
     }
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test("basic-only lookup converts issuance units and recovers whole-day tenors without inventing inquiry", () => {
+  const normalize = (row) => __test__.normalizeDmLookup({ shortName: "26南电MTN004", basic: { rows: [row] }, primary: { rows: [] }, company: { rows: [] } });
+  const actual = normalize({ actu_iss_amut: 600000, bond_matu: "4.986301" });
+  assert.equal(actual.issueScaleYi, 60);
+  assert.equal(actual.durationText, "1820D");
+  assert.equal(actual.inquiryRange, "");
+  assert.equal(normalize({ new_size: 600000 }).issueScaleYi, null);
+  assert.equal(normalize({ bond_matu: "1820", bond_matu_unit_par: "天" }).durationText, "1820D");
+  assert.equal(normalize({ bond_matu: "5" }).durationText, "5Y");
+  assert.equal(normalize({ bond_matu: "3+2Y" }).durationText, "3+2Y");
+});
+
+test("historical bonds outside the primary window are queried around their issuance date", () => {
+  const window = { startDate: "2026-08-26", endDate: "2026-09-24" };
+  assert.deepEqual(__test__.historicalPrimaryWindow({ issStartDate: "2026-07-24" }, window), { startDate: "2026-07-10", endDate: "2026-07-25" });
+  assert.equal(__test__.historicalPrimaryWindow({ issStartDate: "2026-09-01" }, window), null);
+  assert.equal(__test__.historicalPrimaryWindow({}, window), null);
+});
+
+test("lookup retries a missed historical issue and uses only its own subscription range", async () => {
+  const originalFetch = globalThis.fetch;
+  const secret = "1234567890abcdef";
+  const windows = [];
+  globalThis.fetch = async (url, init) => {
+    const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
+    let data = [];
+    if (url.includes("/bond/basic-info/info")) data = [{ securityId: "102600004.IB", secShortName: "26测试MTN004", issStartDate: "2026-07-24", actuIssAmut: 600000, bondMatu: 4.986301 }];
+    if (url.includes("/bond/primary/data")) {
+      windows.push(request);
+      data = { list: request.startDate === "2026-07-10"
+        ? [{ securityId: "102600004.IB", secShortName: "26测试MTN004", bondIssueTenor: "1820D", planIssueAmount: 600000, subscribeRate: "1.2 ~ 1.8" }]
+        : [{ securityId: "102600006.IB", secShortName: "26测试MTN006", subscribeRate: "9 ~ 10" }] };
+    }
+    return new Response(JSON.stringify({ data: __test__.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data }), secret) }), { status: 200 });
+  };
+  try {
+    const response = await onRequestGet({ env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret }, request: new Request("http://127.0.0.1:8788/api/dm/lookup?shortName=26测试MTN004&startDate=2026-08-26&endDate=2026-09-24", { headers: { Authorization: "Bearer pw" } }) });
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(windows.length, 2);
+    assert.equal(payload.normalized.issueScaleYi, 60);
+    assert.equal(payload.normalized.durationText, "1820D");
+    assert.equal(payload.normalized.inquiryRange, "1.2-1.8");
+  } finally { globalThis.fetch = originalFetch; }
+});

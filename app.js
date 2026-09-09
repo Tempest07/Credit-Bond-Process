@@ -33,11 +33,12 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260908-release-504";
+} from "./core.js?v=20260909-release-505";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
   appendBidSubmission,
+  fillBidAtUpperLimit,
   applyGuidancePricing,
   applySemanticIssuanceResult,
   buildAwardResultText,
@@ -60,15 +61,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260908-release-504";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260908-release-504";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260908-release-504";
+} from "./lifecycle.js?v=20260909-release-505";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260909-release-505";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260909-release-505";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260908-release-504";
+} from "./history-parser.js?v=20260909-release-505";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -85,23 +86,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260908-release-504";
+} from "./protocol-transfer.js?v=20260909-release-505";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260908-release-504";
+} from "./protocol-transfer-templates.js?v=20260909-release-505";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260908-release-504";
+} from "./protocol-transfer-docx.js?v=20260909-release-505";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260908-release-504";
+} from "./reminders.js?v=20260909-release-505";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -129,11 +130,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260908-release-504";
+} from "./secondary-inventory.js?v=20260909-release-505";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260908-release-504";
+} from "./trade-record-converter.js?v=20260909-release-505";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -144,14 +145,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260908-release-504";
+} from "./trade-record-grid.js?v=20260909-release-505";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260908-release-504";
-import { initializeDatePickers } from "./date-picker.js?v=20260908-release-504";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260908-release-504";
+} from "./trade-record-ledger.js?v=20260909-release-505";
+import { initializeDatePickers } from "./date-picker.js?v=20260909-release-505";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260909-release-505";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -160,30 +161,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260908-release-504";
+} from "./project-screenshot-ocr.js?v=20260909-release-505";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260908-release-504";
+} from "./project-screenshot-layout.js?v=20260909-release-505";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260908-release-504";
+} from "./project-screenshot-image.js?v=20260909-release-505";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260908-release-504";
+} from "./payment-receipts.js?v=20260909-release-505";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260908-release-504";
+} from "./issuer-search.js?v=20260909-release-505";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260908-release-504";
+} from "./state-history.js?v=20260909-release-505";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -358,6 +359,7 @@ let customProtocolTransferTemplates = [];
 let dmLastPayload = null;
 let projectDmHistory = loadProjectDmHistory();
 let projectDmHistorySaveTimer = null;
+let renderedValuationPayload = null;
 let valuationAssistTimer = null;
 let valuationAssistController = null;
 let valuationAssistRequestKey = "";
@@ -378,7 +380,7 @@ let liquidMotionObserver = null;
 let liquidResizeObserver = null;
 
 const LIQUID_TRACK_CONFIGS = [
-  { container: ".sidebar > .nav", active: ".nav-item.active", betaOnly: true },
+  { container: ".sidebar > .nav", active: ":scope > .nav-item.active, :scope > .nav-more > .nav-more-trigger.active", betaOnly: true },
   { container: ".secondary-workspace-nav", active: ".secondary-workspace-tab.active", betaOnly: true },
   { container: "#ledgerMobileNav", active: ".ledger-mobile-tab[aria-pressed=\"true\"]" },
   { container: ".ledger-filter-tabs", active: ".ledger-filter-chip.active" },
@@ -515,6 +517,13 @@ function initializeAndroidAppShell() {
 }
 
 function bindNavigation() {
+  const more = $("#navMore");
+  document.addEventListener("click", (event) => {
+    if (more?.open && !more.contains(event.target)) more.open = false;
+  });
+  more?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { more.open = false; more.querySelector("summary").focus(); }
+  });
   $$(".nav-item").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.viewTarget === "ledger" && (isUiBeta() || isCompactLedger())) {
@@ -1790,6 +1799,7 @@ function setProjectWorkspaceOpen(open) {
 function handleUiModeChange(event) {
   const viewName = $(".view.active")?.dataset.view || "ledger";
   updateCloudGateCopy();
+  if (renderedValuationPayload && !$("#valuationAssist").hidden) renderDmValuationAssist(renderedValuationPayload);
   // A retained selection is not an instruction to open the detail pane.
   setProjectWorkspaceOpen(event.detail.enabled && viewName === "ledger" && ledgerMobilePane === "detail" && Boolean(selectedProjectId));
   syncLedgerMobilePane();
@@ -1949,6 +1959,11 @@ function applyRouteFocus(route = {}) {
 function switchView(viewName, options = {}) {
   if (viewName !== "ledger") setProjectWorkspaceOpen(false);
   if ($("#workspaceTools")) $("#workspaceTools").open = false;
+  const more = $("#navMore");
+  if (more) {
+    more.open = false;
+    more.querySelector("summary").classList.toggle("active", ["database", "dm-test", "rules"].includes(viewName));
+  }
   const buttons = $$(`.nav-item[data-view-target="${viewName}"]`);
   const button = buttons[0];
   $$(".nav-item").forEach((item) => {
@@ -4690,6 +4705,7 @@ function mergeExistingProjectTranche(existing, created) {
 }
 
 function bindLedger() {
+  $("#projectDateFilter").value = localDate(new Date());
   $$("[data-ledger-mobile-pane]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextPane = button.dataset.ledgerMobilePane;
@@ -6806,6 +6822,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
   });
   if (valuationAssistRequestKey === key) return;
   valuationAssistRequestKey = key;
+  renderedValuationPayload = null;
   clearTimeout(valuationAssistTimer);
   valuationAssistTimer = setTimeout(() => fetchDmValuationAssist(key, projectValue, issuerName), 420);
   output.hidden = false;
@@ -6855,6 +6872,7 @@ async function fetchDmValuationAssist(key, projectValue, issuerName) {
 }
 
 function renderDmValuationEmpty(payload) {
+  renderedValuationPayload = null;
   const output = $("#valuationAssist");
   if (!output) return;
   output.hidden = false;
@@ -6867,6 +6885,7 @@ function renderDmValuationEmpty(payload) {
 }
 
 function renderDmValuationAssist(payload) {
+  renderedValuationPayload = payload;
   const output = $("#valuationAssist");
   if (!output) return;
   const suggestions = Array.isArray(payload.trancheSuggestions) ? payload.trancheSuggestions : [];
@@ -6886,12 +6905,13 @@ function renderDmValuationAssist(payload) {
       <span>${escapeHtml(summary)}</span>
     </div>
     <div class="valuation-assist-list">
-      ${suggestions.map(renderValuationSuggestionCard).join("")}
+      ${suggestions.map(item => renderValuationSuggestionCard(item, payload.query?.offeringType)).join("")}
     </div>
   `;
 }
 
-function renderValuationSuggestionCard(item) {
+function renderValuationSuggestionCard(item, offeringType) {
+  if (document.documentElement.dataset.ui === "beta") return renderValuationBetaCard(item, offeringType);
   const referenceOnly = Boolean(item.referenceOnly);
   const range = referenceOnly
     ? "仅列参考券"
@@ -6917,6 +6937,24 @@ function renderValuationSuggestionCard(item) {
       </div>
     </article>
   `;
+}
+
+function renderValuationBetaCard(item, offeringType) {
+  const comparables = Array.isArray(item.comparableItems) ? item.comparableItems : [];
+  const offering = { public: "公募", private: "私募", "公募": "公募", "私募": "私募" }[offeringType] || "发行方式待确认";
+  const profile = (item.profileLabel || "同类债券").split(" · ").filter(part => part !== "非永续").join(" · ");
+  return `<article class="valuation-beta-card">
+    <div class="vb-color"><div class="vb-hero">
+      <div><span>${escapeHtml(item.durationText || "目标期限")} 参考估值</span><strong class="vb-rate">${item.referenceOnly ? "暂无可靠建议" : escapeHtml(formatValuationRate(item.center))}</strong></div>
+      <div class="vb-range"><span>参考区间</span><strong>${item.referenceOnly ? "仅列参考券" : escapeHtml(`${formatValuationRate(item.low)} — ${formatValuationRate(item.high)}`)}</strong></div>
+    </div><div class="vb-profile"><span>${escapeHtml(profile)} · ${offering}</span><span>置信度 ${escapeHtml(item.confidence || "待确认")}</span></div></div>
+    <details><summary>可比券（${comparables.length}）</summary><div class="vb-table"><table><thead><tr><th>可比券 / 来源</th><th>期限</th><th>估值</th><th>调整</th></tr></thead><tbody>${comparables.map(bond => {
+      const bp = round((bond.adjustment || 0) * 100, 1);
+      const notes = [bond.yieldBasis, bond.valuationDate, bond.stale ? `滞后${formatNumber(bond.ageDays)}天` : "", bond.reliability ? `推荐度${bond.reliability}` : "", Number.isFinite(numberOrNull(bond.curveResidualBp)) ? `曲线偏离${formatNumber(bond.curveResidualBp)}bp` : "", Number(bond.sourceSpreadBp) >= 1 ? `多源差${formatNumber(bond.sourceSpreadBp)}bp` : ""].filter(Boolean).join(" · ");
+      return `<tr><td>${escapeHtml(bond.shortName || "可比券")}<span>${escapeHtml(bond.source || "来源待确认")} · ${escapeHtml(notes)}</span></td><td>${escapeHtml(bond.durationText || "—")}</td><td>${escapeHtml(formatValuationRate(bond.rate))}</td><td>${bp > 0 ? "+" : ""}${formatNumber(bp)}bp</td></tr>`;
+    }).join("") || '<tr><td colspan="4">暂无可比券</td></tr>'}</tbody></table></div></details>
+    <details><summary>定价依据与调整</summary><div class="vb-method">${escapeHtml(item.method || "暂无定价依据")}${item.clusterNote ? `<p>${escapeHtml(item.clusterNote)}</p>` : ""}<p>建议值仅供参考，估值和综合定价仍由手工填写。</p></div></details>
+  </article>`;
 }
 
 function renderValuationComparable(item) {
@@ -10068,6 +10106,9 @@ function renderProjectList() {
   syncLedgerFilterControls();
   const query = $("#projectSearch").value.trim().toLowerCase();
   const dateFilter = $("#projectDateFilter").value;
+  const isTodaySelected = dateFilter === localDate(new Date());
+  $("#projectTodayFilterButton").classList.toggle("is-selected", isTodaySelected);
+  $("#projectTodayFilterButton").setAttribute("aria-pressed", String(isTodaySelected));
   const projects = (state.projects || [])
     .filter((item) => {
       if (!projectMatchesStatusFilter(item, ledgerFilter)) return false;
@@ -10231,12 +10272,17 @@ function renderTranches(tranches) {
     <section class="tranche-card" data-tranche-index="${index}">
       <div class="tranche-card-head">
         <strong>品种 ${index + 1}</strong>
+        <div class="tranche-bid-reference" aria-label="品种投标参考">
+          <span><span>估值</span><strong>${Number.isFinite(numberOrNull(tranche.marketValuation)) ? `${formatNumber(numberOrNull(tranche.marketValuation))}%` : "—"}</strong></span>
+          <span><span>区间</span><strong>${Number.isFinite(numberOrNull(tranche.inquiryLow)) && Number.isFinite(numberOrNull(tranche.inquiryHigh)) ? `${formatNumber(numberOrNull(tranche.inquiryLow))}-${formatNumber(numberOrNull(tranche.inquiryHigh))}%` : "—"}</strong></span>
+        </div>
         <button class="text-button" type="button" data-remove-tranche="${index}" ${tranches.length <= 1 ? "hidden" : ""}>移除品种</button>
       </div>
       <div class="tranche-section bid-entry-section">
         <div class="tranche-subheading first-subheading">
           <strong>投标标位</strong>
           <div class="tranche-subheading-actions">
+            <button class="button subtle" type="button" data-bid-upper-limit="${index}">一键按上限投资</button>
             <button class="text-button" type="button" data-add-bid-level="${index}">增加表内标位</button>
             <button class="text-button" type="button" data-add-outsourced="${index}">增加委外标位</button>
           </div>
@@ -10344,6 +10390,20 @@ function renderTranches(tranches) {
       draft.tranches.splice(Number(button.dataset.removeTranche), 1);
       refillProjectForm(draft);
       saveProjectDraftNow();
+    });
+  });
+  $$("[data-bid-upper-limit]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const result = fillBidAtUpperLimit(readProjectForm(), Number(button.dataset.bidUpperLimit));
+      if (result.issue) { showToast(result.issue); return; }
+      refillProjectForm(result.project);
+      saveProjectDraftNow();
+      try {
+        await navigator.clipboard.writeText($("#projectBidPosition").value);
+        showToast("已按上限填入，标位已复制，请核对后提交标位。");
+      } catch {
+        showToast("已按上限填入，但复制失败，请点击“复制全部标位”重试。");
+      }
     });
   });
   $$("[data-add-bid-level]").forEach((button) => {

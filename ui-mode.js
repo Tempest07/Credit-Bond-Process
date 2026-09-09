@@ -67,7 +67,7 @@
       $("#androidDataActionsMount").append(nodes.actions);
     }
     if (android) topbar.insertBefore(control, $("#androidMoreButton"));
-    else if (enabled) sidebar.append(control);
+    else if (enabled) $(".header-tools").append(control);
     else nodes.actions.append(control);
     toggle.setAttribute("aria-checked", String(enabled));
     toggle.title = enabled ? "关闭新版网页 UI，恢复旧版" : "开启新版网页 UI";

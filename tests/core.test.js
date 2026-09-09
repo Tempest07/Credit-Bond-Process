@@ -843,3 +843,28 @@ test("keeps the newest imported credit record based on document order", () => {
   assert.equal(state.issuers.length, 1);
   assert.equal(state.issuers[0].credit.rawText, "最新授信");
 });
+
+test("AAA+ uses AAA ratio caps and approval thresholds", () => {
+  for (const offeringType of ["公募", "私募"]) {
+    for (const sponsorStatus of ["非我行主承", "牵头"]) {
+      const project = { hiddenRating: "AAA+", offeringType, sponsorStatus, durationText: "5Y", issueScale: 20 };
+      const issuer = { credit: { investmentTermDays: 365, approvedRatio: 40, privateRatio: 30 } };
+      const actual = calculateSuggestion(project, issuer);
+      assert.deepEqual(actual, calculateSuggestion({ ...project, hiddenRating: "AAA" }, issuer));
+      assert.equal(actual.suggestedRatio, sponsorStatus === "牵头" ? 20 : offeringType === "私募" ? 30 : 40);
+    }
+  }
+  for (const amount of [0, 3.2, 4, 8, 8.01, 10, 10.01, null]) {
+    for (const realEstate of [false, true]) {
+      assert.equal(determineApprover("AAA+", amount, realEstate), determineApprover("AAA", amount, realEstate));
+    }
+  }
+});
+
+test("opinion shows day tenor and missing inquiry rather than a zero range", () => {
+  const result = generateOpinion({ warnings: [], shortName: "测试MTN004", durationText: "1820D", issueScale: 60, inquiryRanges: [{ low: null, high: null }] }, null);
+  assert.match(result.opinion, /1820天/);
+  assert.match(result.opinion, /60亿元/);
+  assert.match(result.opinion, /待补充询价区间/);
+  assert.doesNotMatch(result.opinion, /0%-0%/);
+});

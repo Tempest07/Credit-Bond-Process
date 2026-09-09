@@ -264,3 +264,62 @@ html.android-app #projectWorkspace{inset:0;width:100%;height:100dvh;z-index:105;
 @media(max-width:760px){body:has(.view.active #projectWorkspace[data-open=true]){overflow:hidden}}
 
 .site-header .header-version{flex-shrink:0;color:#777;font-size:12px;font-weight:400;white-space:nowrap;letter-spacing:0}
+
+.site-header .nav-more-trigger{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 11px;color:#555;font-size:12px;white-space:nowrap}
+.site-header .nav-more-trigger:hover,.site-header .nav-more-trigger.active{background:#eee;color:#111}
+.site-header .nav.liquid-ready .nav-more-trigger.active{background:transparent}
+.site-header .nav-more-panel .nav-item{border-radius:9px;padding:11px 14px}
+.site-header .nav-more-panel .nav-item:hover,.site-header .nav-more-panel .nav-item.active{background:#eee;color:#111}
+
+.site-header .nav{overflow:visible;flex-wrap:wrap}
+
+.header-tools{display:flex;align-items:center;justify-content:flex-end;gap:18px;min-width:0}
+.nav-more[open] .workspace-chevron{transform:rotate(180deg)}
+@media(min-width:1400px){
+ .sidebar.site-header{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:20px}
+ .site-header .brand{justify-self:start}
+ .site-header .nav{justify-content:center;flex-wrap:nowrap}
+}
+@media(max-width:1399px){
+ .sidebar.site-header{display:flex;flex-wrap:wrap;gap:12px 24px}
+ .header-tools{margin-left:auto;order:1}
+ .site-header .nav{order:2;flex-basis:100%;justify-content:center;overflow:visible}
+}
+
+#projectWorkspace #projectFormTitle,#projectWorkspace #mobileProjectDetailTitle{font-weight:700}
+
+#projectWorkspace .bid-entry-section > .tranche-subheading > strong{font-size:13px;font-weight:700;color:#111}
+#projectWorkspace .bid-entry-section > .tranche-subheading .tranche-subheading-actions{gap:12px}
+#projectWorkspace .bid-entry-section > .tranche-subheading .tranche-subheading-actions button{font-size:12px;line-height:1.4;font-weight:400;min-height:32px}
+#projectWorkspace .bid-entry-section > .tranche-subheading .tranche-subheading-actions .button{padding:6px 14px}
+
+#toast{z-index:1600;max-width:min(420px,calc(100vw - 40px));padding:13px 18px;border:1px solid #333;border-radius:14px;background:#222;color:#fff;box-shadow:0 8px 28px #00000024;font-size:13px;font-weight:400;line-height:1.6;pointer-events:none}
+#toast:not([hidden]){animation:workspace-toast-in .18s ease-out}
+@keyframes workspace-toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){#toast:not([hidden]){animation:none}}
+
+#projectTodayFilterButton.is-selected{background:#222;color:#fff;box-shadow:0 0 0 3px #0000000a,0 3px 12px #00000018;font-weight:600}
+
+/* 5.0.5: approved valuation UI, using the existing DM valuation contract. */
+#valuationAssist{background:#fff;border:1px solid #dbe7e8;border-radius:12px;padding:0;overflow:hidden;color:#203b43}
+#valuationAssist .valuation-assist-head{padding:16px 20px;margin:0}
+#valuationAssist .valuation-assist-list{display:grid;gap:16px}
+.valuation-beta-card{border-top:1px solid #dbe7e8;font-size:14px}
+.valuation-beta-card .vb-color{background:#f0f7f6;padding:24px 20px 18px}
+.valuation-beta-card .vb-hero,.valuation-beta-card .vb-profile{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.valuation-beta-card .vb-rate{display:block;font-size:36px;font-weight:500;color:#096b72;line-height:1.3;font-variant-numeric:tabular-nums}
+.valuation-beta-card .vb-range{display:grid;gap:8px;text-align:right}
+.valuation-beta-card .vb-range>span{color:#60757b}
+.valuation-beta-card .vb-range strong{font-size:18px;font-weight:500}
+.valuation-beta-card .vb-profile{margin-top:18px}
+.valuation-beta-card .vb-profile>span:last-child{background:#dfefeb;color:#096b72;padding:3px 9px;border-radius:5px}
+.valuation-beta-card details{border-top:1px solid #dbe7e8}
+.valuation-beta-card summary{cursor:pointer;padding:14px 20px;min-height:44px;font-weight:500}
+.valuation-beta-card .vb-method{padding:0 20px 16px;line-height:1.7;overflow-wrap:anywhere}
+.valuation-beta-card .vb-table{overflow-x:auto;padding:0 20px 14px}
+.valuation-beta-card table{width:100%;border-collapse:collapse;font-size:14px}
+.valuation-beta-card td,.valuation-beta-card th{padding:10px;border-bottom:1px solid #e3ebec;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.valuation-beta-card td:first-child,.valuation-beta-card th:first-child{text-align:left;white-space:normal;min-width:150px}
+.valuation-beta-card th{font-weight:500;background:#f3f8f8}
+.valuation-beta-card td span{display:block;color:#60757b;margin-top:4px;font-size:12px}
+@media(max-width:600px){.valuation-beta-card .vb-range{text-align:left}.valuation-beta-card .vb-rate{font-size:30px}}

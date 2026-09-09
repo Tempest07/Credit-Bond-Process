@@ -1034,7 +1034,7 @@ export function determineApprover(hiddenRating, investmentAmount, isRealEstate) 
   if (isRealEstate) return "本笔为房地产债业务，由林总终批。";
   if (!Number.isFinite(investmentAmount)) return "【待确认终批层级】";
 
-  if (hiddenRating === "AAA") {
+  if (["AAA+", "AAA"].includes(hiddenRating)) {
     if (investmentAmount > 10) return "本笔业务由周总终批。";
     if (investmentAmount > 8) return "本笔业务由金处终批。";
     return "本笔业务由处室终批。";
@@ -1777,7 +1777,7 @@ function overdueRatingCaps(hiddenRating, offeringType, durationText, exceedsCred
 
 function hiddenRatingRank(value = "") {
   const text = String(value || "").trim().toUpperCase();
-  if (text === "AAA") return 7;
+  if (["AAA+", "AAA"].includes(text)) return 7;
   if (text === "AAA-") return 6;
   if (text === "AA+") return 5;
   if (text === "AA") return 4;
@@ -1797,7 +1797,7 @@ function formatProjectDuration(project) {
 function projectInquiryRanges(project) {
   if (Array.isArray(project?.inquiryRanges) && project.inquiryRanges.length) {
     return project.inquiryRanges.filter((range) =>
-      Number.isFinite(Number(range?.low)) && Number.isFinite(Number(range?.high)),
+      Number.isFinite(numberOrNull(range?.low)) && Number.isFinite(numberOrNull(range?.high)),
     );
   }
   const ranges = [];

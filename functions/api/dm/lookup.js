@@ -70,7 +70,7 @@ export async function onRequestGet(context) {
     const dm = makeDmClient(context.env, context.request);
     const basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
     const basicRow = firstRow(basic);
-    const primary = await lookupPrimaryData(dm, {
+    let primary = await lookupPrimaryData(dm, {
       shortName,
       securityId,
       fullName,
@@ -79,6 +79,14 @@ export async function onRequestGet(context) {
       startDate,
       endDate,
     });
+    const historicalWindow = primary.rows.length ? null : historicalPrimaryWindow(basicRow, primary.window);
+    if (historicalWindow) {
+      primary = await lookupPrimaryData(dm, {
+        shortName, securityId: pickFirstString(basicRow, ["security_id", "securityId"]) || securityId, fullName,
+        issuerName: pickFirstString(basicRow, ["issuer_name", "issuerName"]),
+        absHintText: rowAbsSearchText(basicRow), ...historicalWindow,
+      });
+    }
     const dmMatched = hasMatchedDmLookupResult(basic, primary);
     const issuerName = pickFirstString(firstRow(primary), ["issuer_full_name", "issuerFullName"])
       || pickFirstString(firstRow(basic), ["issuer_name", "issuerName"]);
@@ -631,7 +639,9 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
   const leadUnderwriter = pickFirstString(primaryRow, ["unde_name", "undeName"]);
   const scaleWan = numberFromRow(primaryRow, ["plan_issue_amount", "planIssueAmount"])
     ?? numberFromRow(primaryRow, ["actu_issue_amount", "actuIssueAmount"]);
-  const scaleYi = Number.isFinite(scaleWan) ? round(scaleWan / 10000, 4) : numberFromRow(basicRow, ["actu_iss_amut", "actuIssAmut", "new_size", "newSize"]);
+  // Basic issuance amount and primary issuance amounts are in 万元; balance is not issuance scale.
+  const resolvedScaleWan = scaleWan ?? numberFromRow(basicRow, ["actu_iss_amut", "actuIssAmut"]);
+  const scaleYi = Number.isFinite(resolvedScaleWan) ? round(resolvedScaleWan / 10000, 4) : null;
   const primarySecurityId = pickFirstString(primaryRow, ["security_id", "securityId"]);
   const basicSecurityId = pickFirstString(basicRow, ["security_id", "securityId"]);
   const resolvedShortName = pickFirstString(primaryRow, ["sec_short_name", "secShortName"])
@@ -892,9 +902,23 @@ function resolveDmDurationText(primaryRow, basicRow) {
 
   const inferred = inferDmOptionTenorFromDates(primaryTenor, primaryRow, basicRow);
   if (inferred) return { value: inferred, source: "next_option_date" };
-  if (primaryTenor) return { value: primaryTenor, source: "bond_issue_tenor" };
-  if (basicTenor) return { value: basicTenor, source: "bond_matu" };
+  if (primaryTenor) return { value: normalizeDmPlainTenor(primaryTenor), source: "bond_issue_tenor" };
+  if (basicTenor) return { value: normalizeDmPlainTenor(basicTenor, pickFirstString(basicRow, ["bond_matu_unit_par", "bondMatuUnitPar"])), source: "bond_matu" };
   return { value: "", source: "" };
+}
+
+function normalizeDmPlainTenor(value, explicitUnit = "") {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d+(?:\.\d+)?)\s*(Y|M|D|年|月|天)?$/i);
+  if (!match) return text;
+  const unit = (match[2] || explicitUnit || "Y").toUpperCase();
+  const canonical = ({ 年: "Y", 月: "M", 天: "D" })[unit] || unit;
+  if (!["Y", "M", "D"].includes(canonical)) return text;
+  const amount = Number(match[1]);
+  const days = amount * 365;
+  // Recover whole-day tenors encoded as rounded decimal years, without rounding ordinary year terms.
+  if (canonical === "Y" && /\.\d{4,}$/.test(match[1]) && Math.abs(days - Math.round(days)) < .001) return `${Math.round(days)}D`;
+  return `${amount}${canonical}`;
 }
 
 function normalizeDmOptionTenor(value = "", fallbackUnit = "Y") {
@@ -3030,6 +3054,16 @@ function normalizeName(value = "") {
   return String(value || "").replace(/\s+/g, "").toUpperCase();
 }
 
+function historicalPrimaryWindow(basicRow, currentWindow) {
+  const issued = pickFirstDateString(basicRow, ["iss_start_date", "issStartDate"]);
+  if (!issued || (issued >= currentWindow.startDate && issued <= currentWindow.endDate)) return null;
+  const anchor = new Date(`${issued}T00:00:00Z`);
+  if (!Number.isFinite(anchor.getTime())) return null;
+  const start = new Date(anchor); start.setUTCDate(start.getUTCDate() - 14);
+  const end = new Date(anchor); end.setUTCDate(end.getUTCDate() + 1);
+  return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
+}
+
 function resolvePrimaryWindow(startDate, endDate) {
   if (startDate && endDate) return { startDate, endDate };
   const today = new Date();
@@ -3351,6 +3385,7 @@ function bytesToHex(bytes) {
 
 export const __test__ = {
   normalizeDmLookup,
+  historicalPrimaryWindow,
   sm4RoundKeys,
   sm4CryptBlock,
   prepareSm4Key,

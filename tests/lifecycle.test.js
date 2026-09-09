@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   appendBidSubmission,
+  fillBidAtUpperLimit,
   hasUnsubmittedBidChanges,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
@@ -1401,4 +1402,15 @@ test("allows post-result bid corrections while preserving results and payment re
     assert.equal(hasUnsubmittedBidChanges(corrected.project), false);
   }
   assert.equal(appendBidSubmission({ status: "已结束" }).submission, null);
+});
+
+test("upper-limit draft respects existing positions and missing tranche scale", () => {
+  const project = { issueScale: 10, tranches: [{ inquiryHigh: 1.9, suggestedRatio: 20, bidLevels: [{ bidRate: 1.8, bidAmount: .5 }], outsourcedBids: [{ bidAmount: .3 }] }] };
+  const result = fillBidAtUpperLimit(project, 0);
+  assert.equal(result.project.tranches[0].bidLevels[1].bidAmount, 1.2);
+  assert.equal(result.project.tranches[0].bidLevels[1].bidRate, 1.9);
+  assert.deepEqual(fillBidAtUpperLimit(result.project, 0).project, result.project);
+  assert.equal(project.tranches[0].bidLevels.length, 1);
+  assert.ok(fillBidAtUpperLimit({ ...project, tranches: [project.tranches[0], project.tranches[0]] }, 0).issue);
+  assert.ok(fillBidAtUpperLimit({ ...project, tranches: [{ ...project.tranches[0], inquiryHigh: null }] }, 0).issue);
 });

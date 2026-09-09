@@ -4,23 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.0.4">
-  <meta name="application-build-version" content="5.0.4">
-  <meta name="application-build" content="20260908-release-504">
+  <meta name="application-version" content="5.0.5">
+  <meta name="application-build-version" content="5.0.5">
+  <meta name="application-build" content="20260909-release-505">
   <title>信用债项目中心 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260908-release-504"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260908-release-504">
+  <script src="./app-shell-mode.js?v=20260909-release-505"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260909-release-505">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20260908-release-504" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20260908-release-504" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20260908-release-504" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20260908-release-504">
-  <script src="./ui-preference.js?v=20260908-release-504"></script>
+  <link rel="stylesheet" href="./workspace-design.css?v=20260909-release-505" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20260909-release-505" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20260909-release-505" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20260909-release-505">
+  <script src="./ui-preference.js?v=20260909-release-505"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -29,20 +29,26 @@
       <nav class="nav" aria-label="Bond Centre 导航">
         <button class="nav-item" data-view-target="reminders">待办中心</button>
         <button class="nav-item active" data-view-target="ledger" data-view-label="Bond Centre">项目中心</button>
+        <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="realtime-quotes" data-view-label="Real Time Information">实时行情</button>
         <button class="nav-item" data-view-target="payment-receipts">缴款单</button>
         <button class="nav-item" data-view-target="secondary-trading" data-view-label="Trading">二级交易</button>
-        <button class="nav-item" data-view-target="generator">新增项目</button>
         <button class="nav-item" data-view-target="batch" hidden>批量撰写</button>
+        <details class="nav-more" id="navMore">
+          <summary class="nav-more-trigger">更多 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+          <div class="nav-more-panel">
         <button class="nav-item" data-view-target="database">主体与授信库</button>
         <button class="nav-item" data-view-target="dm-test">DM 测试</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
+          </div>
+        </details>
       </nav>
-      <span class="header-version" aria-label="当前版本 5.0.4">v5.0.4</span>
+      <div class="header-tools">
+      <span class="header-version" aria-label="当前版本 5.0.5">v5.0.5</span>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.0.4 · 2026-09-08 更新">v5.0.4</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.0.5 · 2026-09-09 更新">v5.0.5</span></div>
           <div class="top-actions">
           <button class="button subtle" id="stateHistoryButton">版本历史</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
@@ -78,6 +84,7 @@
       </div>
         </div>
       </details>
+      </div>
     </header>
 
     <main class="main cloud-locked">
@@ -136,10 +143,11 @@
       </section>
 
       <section class="view" data-view="generator">
+        <div class="generator-page-actions"><button class="button primary" id="saveProjectButton">保存为项目</button></div>
         <div class="generator-grid">
           <section class="panel input-panel">
             <div class="panel-head">
-              <div><span class="step">01</span><h2>读取 DM 建项</h2></div>
+              <div class="generator-step-heading"><span class="step">01</span><h2>输入债券代码/简称建项</h2></div>
               <span class="pill muted" id="projectDmStatus">未读取 DM</span>
             </div>
             <form class="project-dm-entry-form" id="projectDmEntryForm" autocomplete="off">
@@ -171,7 +179,7 @@
 
           <section class="panel fields-panel">
             <div class="panel-head">
-              <div><span class="step">02</span><h2>确认结构化字段</h2></div>
+              <div class="generator-step-heading"><span class="step">02</span><h2>确认结构化字段</h2></div>
               <div class="result-actions">
                 <span class="pill" id="matchedIssuerPill">未匹配主体</span>
                 <button class="button subtle" id="quickIssuerButton">录入/更新主体授信</button>
@@ -328,10 +336,9 @@
 
         <section class="panel result-panel">
           <div class="panel-head">
-            <div><span class="step">03</span><h2>流程意见</h2></div>
+            <div class="generator-step-heading"><span class="step">03</span><h2>确认流程意见</h2></div>
             <div class="result-actions">
               <span class="pill accent" id="suggestionSummary">等待生成</span>
-              <button class="button primary" id="saveProjectButton">保存为项目</button>
               <button class="button subtle" id="copyButton">复制流程意见</button>
             </div>
           </div>
@@ -1250,8 +1257,9 @@
           <article class="rule-card"><span>比例规则 02</span><h2>兴业主承最高 20%</h2><p>主承身份为“牵头”或“联席”时，建议投资比例不得超过最终发行规模的20%。</p></article>
           <article class="rule-card"><span>比例规则 03</span><h2>AA 超授信期限最高 15%</h2><p>隐含评级为AA，且债券期限超过授信投资期限时，建议投资比例不得超过15%。</p></article>
           <article class="rule-card"><span>比例规则 04</span><h2>AA(2) 超授信期限最高 10%</h2><p>隐含评级为AA(2)，且债券期限超过授信投资期限时，建议投资比例不得超过10%。</p></article>
+          <article class="rule-card"><span>比例规则</span><h2>AAA+ 与 AAA 规则一致</h2><p>超授信投资期限时，AAA+与AAA均不额外设置评级比例上限，仍受授信批准比例及我行主承20%上限约束。</p></article>
           <article class="rule-card"><span>金额规则</span><h2>发行规模 × 建议比例</h2><p>申请与建议投资金额暂按发行规模乘以最终建议比例自动计算，并允许在流程意见中手工修改。</p></article>
-          <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>房地产债由林总终批；AAA投资金额超过8亿由金处、超过10亿由周总终批；其他评级超过3.2亿由金处、超过4亿由周总终批。</p></article>
+          <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>房地产债由林总终批；AAA+与AAA投资金额超过8亿由金处、超过10亿由周总终批；其他评级超过3.2亿由金处、超过4亿由周总终批。</p></article>
           <article class="rule-card"><span>主承表述</span><h2>牵头与联席自动改写</h2><p>牵头时主承销商写兴业银行；联席时写“牵头主承销商、兴业银行”。</p></article>
           <article class="rule-card"><span>交易所债券</span><h2>发行方式与期次需确认</h2><p>简称尾号不等于发行期次。简表需注明公开/非公开及“第几期”，也可在结构化字段中手工确认。</p></article>
           <article class="rule-card"><span>双品种互拨</span><h2>一条意见分别列示</h2><p>自动合并 A/B 或相邻交易所简称，规模按合计、期限按双向互拨表述，询价和比例按两个期限分别列示。</p></article>
@@ -1499,7 +1507,7 @@
   </section>
 
   <div class="issuance-queue-notifications" id="issuanceQueueNotifications" aria-live="polite" aria-label="发行结果识别通知"></div>
-  <div class="toast" id="toast" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
   <script src="./vendor/pinyin-pro.min.js?v=3.29.3"></script>
@@ -1507,7 +1515,7 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20260908-release-504"></script>
-  <script type="module" src="./app.js?v=20260908-release-504"></script>
+  <script src="./ui-mode.js?v=20260909-release-505"></script>
+  <script type="module" src="./app.js?v=20260909-release-505"></script>
 </body>
 </html>

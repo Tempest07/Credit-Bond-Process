@@ -493,3 +493,36 @@ html[data-ui="beta"] .main.connection-entering.connection-entry-content .view.ac
   html[data-ui="beta"] .cloud-gate-connecting .cloud-gate-copy h2 { animation: none !important; background: none; -webkit-text-fill-color: #171717; }
   html[data-ui="beta"] .cloud-gate-success .cloud-gate-copy h2 { animation: none; }
 }
+
+/* Two-column project creation preview; compact screens retain the stacked form. */
+@media (min-width: 1100px) {
+  [data-view="generator"] { max-width: 1440px; }
+  [data-view="generator"] .generator-grid { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 40px; align-items: start; }
+  [data-view="generator"] .fields-panel { padding-top: 8px; padding-left: 32px; border-top: 0; border-left: 1px solid #e5e5e5; }
+  [data-view="generator"] .fields-panel > .panel-head { flex-wrap: wrap; gap: 12px; }
+}
+
+@media (min-width: 1100px) {
+  .view.active[data-view="generator"] { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); column-gap: 40px; grid-template-rows: min-content min-content 1fr; align-items: start; }
+  [data-view="generator"] .generator-grid { display: contents; }
+  [data-view="generator"] .input-panel { grid-column: 1; grid-row: 1; }
+  [data-view="generator"] .result-panel { grid-column: 1; grid-row: 2; }
+  [data-view="generator"] .quick-issuer-panel { grid-column: 1; grid-row: 3; }
+  [data-view="generator"] .fields-panel { grid-column: 2; grid-row: 1 / 4; }
+  [data-view="generator"] .result-panel > .panel-head { flex-wrap: wrap; gap: 16px; }
+  [data-view="generator"] .result-panel .result-actions { flex-wrap: wrap; }
+}
+
+[data-view="generator"] .generator-page-actions { grid-column: 1 / -1; grid-row: 1; margin-bottom: 28px; }
+[data-view="generator"] .generator-page-actions .button { min-height: 46px; padding-inline: 28px; font-size: 14px; font-weight: 600; }
+@media (min-width: 1100px) {
+  .view.active[data-view="generator"] { grid-template-rows: min-content min-content min-content 1fr; }
+  [data-view="generator"] .input-panel { grid-row: 2; }
+  [data-view="generator"] .result-panel { grid-row: 3; }
+  [data-view="generator"] .quick-issuer-panel { grid-row: 4; }
+  [data-view="generator"] .fields-panel { grid-row: 2 / 5; }
+}
+
+[data-view="generator"] .generator-step-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+[data-view="generator"] .generator-step-heading .step { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 9px; background: #222; color: #fff; font: 600 13px/1 Arial, sans-serif; letter-spacing: .02em; }
+[data-view="generator"] .generator-step-heading h2 { margin: 0; }

@@ -3,7 +3,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260908-release-504";
+} from "./core.js?v=20260909-release-505";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -1558,4 +1558,25 @@ function localDate(value) {
 function referenceDateKey(value) {
   if (typeof value === "string") return value.slice(0, 10);
   return localDate(value);
+}
+
+export function fillBidAtUpperLimit(project, index) {
+  const tranche = project.tranches?.[index];
+  if (!tranche) return { issue: "未找到品种。" };
+  const rate = numberOrNull(tranche.inquiryHigh);
+  const ratio = numberOrNull(tranche.suggestedRatio);
+  const scale = numberOrNull(tranche.issueScale) ?? (project.tranches.length === 1 ? numberOrNull(project.issueScale) : null);
+  if (!Number.isFinite(rate)) return { issue: "请先补充该品种的询价上限。" };
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 100) return { issue: "该品种缺少有效投资比例或不可投资。" };
+  if (!Number.isFinite(scale) || scale <= 0) return { issue: "请先补充该品种的发行规模。" };
+  const levels = tranche.bidLevels || [];
+  const target = levels.findIndex(level => numberOrNull(level.bidRate) === rate || (numberOrNull(level.bidRate) === null && numberOrNull(level.bidAmount) === null));
+  const other = [...levels.filter((_, i) => i !== target), ...(tranche.outsourcedBids || [])];
+  if (other.some(level => numberOrNull(level.bidAmount) !== null && numberOrNull(level.bidAmount) < 0)) return { issue: "请先修正负数投标量。" };
+  const used = other.reduce((sum, level) => sum + (numberOrNull(level.bidAmount) || 0), 0);
+  const amount = Math.floor((scale * ratio / 100 - used + 1e-9) * 10000) / 10000;
+  if (amount <= 0) return { issue: "其他标位已占满允许投资量，无剩余额度。" };
+  const bid = { ...(levels[target] || {}), id: levels[target]?.id || crypto.randomUUID(), bidRate: rate, bidAmount: amount };
+  const bidLevels = target < 0 ? [...levels, bid] : levels.map((level, i) => i === target ? bid : level);
+  return { project: { ...project, tranches: project.tranches.map((item, i) => i === index ? { ...item, bidLevels } : item) }, issue: "" };
 }
