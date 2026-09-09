@@ -7,4 +7,13 @@
 - Persistence: ignored .local-data/valuation-users/<user hash>.json on the local computer. No D1/project-state migration; no beta sample history imported. Computer/service must remain online.
 - Existing Windows Gateway task action now points to this release worktree. Previous task XML backed up outside repo at ../gateway-task-before-510.xml. Tunnel task unchanged. Health verified issuance, vision and valuation version5.1.0.
 - Validation: 63 focused asset/model/provider/gateway tests, DM lookup/legacy valuation regression tests, Pages Functions compile and whitespace checks passed. New tests include auth, evidence substitution, user isolation and shared locking.
-- Production deployment and live acceptance: pending final verification.
+- Production deployment and live acceptance completed; see details below.
+
+## Production acceptance (2026-09-10)
+
+- Published commit 779bac3, Cloudflare production deployment df87a0ac, URL https://df87a0ac.credit-bond-process.pages.dev.
+- Gateway page visibly reports5.1.0; original and experimental containers coexist.
+- Authenticated browser queried an existing bond through DM and ran the experimental assistant. Real2026-09-09 evidence reached gpt-oss:20b; 2 model calls completed; result displayed and saved in the user's independent local history.
+- No project save, bid, pricing write or synthetic learning confirmation was performed during acceptance.
+- New service startup and authentication verified. Local backup/availability caveat remains as documented.
+
