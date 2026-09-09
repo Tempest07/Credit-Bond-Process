@@ -50,6 +50,59 @@ const MARKET_DATA_FIELDS = [
   "spiderYield",
 ];
 
+// Model evidence deliberately bypasses mechanical adjustment, weighting and the five-bond cluster.
+export async function collectModelValuationEvidence(dm, input, { now = new Date() } = {}) {
+  const requestedDate = previousChinaBusinessDate(now);
+  const targets = targetDurationParts(input.durationText);
+  if (!input.issuerName || !input.shortName || !targets.length) throw new Error('需要发行人、债券简称和有效期限');
+  const profile = comparableProfile(input);
+  const offeringType = normalizeOffering(input.offeringType);
+  const target = { ...input, offeringType, profile };
+  const outstanding = await lookupOutstandingBonds(dm, input);
+  const enriched = await enrichOutstandingWithBasicInfo(dm, outstanding.rows);
+  const excluded = [];
+  const eligible = [];
+  for (const row of enriched) {
+    const c = candidateFromOutstandingRow(row, { valuationDate: requestedDate });
+    const name = pickFirstString(row, ['secShortName', 'sec_short_name']);
+    let reason = '';
+    if (!c?.securityId) reason = '缺少有效剩余期限或券码';
+    else if (sameSecurity(c, input)) reason = '目标券本身';
+    else if (!profilesAreComparable(profile, c.profile)) reason = '永续、偿付顺序、结构或品种不匹配';
+    else if (!offeringType || !c.offeringType || c.offeringType !== offeringType) reason = '发行方式未知或不匹配';
+    if (reason) excluded.push({ shortName: name, reason }); else eligible.push(c);
+  }
+  eligible.sort((a, b) => Math.min(...targets.map(t => Math.abs(t.years - a.years))) - Math.min(...targets.map(t => Math.abs(t.years - b.years))));
+  const universe = eligible.slice(0, MAX_MARKET_DATA_SECURITIES);
+  const market = await lookupMarketDataRows(dm, universe.map(c => c.securityId), requestedDate);
+  const grouped = groupMarketRowsBySecurityId(market.rows);
+  const dates = [...new Set(market.rows.map(marketRowValuationDate).filter(d => d && d <= requestedDate))].sort().reverse();
+  const actualDate = dates.find(d => universe.some(c => {
+    const v = pickDmValuationRate(grouped.get(c.securityId) || [], c.profile.exercisable, d, requestedDate);
+    return v && !v.basisFallback;
+  })) || '';
+  const candidates = [];
+  for (const c of universe) {
+    const v = pickDmValuationRate(grouped.get(c.securityId) || [], c.profile.exercisable, actualDate, requestedDate);
+    if (!v || v.basisFallback) { excluded.push({ shortName: c.shortName, reason: '所选估值日缺少匹配口径估值' }); continue; }
+    candidates.push({ securityId: c.securityId, shortName: c.shortName, years: c.years, offeringType: c.offeringType, profile: c.profile, ...v });
+  }
+  const rating = normalizeCurveRating(input.hiddenRating);
+  let curve = null;
+  let curveWarning = '';
+  if (rating && actualDate) {
+    try {
+      const raw = await lookupYieldCurveRows(dm, { impliedRating: rating, terms: [...targets.map(t => t.years), ...candidates.map(c => c.years)], valuationDate: actualDate });
+      const rows = raw.rows.filter(r => pickFirstDateString(r, ['valuationDate','valuation_date']) === actualDate);
+      const byTerm = curveRowsByTerm(rows, actualDate);
+      curve = { name: raw.curveName, date: actualDate, nodes: [...new Set([...targets.map(t => t.years), ...candidates.map(c => c.years)])].map(years => ({ years, rate: curveYieldForTerm(byTerm, years) })).filter(n => Number.isFinite(n.rate)) };
+    } catch { curveWarning = '评级曲线未取得，本次材料不含曲线'; }
+  }
+  return { source: 'DM market-data/date', sample: false, collectedAt: now.toISOString(), requestedDate, valuationDate: actualDate,
+    target, targets, candidates, excluded, curve, warnings: [curveWarning, eligible.length > universe.length ? `候选${eligible.length}只，按期限接近度查询前${universe.length}只` : '', actualDate && actualDate !== requestedDate ? '最新可用估值日早于请求日' : ''].filter(Boolean),
+    counts: { outstanding: outstanding.rows.length, eligible: eligible.length, queried: universe.length, priced: candidates.length } };
+}
+
 export async function onRequestGet(context) {
   const auth = await requireUser(context);
   if (auth.response) return auth.response;

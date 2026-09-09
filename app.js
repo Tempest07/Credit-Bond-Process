@@ -1,3 +1,4 @@
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260910-release-510';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -33,7 +34,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260909-release-505";
+} from "./core.js?v=20260910-release-510";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -61,15 +62,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260909-release-505";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260909-release-505";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260909-release-505";
+} from "./lifecycle.js?v=20260910-release-510";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260910-release-510";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260910-release-510";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260909-release-505";
+} from "./history-parser.js?v=20260910-release-510";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -86,23 +87,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260909-release-505";
+} from "./protocol-transfer.js?v=20260910-release-510";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260909-release-505";
+} from "./protocol-transfer-templates.js?v=20260910-release-510";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260909-release-505";
+} from "./protocol-transfer-docx.js?v=20260910-release-510";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260909-release-505";
+} from "./reminders.js?v=20260910-release-510";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -130,11 +131,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260909-release-505";
+} from "./secondary-inventory.js?v=20260910-release-510";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260909-release-505";
+} from "./trade-record-converter.js?v=20260910-release-510";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -145,14 +146,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260909-release-505";
+} from "./trade-record-grid.js?v=20260910-release-510";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260909-release-505";
-import { initializeDatePickers } from "./date-picker.js?v=20260909-release-505";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260909-release-505";
+} from "./trade-record-ledger.js?v=20260910-release-510";
+import { initializeDatePickers } from "./date-picker.js?v=20260910-release-510";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260910-release-510";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -161,30 +162,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260909-release-505";
+} from "./project-screenshot-ocr.js?v=20260910-release-510";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260909-release-505";
+} from "./project-screenshot-layout.js?v=20260910-release-510";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260909-release-505";
+} from "./project-screenshot-image.js?v=20260910-release-510";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260909-release-505";
+} from "./payment-receipts.js?v=20260910-release-510";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260909-release-505";
+} from "./issuer-search.js?v=20260910-release-510";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260909-release-505";
+} from "./state-history.js?v=20260910-release-510";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -4422,6 +4423,7 @@ function resetProjectDmWorkspace(options = {}) {
   project.warnings = [];
   selectedIssuerId = "";
   clearProjectRecognitionMarks();
+  resetModelValuationAssist();
   clearTimeout(valuationAssistTimer);
   if (valuationAssistController) valuationAssistController.abort();
   valuationAssistController = null;
@@ -6788,6 +6790,8 @@ function renderNewProjectCutoffControl(issuer = null, referenceDate = new Date()
 }
 
 function scheduleDmValuationAssist(projectValue, issuer) {
+  if (isAbsProject(projectValue)) resetModelValuationAssist();
+  else updateModelValuationAssist(projectValue, issuer);
   const output = $("#valuationAssist");
   if (!output) return;
   if (isAbsProject(projectValue)) {

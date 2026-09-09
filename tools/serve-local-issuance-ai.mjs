@@ -8,6 +8,7 @@ import {
   LOCAL_ISSUANCE_PROMPT_REVISION,
 } from "./local-issuance-ollama.mjs";
 import { recognizeProjectWithLocalVision, MAX_VISION_IMAGE_BYTES, PROJECT_VISION_MODEL } from "./local-project-vision.mjs";
+import { createValuationGatewayHandler } from './valuation-gateway.mjs';
 
 const MAX_REQUEST_BYTES = 64000;
 
@@ -18,6 +19,7 @@ export function createLocalIssuanceGateway(options = {}) {
   }
   const extract = options.extract || extractIssuanceWithLocalOllama;
   const recognizeVision = options.recognizeVision || recognizeProjectWithLocalVision;
+  const valuation = options.valuation || createValuationGatewayHandler();
   const logger = options.logger || console;
   const timeoutMs = Number(options.timeoutMs || process.env.LOCAL_ISSUANCE_AI_TIMEOUT_MS || 120000);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 5000 || timeoutMs > 180000) throw new Error("LOCAL_ISSUANCE_AI_TIMEOUT_MS must be 5000-180000.");
@@ -29,24 +31,35 @@ export function createLocalIssuanceGateway(options = {}) {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     if (!authorized(request.headers.authorization, token)) return send(response, 401, { error: "Unauthorized." });
     if (request.method === "GET" && url.pathname === "/health") {
-      return send(response, 200, { status: "ok", model: LOCAL_ISSUANCE_MODEL, promptRevision: LOCAL_ISSUANCE_PROMPT_REVISION, visionModel: PROJECT_VISION_MODEL, busy: active });
+      return send(response, 200, { status: "ok", model: LOCAL_ISSUANCE_MODEL, promptRevision: LOCAL_ISSUANCE_PROMPT_REVISION, visionModel: PROJECT_VISION_MODEL, valuationVersion: '5.1.0', busy: active });
     }
     const isVision = url.pathname === "/v1/project-screenshot";
-    if (request.method !== "POST" || (!isVision && url.pathname !== "/v1/issuance-recognition")) return send(response, 404, { error: "Not found." });
+    const isValuation = url.pathname === '/v1/valuation';
+    if (request.method !== "POST" || (!isValuation && !isVision && url.pathname !== "/v1/issuance-recognition")) return send(response, 404, { error: "Not found." });
     const mimeType = request.headers["content-type"]?.split(";")[0].toLowerCase();
     if (isVision && !["image/png", "image/jpeg", "image/webp"].includes(mimeType)) return send(response, 415, { error: "Unsupported image format." });
     const limit = isVision ? MAX_VISION_IMAGE_BYTES : MAX_REQUEST_BYTES;
     if (Number(request.headers["content-length"]) > limit) return send(response, 413, { error: "Request is too large." });
-    if (active) return send(response, 429, { error: "Local inference is busy." });
+    if (active && !isValuation) return send(response, 429, { error: "Local inference is busy." });
 
     const controller = new AbortController();
     request.once("aborted", () => controller.abort());
     const abort = () => { if (!response.writableEnded) controller.abort(); };
     response.once("close", abort);
-    active = true;
+    let ownsLock = false;
+    if (!isValuation) { active = true; ownsLock = true; }
     try {
       const body = await readBoundedBody(request, limit);
-      const result = isVision
+      let envelope;
+      if (isValuation) {
+        if (mimeType !== 'application/json') return send(response, 415, { error: 'JSON required' });
+        envelope = JSON.parse(body.toString('utf8'));
+        if (['analyze', 'feedback'].includes(envelope.action)) {
+          if (active) return send(response, 429, { error: 'Local inference is busy.' });
+          active = true; ownsLock = true;
+        }
+      }
+      const result = isValuation ? await valuation(envelope, AbortSignal.any([controller.signal, AbortSignal.timeout(85000)])) : isVision
         ? await recognizeVision(body, mimeType, { signal: controller.signal })
         : await extract(JSON.parse(body.toString("utf8"))?.request, { timeoutMs, signal: controller.signal });
       logger.log(JSON.stringify({ event: isVision ? "local_vision_complete" : "local_issuance_complete", elapsedMs: Date.now() - started, attempts: result.attempts }));
@@ -56,7 +69,7 @@ export function createLocalIssuanceGateway(options = {}) {
       logger.warn(JSON.stringify({ event: isVision ? "local_vision_failed" : "local_issuance_failed", name: error?.name || "Error", elapsedMs: Date.now() - started }));
       if (!response.destroyed) return send(response, error?.status || (timeout ? 504 : 400), { error: timeout ? "Local inference timed out." : "Local inference failed." });
     } finally {
-      active = false;
+      if (ownsLock) active = false;
       response.removeListener("close", abort);
     }
   });
