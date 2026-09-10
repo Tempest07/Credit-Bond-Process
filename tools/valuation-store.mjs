@@ -31,9 +31,12 @@ export class ValuationStore {
   async learning(evidence) {
     const data = await this.read();
     const scope = experienceScope(evidence);
-    const active = data.experiences.filter(e => e.scope === scope && e.status === 'confirmed').slice(-8);
+    const scoped = data.experiences.filter(e => e.scope === scope && e.status === 'confirmed');
+    const reviewRequired = scoped.filter(e => e.learningVersion !== 2).length;
+    const active = scoped.filter(e => e.learningVersion === 2).slice(-8);
     const confirmedFeedback = new Set(active.map(e => e.feedbackId));
     return {
+      ...(reviewRequired ? { reviewRequired } : {}),
       experiences: active.map(e => ({ id: e.id, text: e.text, confirmedAt: e.updatedAt })),
       cases: data.runs.filter(r => r.status === 'complete' && experienceScope(r.evidence) === scope && r.feedback?.some(f => confirmedFeedback.has(f.id))).slice(-3).map(r => ({ id: r.id, date: r.createdAt, historicalOnly: true, corrections: r.feedback.filter(f => confirmedFeedback.has(f.id)).map(f => ({ target: r.evidence.targets[f.targetIndex], reason: f.reason })) })),
     };
@@ -56,7 +59,7 @@ export class ValuationStore {
     });
   }
   addProposal(run, feedback, text) {
-    return this.mutate(d => { const e = { id: randomUUID(), runId: run.id, feedbackId: feedback.id, scope: experienceScope(run.evidence), issuerName: run.evidence.target.issuerName, sample: run.evidence.sample, text, status: 'pending', revision: 1, updatedAt: new Date().toISOString(), audit: [] }; d.experiences.push(e); return e; });
+    return this.mutate(d => { const e = { id: randomUUID(), runId: run.id, feedbackId: feedback.id, scope: experienceScope(run.evidence), issuerName: run.evidence.target.issuerName, sample: run.evidence.sample, text, feedbackReason: feedback.reason, learningVersion: 2, status: 'pending', revision: 1, updatedAt: new Date().toISOString(), audit: [] }; d.experiences.push(e); return e; });
   }
   setExperience(id, { status, text, revision }) {
     return this.mutate(d => {
@@ -64,8 +67,8 @@ export class ValuationStore {
       if (!e) throw new Error('经验不存在');
       if (e.revision !== revision) throw Object.assign(new Error('经验已变化，请刷新后重试'), { status: 409 });
       if (!['confirmed','disabled'].includes(status) || typeof text !== 'string' || !text.trim() || text.length > 1000) throw new Error('经验内容或状态无效');
-      e.audit.push({ status: e.status, text: e.text, at: e.updatedAt });
-      Object.assign(e, { status, text: text.trim(), revision: revision + 1, updatedAt: new Date().toISOString() }); return e;
+      e.audit.push({ status: e.status, text: e.text, learningVersion: e.learningVersion ?? 1, at: e.updatedAt });
+      Object.assign(e, { status, text: text.trim(), ...(status === 'confirmed' ? { learningVersion: 2 } : {}), revision: revision + 1, updatedAt: new Date().toISOString() }); return e;
     });
   }
 }

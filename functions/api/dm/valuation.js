@@ -89,13 +89,14 @@ export async function collectModelValuationEvidence(dm, input, { now = new Date(
   }
   const rating = normalizeCurveRating(input.hiddenRating);
   let curve = null;
-  let curveWarning = '';
+  let curveWarning = rating ? '' : '缺少有效隐含评级，未请求评级曲线；不可使用主体评级替代';
   if (rating && actualDate) {
     try {
       const raw = await lookupYieldCurveRows(dm, { impliedRating: rating, terms: [...targets.map(t => t.years), ...candidates.map(c => c.years)], valuationDate: actualDate });
       const rows = raw.rows.filter(r => pickFirstDateString(r, ['valuationDate','valuation_date']) === actualDate);
       const byTerm = curveRowsByTerm(rows, actualDate);
       curve = { name: raw.curveName, date: actualDate, nodes: [...new Set([...targets.map(t => t.years), ...candidates.map(c => c.years)])].map(years => ({ years, rate: curveYieldForTerm(byTerm, years) })).filter(n => Number.isFinite(n.rate)) };
+    if (!curve.nodes.length) { curve = null; curveWarning = '所选估值日无可用曲线节点'; }
     } catch { curveWarning = '评级曲线未取得，本次材料不含曲线'; }
   }
   return { source: 'DM market-data/date', sample: false, collectedAt: now.toISOString(), requestedDate, valuationDate: actualDate,

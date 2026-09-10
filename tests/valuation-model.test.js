@@ -8,7 +8,7 @@ import { ValuationStore } from '../tools/valuation-store.mjs';
 import { valuationSample } from '../tools/valuation-sample.mjs';
 import { analyzeValuation } from '../tools/local-valuation-model.mjs';
 import { collectModelValuationEvidence } from '../functions/api/dm/valuation.js';
-const valid = () => ({results:[{targetIndex:0,center:1.76,low:null,high:null,reasons:['两侧同属性券插值'],limitations:[],comparables:[{securityId:'SAMPLE2',weight:.5,tenorAdjustmentBp:2,marketAdjustmentBp:0,adjustedYield:1.76,rationale:'0.2年按同主体局部斜率10bp/年调整'},{securityId:'SAMPLE3',weight:.5,tenorAdjustmentBp:-2,marketAdjustmentBp:0,adjustedYield:1.76,rationale:'-0.2年按同主体局部斜率10bp/年调整'}],excluded:[]}]});
+const valid = () => ({results:[{targetIndex:0,center:1.76,low:null,high:null,reasons:['两侧同属性券插值'],limitations:[],comparables:[{securityId:'SAMPLE2',weight:.5,tenorBasis:{method:'bondSlope',securityIds:['SAMPLE2','SAMPLE3']},tenorAdjustmentBp:2,marketAdjustmentBp:0,adjustedYield:1.76,rationale:'0.2年按同主体局部斜率10bp/年调整'},{securityId:'SAMPLE3',weight:.5,tenorBasis:{method:'bondSlope',securityIds:['SAMPLE2','SAMPLE3']},tenorAdjustmentBp:-2,marketAdjustmentBp:0,adjustedYield:1.76,rationale:'-0.2年按同主体局部斜率10bp/年调整'}],excluded:[]}]});
 test('validates basis-point math, references, weights and all targets', () => {
   const evidence=valuationSample();
   assert.equal(validateValuationOutput(valid(),evidence).ok,true);
