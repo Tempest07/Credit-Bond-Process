@@ -323,3 +323,8 @@ html.android-app #projectWorkspace{inset:0;width:100%;height:100dvh;z-index:105;
 .valuation-beta-card th{font-weight:500;background:#f3f8f8}
 .valuation-beta-card td span{display:block;color:#60757b;margin-top:4px;font-size:12px}
 @media(max-width:600px){.valuation-beta-card .vb-range{text-align:left}.valuation-beta-card .vb-rate{font-size:30px}}
+
+#valuationAssist .valuation-assist-head>strong{font-family:Arial,"Microsoft YaHei","PingFang SC",sans-serif;font-size:16px;font-weight:600;line-height:1.5;letter-spacing:0}
+#valuationAssist .vb-profile>span:only-child{background:none;color:inherit;padding:0;border-radius:0}
+
+.project-screenshot-candidates{display:grid;gap:8px;margin:12px 0}.project-screenshot-candidates button{text-align:left;white-space:normal;line-height:1.6}

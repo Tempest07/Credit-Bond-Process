@@ -4,24 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.1.0.1">
-  <meta name="application-build-version" content="5.1.0.1">
-  <meta name="application-build" content="20260910-release-5101">
+  <meta name="application-version" content="5.1.1">
+  <meta name="application-build-version" content="5.1.1">
+  <meta name="application-build" content="20260910-release-511">
   <title>信用债项目中心 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260910-release-5101"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260910-release-5101">
+  <script src="./app-shell-mode.js?v=20260910-release-511"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260910-release-511">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20260910-release-5101" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20260910-release-5101" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20260910-release-5101" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20260910-release-5101">
-  <script src="./ui-preference.js?v=20260910-release-5101"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20260910-release-5101">
+  <link rel="stylesheet" href="./workspace-design.css?v=20260910-release-511" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20260910-release-511" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20260910-release-511" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20260910-release-511">
+  <script src="./ui-preference.js?v=20260910-release-511"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20260910-release-511">
 </head>
 <body>
   <div class="app-shell">
@@ -45,11 +45,11 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.1.0.1">v5.1.0.1</span>
+      <span class="header-version" aria-label="当前版本 5.1.1">v5.1.1</span>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.1.0.1 · 2026-09-10 更新">v5.1.0.1</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.1.1 · 2026-09-10 更新">v5.1.1</span></div>
           <div class="top-actions">
           <button class="button subtle" id="stateHistoryButton">版本历史</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
@@ -165,7 +165,7 @@
               </label>
             </div>
             <div class="tranche-term-panel project-pricing-panel" id="projectPricingPanel">
-              <div class="tranche-term-head"><strong>分品种估值与定价</strong><button class="button subtle" id="openExperimentalValuation" type="button">实验性估值助手</button></div>
+              <div class="tranche-term-head"><strong>分品种估值与定价</strong><button class="button subtle" id="openExperimentalValuation" type="button">估值助手 AI Beta</button></div>
               <div class="tranche-term-rows" id="projectPricingRows"></div>
             </div>
             <div class="valuation-assist" id="valuationAssist" hidden></div>
@@ -1174,7 +1174,7 @@
             </article>
             <article class="reminder-kpi info">
               <span class="reminder-kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16M8 14h3M8 17h6"/></svg></span>
-              <div><span>日常任务</span><small>早报与常规推进</small></div>
+              <div><span>日常任务</span><small>每日提醒与常规推进</small></div>
               <strong id="reminderDailyCount">0</strong>
             </article>
           </section>
@@ -1517,7 +1517,7 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20260910-release-5101"></script>
-  <script type="module" src="./app.js?v=20260910-release-5101"></script>
+  <script src="./ui-mode.js?v=20260910-release-511"></script>
+  <script type="module" src="./app.js?v=20260910-release-511"></script>
 </body>
 </html>

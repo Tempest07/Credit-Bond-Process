@@ -98,10 +98,14 @@ test("DM lookup resolves a primary record by full bond name", async () => {
     const request = JSON.parse(__test__.sm4DecryptFromBase64Url(init.body, secret));
     let data;
     if (String(url).includes("/bond/basic-info/info")) {
-      throw new Error("fullName-only lookup should not call basic-info");
+      assert.deepEqual(request.securityIdList, ["012681234.IB"]);
+      data = [{security_id:"012681234.IB", sec_short_name:"26广州地铁SCP006", sec_full_name:fullName, issuer_name:"广州地铁集团有限公司"}];
+    } else if (String(url).includes("/outstanding-bonds")) {
+      assert.equal(request.issuerFullName, "广州地铁集团有限公司");
+      data = [];
     } else if (String(url).includes("/bond/primary/data")) {
       assert.equal(request.bond_category, "1");
-      assert.equal(request.issuerFullName, undefined);
+      assert.equal(request.issuerFullName, "广州地铁集团有限公司");
       data = {
         list: [
           {
@@ -148,7 +152,8 @@ test("DM lookup resolves a primary record by full bond name", async () => {
     assert.equal(payload.normalized.fullName, fullName);
     assert.equal(payload.normalized.issuerName, "广州地铁集团有限公司");
     assert.equal(payload.normalized.issueScaleYi, 21);
-    assert.equal(calls.length, 6);
+    assert.ok(calls.some(url => url.includes("/outstanding-bonds")));
+    assert.ok(calls.some(url => url.includes("/basic-info/info")));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -3001,4 +3006,20 @@ test("lookup retries a missed historical issue and uses only its own subscriptio
     assert.equal(payload.normalized.durationText, "1820D");
     assert.equal(payload.normalized.inquiryRange, "1.2-1.8");
   } finally { globalThis.fetch = originalFetch; }
+});
+
+
+test("full-name discovery verifies an old issue by code and never picks ambiguous or different issues", async () => {
+  const name = "测试集团有限公司2024年度第三期中期票据";
+  const row = { security_id:"102400001.IB", sec_short_name:"24测试MTN003", sec_full_name:name };
+  const calls = [];
+  const dm = { post: async (path, body) => { calls.push({path,body}); return {list: path.includes("/primary/") ? [] : [row]}; } };
+  assert.equal((await __test__.discoverFullNameBond(dm,name)).securityId,row.security_id);
+  assert.ok(calls.some(c => c.body.startDate === "2024-01-01" && c.body.issuerFullName === "测试集团有限公司"));
+  assert.equal((await __test__.discoverFullNameBond(dm,name.replace("第三期","第四期"))).securityId, "");
+  const ambiguous = {post:async()=>({list:[row,{...row,security_id:"102400002.IB"}]})};
+  assert.equal((await __test__.discoverFullNameBond(ambiguous,name)).securityId, "");
+  const incorrectBasic = {post:async path=>({list:[path.endsWith("/info") ? {...row,sec_full_name:name.replace("第三期","第四期")} : row]})};
+  assert.equal((await __test__.discoverFullNameBond(incorrectBasic,name)).securityId, "");
+  assert.equal(__test__.fullNameIdentity(name),__test__.fullNameIdentity("测试集团有限公司二〇二四年度第3期中期票据"));
 });

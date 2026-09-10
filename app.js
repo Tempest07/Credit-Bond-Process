@@ -1,4 +1,4 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260910-release-5101';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260910-release-511';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -34,7 +34,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260910-release-5101";
+} from "./core.js?v=20260910-release-511";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -62,15 +62,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260910-release-5101";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260910-release-5101";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260910-release-5101";
+} from "./lifecycle.js?v=20260910-release-511";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260910-release-511";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260910-release-511";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260910-release-5101";
+} from "./history-parser.js?v=20260910-release-511";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -87,23 +87,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260910-release-5101";
+} from "./protocol-transfer.js?v=20260910-release-511";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260910-release-5101";
+} from "./protocol-transfer-templates.js?v=20260910-release-511";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260910-release-5101";
+} from "./protocol-transfer-docx.js?v=20260910-release-511";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260910-release-5101";
+} from "./reminders.js?v=20260910-release-511";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -131,11 +131,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260910-release-5101";
+} from "./secondary-inventory.js?v=20260910-release-511";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260910-release-5101";
+} from "./trade-record-converter.js?v=20260910-release-511";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -146,14 +146,14 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260910-release-5101";
+} from "./trade-record-grid.js?v=20260910-release-511";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260910-release-5101";
-import { initializeDatePickers } from "./date-picker.js?v=20260910-release-5101";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260910-release-5101";
+} from "./trade-record-ledger.js?v=20260910-release-511";
+import { initializeDatePickers } from "./date-picker.js?v=20260910-release-511";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260910-release-511";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -162,30 +162,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260910-release-5101";
+} from "./project-screenshot-ocr.js?v=20260910-release-511";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260910-release-5101";
+} from "./project-screenshot-layout.js?v=20260910-release-511";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260910-release-5101";
+} from "./project-screenshot-image.js?v=20260910-release-511";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260910-release-5101";
+} from "./payment-receipts.js?v=20260910-release-511";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260910-release-5101";
+} from "./issuer-search.js?v=20260910-release-511";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260910-release-5101";
+} from "./state-history.js?v=20260910-release-511";
 
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
@@ -3409,11 +3409,11 @@ function eraseProjectScreenshotTableLines(canvas, coverageThreshold) {
 
 async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
   try {
-    const { response, payload } = await requestProjectScreenshotDmLookup({ fullName: entry.fullName }, { signal });
+    const { response, payload } = await requestProjectScreenshotDmLookup(entry.selectedSecurityId ? { securityId: entry.selectedSecurityId } : { fullName: entry.fullName }, { signal });
     if (!response.ok || !payload.ok) {
       const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
       const suggestion = suggestions[0] || null;
-      const reliableSuggestion = payload?.noResult
+      const reliableSuggestion = payload?.noResult && !payload.requiresSelection
         ? selectReliableProjectScreenshotSuggestion(entry.fullName, suggestions)
         : null;
       if (reliableSuggestion) {
@@ -3441,10 +3441,11 @@ async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
         status: "error",
         dmVerified: false,
         shortName: "",
+        candidates: suggestions,
         candidateShortName: suggestion?.shortName || "",
         securityId: "",
         candidateSecurityId: suggestion?.securityId || "",
-        error: payload?.noResult ? "DM 无结果" : payload?.error || `HTTP ${response.status}`,
+        error: payload?.error || (payload?.noResult ? "DM 无结果" : `HTTP ${response.status}`),
       };
     }
     const normalized = payload.normalized || {};
@@ -3503,7 +3504,7 @@ async function requestProjectScreenshotDmLookup(query = {}, { signal } = {}) {
   const timeout = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, 12_000);
+  }, 30_000);
   try {
     const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
       cache: "no-store",
@@ -3619,7 +3620,7 @@ function createManualProjectScreenshotRow(sessionId = projectScreenshotSessionId
   };
 }
 
-function handleProjectScreenshotCorrectionClick(event) {
+async function handleProjectScreenshotCorrectionClick(event) {
   const button = event.target.closest("[data-project-screenshot-action]");
   if (!button) return;
   const action = button.dataset.projectScreenshotAction;
@@ -3633,6 +3634,26 @@ function handleProjectScreenshotCorrectionClick(event) {
   }
   const row = projectScreenshotRows.find((item) => item.id === button.dataset.projectScreenshotRowId);
   if (!row) return;
+  if (action === "select-candidate") {
+    const candidate = row.candidates?.[Number(button.dataset.candidateIndex)];
+    if (!candidate?.securityId || row.status === "pending") return;
+    cancelProjectScreenshotRowLookup(row);
+    row.revision += 1;
+    const revision = row.revision, sessionId = row.sessionId;
+    const controller = new AbortController();
+    row.lookupController = controller;
+    row.status = "pending";
+    row.dmVerified = false;
+    renderProjectScreenshotResults(projectScreenshotRows, { force: true });
+    const result = await lookupProjectScreenshotEntry({ ...row, selectedSecurityId: candidate.securityId }, { signal: controller.signal });
+    const index = projectScreenshotRows.findIndex(item => item.id === row.id);
+    if (index < 0 || sessionId !== projectScreenshotSessionId || projectScreenshotRows[index].revision !== revision) return;
+    const current = projectScreenshotRows[index];
+    current.lookupController = null;
+    projectScreenshotRows[index] = finalizeProjectScreenshotLookupRow(current, { ...result, selectedSecurityId: "", candidates: [] });
+    renderProjectScreenshotResults();
+    return;
+  }
   if (action === "edit") {
     row.editSnapshot = projectScreenshotRowSnapshot(row);
     row.correctionDismissed = false;
@@ -3852,6 +3873,7 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
           </div>
           <em>${escapeHtml(row.draftFullName || row.fullName)}</em>
           <span role="status" aria-live="polite" data-project-screenshot-row-status>${escapeHtml(detail)}</span>
+          ${row.status === "error" && row.candidates?.length ? `<div class="project-screenshot-candidates">${row.candidates.filter(candidate => candidate.securityId).map(candidate => `<button type="button" class="button subtle" data-project-screenshot-action="select-candidate" data-project-screenshot-row-id="${escapeAttribute(row.id)}" data-candidate-index="${row.candidates.indexOf(candidate)}">选择并核验：${escapeHtml(candidate.shortName || candidate.securityId)} · ${escapeHtml(candidate.securityId)}<br>${escapeHtml(candidate.fullName || "全称未返回")}</button>`).join("")}</div>` : ""}
           ${correctionForm}
         </div>
       `;
@@ -6931,7 +6953,7 @@ function renderValuationSuggestionCard(item, offeringType) {
       <div class="valuation-suggestion-main">
         <div>
           <strong>${escapeHtml(headline)}</strong>
-          <span>${escapeHtml(item.profileLabel || "同类债券")} · 置信度${escapeHtml(confidenceText)}</span>
+          <span>${escapeHtml(item.profileLabel || "同类债券")}</span>
         </div>
         <span>${escapeHtml(range)}</span>
       </div>
@@ -6951,7 +6973,7 @@ function renderValuationBetaCard(item, offeringType) {
     <div class="vb-color"><div class="vb-hero">
       <div><span>${escapeHtml(item.durationText || "目标期限")} 参考估值</span><strong class="vb-rate">${item.referenceOnly ? "暂无可靠建议" : escapeHtml(formatValuationRate(item.center))}</strong></div>
       <div class="vb-range"><span>参考区间</span><strong>${item.referenceOnly ? "仅列参考券" : escapeHtml(`${formatValuationRate(item.low)} — ${formatValuationRate(item.high)}`)}</strong></div>
-    </div><div class="vb-profile"><span>${escapeHtml(profile)} · ${offering}</span><span>置信度 ${escapeHtml(item.confidence || "待确认")}</span></div></div>
+    </div><div class="vb-profile"><span>${escapeHtml(profile)} · ${offering}</span></div></div>
     <details><summary>可比券（${comparables.length}）</summary><div class="vb-table"><table><thead><tr><th>可比券 / 来源</th><th>期限</th><th>估值</th><th>调整</th></tr></thead><tbody>${comparables.map(bond => {
       const bp = round((bond.adjustment || 0) * 100, 1);
       const notes = [bond.yieldBasis, bond.valuationDate, bond.stale ? `滞后${formatNumber(bond.ageDays)}天` : "", bond.reliability ? `推荐度${bond.reliability}` : "", Number.isFinite(numberOrNull(bond.curveResidualBp)) ? `曲线偏离${formatNumber(bond.curveResidualBp)}bp` : "", Number(bond.sourceSpreadBp) >= 1 ? `多源差${formatNumber(bond.sourceSpreadBp)}bp` : ""].filter(Boolean).join(" · ");
@@ -7137,7 +7159,7 @@ function renderUnifiedReminders() {
 function renderUnifiedReminderItem(item) {
   const subject = item.subject || item.detail || item.title || "待办事项";
   const task = item.moduleLabel || "待办";
-  const detail = [item.title, item.detail].filter(Boolean).join(" · ");
+  const detail = [...new Set([item.title, item.detail].filter(Boolean))].join(" · ");
   const severity = item.severity || "info";
   const policy = [reminderSeverityLabel(severity), reminderPolicyLabel(item.pushPolicy)].filter(Boolean).join(" · ");
   return `
@@ -7254,7 +7276,7 @@ function reminderSeverityLabel(severity) {
 
 function reminderPolicyLabel(policy) {
   if (policy === "immediate") return "即时";
-  if (policy === "daily") return "早报";
+  if (policy === "daily") return "每日提醒";
   return "";
 }
 

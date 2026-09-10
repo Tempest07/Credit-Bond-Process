@@ -9,3 +9,34 @@
 .va-assistant .va-summary{padding:12px 20px}.va-assistant .va-summary span{color:#60757b}.va-assistant details{border-top:1px solid #dbe7e8}.va-assistant summary{cursor:pointer;padding:14px 20px;min-height:44px;font-weight:500}.va-assistant .va-text{padding:0 20px 16px;line-height:1.7;overflow-wrap:anywhere}.va-assistant .va-text ul{padding-left:20px}.va-assistant .va-adjust{padding:5px 0}.va-assistant .va-feedback{display:grid;gap:12px}.va-assistant textarea{width:100%;resize:vertical}.va-assistant .va-feedback button{justify-self:start}
 .va-assistant .va-table{overflow-x:auto;padding:0 20px 14px}.va-assistant table{width:100%;border-collapse:collapse;font-size:14px}.va-assistant td,.va-assistant th{padding:10px;border-bottom:1px solid #e3ebec;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.va-assistant td:first-child,.va-assistant th:first-child{text-align:left;white-space:normal;min-width:150px}.va-assistant th{font-weight:500;background:#f3f8f8}.va-assistant td span{display:block;color:#60757b;margin-top:4px;font-size:12px}.va-assistant .va-reason td{white-space:normal;color:#60757b}.va-assistant .va-history-row{display:block;width:100%;text-align:left;margin-bottom:8px}.va-assistant .va-experience{padding:12px 0}.va-assistant .va-experience .va-actions{padding:8px 0}.va-assistant .va-experience textarea{margin-top:8px}
 @media(max-width:600px){.va-assistant .va-range{text-align:left}.va-assistant .va-rate{font-size:30px}.va-assistant .va-actions{align-items:stretch}.va-assistant .va-actions select{width:100%}}
+
+#experimentalValuationAssist.va-assistant{margin-top:28px;margin-bottom:28px}
+
+/* Approved 03: warm charcoal and champagne, with separate disclosure cards. */
+#experimentalValuationAssist.va-assistant{background:#fffefa;color:#302c25;border-color:#e8dfce;border-radius:18px;padding-bottom:14px;box-shadow:0 8px 28px #302c2508}
+.va-assistant .va-header{background:#211f1b;color:#f1e7d2;border-color:#39342a;padding:20px}
+.va-assistant .va-header strong{display:flex;align-items:center;gap:9px;font:600 16px/1.5 Arial,"Microsoft YaHei",sans-serif}
+.va-assistant .va-beta-label{font-size:10px;font-weight:500;letter-spacing:.05em;color:#dac18e;border:1px solid #726044;border-radius:5px;padding:2px 6px}
+.va-assistant .va-header .va-model-mark{color:#dac18e;border:1px solid #726044;border-radius:7px;padding:6px 10px;font-size:11px;letter-spacing:.04em;background:linear-gradient(125deg,#c4aa7618,transparent)}
+.va-model-mark::before{content:"◇";margin-right:7px}
+.va-assistant .va-actions{padding:18px 20px;gap:10px}
+.va-assistant button,.va-assistant input,.va-assistant textarea{border-color:#e0d6c3;color:#302c25;background:#fffefa;border-radius:8px}
+.va-assistant button[data-action=analyze]{background:#c4aa76;border-color:#c4aa76;color:#211f1b;font-weight:600}
+.va-assistant .va-notice,.va-assistant .va-message,.va-assistant .va-run-meta,.va-assistant .va-summary span{color:#827664}
+.va-assistant .va-card{border-color:#e8dfce;margin-top:14px;padding-bottom:4px}
+.va-assistant .va-color{background:#302c25;color:#e9dfcc;padding:24px 20px}
+.va-assistant .va-rate{color:#e4c995}.va-assistant .va-range span{color:#c9bfa9}
+.va-assistant .va-profile>span:last-child{color:#e4c995;border:1px solid #726044;background:#ffffff08;border-radius:5px}
+.va-assistant details{margin:10px 16px;border:1px solid #e8dfce;border-radius:11px;background:#fffdf8;overflow:hidden}
+.va-assistant summary{display:flex;align-items:center;gap:12px;padding:16px;min-height:54px;list-style:none;color:#403729;font-size:14px;font-weight:600;transition:background .18s}
+.va-assistant summary::-webkit-details-marker{display:none}
+.va-assistant summary::before{content:"";width:4px;height:16px;background:#c4aa76;border-radius:3px;flex-shrink:0}
+.va-assistant summary::after{content:"";width:7px;height:7px;border-right:1.5px solid #96805a;border-bottom:1.5px solid #96805a;transform:rotate(45deg);margin-left:auto;transition:transform .18s}
+.va-assistant summary:hover{background:#f6f0e5}.va-assistant summary:focus-visible{outline:2px solid #96805a;outline-offset:-3px}
+.va-assistant details[open]>summary{background:#f5efe3;border-bottom:1px solid #e8dfce}
+.va-assistant details[open]>summary::after{transform:rotate(225deg)}
+.va-assistant .va-table{padding:12px 14px 16px}.va-assistant th{background:#f5efe3;color:#6c5b3c}
+.va-assistant td,.va-assistant th{border-color:#e8dfce}.va-assistant td span,.va-assistant .va-reason td{color:#827664}
+.va-assistant .va-text{padding:16px;line-height:1.8}.va-assistant .va-text p{margin:0 0 12px}
+.va-assistant .va-adjust{padding:10px 12px;margin:8px 0;background:#f6f1e7;border-radius:7px}
+@media(prefers-reduced-motion:reduce){.va-assistant summary,.va-assistant summary::after{transition:none}}
