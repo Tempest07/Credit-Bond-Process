@@ -31,7 +31,7 @@ export function createLocalIssuanceGateway(options = {}) {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     if (!authorized(request.headers.authorization, token)) return send(response, 401, { error: "Unauthorized." });
     if (request.method === "GET" && url.pathname === "/health") {
-      return send(response, 200, { status: "ok", model: LOCAL_ISSUANCE_MODEL, promptRevision: LOCAL_ISSUANCE_PROMPT_REVISION, visionModel: PROJECT_VISION_MODEL, valuationVersion: '5.1.0', busy: active });
+      return send(response, 200, { status: "ok", model: LOCAL_ISSUANCE_MODEL, promptRevision: LOCAL_ISSUANCE_PROMPT_REVISION, visionModel: PROJECT_VISION_MODEL, valuationVersion: '5.1.2', busy: active });
     }
     const isVision = url.pathname === "/v1/project-screenshot";
     const isValuation = url.pathname === '/v1/valuation';

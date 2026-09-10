@@ -55,7 +55,7 @@ export async function onRequestGet(context) {
 
   const url = new URL(context.request.url);
   const shortName = (url.searchParams.get("shortName") || url.searchParams.get("short_name") || "").trim();
-  const securityId = (url.searchParams.get("securityId") || url.searchParams.get("security_id") || "").trim();
+  let securityId = (url.searchParams.get("securityId") || url.searchParams.get("security_id") || "").trim();
   const fullName = (url.searchParams.get("fullName") || url.searchParams.get("full_name") || "").trim();
   const startDate = (url.searchParams.get("startDate") || url.searchParams.get("start_date") || "").trim();
   const endDate = (url.searchParams.get("endDate") || url.searchParams.get("end_date") || "").trim();
@@ -68,6 +68,15 @@ export async function onRequestGet(context) {
 
   try {
     const dm = makeDmClient(context.env, context.request);
+    if (fullName && !shortName && !securityId) {
+      const discovery = await discoverFullNameBond(dm, fullName);
+      if (!discovery.securityId) {
+        return json({ ok: false, noResult: true, requiresSelection: true,
+          error: discovery.suggestions.length ? "请核对并选择债券候选" : discovery.diagnostic.errors?.length ? "DM 候选查询未完成，请稍后重试" : "未找到该全称对应的债券，请核对主体、年份和期次",
+          suggestions: discovery.suggestions, diagnostic: { dmMatched: false, fullNameDiscovery: discovery.diagnostic } });
+      }
+      securityId = discovery.securityId;
+    }
     const basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
     const basicRow = firstRow(basic);
     let primary = await lookupPrimaryData(dm, {
@@ -215,6 +224,46 @@ export async function onRequestGet(context) {
 
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: apiHeaders() });
+}
+
+function fullNameIdentity(value) {
+  return normalizeFullNameForLookup(String(value).normalize("NFKC"))
+    .replace(/[〇零一二三四五六七八九两]{4}(?=年)/g, text => [...text].map(c => "零一二三四五六七八九".indexOf(c === "〇" ? "零" : c === "两" ? "二" : c)).join(""))
+    .replace(/第([一二三四五六七八九十百零两]+)(期|次)/g, (_, text, suffix) => {
+      let n = 0, digit = 0;
+      for (const c of text) { if (c === "十" || c === "百") { n += (digit || 1) * (c === "十" ? 10 : 100); digit = 0; } else digit = "零一二三四五六七八九".indexOf(c === "两" ? "二" : c); }
+      return `第${n + digit}${suffix}`;
+    });
+}
+
+async function discoverFullNameBond(dm, fullName) {
+  const identity = fullNameIdentity(fullName);
+  const match = identity.match(/^(.+?(?:有限公司|股份公司|集团公司|银行))((?:19|20)\d{2})年?度?/);
+  if (!match) return { securityId: "", suggestions: [], diagnostic: { reason: "issuerOrYearMissing" } };
+  const issuerName = match[1], year = match[2];
+  const candidates = [], errors = [];
+  // Issuer-scoped outstanding universe is independent of the recent issuance window.
+  try { candidates.push(...rowsFromDm(await dm.post(OUTSTANDING_BONDS_PATH, { issuerFullName: issuerName }))); }
+  catch (error) { errors.push(error.message); }
+  // Include planned issues and bonds outside the outstanding universe using the explicit issue year.
+  try {
+    const primary = await lookupPrimaryData(dm, { fullName, issuerName, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+    candidates.push(...rowsFromDm(primary.raw));
+  } catch (error) { errors.push(error.message); }
+  const matches = new Map();
+  for (const row of candidates) {
+    const code = pickFirstString(row, ["security_id", "securityId"]);
+    if (code && rowFullNames(row).some(name => fullNameIdentity(name) === identity)) matches.set(code, row);
+  }
+  const suggestions = closestDmLookupSuggestions({ fullName, issuerName, rows: candidates });
+  if (matches.size === 1) {
+    const code = [...matches.keys()][0];
+    const verified = await lookupBasicInfo(dm, { securityId: code });
+    if (verified.rows.some(row => rowShortNames(row).length && rowFullNames(row).some(name => fullNameIdentity(name) === identity))) {
+      return { securityId: code, suggestions, diagnostic: { issuerName, year, verified: true } };
+    }
+  }
+  return { securityId: "", suggestions, diagnostic: { issuerName, year, exactMatches: matches.size, errors } };
 }
 
 async function lookupBasicInfo(dm, { shortName, securityId, fullName }) {
@@ -2818,10 +2867,10 @@ function rowMatchesLikelyShortName(row, shortName) {
 }
 
 function rowMatchesFullName(row, fullName) {
-  const query = normalizeFullNameForLookup(fullName);
+  const query = fullNameIdentity(fullName);
   if (!query || query.length < 8) return false;
   return rowFullNames(row).some((candidate) => {
-    const normalized = normalizeFullNameForLookup(candidate);
+    const normalized = fullNameIdentity(candidate);
     if (!normalized) return false;
     if (normalized === query) return true;
     if ((normalized.includes(query) || query.includes(normalized))
@@ -3384,6 +3433,8 @@ function bytesToHex(bytes) {
 }
 
 export const __test__ = {
+  discoverFullNameBond,
+  fullNameIdentity,
   normalizeDmLookup,
   historicalPrimaryWindow,
   sm4RoundKeys,

@@ -58,11 +58,11 @@ function render() {
   if (!visible) {el.hidden=true; return;}
   el.hidden=false; el.classList.add('va-assistant');
   const canAnalyze = Boolean(target.issuerName && target.shortName && target.durationText && status?.dmConfigured && status?.models?.length);
-  el.innerHTML=`<div class="va-header"><strong>实验性估值助手</strong><span>gpt-oss 20B · 试用</span></div><div class="va-actions"><label>研判模型 <select id="vaModel" ${pending?'disabled':''}>${(status?.models || []).map(m=>`<option ${m.name===status?.defaultModel?'selected':''} value="${escape(m.name)}">${escape(m.name)}</option>`).join('')}</select></label><button type="button" data-action="analyze" ${pending||!canAnalyze?'disabled':''}>${pending?'正在处理…':'生成估值'}</button><button type="button" data-action="history" ${pending?'disabled':''}>记录与经验</button></div>
+  el.innerHTML=`<div class="va-header"><strong>估值助手 <small class="va-beta-label">AI Beta</small></strong><span class="va-model-mark">${escape(run?.model || status?.defaultModel || "模型待连接")}</span></div><div class="va-actions"><button type="button" data-action="analyze" ${pending||!canAnalyze?'disabled':''}>${pending?'正在处理…':'生成估值'}</button><button type="button" data-action="history" ${pending?'disabled':''}>记录与经验</button></div>
   ${!status?.dmConfigured ? '<div class="va-notice">实验服务尚未连接，原估值助手可继续使用。</div>' : ''}
   ${status?.dmConfigured && !status?.models?.length ? '<div class="va-notice">本地模型未就绪，请启动模型服务后重新打开助手。</div>' : ''}
   <div class="va-message" role="status" aria-live="polite">${escape(message)}</div>
-  ${run ? `<div class="va-run-meta">${escape(run.evidence.target.shortName)} · ${escape(run.model)} · ${escape(new Date(run.createdAt).toLocaleString('zh-CN'))}${run.evidence.sample?' · 演示':''}</div>${run.status==='complete' ? run.result.output.results.map(resultCard).join('') : `<div class="va-notice">${escape(run.error || '记录未完成')}</div>`}<details><summary>本次采用的经验（${run.learning.experiences.length}）</summary><div class="va-text">${run.learning.experiences.map(e=>`<p>${escape(e.text)}</p>`).join('') || '未采用历史经验'}${run.learning.reviewRequired ? `<div>有 ${run.learning.reviewRequired} 条旧经验待复核，本次未采用。</div>` : ''}<div>经验范围：同主体、品种、市场、发行方式及期限结构。</div></div></details>`:''}
+  ${run ? `<div class="va-run-meta">${escape(run.evidence.target.shortName)} · ${escape(new Date(run.createdAt).toLocaleString('zh-CN'))}${run.evidence.sample?' · 演示':''}</div>${run.status==='complete' ? run.result.output.results.map(resultCard).join('') : `<div class="va-notice">${escape(run.error || '记录未完成')}</div>`}<details><summary>本次采用的经验（${run.learning.experiences.length}）</summary><div class="va-text">${run.learning.experiences.map(e=>`<p>${escape(e.text)}</p>`).join('') || '未采用历史经验'}${run.learning.reviewRequired ? `<div>有 ${run.learning.reviewRequired} 条旧经验待复核，本次未采用。</div>` : ''}<div>经验范围：同主体、品种、市场、发行方式及期限结构。</div></div></details>`:''}
   <div id="vaHistory"></div>`;
   el.onclick = onClick;
 }
@@ -86,7 +86,7 @@ async function onClick(event) {
     } catch(e) { message=e.message; render(); } finally {button.disabled=false;}
     return;
   }
-  const model=document.getElementById('vaModel')?.value;
+  const model=status?.defaultModel;
   const currentGeneration=generation;
   let payload;
   if (action==='feedback') {
