@@ -109,3 +109,30 @@ test("clamps and restores persisted realtime column widths", () => {
   assert.deepEqual(__test__.normalizeColumnWidths({ identity: "360", bid: 20, unknown: 200 }), { identity: 360, bid: 64 });
   assert.deepEqual(__test__.normalizeColumnWidths(null), {});
 });
+
+test('pause cancels scheduling and requests; only manual refresh runs until resumed', async (t) => {
+  const previousWindow = globalThis.window;
+  let cleared = 0, scheduled = 0, calls = 0;
+  globalThis.window = { clearTimeout: () => cleared++, setTimeout: () => ++scheduled };
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw Object.assign(new Error('cancelled'), { name: 'AbortError' }); });
+  const c = Object.create(__test__.RealtimeQuoteController.prototype);
+  const inflight = new AbortController();
+  Object.assign(c, { paused: false, watchlist: [{query:'250004'}], rows: [], loading: false,
+    fetchController: inflight, requestSequence: 0, intervalMs: 20000, lastFetchedAt: new Date().toISOString(),
+    renderStatus() {}, render() {} });
+  c.togglePaused();
+  assert.equal(c.paused, true);
+  assert.equal(inflight.signal.aborted, true);
+  assert.equal(c.nextRefreshAt, 0);
+  await c.refresh();
+  assert.equal(calls, 0);
+  await c.refresh({manual:true});
+  assert.equal(calls, 1);
+  assert.equal(scheduled, 0);
+  assert.equal(c.paused, true);
+  c.togglePaused();
+  assert.equal(c.paused, false);
+  assert.equal(scheduled, 1);
+  assert.ok(cleared > 0);
+});

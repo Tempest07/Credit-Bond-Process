@@ -519,6 +519,8 @@ label[data-recognition-source="derived"]::after {
 .realtime-button.primary:hover:not(:disabled) { border-color: #20c7b5; background: linear-gradient(135deg, #0b9185, #087068); }
 .realtime-button.primary > span { margin-right: 5px; font-family: "Cascadia Mono", Consolas, monospace; font-size: 15px; font-weight: 400; }
 .realtime-button.ghost { background: #0d131c; }
+.realtime-button.polling-toggle { border-color: #d7a34e; color: #ffe0a0; background: #302718; font-weight: 700; }
+.realtime-button.polling-toggle[aria-pressed="true"] { border-color: #37b6a2; color: #a1f0dd; background: #123a33; }
 .realtime-button[data-permission="granted"] { border-color: rgba(50,225,191,.45); color: #68d8c8; background: rgba(17,121,109,.13); }
 .realtime-button[data-permission="denied"] { border-color: rgba(251,113,133,.24); color: #c57986; }
 .realtime-column-menu-wrap { position: relative; }

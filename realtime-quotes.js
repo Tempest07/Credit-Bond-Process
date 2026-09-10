@@ -392,7 +392,7 @@ class RealtimeQuoteController {
   }
 
   async refresh({ manual = false } = {}) {
-    if (!this.watchlist.length || this.loading) return;
+    if ((!manual && this.paused) || !this.watchlist.length || this.loading) return;
     this.fetchController?.abort();
     const controller = new AbortController();
     this.fetchController = controller;
@@ -412,7 +412,7 @@ class RealtimeQuoteController {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok !== true) throw new Error(payload.error || `HTTP ${response.status}`);
-      if (sequence !== this.requestSequence) return;
+      if (controller.signal.aborted || sequence !== this.requestSequence) return;
       const nextRows = (Array.isArray(payload.rows) ? payload.rows : []).map((row) => this.attachValuation(row));
       const unmatched = pruneUnresolvedWatchItems(this.watchlist, payload.unresolved);
       this.captureQuoteChanges(this.rows, nextRows);
@@ -790,14 +790,14 @@ class RealtimeQuoteController {
       label = "刷新中";
       status = "loading";
       detailText = "正在读取当日最优报价";
-    } else if (this.error) {
-      label = "连接异常";
-      status = "error";
-      detailText = this.error;
     } else if (this.paused) {
       label = "已暂停";
       status = "paused";
       detailText = "自动轮询已暂停";
+    } else if (this.error) {
+      label = "连接异常";
+      status = "error";
+      detailText = this.error;
     } else if ((!this.active || document.hidden) && this.watchlist.length) {
       label = "后台监控";
       status = "background";
@@ -813,8 +813,8 @@ class RealtimeQuoteController {
     }
     if (detail) detail.textContent = detailText;
     if (pause) {
-      pause.textContent = this.paused ? "继续轮询" : "暂停轮询";
-      pause.disabled = !this.watchlist.length;
+      pause.textContent = this.paused ? "恢复轮询" : "暂停轮询";
+      pause.setAttribute("aria-pressed", String(this.paused));
     }
     if (refresh) refresh.disabled = !this.watchlist.length || this.loading;
     if (last) last.textContent = this.lastFetchedAt ? formatChinaDateTime(this.lastFetchedAt) : "--";
@@ -1271,6 +1271,7 @@ function escapeAttribute(value = "") {
 }
 
 export const __test__ = {
+  RealtimeQuoteController,
   buildAlertText,
   buildQuoteCopyText,
   clampColumnWidth,
