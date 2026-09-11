@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import PizZip from "pizzip";
+import { normalizeProtocolTransfer, parseProtocolTransferText, protocolTransferFromSecondaryTrade } from "../protocol-transfer.js";
+import { parseSecondaryTradeIntake } from "../secondary-inventory.js";
 
 import {
   extractProtocolTransferTemplateMetadata,
@@ -107,6 +109,52 @@ test("generates a Huachuang application using maker and bank only", async () => 
     protocolTransferApplicationFilename(record, template),
     "上交所协议转让N0812 兴业华创 25汉投03 3000.docx",
   );
+});
+
+test("preserves secondary intake amount units while extracting bridge prices", () => {
+  for (const [amountText, expected] of [["5000", 5000], ["5000万", 5000], ["5k", 5000], ["0.5e", 5000], ["3.5k", 3500], ["100", 100]]) {
+    const text = `【测试】 2.9Y 283353.SH 26测试01 私募债 100 / 99.998 净价 ${amountText} 09.11交易所 兴业银行 出给 某基金`;
+    const candidate = parseSecondaryTradeIntake(text, { negotiationDate: "2026-09-11" }).protocolCandidates[0];
+    assert.equal(candidate.price, "99.998", amountText);
+    assert.equal(candidate.quantityWan, expected, amountText);
+  }
+});
+
+for (const template of BUILTIN_PROTOCOL_TRANSFER_TEMPLATES) {
+  test(`exports the bank-to-bridge price and hands into separate ${template.label} Word cells`, async () => {
+    const text = `【测试】 2.9Y 283353.SH 26测试01 100 / 99.998 净价 5000 09.11交易所 兴业银行 出给 某基金\n${template.marketMakerName} 测试联系人 3000000000`;
+    const parsed = parseProtocolTransferText(text, new Date("2026-09-11T09:00:00+08:00"));
+    // Cover both recognized text and a user-entered slash quote in the form.
+    for (const record of [parsed, normalizeProtocolTransfer({ ...parsed, price: "100/99.998" })]) {
+      const zip = await readTemplateZip(TEMPLATE_EXPECTATIONS[template.id].file);
+      zip.file("word/document.xml", patchProtocolTransferDocumentXml(zip.file("word/document.xml").asText(), record, template));
+      const reopened = new PizZip(zip.generate({ type: "uint8array", compression: "DEFLATE" }));
+      const rows = rowTexts(reopened.file("word/document.xml").asText());
+      assert.match(rows.find(row => row.includes("交易净价")), /99\.998$/);
+      assert.match(rows.find(row => row.includes("交易数量")), /50000$/);
+      assert.doesNotMatch(rows.find(row => row.includes("交易净价")), /5000/);
+    }
+  });
+}
+
+test("routes secondary intake slash quotes through the same protocol Word price and amount rules", async () => {
+  const template = matchProtocolTransferTemplate("华创证券");
+  for (const quote of ["净价 100/99.998", "100 / 99.998 净价", "99.998/100 净价"]) {
+    const text = `【测试】 2.9Y 283353.SH 26测试01 私募债 ${quote} 5000 09.11交易所 兴业银行 出给 某基金，华创证券发 100/99.998`;
+    const candidate = parseSecondaryTradeIntake(text, { negotiationDate: "2026-09-11" }).protocolCandidates[0];
+    assert.equal(candidate.price, "99.998", quote);
+    assert.equal(candidate.quantityWan, 5000, quote);
+    assert.equal(String(candidate.tradeRecord["净价"]), "99.998", quote);
+    const record = protocolTransferFromSecondaryTrade(candidate);
+    const zip = await readTemplateZip("huachuang.docx");
+    const xml = patchProtocolTransferDocumentXml(zip.file("word/document.xml").asText(), record, template);
+    const rows = rowTexts(xml);
+    assert.match(rows.find(row => row.includes("交易净价")), /99\.998$/);
+    assert.match(rows.find(row => row.includes("交易数量")), /50000$/);
+    const manual = protocolTransferFromSecondaryTrade({ ...candidate, frontOfficePrice: "99.999", quantityWan: 3000 });
+    assert.equal(manual.price, 99.999);
+    assert.equal(manual.quantityHands, 30000);
+  }
 });
 
 test("falls back from hands to the archive amount and compacts a new maker name", () => {

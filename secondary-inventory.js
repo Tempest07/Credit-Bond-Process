@@ -2,6 +2,7 @@ import {
   normalizeTradeRecord,
   parseTradeRecordLine,
 } from "./trade-record-converter.js";
+import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20260911-release-5111";
 
 const ACCOUNT_ALIASES = new Map([
   ["SDR", "SDR"],
@@ -245,7 +246,22 @@ export function parseSecondaryTradeIntake(text = "", options = {}) {
       warnings: parsed.warnings,
     });
     if (trade.instrumentScope === "exchange_private") {
-      protocolCandidates.push(trade);
+      // Protocol quotes can contain both bridge legs. Use the same parser as
+      // direct protocol entry before these parsed fields reach the Word form.
+      const quote = parseProtocolTransferQuote(rawLine);
+      const amount = quote.price !== null
+        ? parseTradeRecordLine(quote.remainingText, negotiationDateValue, bankName).trade["面值（万元）"]
+        : trade.tradeRecord["面值（万元）"];
+      protocolCandidates.push(normalizeSecondaryTrade({
+        ...trade,
+        price: quote.price ?? trade.price,
+        quantityWan: numberOrNull(amount) ?? 0,
+        tradeRecord: {
+          ...trade.tradeRecord,
+          净价: quote.price ?? trade.tradeRecord["净价"],
+          "面值（万元）": amount,
+        },
+      }));
       diagnostics.push({
         lineNumber: index + 1,
         original: trade.sourceText,

@@ -78,6 +78,49 @@ test("parses chat-style protocol transfer trade elements", () => {
   assert.match(parsed.remarks, /南方基金 呼啸 3005263171/);
 });
 
+test("keeps postfixed net prices separate from the following amount", () => {
+  for (const quote of ["100/99.998 净价", "100/99.998净价", "100 / 99.998 净价", "99.998 / 100 全价", "100.000/99.998 净价", "99.998 净价", "净价100/99.998"]) {
+    const text = `【测试】 2.9Y 283353.SH 26测试01 ${quote} 5000 09.11交易所 兴业银行 出给 某基金\n华创证券 测试联系人 3000000000`;
+    const parsed = parseProtocolTransferText(text, new Date("2026-09-11T09:00:00+08:00"));
+    assert.equal(parsed.price, 99.998, quote);
+    assert.equal(parsed.amountTenThousand, 5000, quote);
+    assert.equal(parsed.quantityHands, 50000, quote);
+  }
+});
+
+test("does not use an integer quote or a spaced slash leg as the amount", () => {
+  for (const quote of ["100 净价", "净价 100", "100 / 99.998", "99.998 / 100"]) {
+    const text = `【测试】 2.9Y 283353.SH 26测试01 ${quote} 5000 09.11交易所 兴业银行 出给 某基金`;
+    const parsed = parseProtocolTransferText(text, new Date("2026-09-11T09:00:00+08:00"));
+    assert.equal(parsed.price, quote.includes("99.998") ? 99.998 : 100, quote);
+    assert.equal(parsed.amountTenThousand, 5000, quote);
+    assert.equal(parsed.quantityHands, 50000, quote);
+  }
+});
+
+test("keeps slash dates and repeated bridge quotes out of price and amount fields", () => {
+  for (const date of ["09/11交易所", "10/11上交所"]) {
+    for (const quote of ["99.998", "100 / 99.998"]) {
+      const text = `【测试】 2.9Y 283353.SH 26测试01 5000 ${date} 兴业银行 出给 某基金 ${quote}`;
+      const parsed = parseProtocolTransferText(text, new Date("2026-09-11T09:00:00+08:00"));
+      assert.equal(parsed.price, 99.998, text);
+      assert.equal(parsed.amountTenThousand, 5000, text);
+    }
+  }
+  const text = "【测试】 2.9Y 283353.SH 26测试01 100 / 99.998 5000 09.11交易所 兴业银行 出给 某基金，华创证券发 100/99.998";
+  const parsed = parseProtocolTransferText(text);
+  assert.equal(parsed.price, 99.998);
+  assert.equal(parsed.amountTenThousand, 5000);
+  assert.equal(parsed.quantityHands, 50000);
+});
+
+test("preserves a small amount preceding a prefix-labelled net price", () => {
+  const parsed = parseProtocolTransferText("【测试】 2.9Y 283353.SH 26测试01 100 净价 99.998 09.11交易所 兴业银行 出给 某基金");
+  assert.equal(parsed.price, 99.998);
+  assert.equal(parsed.amountTenThousand, 100);
+  assert.equal(parsed.quantityHands, 1000);
+});
+
 const shortTenorElements = `【国利】 2.9Y(休2) 283353.SH 26苏水01 1.74 2000 09.07交易所 兴业银行 出给 广发证券投顾业务部 99.826/99.824
 //联系
 中信建投 测试联系人 3000000001

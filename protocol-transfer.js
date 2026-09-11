@@ -524,16 +524,33 @@ function inferTransferType(text, sides) {
 }
 
 function parsePrice(text) {
-  const labelled = firstMatch(text, /(?:交易净价|价格|成交价|全价|净价)(?:（元）|\(元\))?(?:\s*\([^)]*\))?[:：\s]*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/);
-  if (labelled) return labelled.replace(/\s+/g, "");
+  return matchPriceQuote(text)?.[1].replace(/\s+/g, "") || "";
+}
 
-  const sentBy = firstMatch(text, /(?:^|[，,；;\s])[\u4e00-\u9fa5A-Za-z]{2,20}\s*发\s*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/);
-  if (sentBy) return sentBy.replace(/\s+/g, "");
-
-  const slashPrice = firstMatch(text, /(\d{2,3}\.\d{3}\s*\/\s*\d{2,3}\.\d{3})/);
-  if (slashPrice) return slashPrice.replace(/\s+/g, "");
-
-  return firstMatch(text, /\b((?:9\d|10\d)\.\d{3})\b/);
+function matchPriceQuote(text) {
+  const postfixed = /(?:^|[\s，,；;])(\d{2,3}(?:\.\d+)?(?:\s*\/\s*\d{2,3}(?:\.\d+)?)?)\s*(?:净价|全价)(?=$|[\s，,；;])/;
+  const patterns = [
+    // In "100/99.998 净价 5000", 净价 belongs to the preceding quote,
+    // not the following amount. Keep the full quote span for amount parsing.
+    postfixed,
+    /(?:交易净价|价格|成交价|全价|净价)(?:（元）|\(元\))?(?:\s*\([^)]*\))?[:：\s]*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/,
+    /(?:^|[，,；;\s])[\u4e00-\u9fa5A-Za-z]{2,20}\s*发\s*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/,
+    /(?<![\d./])(\d{2,3}(?:\.\d+)?\s*\/\s*\d{2,3}(?:\.\d+)?)(?![\d./])/,
+    /\b((?:9\d|10\d)\.\d{3})\b/,
+  ];
+  for (const pattern of patterns) {
+    for (const match of String(text).matchAll(new RegExp(pattern, "g"))) {
+      // "100 净价 99.998" can mean amount 100, price 99.998. Preserve
+      // prefix-label parsing when both single values look like net prices.
+      if (pattern === postfixed && !match[1].includes("/")
+        && /^\s*\d{1,3}(?:\.\d+)?(?=$|[\s，,；;\/])/.test(String(text).slice(match.index + match[0].length))) continue;
+      // An unlabelled month/day (09/11) is not a two-leg price quote.
+      const date = /^(\d{1,2})\s*\/\s*(\d{1,2})$/.exec(match[1]);
+      if (match[0] === match[1] && date && Number(date[1]) >= 1 && Number(date[1]) <= 12 && Number(date[2]) >= 1 && Number(date[2]) <= 31) continue;
+      return match;
+    }
+  }
+  return null;
 }
 
 function parseQuantityHands(text) {
@@ -545,8 +562,21 @@ function parseQuantityHands(text) {
   return null;
 }
 
+export function parseProtocolTransferQuote(text = "") {
+  return { price: normalizePrice(parsePrice(text)), remainingText: removePriceQuotes(text) };
+}
+
+function removePriceQuotes(text) {
+  let amountText = String(text);
+  let quote;
+  while ((quote = matchPriceQuote(amountText))) {
+    amountText = amountText.slice(0, quote.index) + " " + amountText.slice(quote.index + quote[0].length);
+  }
+  return amountText;
+}
+
 function parseChatAmountTenThousand(text) {
-  const tokens = normalizeText(text).split(/\s+/).map(cleanToken).filter(Boolean);
+  const tokens = normalizeText(removePriceQuotes(text)).split(/\s+/).map(cleanToken).filter(Boolean);
   for (const token of tokens) {
     const amountTenThousand = parseAmountTenThousand(token);
     if (amountTenThousand !== null) return amountTenThousand;
