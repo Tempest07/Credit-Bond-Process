@@ -121,6 +121,15 @@ test("preserves a small amount preceding a prefix-labelled net price", () => {
   assert.equal(parsed.quantityHands, 1000);
 });
 
+test("does not consume decimal amounts as additional unlabelled quotes", () => {
+  for (const amount of ["100.000万", "100.000w", "100.000 万", "100.000"]) {
+    const parsed = parseProtocolTransferText(`【测试】 2.9Y 283353.SH 26测试01 净价 99.998 ${amount} 09.11交易所 兴业银行 出给 某基金`);
+    assert.equal(parsed.price, 99.998, amount);
+    assert.equal(parsed.amountTenThousand, 100, amount);
+    assert.equal(parsed.quantityHands, 1000, amount);
+  }
+});
+
 const shortTenorElements = `【国利】 2.9Y(休2) 283353.SH 26苏水01 1.74 2000 09.07交易所 兴业银行 出给 广发证券投顾业务部 99.826/99.824
 //联系
 中信建投 测试联系人 3000000001

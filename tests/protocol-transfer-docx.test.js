@@ -112,7 +112,7 @@ test("generates a Huachuang application using maker and bank only", async () => 
 });
 
 test("preserves secondary intake amount units while extracting bridge prices", () => {
-  for (const [amountText, expected] of [["5000", 5000], ["5000万", 5000], ["5k", 5000], ["0.5e", 5000], ["3.5k", 3500], ["100", 100]]) {
+  for (const [amountText, expected] of [["5000", 5000], ["5000万", 5000], ["5k", 5000], ["0.5e", 5000], ["3.5k", 3500], ["100", 100], ["100.000万", 100], ["100.000w", 100], ["100.000", 100]]) {
     const text = `【测试】 2.9Y 283353.SH 26测试01 私募债 100 / 99.998 净价 ${amountText} 09.11交易所 兴业银行 出给 某基金`;
     const candidate = parseSecondaryTradeIntake(text, { negotiationDate: "2026-09-11" }).protocolCandidates[0];
     assert.equal(candidate.price, "99.998", amountText);

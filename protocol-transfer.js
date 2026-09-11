@@ -527,7 +527,7 @@ function parsePrice(text) {
   return matchPriceQuote(text)?.[1].replace(/\s+/g, "") || "";
 }
 
-function matchPriceQuote(text) {
+function matchPriceQuote(text, includeBareDecimal = true) {
   const postfixed = /(?:^|[\s，,；;])(\d{2,3}(?:\.\d+)?(?:\s*\/\s*\d{2,3}(?:\.\d+)?)?)\s*(?:净价|全价)(?=$|[\s，,；;])/;
   const patterns = [
     // In "100/99.998 净价 5000", 净价 belongs to the preceding quote,
@@ -536,8 +536,8 @@ function matchPriceQuote(text) {
     /(?:交易净价|价格|成交价|全价|净价)(?:（元）|\(元\))?(?:\s*\([^)]*\))?[:：\s]*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/,
     /(?:^|[，,；;\s])[\u4e00-\u9fa5A-Za-z]{2,20}\s*发\s*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/,
     /(?<![\d./])(\d{2,3}(?:\.\d+)?\s*\/\s*\d{2,3}(?:\.\d+)?)(?![\d./])/,
-    /\b((?:9\d|10\d)\.\d{3})\b/,
   ];
+  if (includeBareDecimal) patterns.push(/(?<![\d.A-Za-z])((?:9\d|10\d)\.\d{3})(?![\d.])(?!\s*(?:[A-Za-z%％]|万|亿|千|手|张|年|月|天))/);
   for (const pattern of patterns) {
     for (const match of String(text).matchAll(new RegExp(pattern, "g"))) {
       // "100 净价 99.998" can mean amount 100, price 99.998. Preserve
@@ -569,8 +569,12 @@ export function parseProtocolTransferQuote(text = "") {
 function removePriceQuotes(text) {
   let amountText = String(text);
   let quote;
-  while ((quote = matchPriceQuote(amountText))) {
+  let firstQuote = true;
+  while ((quote = matchPriceQuote(amountText, firstQuote))) {
     amountText = amountText.slice(0, quote.index) + " " + amountText.slice(quote.index + quote[0].length);
+    // Once the price is removed, an unlabelled decimal can be the amount.
+    // Only remove additional quotes with an explicit label or two legs.
+    firstQuote = false;
   }
   return amountText;
 }
