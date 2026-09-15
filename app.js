@@ -1,4 +1,4 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260915-release-513';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260915-release-5131';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -34,7 +34,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260915-release-513";
+} from "./core.js?v=20260915-release-5131";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -63,15 +63,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260915-release-513";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260915-release-513";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260915-release-513";
+} from "./lifecycle.js?v=20260915-release-5131";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260915-release-5131";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260915-release-5131";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260915-release-513";
+} from "./history-parser.js?v=20260915-release-5131";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -88,23 +88,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260915-release-513";
+} from "./protocol-transfer.js?v=20260915-release-5131";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260915-release-513";
+} from "./protocol-transfer-templates.js?v=20260915-release-5131";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260915-release-513";
+} from "./protocol-transfer-docx.js?v=20260915-release-5131";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260915-release-513";
+} from "./reminders.js?v=20260915-release-5131";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -132,11 +132,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260915-release-513";
+} from "./secondary-inventory.js?v=20260915-release-5131";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260915-release-513";
+} from "./trade-record-converter.js?v=20260915-release-5131";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -147,15 +147,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260915-release-513";
+} from "./trade-record-grid.js?v=20260915-release-5131";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260915-release-513";
-import { initializeDatePickers } from "./date-picker.js?v=20260915-release-513";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260915-release-513";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260915-release-513";
+} from "./trade-record-ledger.js?v=20260915-release-5131";
+import { initializeDatePickers } from "./date-picker.js?v=20260915-release-5131";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260915-release-5131";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260915-release-5131";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260915-release-5131";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -164,30 +165,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260915-release-513";
+} from "./project-screenshot-ocr.js?v=20260915-release-5131";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260915-release-513";
+} from "./project-screenshot-layout.js?v=20260915-release-5131";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260915-release-513";
+} from "./project-screenshot-image.js?v=20260915-release-5131";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260915-release-513";
+} from "./payment-receipts.js?v=20260915-release-5131";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260915-release-513";
+} from "./issuer-search.js?v=20260915-release-5131";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260915-release-513";
+} from "./state-history.js?v=20260915-release-5131";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -306,6 +307,7 @@ let bondActivityChannel = null;
 const stateClientId = loadStateClientId();
 let project = parseProjectBrief("");
 let opinionManuallyEdited = false;
+let resultConnectingOrb = null;
 let newProjectCutoffMode = "auto";
 let newProjectCutoffPreview = null;
 let selectedIssuerId = "";
@@ -11275,6 +11277,8 @@ function updateProjectResultQueueState() {
   const queueStatus = ready ? "ready" : failed ? "error" : processing ? "processing" : "";
   if (queueStatus) anchor?.setAttribute("data-queue-status", queueStatus);
   else anchor?.removeAttribute("data-queue-status");
+  resultConnectingOrb ??= createResultConnectingOrb($("#resultConnectingOrb"));
+  resultConnectingOrb.setActive(queueStatus === "processing");
   button.removeAttribute("data-queue-status");
   button.setAttribute("aria-busy", processing ? "true" : "false");
   button.title = ready ? "识别完成，结果待核对" : failed ? "识别失败，请打开重试" : processing ? "发行结果正在后台识别" : "";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260915-release-513";
+const VERSION = "20260915-release-5131";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -85,8 +85,8 @@ test("queues compact issuance-result entry without blocking the project workspac
   assert.match(app, /anchor\?\.setAttribute\("data-queue-status", queueStatus\)/);
   assert.match(app, /button\.setAttribute\("aria-busy", processing \? "true" : "false"\)/);
   assert.doesNotMatch(styles, /\.result-action\[data-queue-status=/);
-  assert.match(styles, /\.result-entry-anchor\[data-queue-status="processing"\]::before,[\s\S]*animation:\s*resultQueueWave/);
-  assert.match(styles, /@keyframes resultQueueWave/);
+  assert.match(html, /id="resultConnectingOrb"[^>]*aria-hidden="true"[^>]*hidden/);
+  assert.match(app, /resultConnectingOrb\.setActive\(queueStatus === "processing"\)/);
   assert.match(styles, /\.result-entry-anchor\[data-queue-status="ready"\]::before\s*\{[^}]*content:\s*"✓";[^}]*animation:\s*resultQueueCheckIn/s);
   assert.match(styles, /\.result-entry-anchor\[data-queue-status="error"\]::before\s*\{[^}]*content:\s*"!";/s);
   assert.match(styles, /@keyframes resultQueueCheckIn/);
