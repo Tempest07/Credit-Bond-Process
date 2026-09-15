@@ -1,9 +1,10 @@
 import {
   compactSelectedAbsShortNames,
+  floorInvestmentAmount,
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20260911-release-5111";
+} from "./core.js?v=20260915-release-513";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -1560,12 +1561,32 @@ function referenceDateKey(value) {
   return localDate(value);
 }
 
+export function fillDualBidsAtUpperLimit(project) {
+  if (project.tranches?.length !== 2) return { issue: "此操作仅适用于双品种项目。" };
+  let draft = project;
+  for (let index = 0; index < 2; index += 1) {
+    const result = fillBidAtUpperLimit(draft, index);
+    // Keep the operation atomic: a failed second tranche must not leave the
+    // first tranche changed or copy an incomplete pair to the clipboard.
+    if (result.issue) return { issue: `品种${index + 1}：${result.issue}` };
+    draft = result.project;
+  }
+  return { project: draft, issue: "" };
+}
+
 export function fillBidAtUpperLimit(project, index) {
   const tranche = project.tranches?.[index];
   if (!tranche) return { issue: "未找到品种。" };
   const rate = numberOrNull(tranche.inquiryHigh);
   const ratio = numberOrNull(tranche.suggestedRatio);
-  const scale = numberOrNull(tranche.issueScale) ?? (project.tranches.length === 1 ? numberOrNull(project.issueScale) : null);
+  // Ordinary multi-tranche issues share the total scale until reallocation is
+  // fixed. This is a bidding basis only: never duplicate it into issueScale.
+  // ABS/ABN layers must continue to use their own layer scale.
+  const scale = numberOrNull(tranche.issueScale)
+    ?? (project.tranches.length === 1 || !normalizeInstrumentType(project.instrumentType) ? numberOrNull(project.issueScale) : null);
+  if (/全部回拨|^取消发行(?:[：:]|$)/.test(tranche.allocationNote || "")) {
+    return { issue: "该品种已取消发行或全部回拨，不能按上限投资。" };
+  }
   if (!Number.isFinite(rate)) return { issue: "请先补充该品种的询价上限。" };
   if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 100) return { issue: "该品种缺少有效投资比例或不可投资。" };
   if (!Number.isFinite(scale) || scale <= 0) return { issue: "请先补充该品种的发行规模。" };
@@ -1574,8 +1595,12 @@ export function fillBidAtUpperLimit(project, index) {
   const other = [...levels.filter((_, i) => i !== target), ...(tranche.outsourcedBids || [])];
   if (other.some(level => numberOrNull(level.bidAmount) !== null && numberOrNull(level.bidAmount) < 0)) return { issue: "请先修正负数投标量。" };
   const used = other.reduce((sum, level) => sum + (numberOrNull(level.bidAmount) || 0), 0);
-  const amount = Math.floor((scale * ratio / 100 - used + 1e-9) * 10000) / 10000;
-  if (amount <= 0) return { issue: "其他标位已占满允许投资量，无剩余额度。" };
+  const limit = floorInvestmentAmount(scale * ratio / 100);
+  if (limit <= 0) return { issue: "可投金额不足1000万元，向下取整后为0，无法填入标位。" };
+  const amount = floorInvestmentAmount(limit - used);
+  if (amount <= 0) return { issue: limit > used
+    ? "剩余可投额度不足1000万元，无法按千万整数填入标位。"
+    : "其他标位已占满允许投资量，无剩余额度。" };
   const bid = { ...(levels[target] || {}), id: levels[target]?.id || crypto.randomUUID(), bidRate: rate, bidAmount: amount };
   const bidLevels = target < 0 ? [...levels, bid] : levels.map((level, i) => i === target ? bid : level);
   return { project: { ...project, tranches: project.tranches.map((item, i) => i === index ? { ...item, bidLevels } : item) }, issue: "" };

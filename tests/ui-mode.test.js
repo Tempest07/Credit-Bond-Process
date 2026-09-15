@@ -42,6 +42,7 @@ test("switching from classic to beta does not open a retained project selection 
     const context = vm.createContext({
       $: () => ({ dataset: { view: "ledger" } }),
       ledgerMobilePane: pane, selectedProjectId: "previously-selected-project",
+      renderedValuationPayload: null,
       updateCloudGateCopy() {},
       setProjectWorkspaceOpen: value => opened.push(value),
       syncLedgerMobilePane() {}, switchView() {}, renderProtocolTransferList() {},

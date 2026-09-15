@@ -2,7 +2,7 @@ import {
   normalizeTradeRecord,
   parseTradeRecordLine,
 } from "./trade-record-converter.js";
-import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20260911-release-5111";
+import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20260915-release-513";
 
 const ACCOUNT_ALIASES = new Map([
   ["SDR", "SDR"],

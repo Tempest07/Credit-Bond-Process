@@ -17,6 +17,7 @@ import {
   determineApprover,
   durationToDays,
   findIssuer,
+  floorInvestmentAmount,
   generateOpinion,
   inferAbsClassNameFromShortName,
   linkAbsCreditApprovalToProject,
@@ -30,6 +31,43 @@ import {
   splitProjectBriefs,
   upsertAbsCreditApproval,
 } from "../core.js";
+
+test("investment amounts floor to 1000万元 without losing exact floating-point boundaries", () => {
+  for (const [amount, expected] of [[0.54, 0.5], [0.59, 0.5], [0.5, 0.5], [0.09, 0], [0, 0], [0.3 - Number.EPSILON / 4, 0.3], [1.9999999, 1.9]]) {
+    assert.equal(floorInvestmentAmount(amount), expected, String(amount));
+  }
+  for (const amount of [null, undefined, NaN, Infinity]) assert.equal(floorInvestmentAmount(amount), null);
+});
+
+test("ordinary flow opinion floors both application and recommendation while retaining scale and term rules", () => {
+  const project = parseProjectBrief(`26测试01A
+26测试01B 非我行主承 武汉分行
+3+2/7年期 规模2.7亿 AA+(中诚信国际)/隐含AA 私募
+询价区间1.6-2.6/2-3 银行间 中信银行`);
+  const before = structuredClone(project);
+  const generated = generateOpinion(project, { ...issuer, credit: { ...issuer.credit, privateRatio: 20 } });
+  assert.equal(generated.suggestion.investmentAmount, 0.5);
+  assert.deepEqual(generated.suggestion.trancheSuggestions.map(t => t.suggestedRatio), [20, 0]);
+  assert.match(generated.opinion, /拟申请投资金额合计不超过0\.5亿元/);
+  assert.match(generated.opinion, /建议限投资3\+2年期金额不超过0\.5亿元/);
+  assert.match(generated.opinion, /2\.7亿元/);
+  assert.doesNotMatch(generated.opinion, /0\.54亿元|本笔业务期限不覆盖/);
+  assert.deepEqual(project, before);
+});
+
+test("ABS automatic and explicit investment suggestions floor without changing source scales or approvals", () => {
+  const project = { instrumentType: "ABS", issueScale: 2.7, absInfo: { approvalRatio: 20,
+    tranches: [{ className: "优先A1级", scale: 2.7, selected: true }] } };
+  for (const fields of [{}, { approvalAmount: 0.54 }, { applicationAmount: 0.59, recommendedAmount: 0.54 }]) {
+    const input = { ...project, absInfo: { ...project.absInfo, ...fields } };
+    const before = structuredClone(input);
+    const suggestion = calculateSuggestion(input, null);
+    assert.equal(suggestion.applicationAmount, 0.5);
+    assert.equal(suggestion.recommendedAmount, 0.5);
+    assert.equal(suggestion.trancheSuggestions[0].investmentAmount, 0.5);
+    assert.deepEqual(input, before);
+  }
+});
 
 test("derives ABS tranche shares, explicit priority classes, and selected project name", () => {
   const tranches = [
@@ -792,6 +830,49 @@ test("limits dual-tranche overdue private AA bonds to investable terms only", ()
   assert.match(generated.opinion, /拟申请投资金额合计不超过4.5亿元/);
   assert.match(generated.opinion, /建议限投资3年期金额不超过4.5亿元、投资比例不超过3年期最终发行规模的30%、3年期一级投标利率不低于【待填写】%/);
   assert.doesNotMatch(generated.opinion, /5年期一级投标利率/);
+  assert.doesNotMatch(generated.opinion, /本笔业务期限不覆盖|及时续作授信|避免超期限持有/);
+  assert.equal(generated.suggestion.trancheSuggestions[1].exceedsCreditTerm, true);
+  assert.match(generated.warnings.join(""), /不可投资/);
+});
+
+test("credit-term wording follows recommended tranches and preserves overdue rating caps", () => {
+  const base = parseProjectBrief(`26测试PPN001A
+26测试PPN001B 非我行主承 广州分行
+3/5年期 规模10亿 AAA(联合资信)/隐含AA 私募
+询价区间1.5-2.5/1.8-2.8 银行间 中信银行`);
+  const approvedIssuer = {
+    ...issuer,
+    credit: { ...issuer.credit, approvedRatio: 30, privateRatio: 25, investmentTermDays: 1095 },
+  };
+  const renewal = "本笔业务期限不覆盖，要求广州分行及时续作授信，或在授信到期前三个月通知我部，避免超期限持有。";
+  for (const [hiddenRating, offeringType, ratios, needsRenewal] of [
+    ["AA", "私募", [25, 0], false],
+    ["AA(2)", "私募", [25, 0], false],
+    ["AA+", "私募", [25, 10], true],
+    ["AA+", "公募", [30, 20], true],
+    ["AA", "公募", [30, 15], true],
+    ["AA(2)", "公募", [30, 10], true],
+    ["AAA", "公募", [30, 30], true],
+  ]) {
+    const generated = generateOpinion({ ...base, hiddenRating, offeringType }, approvedIssuer);
+    const label = `${hiddenRating} ${offeringType}`;
+    assert.deepEqual(generated.suggestion.trancheSuggestions.map(item => item.suggestedRatio), ratios, label);
+    assert.equal(generated.opinion.includes(renewal), needsRenewal, label);
+    assert.match(generated.opinion, /发行期限3年\/5年（双向互拨）/, label);
+  }
+});
+
+test("one investable tranche still needs renewal when its own tenor is overdue", () => {
+  const project = parseProjectBrief(`26测试PPN001 非我行主承 广州分行
+5年期 规模10亿 AAA(联合资信)/隐含AA+ 私募
+询价区间1.5-2.5 银行间 中信银行`);
+  const generated = generateOpinion(project, {
+    ...issuer,
+    credit: { ...issuer.credit, privateRatio: 30, investmentTermDays: 1095 },
+  });
+  assert.equal(generated.suggestion.trancheSuggestions.length, 1);
+  assert.equal(generated.suggestion.suggestedRatio, 10);
+  assert.match(generated.opinion, /本笔业务期限不覆盖，要求广州分行及时续作授信/);
 });
 
 test("splits multiple project briefs by their project headers", () => {

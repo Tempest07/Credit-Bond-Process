@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   appendBidSubmission,
   fillBidAtUpperLimit,
+  fillDualBidsAtUpperLimit,
   hasUnsubmittedBidChanges,
   applyGuidancePricing,
   applyIssuanceAdvertisement,
@@ -1404,13 +1405,103 @@ test("allows post-result bid corrections while preserving results and payment re
   assert.equal(appendBidSubmission({ status: "已结束" }).submission, null);
 });
 
-test("upper-limit draft respects existing positions and missing tranche scale", () => {
+test("dual upper-limit fill is atomic, repeatable and preserves each tranche's limits", () => {
+  const project = normalizeProjectRecord({ issueScale: 20, tranches: [
+    { shortName: "26测试A", inquiryHigh: 1.9, suggestedRatio: 20, bidLevels: [{ bidRate: 1.8, bidAmount: 1 }] },
+    { shortName: "26测试B", inquiryHigh: 2.2, suggestedRatio: 10, outsourcedBids: [{ managerName: "测试机构", bidRate: 2, bidAmount: 0.5 }] },
+  ] });
+  const before = structuredClone(project);
+  const filled = fillDualBidsAtUpperLimit(project);
+  assert.equal(filled.issue, "");
+  assert.equal(filled.project.tranches[0].bidLevels.at(-1).bidAmount, 3);
+  assert.equal(filled.project.tranches[1].bidLevels.at(-1).bidAmount, 1.5);
+  assert.equal(filled.project.tranches[0].bidLevels.at(-1).bidRate, 1.9);
+  assert.equal(filled.project.tranches[1].bidLevels.at(-1).bidRate, 2.2);
+  assert.deepEqual(fillDualBidsAtUpperLimit(filled.project).project, filled.project);
+  assert.deepEqual(project, before);
+  assert.deepEqual(appendBidSubmission(filled.project).issues, []);
+  for (const patch of [{ inquiryHigh: null }, { suggestedRatio: 0 }, { issueScale: 0 }, { allocationNote: "全部回拨至品种一" }]) {
+    const invalid = { ...project, tranches: [project.tranches[0], { ...project.tranches[1], ...patch }] };
+    const snapshot = structuredClone(invalid);
+    const failed = fillDualBidsAtUpperLimit(invalid);
+    assert.match(failed.issue, /品种2/);
+    assert.equal(failed.project, undefined);
+    assert.deepEqual(invalid, snapshot);
+  }
+  assert.ok(fillDualBidsAtUpperLimit({ tranches: [project.tranches[0]] }).issue);
+});
+
+test("upper-limit fills floor shared and individual scales and retain existing odd-size positions", () => {
+  const project = normalizeProjectRecord({ issueScale: 2.7, tranches: [
+    { shortName: "测试A", inquiryHigh: 1.9, suggestedRatio: 20 },
+    { shortName: "测试B", inquiryHigh: 2.2, suggestedRatio: 20 },
+  ] });
+  const filled = fillDualBidsAtUpperLimit(project).project;
+  assert.deepEqual(filled.tranches.map(t => t.bidLevels[0].bidAmount), [0.5, 0.5]);
+  assert.deepEqual(fillDualBidsAtUpperLimit(filled).project, filled);
+  const known = { ...project, tranches: [{ ...project.tranches[0], issueScale: 1.8 }, project.tranches[1]] };
+  assert.equal(fillBidAtUpperLimit(known, 0).project.tranches[0].bidLevels[0].bidAmount, 0.3);
+  const existing = { ...project, tranches: [{ ...project.tranches[0],
+    bidLevels: [{ bidRate: 1.8, bidAmount: 0.12 }], outsourcedBids: [{ bidRate: 1.7, bidAmount: 0.04 }],
+  }, project.tranches[1]] };
+  const result = fillBidAtUpperLimit(existing, 0).project;
+  assert.equal(result.tranches[0].bidLevels.at(-1).bidAmount, 0.3);
+  assert.equal(result.tranches[0].bidLevels[0].bidAmount, 0.12);
+  assert.deepEqual(result.tranches[0].outsourcedBids, existing.tranches[0].outsourcedBids);
+  for (const patch of [{ issueScale: 0.4 }, { outsourcedBids: [{ bidAmount: 0.44 }] }]) {
+    const invalid = { ...project, tranches: [project.tranches[0], { ...project.tranches[1], ...patch }] };
+    const before = structuredClone(invalid);
+    const failed = fillDualBidsAtUpperLimit(invalid);
+    assert.match(failed.issue, /品种2.*不足1000万元/);
+    assert.equal(failed.project, undefined);
+    assert.deepEqual(invalid, before);
+  }
+});
+
+test("upper-limit draft respects existing positions and uses the shared issue scale", () => {
   const project = { issueScale: 10, tranches: [{ inquiryHigh: 1.9, suggestedRatio: 20, bidLevels: [{ bidRate: 1.8, bidAmount: .5 }], outsourcedBids: [{ bidAmount: .3 }] }] };
   const result = fillBidAtUpperLimit(project, 0);
   assert.equal(result.project.tranches[0].bidLevels[1].bidAmount, 1.2);
   assert.equal(result.project.tranches[0].bidLevels[1].bidRate, 1.9);
   assert.deepEqual(fillBidAtUpperLimit(result.project, 0).project, result.project);
   assert.equal(project.tranches[0].bidLevels.length, 1);
-  assert.ok(fillBidAtUpperLimit({ ...project, tranches: [project.tranches[0], project.tranches[0]] }, 0).issue);
+  assert.equal(fillBidAtUpperLimit({ ...project, tranches: [project.tranches[0], project.tranches[0]] }, 0).project.tranches[0].bidLevels[1].bidAmount, 1.2);
   assert.ok(fillBidAtUpperLimit({ ...project, tranches: [{ ...project.tranches[0], inquiryHigh: null }] }, 0).issue);
+});
+
+test("mutual-allocation bids independently use total scale without inventing actual tranche sizes", () => {
+  const project = normalizeProjectRecord({ issueScale: 20, tranches: [
+    { shortName: "26测试MTN001A", durationText: "3Y", inquiryHigh: 1.9, suggestedRatio: 20 },
+    { shortName: "26测试MTN001B", durationText: "5Y", inquiryHigh: 2.2, suggestedRatio: 20 },
+  ] });
+  const first = fillBidAtUpperLimit(project, 0);
+  const second = fillBidAtUpperLimit(first.project, 1);
+  assert.equal(second.issue, "");
+  assert.deepEqual(second.project.tranches.map(t => t.bidLevels[0].bidAmount), [4, 4]);
+  assert.deepEqual(second.project.tranches.map(t => t.issueScale), [null, null]);
+  assert.equal(second.project.issueScale, 20);
+  assert.deepEqual(appendBidSubmission(second.project).issues, []);
+  const awarded = applyIssuanceAdvertisement(second.project, `【结果】
+1.26测试MTN001A：规模调整为8亿，票面1.9%，边际1倍
+2.26测试MTN001B：规模调整为12亿，票面2.2%，边际1倍
+缴款日期：9月16日`, new Date("2026-09-15T09:00:00"));
+  assert.deepEqual(awarded.tranches.map(t => t.winningAmountWan), [16000, 24000]);
+  assert.equal(awarded.tranches.reduce((sum, t) => sum + t.winningAmountWan, 0), 40000);
+  const known = { ...second.project, tranches: second.project.tranches.map((t, i) => ({ ...t, issueScale: i ? 12 : 8 })) };
+  const refilled = fillBidAtUpperLimit(fillBidAtUpperLimit(known, 0).project, 1).project;
+  assert.deepEqual(refilled.tranches.map(t => t.bidLevels[0].bidAmount), [1.6, 2.4]);
+  assert.deepEqual(refilled.tranches.map(t => t.issueScale), [8, 12]);
+  for (const issueScale of [null, 0, -1]) {
+    assert.ok(fillBidAtUpperLimit({ ...project, issueScale }, 0).issue);
+  }
+  for (const issueScale of [0, -1]) {
+    assert.ok(fillBidAtUpperLimit({ ...project, tranches: [{ ...project.tranches[0], issueScale }, project.tranches[1]] }, 0).issue);
+  }
+  for (const instrumentType of ["ABS", "ABN"]) {
+    assert.ok(fillBidAtUpperLimit({ ...project, instrumentType }, 0).issue);
+  }
+  for (const allocationNote of ["全部回拨至品种二", "取消发行"]) {
+    assert.ok(fillBidAtUpperLimit({ ...project, tranches: [{ ...project.tranches[0], allocationNote }, project.tranches[1]] }, 0).issue);
+  }
+  assert.ok(fillBidAtUpperLimit({ ...project, tranches: [{ ...project.tranches[0], suggestedRatio: 0 }, project.tranches[1]] }, 0).issue);
 });

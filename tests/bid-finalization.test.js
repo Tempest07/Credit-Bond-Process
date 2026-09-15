@@ -108,7 +108,16 @@ test("unsubmitted, terminated and resulted records cannot be marked final or reo
     const project = normalizeProjectRecord({ ...final, status });
     assert.ok(finalizeProjectBid(project).issues.length);
     assert.ok(reopenProjectBid(project).issues.length);
-    assert.equal(appendBidSubmission(project).submission, null);
+    // Results cannot re-enter the old finalization workflow, but the current
+    // correction workflow permits a new bid round until the project is ended.
+    const corrected = appendBidSubmission(project);
+    if (status === "已结束") assert.equal(corrected.submission, null);
+    else {
+      assert.ok(corrected.submission);
+      assert.equal(corrected.project.status, project.status);
+      assert.deepEqual(corrected.project.tranches, project.tranches);
+      assert.deepEqual(corrected.project.bidSubmissions[0], project.bidSubmissions[0]);
+    }
   }
   const wrongRound = normalizeProjectRecord({ ...final, finalBidSubmissionId: "not-the-latest-round" });
   assert.equal(wrongRound.status, "已投标");

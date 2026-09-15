@@ -1,4 +1,4 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260911-release-5111';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260915-release-513';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -34,12 +34,13 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260911-release-5111";
+} from "./core.js?v=20260915-release-513";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
   appendBidSubmission,
   fillBidAtUpperLimit,
+  fillDualBidsAtUpperLimit,
   applyGuidancePricing,
   applySemanticIssuanceResult,
   buildAwardResultText,
@@ -62,15 +63,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260911-release-5111";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260911-release-5111";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260911-release-5111";
+} from "./lifecycle.js?v=20260915-release-513";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260915-release-513";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260915-release-513";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260911-release-5111";
+} from "./history-parser.js?v=20260915-release-513";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -87,23 +88,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260911-release-5111";
+} from "./protocol-transfer.js?v=20260915-release-513";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260911-release-5111";
+} from "./protocol-transfer-templates.js?v=20260915-release-513";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260911-release-5111";
+} from "./protocol-transfer-docx.js?v=20260915-release-513";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260911-release-5111";
+} from "./reminders.js?v=20260915-release-513";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -131,11 +132,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260911-release-5111";
+} from "./secondary-inventory.js?v=20260915-release-513";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260911-release-5111";
+} from "./trade-record-converter.js?v=20260915-release-513";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -146,14 +147,15 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260911-release-5111";
+} from "./trade-record-grid.js?v=20260915-release-513";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260911-release-5111";
-import { initializeDatePickers } from "./date-picker.js?v=20260911-release-5111";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260911-release-5111";
+} from "./trade-record-ledger.js?v=20260915-release-513";
+import { initializeDatePickers } from "./date-picker.js?v=20260915-release-513";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260915-release-513";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260915-release-513";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -162,31 +164,32 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260911-release-5111";
+} from "./project-screenshot-ocr.js?v=20260915-release-513";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260911-release-5111";
+} from "./project-screenshot-layout.js?v=20260915-release-513";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260911-release-5111";
+} from "./project-screenshot-image.js?v=20260915-release-513";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260911-release-5111";
+} from "./payment-receipts.js?v=20260915-release-513";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260911-release-5111";
+} from "./issuer-search.js?v=20260915-release-513";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260911-release-5111";
+} from "./state-history.js?v=20260915-release-513";
 
+const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
 const CLIENT_ID_KEY = "credit-bond-process-client-id-v1";
 const LOCAL_CACHE_VERSION = 2;
@@ -302,6 +305,7 @@ let idleExitInProgress = false;
 let bondActivityChannel = null;
 const stateClientId = loadStateClientId();
 let project = parseProjectBrief("");
+let opinionManuallyEdited = false;
 let newProjectCutoffMode = "auto";
 let newProjectCutoffPreview = null;
 let selectedIssuerId = "";
@@ -436,6 +440,7 @@ async function initialize() {
   bindNavigation();
   bindWorkspaceChrome();
   realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast });
+  configureLocalBetaQuotes(realtimeQuoteController);
   bindRouteHashNavigation();
   bindProjectScreenshotTool();
   bindIssuerPicker();
@@ -471,6 +476,50 @@ async function initialize() {
   applyRouteFromHash();
   await Promise.all([loadCloudState(), loadPolicyCurve()]);
   await loadPaymentReceipts({ silent: true });
+}
+
+// Apply the local-only policy before route activation. The shared controller and
+// production polling remain unchanged; every automatic path hits both gates.
+function configureLocalBetaQuotes(controller) {
+  if (!LOCAL_BETA || !controller) return;
+  const refresh = controller.refresh.bind(controller);
+  const renderStatus = controller.renderStatus.bind(controller);
+  controller.shouldPoll = () => false;
+  controller.refresh = (options = {}) => options.manual === true
+    ? refresh({ ...options, requestHeaders: localBetaManualHeaders(LOCAL_BETA, true) })
+    : Promise.resolve();
+  controller.togglePaused = () => {};
+  controller.paused = false;
+  window.clearTimeout(controller.refreshTimer);
+  window.clearInterval(controller.ticker);
+  controller.refreshTimer = null;
+  controller.ticker = null;
+  controller.nextRefreshAt = 0;
+
+  const root = controller.root;
+  // Remove obsolete controls rather than allowing CSS to override `hidden`.
+  root.querySelector("#realtimeQuoteInterval")?.closest("label")?.remove();
+  root.querySelector("#realtimeQuotePauseButton")?.remove();
+  root.querySelector("#realtimeQuoteCountdown")?.parentElement?.remove();
+  const emptyHint = root.querySelector("#realtimeQuoteEmptyState p");
+  if (emptyHint) emptyHint.textContent = "导入券码或券名后，点击“立即刷新”读取 DM 报价。";
+  const footnote = root.querySelector(".realtime-footnote span:last-child");
+  if (footnote) footnote.textContent = "仅手动刷新；变动与到价提醒仅在刷新时检查";
+  controller.renderStatus = () => {
+    renderStatus();
+    if (controller.loading || controller.error) return;
+    const state = root.querySelector("#realtimeQuoteLiveState");
+    if (state) {
+      state.dataset.state = "idle";
+      const label = state.querySelector("strong");
+      if (label) label.textContent = "手动刷新";
+    }
+    const detail = root.querySelector("#realtimeQuoteStatusDetail");
+    if (detail) detail.textContent = controller.watchlist.length
+      ? "点击“立即刷新”读取 DM，后台不自动更新"
+      : "导入券池后点击“立即刷新”";
+  };
+  controller.renderStatus();
 }
 
 function initializeAndroidAppShell() {
@@ -4407,6 +4456,16 @@ function bindGenerator() {
   });
   $("#opinionOutput").addEventListener("mousedown", selectBidRateOnMouseDown);
   $("#opinionOutput").addEventListener("dblclick", selectBidRateOnDoubleClick);
+  $("#opinionOutput").addEventListener("input", () => {
+    opinionManuallyEdited = true;
+    scheduleProjectDmHistorySave();
+  });
+  $("#restoreOpinionButton").addEventListener("click", () => {
+    opinionManuallyEdited = false;
+    regenerate();
+    scheduleProjectDmHistorySave();
+    showToast("已按当前要素恢复标准流程意见。");
+  });
   $("#saveProjectButton").addEventListener("click", saveCurrentProject);
 }
 
@@ -4443,6 +4502,7 @@ function resetProjectDmWorkspace(options = {}) {
   projectDmHistorySaveTimer = null;
   project = parseProjectBrief("");
   project.warnings = [];
+  opinionManuallyEdited = false;
   selectedIssuerId = "";
   clearProjectRecognitionMarks();
   resetModelValuationAssist();
@@ -4509,6 +4569,8 @@ function projectDmHistoryItemFromCurrent() {
     guidanceText: formatRateListInput(snapshot.guidancePrices?.length ? snapshot.guidancePrices : [snapshot.guidancePrice]),
     selectedIssuerId,
     project: snapshot,
+    // Absent for automatic/legacy drafts; an empty string is a deliberate edit.
+    ...(opinionManuallyEdited ? { opinion: $("#opinionOutput").value } : {}),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -4541,6 +4603,8 @@ function restoreProjectDmHistoryItem(id) {
   if (!item?.project) return;
   pushProjectDmHistoryFromCurrent();
   project = clonePlain(item.project);
+  opinionManuallyEdited = typeof item.opinion === "string";
+  if (opinionManuallyEdited) $("#opinionOutput").value = item.opinion;
   project.warnings = Array.isArray(project.warnings) ? project.warnings : [];
   selectedIssuerId = state.issuers.some((issuer) => issuer.id === item.selectedIssuerId)
     ? item.selectedIssuerId
@@ -4880,8 +4944,9 @@ function bindLedger() {
     $("#briefInput").value = record.sourceText;
     fillProjectFields();
     renderIssuerOptions();
+    opinionManuallyEdited = typeof record.opinion === "string";
+    if (opinionManuallyEdited) $("#opinionOutput").value = record.opinion;
     regenerate();
-    $("#opinionOutput").value = record.opinion;
     switchView("generator");
   });
   $("#paymentTodoList").addEventListener("click", (event) => {
@@ -4924,6 +4989,7 @@ function parseAndRender() {
     return;
   }
   const parsedProject = parseProjectBrief($("#briefInput").value);
+  resetOpinionForDifferentProject(parsedProject);
   const matched = findIssuerForProject(parsedProject);
   project = applyIssuerCommonFields(parsedProject, matched);
   selectedIssuerId = matched?.id || "";
@@ -5001,6 +5067,7 @@ function setProjectDmLookupBusy(isBusy) {
 function applyDmLookupToCurrentProject(payload) {
   const patch = projectPatchFromDmLookup(payload);
   const { sourceMap: _sourceMap, ...projectPatch } = patch;
+  resetOpinionForDifferentProject(projectPatch);
   project = replaceProjectWithDmLookup(project, projectPatch);
   if (isAbsProject(project)) syncAbsProjectSelectionScope({ updateField: false });
   const matched = findIssuerForProject(project)
@@ -5794,6 +5861,7 @@ function findIssuerForProject(projectValue) {
 function loadBlankBriefTemplate() {
   $("#briefInput").value = BLANK_BRIEF_TEMPLATE;
   project = parseProjectBrief("");
+  opinionManuallyEdited = false;
   selectedIssuerId = "";
   clearProjectRecognitionMarks();
   fillProjectFields();
@@ -6727,6 +6795,12 @@ function commonFieldMismatchWarning(projectValue, field) {
   return (projectValue.warnings || []).find((warning) => label && warning.includes(`主体库要素${label}`)) || "";
 }
 
+function resetOpinionForDifferentProject(nextProject) {
+  const currentName = project.shortName || project.fullName || "";
+  const nextName = nextProject.shortName || nextProject.fullName || "";
+  if (nextName && nextName !== currentName) opinionManuallyEdited = false;
+}
+
 function regenerate() {
   const issuer = state.issuers.find((item) => item.id === selectedIssuerId) || null;
   renderNewProjectCutoffControl(issuer);
@@ -6746,7 +6820,7 @@ function regenerate() {
   }
 
   const generated = generateOpinion(project, issuer);
-  $("#opinionOutput").value = generated.opinion;
+  if (!opinionManuallyEdited) $("#opinionOutput").value = generated.opinion;
   $("#matchedIssuerPill").textContent = issuer ? issuer.legalName : "未匹配主体";
   $("#matchedIssuerPill").classList.toggle("accent", Boolean(issuer));
 
@@ -7367,6 +7441,7 @@ function renderCutoffTodo() {
 }
 
 async function loadPolicyCurve({ refresh = false } = {}) {
+  if (LOCAL_BETA && !refresh) return;
   const card = $("#policyCurveCard");
   const retry = $("#policyCurveRetry");
   if (!card || !retry) return;
@@ -7380,7 +7455,7 @@ async function loadPolicyCurve({ refresh = false } = {}) {
   try {
     const response = await fetch(DM_POLICY_CURVE_URL, {
       credentials: "same-origin",
-      headers: { ...authHeaders(), Accept: "application/json" },
+      headers: { ...authHeaders(), ...localBetaManualHeaders(LOCAL_BETA, refresh), Accept: "application/json" },
       cache: "no-store",
       signal: controller.signal,
     });
@@ -8808,7 +8883,7 @@ function renderSecondaryTrades() {
   updateSecondaryPendingControls();
   const dmRows = tradeRecordDmRequestRows(rows);
   const attemptKey = secondaryPendingDmRequestKey(rows);
-  if (dmRows.length && !secondaryPendingDmLoading && secondaryPendingDmAttemptKey !== attemptKey) {
+  if (!LOCAL_BETA && dmRows.length && !secondaryPendingDmLoading && secondaryPendingDmAttemptKey !== attemptKey) {
     secondaryPendingDmAttemptKey = attemptKey;
     queueMicrotask(() => enrichSecondaryPendingFromDm({ automatic: true }));
   }
@@ -9051,7 +9126,8 @@ async function saveSecondaryPendingDraft({ silent = false } = {}) {
   return true;
 }
 
-async function requestTradeRecordDmRows(requestRows = []) {
+async function requestTradeRecordDmRows(requestRows = [], { manual = false } = {}) {
+  if (LOCAL_BETA && !manual) return { rows: [], failedIds: [], errors: [] };
   const rows = [];
   const failedIds = [];
   const errors = [];
@@ -9061,7 +9137,7 @@ async function requestTradeRecordDmRows(requestRows = []) {
       const response = await fetch(DM_TRADE_RECORDS_URL, {
         method: "POST",
         credentials: "same-origin",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json", ...authHeaders(), ...localBetaManualHeaders(LOCAL_BETA, manual) },
         body: JSON.stringify({ rows: batch }),
       });
       const text = await response.text();
@@ -9087,6 +9163,7 @@ async function requestTradeRecordDmRows(requestRows = []) {
 }
 
 async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false } = {}) {
+  if (LOCAL_BETA && (automatic || !refresh)) return;
   const rows = ensureSecondaryPendingDraft();
   const requestRows = tradeRecordDmRequestRows(rows, { refresh });
   if (!requestRows.length) {
@@ -9098,7 +9175,7 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
   secondaryPendingDmLoading = true;
   updateSecondaryPendingControls();
   try {
-    const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows);
+    const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows, { manual: !automatic && refresh });
     secondaryPendingDraftRows = mergeTradeRecordDmResults(secondaryPendingDraftRows, results);
     secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, failedIds);
     renderSecondaryTrades();
@@ -9271,7 +9348,7 @@ function renderSecondaryLedger() {
   updateSecondaryLedgerControls();
   const dmRows = tradeRecordDmRequestRows(rows);
   const attemptKey = `${date}:${dmRows.map((row) => `${row.id}:${row.securityId}:${row.negotiationDate}`).join("|")}`;
-  if (dmRows.length && !secondaryLedgerDmLoading && secondaryLedgerDmAttemptKey !== attemptKey) {
+  if (!LOCAL_BETA && dmRows.length && !secondaryLedgerDmLoading && secondaryLedgerDmAttemptKey !== attemptKey) {
     secondaryLedgerDmAttemptKey = attemptKey;
     queueMicrotask(() => enrichSecondaryLedgerFromDm({ automatic: true }));
   }
@@ -9523,6 +9600,7 @@ function secondaryLedgerDateValue() {
 }
 
 async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false } = {}) {
+  if (LOCAL_BETA && (automatic || !refresh)) return;
   const date = secondaryLedgerDateValue();
   const rows = ensureSecondaryLedgerDraft(date);
   const requestRows = tradeRecordDmRequestRows(rows, { refresh });
@@ -9533,7 +9611,7 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
   secondaryLedgerDmLoading = true;
   updateSecondaryLedgerControls();
   try {
-    const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows);
+    const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows, { manual: !automatic && refresh });
     const before = cloneTradeRecordDraftRows(secondaryLedgerDraftRows);
     secondaryLedgerDraftRows = mergeTradeRecordDmResults(secondaryLedgerDraftRows, results);
     secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, failedIds);
@@ -10241,11 +10319,11 @@ function fillProjectForm(input) {
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = record.status;
   $("#projectStatusPill").classList.toggle("bid-final", record.status === "已投标结束");
-  $("#projectAutosaveStatus").textContent = localStateDirty ? "已保存到本机，正在上传" : "云端已确认";
+  $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
   updateProjectActionButtons(record);
   renderBidSubmissionHistory(record);
   renderCutoffHint(record);
-  renderTranches(record.tranches);
+  renderTranches(record.tranches, record);
   void loadProjectPaymentReceipts(record.id);
   applyResultRecognitionMarks(record);
   renderProjectList();
@@ -10293,7 +10371,8 @@ function bidLevelsForDisplay(tranche) {
   return levels.length ? levels : [{ id: "", bidRate: null, bidAmount: null }];
 }
 
-function renderTranches(tranches) {
+function renderTranches(tranches, project = {}) {
+  $("#dualBidUpperLimitButton").hidden = tranches.length !== 2;
   $("#trancheList").innerHTML = tranches.map((tranche, index) => `
     <section class="tranche-card" data-tranche-index="${index}">
       <div class="tranche-card-head">
@@ -10316,6 +10395,7 @@ function renderTranches(tranches) {
         <div class="tranche-grid">
           <label>债券简称<input data-tranche-field="shortName" value="${escapeAttribute(tranche.shortName)}"></label>
           <label>期限<input data-tranche-field="durationText" value="${escapeAttribute(tranche.durationText)}"></label>
+          <label>品种发行规模（亿元）<input data-tranche-field="issueScale" type="number" min="0" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}" placeholder="${!project.instrumentType && Number.isFinite(numberOrNull(project.issueScale)) ? `未定时按整期 ${formatNumber(project.issueScale)} 亿计算` : "请输入品种规模"}"></label>
           <label>比例限制（%）<input data-tranche-field="suggestedRatio" type="number" step="0.01" value="${escapeAttribute(tranche.suggestedRatio ?? "")}"></label>
           <label>投标类型
             <select data-tranche-field="bidAction">
@@ -10326,6 +10406,7 @@ function renderTranches(tranches) {
             </select>
           </label>
         </div>
+        ${tranches.length > 1 && !project.instrumentType ? '<p class="muted">互拨规模未定时，各品种按整期规模计算投标上限；确定后填写品种实际规模。最终中标量按实际发行规模和比例限制核对。</p>' : ""}
         ${renderBidLevels(tranche, index)}
         <div class="outsourced-list">
           ${(tranche.outsourcedBids || []).map((outsourced, outsourcedIndex) => `
@@ -10395,7 +10476,6 @@ function renderTranches(tranches) {
         <div class="tranche-subheading first-subheading"><strong>发行结果与缴款</strong></div>
         <div class="tranche-grid">
           <label>债券代码<input data-tranche-field="securityCode" value="${escapeAttribute(tranche.securityCode)}"></label>
-          <label>发行规模（亿元）<input data-tranche-field="issueScale" type="number" step="0.0001" value="${escapeAttribute(tranche.issueScale ?? "")}"></label>
           <label>全场倍数<input data-tranche-field="fullMarketMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.fullMarketMultiple ?? "")}"></label>
           <label>边际倍数<input data-tranche-field="marginalMultiple" type="number" step="0.0001" value="${escapeAttribute(tranche.marginalMultiple ?? "")}"></label>
           <label>起息日期<input data-tranche-field="startDate" type="date" value="${escapeAttribute(tranche.startDate)}"></label>
@@ -10419,18 +10499,22 @@ function renderTranches(tranches) {
     });
   });
   $$("[data-bid-upper-limit]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const result = fillBidAtUpperLimit(readProjectForm(), Number(button.dataset.bidUpperLimit));
+    button.onclick = async () => {
+      const draft = readProjectForm();
+      const isDual = button.dataset.bidUpperLimit === "all";
+      const result = isDual
+        ? fillDualBidsAtUpperLimit(draft)
+        : fillBidAtUpperLimit(draft, Number(button.dataset.bidUpperLimit));
       if (result.issue) { showToast(result.issue); return; }
       refillProjectForm(result.project);
       saveProjectDraftNow();
       try {
         await navigator.clipboard.writeText($("#projectBidPosition").value);
-        showToast("已按上限填入，标位已复制，请核对后提交标位。");
+        showToast(isDual ? "两个品种已按上限填入并复制，请核对后提交标位。" : "已按上限填入，标位已复制，请核对后提交标位。");
       } catch {
         showToast("已按上限填入，但复制失败，请点击“复制全部标位”重试。");
       }
-    });
+    };
   });
   $$("[data-add-bid-level]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -14000,7 +14084,7 @@ async function saveCloudStateSnapshot(snapshot, { generation, source }) {
     );
     setCloudGate(false, { state: "success" });
     if ($("#projectAutosaveStatus") && !$("#projectForm")?.hidden) {
-      $("#projectAutosaveStatus").textContent = localStateDirty ? "已保存到本机，正在上传" : "云端已确认";
+      $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
     }
     return true;
   } catch (error) {
@@ -14148,12 +14232,12 @@ function persistLocal() {
 }
 
 function setSyncStatus(status, detail) {
-  $("#syncStatus").textContent = status;
-  $("#syncDetail").textContent = detail;
+  $("#syncStatus").textContent = localBetaSyncText(status, LOCAL_BETA);
+  $("#syncDetail").textContent = localBetaSyncText(detail, LOCAL_BETA);
   const revision = $("#syncRevision");
   if (revision) {
     const dirtyLabel = syncConflictActive ? " · 存在冲突" : localStateDirty ? " · 本机待同步" : " · 云端已确认";
-    revision.textContent = `云端版本 ${cloudRevision}${dirtyLabel}`;
+    revision.textContent = localBetaSyncText(`云端版本 ${cloudRevision}${dirtyLabel}`, LOCAL_BETA);
   }
 }
 

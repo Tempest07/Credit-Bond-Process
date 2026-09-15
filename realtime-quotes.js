@@ -391,7 +391,7 @@ class RealtimeQuoteController {
     return this.active && !document.hidden;
   }
 
-  async refresh({ manual = false } = {}) {
+  async refresh({ manual = false, requestHeaders = {} } = {}) {
     if ((!manual && this.paused) || !this.watchlist.length || this.loading) return;
     this.fetchController?.abort();
     const controller = new AbortController();
@@ -406,7 +406,7 @@ class RealtimeQuoteController {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        headers: { ...requestHeaders, "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ queries: this.watchlist.map((item) => item.query) }),
         signal: controller.signal,
       });
@@ -424,7 +424,7 @@ class RealtimeQuoteController {
       this.evaluateAlerts(nextRows);
       if (unmatched.removed.length) this.save();
       this.render();
-      void this.maybeRefreshValuations(nextRows);
+      void this.maybeRefreshValuations(nextRows, { requestHeaders });
       if (unmatched.removed.length) {
         const labels = unmatched.removed.slice(0, 3).map((item) => item.label || item.query).join("、");
         const more = unmatched.removed.length > 3 ? ` 等 ${unmatched.removed.length} 项` : "";
@@ -444,7 +444,7 @@ class RealtimeQuoteController {
     }
   }
 
-  async maybeRefreshValuations(rows, { force = false } = {}) {
+  async maybeRefreshValuations(rows, { force = false, requestHeaders = {} } = {}) {
     const securityIds = unique(rows.map((row) => normalizeSecurityKey(row.securityId)).filter(Boolean));
     if (!securityIds.length || this.valuationLoading) return;
     const missing = securityIds.some((securityId) => !this.valuations.has(securityId));
@@ -462,7 +462,7 @@ class RealtimeQuoteController {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        headers: { ...requestHeaders, "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ securityIds }),
         signal: controller.signal,
       });

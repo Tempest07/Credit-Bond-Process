@@ -1016,7 +1016,7 @@ export function calculateSuggestion(project, issuer) {
 
   const investmentAmount =
     Number.isFinite(project.issueScale) && Number.isFinite(suggestedRatio)
-      ? round(project.issueScale * suggestedRatio / 100, 4)
+      ? floorInvestmentAmount(project.issueScale * suggestedRatio / 100)
       : null;
 
   return {
@@ -1028,6 +1028,14 @@ export function calculateSuggestion(project, issuer) {
     trancheSuggestions,
     warnings,
   };
+}
+
+// Investment amounts are in 亿元. One bidding lot is 1000万元 (0.1亿元).
+// Correct only machine-precision noise at exact lot boundaries before flooring.
+export function floorInvestmentAmount(value) {
+  if (!Number.isFinite(value)) return null;
+  const lots = value * 10;
+  return Math.floor(lots + Number.EPSILON * Math.max(1, Math.abs(lots)) * 2) / 10;
 }
 
 export function determineApprover(hiddenRating, investmentAmount, isRealEstate) {
@@ -1086,7 +1094,9 @@ function uniqueNonEmpty(values = []) {
 }
 
 function formatCreditTermCoverageSentence(suggestion, branch) {
-  if (!suggestion.trancheSuggestions.some((item) => item.exceedsCreditTerm)) return "";
+  // Use the same tranche scope as the recommendation and bid-rate wording.
+  // An excluded overdue tranche must not make the remaining investment overdue.
+  if (!recommendationTrancheSuggestions(suggestion).some((item) => item.exceedsCreditTerm)) return "";
   return `本笔业务期限不覆盖，要求${branch || "【待补充联动分行】"}及时续作授信，或在授信到期前三个月通知我部，避免超期限持有。`;
 }
 
@@ -1198,13 +1208,13 @@ function calculateAbsSuggestion(project, issuer) {
   const approvalAmount = numberOrNull(abs.approvalAmount);
   const selectedScale = sumNumbers(investable.map((tranche) => tranche.scale));
   const calculatedAmount = Number.isFinite(selectedScale) && Number.isFinite(ratio)
-    ? round(selectedScale * ratio / 100, 4)
+    ? floorInvestmentAmount(selectedScale * ratio / 100)
     : null;
-  const applicationAmount = numberOrNull(abs.applicationAmount)
+  const applicationAmount = floorInvestmentAmount(numberOrNull(abs.applicationAmount)
     ?? approvalAmount
-    ?? calculatedAmount;
-  const recommendedAmount = numberOrNull(abs.recommendedAmount)
-    ?? applicationAmount;
+    ?? calculatedAmount);
+  const recommendedAmount = floorInvestmentAmount(numberOrNull(abs.recommendedAmount)
+    ?? applicationAmount);
   const trancheSuggestions = investable.length
     ? investable.map((tranche, index) => ({
         index,
@@ -1213,7 +1223,7 @@ function calculateAbsSuggestion(project, issuer) {
         className: tranche.className,
         shortName: tranche.shortName,
         investmentAmount: Number.isFinite(numberOrNull(tranche.scale)) && Number.isFinite(ratio)
-          ? round(numberOrNull(tranche.scale) * ratio / 100, 4)
+          ? floorInvestmentAmount(numberOrNull(tranche.scale) * ratio / 100)
           : null,
       }))
     : [{ index: 0, durationText: abs.selectedClass || "优先级", suggestedRatio: ratio }];
