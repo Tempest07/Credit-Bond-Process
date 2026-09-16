@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20260915-release-5131";
+const VERSION = "20260916-release-5200";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -92,7 +92,10 @@ test("queues compact issuance-result entry without blocking the project workspac
   assert.match(styles, /@keyframes resultQueueCheckIn/);
   assert.match(app, /const queueStatus = ready \? "ready" : failed \? "error" : processing \? "processing" : "";/);
   assert.match(styles, /\.result-entry-panel\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(100% \+ 9px\);[^}]*width:\s*min\(460px/s);
-  assert.match(styles, /\.issuance-queue-notifications\s*\{[^}]*position:\s*fixed;[^}]*right:\s*22px;/s);
+  const queueStyles = await readFile(new URL("../issuance-queue-panel.css", import.meta.url), "utf8");
+  assert.match(queueStyles, /\.issuance-queue-panel\s*\{[^}]*position:\s*fixed;[^}]*top:\s*var\(--queue-panel-top,90px\);[^}]*right:\s*22px;/s);
+  assert.match(html, /id="issuanceQueueToggle"[^>]*aria-controls="issuanceQueuePanel"/);
+  assert.doesNotMatch(app, /showToast\(`[^`]*已加入后台识别队列/);
 });
 
 test("ships a configurable dark DM realtime quote tab without a large text-entry surface", async () => {

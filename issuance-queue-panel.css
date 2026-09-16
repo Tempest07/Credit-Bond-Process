@@ -1,0 +1,42 @@
+.queue-launcher{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 12px;border:1px solid #ddd;border-radius:24px;background:#fff;color:#444;font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
+.queue-launcher:hover,.queue-launcher[aria-expanded=true]{background:#f2f2f2;color:#111}
+.queue-launcher-count{display:grid;place-items:center;min-width:19px;height:19px;padding:0 4px;border-radius:20px;background:#eee;font-size:11px;font-variant-numeric:tabular-nums}
+.queue-launcher[data-attention=true] .queue-launcher-count{background:#111;color:#fff}
+.queue-launcher-count[hidden],.issuance-queue-panel[hidden]{display:none}
+.issuance-queue-panel{position:fixed;z-index:1500;top:var(--queue-panel-top,90px);right:22px;width:min(360px,calc(100vw - 28px));max-height:max(0px,calc(100dvh - var(--queue-panel-top,90px) - 24px));display:flex;flex-direction:column;border:1px solid #e5e5e5;border-radius:20px;background:#fff;color:#111;box-shadow:0 16px 55px #0000001a;overflow:hidden;font-size:13px}
+.issuance-queue-panel.is-morphing{pointer-events:none;will-change:width,height,left,top,border-radius}
+.issuance-queue-panel.is-morphing>.queue-panel-head,.issuance-queue-panel.is-morphing>.issuance-queue-notifications{box-sizing:border-box;flex-shrink:0;width:var(--queue-content-width)}
+.queue-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 18px 16px;border-bottom:1px solid #eee}
+.queue-panel-head h2{margin:0;font-size:15px;font-weight:650;line-height:1.5;color:#111}
+.queue-panel-head p{margin:5px 0 0;color:#777;font-size:11px;line-height:1.6}
+.queue-minimize{display:grid;place-items:center;flex:none;width:28px;height:28px;border:0;border-radius:50%;background:#f3f3f3;color:#555;font-size:16px;cursor:pointer}
+.issuance-queue-notifications{position:static;display:grid;gap:4px;width:auto;padding:8px;overflow:auto;overscroll-behavior:contain;pointer-events:auto}
+.queue-task{display:flex;align-items:center;gap:12px;width:100%;padding:14px 10px;border:0;border-radius:12px;background:transparent;color:#111;font:inherit;text-align:left;cursor:pointer}
+.queue-task:disabled{opacity:1;cursor:default}
+.queue-task:not(:disabled):hover{background:#f5f5f5}
+.queue-task:focus-visible,.queue-launcher:focus-visible,.queue-minimize:focus-visible{outline:2px solid #777;outline-offset:2px}
+.queue-task-icon{position:relative;display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;color:#777}
+.queue-task-icon svg{grid-area:1/1;display:block;width:30px;height:30px;transform-box:view-box;transform-origin:center;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.queue-task[data-status=ready] .queue-task-icon,.queue-task[data-status=review] .queue-task-icon{color:#222}
+.queue-task[data-status=error] .queue-task-icon{color:#9c4b3c}
+.queue-error-dot{fill:currentColor;stroke:none}
+/* Keep the layout anchor stationary; only the artwork and ripple animate. */
+.queue-completion-enter .queue-task-icon>svg{animation:queueCompletionPop .7s cubic-bezier(.16,1,.3,1) both}
+.queue-completion-enter .queue-task-icon::after{content:"";position:absolute;inset:2px;border:1px solid currentColor;border-radius:50%;pointer-events:none;animation:queueCompletionRipple .8s ease-out both}
+.queue-completion-enter .queue-check-mark{stroke-dasharray:24;stroke-dashoffset:24;animation:queueCompletionDraw .3s .12s forwards}
+.queue-completion-enter .queue-error-mark{stroke-dasharray:9;stroke-dashoffset:9;animation:queueCompletionDraw .3s .12s forwards}
+.queue-completion-enter .queue-error-dot{animation:queueCompletionDot .3s .18s both}
+@keyframes queueCompletionPop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:1}}
+@keyframes queueCompletionRipple{0%{transform:scale(.8);opacity:.6}100%{transform:scale(1.6);opacity:0}}
+@keyframes queueCompletionDraw{to{stroke-dashoffset:0}}
+@keyframes queueCompletionDot{from{opacity:0}to{opacity:1}}
+.queue-task-copy{display:grid;gap:5px;min-width:0;flex:1}
+.queue-task-copy strong{font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+.queue-task-copy>span{font-size:11px;color:#777;line-height:1.5}
+.queue-task-arrow{color:#777;font-size:16px}
+.queue-panel-empty{margin:0;padding:35px 12px;color:#888;text-align:center}
+.queue-working{animation:queueWorking 1.7s linear infinite}
+@keyframes queueWorking{to{transform:rotate(360deg)}}
+@media(min-width:1400px) and (max-width:1699px){.sidebar.site-header{display:flex;flex-wrap:wrap}.header-tools{margin-left:auto;order:1}.site-header .nav{order:2;flex-basis:100%;justify-content:center}}
+@media(max-width:760px){.issuance-queue-panel{top:var(--queue-panel-top,76px);right:14px;max-height:max(0px,calc(100dvh - var(--queue-panel-top,76px) - 24px))}.header-tools{gap:8px;flex-wrap:wrap;max-width:100%}.queue-launcher{padding:6px 9px;font-size:11px}}
+@media(prefers-reduced-motion:reduce){.queue-working,.queue-completion-enter .queue-task-icon,.queue-completion-enter .queue-task-icon *{animation:none;stroke-dashoffset:0}.queue-completion-enter .queue-task-icon::after{display:none;animation:none}}

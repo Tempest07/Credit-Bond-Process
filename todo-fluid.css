@@ -1,0 +1,24 @@
+.todo-fluid-toggle,.todo-fluid-count{display:none}
+html[data-ui=beta]{scrollbar-gutter:stable}
+.ledger-todo-zone.todo-fluid{position:relative;display:block;isolation:isolate;overflow:visible;--todo-motion:500ms;--todo-fluid:cubic-bezier(.22,.8,.2,1);transition:height var(--todo-motion) var(--todo-fluid)}
+.todo-fluid>.ledger-command-card{position:absolute;min-width:0;min-height:0;padding:0;border:1px solid #e6e6e6;border-radius:26px;background:#fff;box-shadow:0 6px 20px #00000002;overflow:hidden;transition:left var(--todo-motion) var(--todo-fluid),top var(--todo-motion) var(--todo-fluid),width var(--todo-motion) var(--todo-fluid),height var(--todo-motion) var(--todo-fluid),border-radius var(--todo-motion) var(--todo-fluid),box-shadow var(--todo-motion),opacity 230ms,transform var(--todo-motion) var(--todo-fluid)}
+.todo-fluid>.ledger-command-card.is-expanded{z-index:2;border-radius:34px;border-color:#d5d5d5;box-shadow:0 18px 48px #0000000b;animation:todoFluidEdge var(--todo-motion) var(--todo-fluid)}
+.todo-fluid>.ledger-command-card.is-muted{opacity:0;transform:scale(.94);pointer-events:none}
+.todo-fluid .payment-todo-head{height:var(--todo-head);min-height:var(--todo-head);margin:0;padding:0 var(--todo-inset);box-sizing:border-box}
+.todo-fluid .payment-todo-head h2{font-size:20px;font-weight:550}
+.todo-fluid .todo-fluid-count{display:inline;color:#999;font-size:11px;font-variant-numeric:tabular-nums}
+.todo-fluid .todo-fluid-toggle{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:50%;background:transparent;color:#888;cursor:pointer}
+.todo-fluid .todo-fluid-toggle[hidden]{display:none}
+.todo-fluid .todo-fluid-toggle:hover,.todo-fluid .is-expanded .todo-fluid-toggle{background:#f5f5f5;color:#555}
+.todo-fluid-toggle svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.todo-fluid .todo-fluid-toggle:focus-visible{outline:2px solid #888;outline-offset:3px}
+.ledger-todo-zone.todo-fluid .cutoff-todo-list,.ledger-todo-zone.todo-fluid .payment-todo-list{position:absolute;top:var(--todo-head);left:var(--todo-inset);display:grid;gap:10px;align-content:start;min-height:0;flex:none}
+.todo-fluid .payment-todo-item,.todo-fluid .cutoff-todo-item{position:relative;min-height:86px;padding:15px 17px;border-radius:15px;gap:12px;box-sizing:border-box}
+.todo-fluid .payment-todo-main{grid-template-columns:minmax(0,1fr);gap:7px}
+.todo-fluid .payment-todo-main strong{font-size:13px;font-weight:600}
+.todo-fluid .payment-todo-main span{padding:0;border:0;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.todo-fluid .payment-todo-actions,.todo-fluid .cutoff-todo-actions{gap:6px}
+.todo-fluid .payment-todo-empty{min-height:200px;align-content:center}
+@keyframes todoFluidEdge{0%{border-radius:26px}38%{border-radius:45px 22px 43px 25px}100%{border-radius:34px}}
+@media(max-width:760px){.todo-fluid .payment-todo-head h2{font-size:18px}.todo-fluid .payment-todo-item,.todo-fluid .cutoff-todo-item{padding:12px;gap:8px}.todo-fluid .payment-todo-main strong{font-size:12px}}
+@media(prefers-reduced-motion:reduce){.ledger-todo-zone.todo-fluid,.todo-fluid>.ledger-command-card{transition:none;animation:none}}

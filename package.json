@@ -1,6 +1,6 @@
 {
   "name": "credit-bond-process",
-  "version": "5.1.3-1",
+  "version": "5.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,13 +10,20 @@
     "serve:issuance:local": "node tools/serve-local-issuance-ai.mjs",
     "receipts:preflight": "node tools/check-payment-receipt-readiness.mjs",
     "test": "node --test",
-    "vendor:orbs": "node tools/vendor-thinking-orbs.mjs"
+    "vendor:orbs": "node tools/vendor-thinking-orbs.mjs",
+    "build:search-beam": "node tools/build-search-beam.mjs"
   },
   "dependencies": {
+    "border-beam": "1.3.0",
     "pdf-lib": "^1.17.1",
     "pizzip": "3.2.0",
     "postal-mime": "^2.7.5",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "thinking-orbs": "0.3.1"
   },
-  "buildVersion": "5.1.3.1"
+  "buildVersion": "5.2.0.0",
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
 }

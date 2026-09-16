@@ -1,4 +1,5 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260915-release-5131';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260916-release-5200';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20260916-release-5200';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -34,7 +35,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260915-release-5131";
+} from "./core.js?v=20260916-release-5200";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -63,15 +64,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260915-release-5131";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260915-release-5131";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260915-release-5131";
+} from "./lifecycle.js?v=20260916-release-5200";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260916-release-5200";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260916-release-5200";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260915-release-5131";
+} from "./history-parser.js?v=20260916-release-5200";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -88,23 +89,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260915-release-5131";
+} from "./protocol-transfer.js?v=20260916-release-5200";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260915-release-5131";
+} from "./protocol-transfer-templates.js?v=20260916-release-5200";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260915-release-5131";
+} from "./protocol-transfer-docx.js?v=20260916-release-5200";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260915-release-5131";
+} from "./reminders.js?v=20260916-release-5200";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -132,11 +133,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260915-release-5131";
+} from "./secondary-inventory.js?v=20260916-release-5200";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260915-release-5131";
+} from "./trade-record-converter.js?v=20260916-release-5200";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -147,16 +148,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260915-release-5131";
+} from "./trade-record-grid.js?v=20260916-release-5200";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260915-release-5131";
-import { initializeDatePickers } from "./date-picker.js?v=20260915-release-5131";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260915-release-5131";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260915-release-5131";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260915-release-5131";
+} from "./trade-record-ledger.js?v=20260916-release-5200";
+import { initializeDatePickers } from "./date-picker.js?v=20260916-release-5200";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260916-release-5200";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260916-release-5200";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260916-release-5200";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -165,30 +166,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260915-release-5131";
+} from "./project-screenshot-ocr.js?v=20260916-release-5200";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260915-release-5131";
+} from "./project-screenshot-layout.js?v=20260916-release-5200";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260915-release-5131";
+} from "./project-screenshot-image.js?v=20260916-release-5200";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260915-release-5131";
+} from "./payment-receipts.js?v=20260916-release-5200";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260915-release-5131";
+} from "./issuer-search.js?v=20260916-release-5200";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260915-release-5131";
+} from "./state-history.js?v=20260916-release-5200";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -355,9 +356,8 @@ let projectAutoSaveTimer = null;
 let projectRecognitionMarks = {};
 let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
-const issuanceQueueAnnouncedStatus = new Map();
-const dismissedIssuanceQueueTaskIds = new Set();
 let activeIssuanceQueueTaskId = "";
+let issuanceQueuePanel = null;
 const issuanceRecognitionQueue = createSequentialIssuanceQueue(requestQueuedIssuanceRecognition, handleIssuanceQueueChange);
 let activePrepaymentTarget = null;
 let protocolTransferRecognitionMarks = {};
@@ -4899,7 +4899,13 @@ function bindLedger() {
   });
   $("#parseAdvertisementButton").addEventListener("click", queueIssuanceResultRecognition);
   $("#confirmIssuanceResultButton").addEventListener("click", confirmIssuanceResult);
-  $("#issuanceQueueNotifications").addEventListener("click", handleIssuanceQueueNotificationClick);
+  issuanceQueuePanel = createIssuanceQueuePanel({
+    panel: $("#issuanceQueuePanel"), list: $("#issuanceQueueNotifications"),
+    toggle: $("#issuanceQueueToggle"), minimize: $("#issuanceQueueMinimize"),
+    summary: $("#issuanceQueuePanelSummary"), count: $("#issuanceQueueCount"),
+    onReview: openIssuanceQueueTask,
+  });
+  renderIssuanceQueueNotifications();
   for (const selector of ["#projectResultAdvertisement", "#issuanceNoticeDate"]) {
     for (const event of ["input", "change"]) $(selector).addEventListener(event, () => resetIssuanceReview());
   }
@@ -4914,6 +4920,9 @@ function bindLedger() {
       shortNames: recordTranches.map((tranche) => tranche.shortName).filter(Boolean),
       branch: record.branch,
       venue: record.venue,
+      // Stored issue method is authoritative; a brief may omit it entirely.
+      offeringType: record.offeringType || "",
+      offeringTypeSource: "",
       leadUnderwriter: record.leadUnderwriter,
       sponsorStatus: record.sponsorStatus,
       instrumentType: record.instrumentType,
@@ -11132,7 +11141,6 @@ function queueIssuanceResultRecognition() {
     }
     if (activeIssuanceQueueTaskId) {
       issuanceRecognitionQueue.remove(activeIssuanceQueueTaskId);
-      dismissedIssuanceQueueTaskIds.add(activeIssuanceQueueTaskId);
     }
     const task = issuanceRecognitionQueue.enqueue({
       projectId: current.id,
@@ -11142,7 +11150,7 @@ function queueIssuanceResultRecognition() {
       request,
     });
     closeResultEntryPanel();
-    showToast(`${current.shortName || "项目"}已加入后台识别队列。`);
+    issuanceQueuePanel?.open();
     return task;
   } catch (error) {
     resetIssuanceReview(error.message || "无法加入识别队列，本次未改动项目。");
@@ -11163,10 +11171,6 @@ async function requestQueuedIssuanceRecognition(payload) {
 }
 
 function handleIssuanceQueueChange(task) {
-  const previousStatus = issuanceQueueAnnouncedStatus.get(task.id);
-  issuanceQueueAnnouncedStatus.set(task.id, task.status);
-  const completed = [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status);
-  if (completed && previousStatus !== task.status) dismissedIssuanceQueueTaskIds.delete(task.id);
   updateIssuanceQueueSummary();
   renderIssuanceQueueNotifications();
   updateProjectResultQueueState();
@@ -11217,38 +11221,7 @@ function updateIssuanceQueueSummary() {
 }
 
 function renderIssuanceQueueNotifications() {
-  const container = $("#issuanceQueueNotifications");
-  if (!container) return;
-  const visible = issuanceRecognitionQueue.list()
-    .filter((task) => [ISSUANCE_QUEUE_STATUS.READY, ISSUANCE_QUEUE_STATUS.REVIEW, ISSUANCE_QUEUE_STATUS.ERROR].includes(task.status)
-      && !dismissedIssuanceQueueTaskIds.has(task.id))
-    .slice(-4)
-    .reverse();
-  container.innerHTML = visible.map((task) => {
-    const ready = task.status === ISSUANCE_QUEUE_STATUS.READY;
-    const message = ready ? "已识别完成，等待人工核对"
-      : task.status === ISSUANCE_QUEUE_STATUS.REVIEW ? "识别完成，有字段需要核对"
-        : "识别失败，可重新提交";
-    return `<article class="issuance-queue-notification" data-status="${escapeAttribute(task.status)}">
-      <div class="issuance-queue-notification-copy"><strong>${escapeHtml(task.payload.projectName)}</strong><span>${escapeHtml(message)}</span></div>
-      <div class="issuance-queue-notification-actions">
-        <button type="button" data-review-issuance-task="${escapeAttribute(task.id)}">${ready ? "核对并写入" : "查看"}</button>
-        <button type="button" data-dismiss-issuance-task="${escapeAttribute(task.id)}" aria-label="关闭通知">×</button>
-      </div>
-    </article>`;
-  }).join("");
-}
-
-function handleIssuanceQueueNotificationClick(event) {
-  const dismiss = event.target.closest("[data-dismiss-issuance-task]");
-  if (dismiss) {
-    dismissedIssuanceQueueTaskIds.add(dismiss.dataset.dismissIssuanceTask);
-    renderIssuanceQueueNotifications();
-    return;
-  }
-  const review = event.target.closest("[data-review-issuance-task]");
-  if (!review) return;
-  openIssuanceQueueTask(review.dataset.reviewIssuanceTask);
+  issuanceQueuePanel?.render(issuanceRecognitionQueue.list());
 }
 
 function openIssuanceQueueTask(taskId) {
@@ -11259,7 +11232,6 @@ function openIssuanceQueueTask(taskId) {
     showToast("对应项目已不存在，无法核对该识别结果。");
     return;
   }
-  dismissedIssuanceQueueTaskIds.add(task.id);
   renderIssuanceQueueNotifications();
   openLedgerProject(task.payload.projectId);
   requestAnimationFrame(() => openResultEntryPanel(true, task.id));
@@ -11360,8 +11332,6 @@ function confirmIssuanceResult() {
     resultRecognitionMarks = buildResultRecognitionMarks(draft, parsed, task.result);
     resultRecognitionProjectId = parsed.id;
     issuanceRecognitionQueue.remove(task.id);
-    dismissedIssuanceQueueTaskIds.add(task.id);
-    issuanceQueueAnnouncedStatus.delete(task.id);
     activeIssuanceQueueTaskId = "";
     saveProjectRecordNow(parsed);
     fillProjectForm(parsed);
@@ -11481,7 +11451,8 @@ function formatDurationPart(value = "") {
 function formatProjectOfferingSummary(projectValue) {
   if (isAbsProject(projectValue)) return projectValue.instrumentType || "ABS";
   if (["公募", "私募"].includes(projectValue.offeringType)) return projectValue.offeringType;
-  const text = `${projectValue.sourceText || ""} ${projectValue.opinion || ""}`.replace(/公私募/g, "");
+  // Opinions include issuer credit scopes (e.g. 私募5亿), not just bond terms.
+  const text = String(projectValue.sourceText || "").replace(/公私募/g, "");
   if (/(?:非公开|私募)/.test(text)) return "私募";
   if (/公开发行|(?:^|[\s/，,])(?:公开|公募)(?:$|[\s/，,])/.test(text)) return "公募";
   const shortNameText = [

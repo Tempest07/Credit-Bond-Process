@@ -4,24 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.1.3.1">
-  <meta name="application-build-version" content="5.1.3.1">
-  <meta name="application-build" content="20260915-release-5131">
-  <title>信用债项目中心 - Tempest07</title>
+  <meta name="application-version" content="5.2.0.0">
+  <meta name="application-build-version" content="5.2.0.0">
+  <meta name="application-build" content="20260916-release-5200">
+  <title>Bond Centre 5.2.0.0 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20260915-release-5131"></script>
-  <link rel="stylesheet" href="./styles.css?v=20260915-release-5131">
+  <script src="./app-shell-mode.js?v=20260916-release-5200"></script>
+  <link rel="stylesheet" href="./styles.css?v=20260916-release-5200">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20260915-release-5131" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20260915-release-5131" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20260915-release-5131" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20260915-release-5131">
-  <script src="./ui-preference.js?v=20260915-release-5131"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20260915-release-5131">
+  <link rel="stylesheet" href="./workspace-design.css?v=20260916-release-5200" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20260916-release-5200" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20260916-release-5200" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20260916-release-5200">
+  <script src="./ui-preference.js?v=20260916-release-5200"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20260916-release-5200">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20260916-release-5200">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20260916-release-5200">
+  <link rel="stylesheet" href="./release-notes.css?v=20260916-release-5200">
 </head>
 <body>
   <div class="app-shell">
@@ -45,11 +48,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.1.3.1">v5.1.3.1</span>
+      <span class="header-version" aria-label="当前版本 5.2.0.0">v5.2.0.0</span>
+      <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
+      <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.1.3.1 · 2026-09-15 更新">v5.1.3.1</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.2.0.0 · 2026-09-16 更新">v5.2.0.0</span></div>
           <div class="top-actions">
           <button class="button subtle" id="stateHistoryButton">版本历史</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
@@ -1512,7 +1517,34 @@
     </div>
   </section>
 
-  <div class="issuance-queue-notifications" id="issuanceQueueNotifications" aria-live="polite" aria-label="发行结果识别通知"></div>
+  <section class="issuance-queue-panel" id="issuanceQueuePanel" aria-labelledby="issuanceQueuePanelTitle" hidden>
+    <header class="queue-panel-head"><div><h2 id="issuanceQueuePanelTitle">结果识别</h2><p id="issuanceQueuePanelSummary" role="status">暂无识别任务</p></div><button class="queue-minimize" id="issuanceQueueMinimize" type="button" aria-label="最小化识别队列" title="最小化">—</button></header>
+    <div class="issuance-queue-notifications" id="issuanceQueueNotifications" aria-live="polite" aria-label="发行结果识别通知"></div>
+  </section>
+  <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
+    <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
+    <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.2.0.0</strong><time datetime="2026-09-16">2026 / 09 / 16</time></div>
+      <section><h3>识别进度，一处掌握</h3><ul>
+        <li>右上角“识别队列”集中展示排队、识别中、待复核与失败项目，点击已完成项目即可前往复核。</li>
+        <li>胶囊按钮流体展开为面板，可最小化并再次打开；任务在收起后继续处理。</li>
+        <li>成功勾号与失败叹号采用轻弹涟漪效果，修复文字闪烁、图标偏移和面板遮挡按钮。</li>
+      </ul></section>
+      <section><h3>待办卡片，自然展开</h3><ul>
+        <li>鼠标停稳约 60ms，选中的待办卡片流体展开；宽屏下自动排列为两列，移开后恢复。</li>
+        <li>只有一侧有待办时自动展开该侧；触屏和键盘也可通过按钮展开。</li>
+        <li>按真实内容调整卡片高度，保留查看项目、延期、预缴款与缴款操作。</li>
+      </ul></section>
+      <section><h3>更清晰的视觉反馈</h3><ul>
+        <li>搜索框新增海洋配色的外侧呼吸光晕，强度 0.85，柔和延展至四周。</li>
+        <li>提高“结果”按钮文字与识别动画连线的清晰度，优化文字对齐和空待办布局。</li>
+      </ul></section>
+      <section><h3>建项与编辑修复</h3><ul>
+        <li>返回流程意见撰写后直接保存，正确保留项目的公募或私募发行方式。</li>
+        <li>可直接输入“26青岛地铁MTN002A/B”等合并简称，核查并读取两个品种。</li>
+      </ul></section>
+    </div>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
   <script src="./vendor/mammoth.browser.min.js"></script>
   <script src="./vendor/pizzip.min.js"></script>
@@ -1521,7 +1553,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20260915-release-5131"></script>
-  <script type="module" src="./app.js?v=20260915-release-5131"></script>
+  <script src="./ui-mode.js?v=20260916-release-5200"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20260916-release-5200"></script>
+  <script type="module" src="./app.js?v=20260916-release-5200"></script>
+  <script type="module" src="./todo-fluid.js?v=20260916-release-5200"></script>
+  <script type="module" src="./release-notes.js?v=20260916-release-5200"></script>
 </body>
 </html>

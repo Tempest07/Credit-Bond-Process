@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { resolvePreset } from "../vendor/thinking-orbs/engine.es.js";
+import { MODE_FRAMES, resolvePreset } from "../vendor/thinking-orbs/engine.es.js";
 
 const source = await readFile(new URL("../result-connecting-orb.js", import.meta.url), "utf8");
 test("vendored renderer is the installed upstream engine and selects connecting's inline preset", async () => {
@@ -19,7 +19,8 @@ test("orb animates only while processing and visible, respects reduced motion an
   const canvas = {width:20,height:20,hidden:true,getContext:()=>({setTransform(){},clearRect(){}})};
   const context = vm.createContext({
     resolvePreset: (state,size)=>{assert.equal(state,"connecting");assert.equal(size,20);return {mode:"web",speed:1,opts:{}};},
-    MODE_DRAWS:{web:(_ctx,size,time,dark)=>draws.push({size,time,dark})},
+    MODE_FRAMES:{web:(size,time,opts)=>{draws.push({size,time,opts});return {lines:[{white:0.42,a:0.05,w:0.6}],dots:[{white:0.55}]};}},
+    paintFrame:(_ctx,scene,dark)=>{assert.equal(dark,true);assert.ok(scene.lines[0].a>=0.3);assert.ok(scene.lines[0].w>=0.8);assert.ok(scene.dots[0].white<=0.25);},
     document:doc,window:{devicePixelRatio:2},matchMedia:()=>motion,performance:{now:()=>1000},
     requestAnimationFrame:f=>{raf.set(++id,f);return id;},cancelAnimationFrame:n=>raf.delete(n),
     IntersectionObserver:class {constructor(cb){this.cb=cb;observer=this;}observe(){}disconnect(){this.disconnected=true;}},
@@ -28,7 +29,13 @@ test("orb animates only while processing and visible, respects reduced motion an
   const orb = context.createResultConnectingOrb(canvas);
   orb.setActive(true);
   assert.equal(canvas.hidden,false);
-  assert.equal(canvas.width,40);
+  assert.equal(canvas.width,56);
+  assert.equal(draws.at(-1).size,28);
+  for (let time = 0; time <= 30; time += 0.5) {
+    const scene = MODE_FRAMES.web(28,time,draws.at(-1).opts);
+    assert.ok(scene.lines.length >= 12, `connecting must retain visible links at ${time}s`);
+  }
+  context.window.devicePixelRatio=3;
   assert.equal(raf.size,1);
   orb.setActive(true);
   assert.equal(raf.size,1);
@@ -36,6 +43,7 @@ test("orb animates only while processing and visible, respects reduced motion an
   assert.equal(raf.size,0);
   observer.cb([{isIntersecting:true}]);
   assert.equal(raf.size,1);
+  assert.equal(canvas.width,84);
   doc.hidden=true;events.get("visibilitychange")();
   assert.equal(raf.size,0);
   doc.hidden=false;events.get("visibilitychange")();

@@ -277,11 +277,14 @@ async function lookupBasicInfo(dm, { shortName, securityId, fullName }) {
 }
 
 function basicShortNameCandidates(shortName = "") {
-  const value = String(shortName || "").trim();
-  const label = value.match(/(\([^()]*\)|（[^（）]*）)$/)?.[1] || "";
-  const core = label ? value.slice(0, -label.length) : value;
-  if (!/^(?:.*)(?:MTN|PPN|PRN)\d{3}$/i.test(core)) return [value];
-  return [value, `${core}A${label}`, `${core}B${label}`];
+  // DM stores individual securities, not display names such as MTN002A/B.
+  // Expand once, then reuse these names for the existing result/group matching.
+  return uniqueStrings(splitCombinedShortNames(shortName).flatMap((value) => {
+    const label = value.match(/(\([^()]*\)|（[^（）]*）)$/)?.[1] || "";
+    const core = label ? value.slice(0, -label.length) : value;
+    if (!/^(?:.*)(?:MTN|PPN|PRN)\d{3}$/i.test(core)) return [value];
+    return [value, `${core}A${label}`, `${core}B${label}`];
+  }));
 }
 
 async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, absHintText, startDate, endDate }) {
@@ -2584,21 +2587,23 @@ function cleanIssueTranche(tranche) {
 }
 
 function splitCombinedShortNames(value = "") {
-  const text = String(value || "").trim();
+  const text = String(value || "").trim().replace(/／/g, "/");
   if (!text || !text.includes("/")) return text ? [text] : [];
-  const parts = text.split("/").map((part) => part.trim()).filter(Boolean);
+  const label = text.match(/(\([^()]*\)|（[^（）]*）)$/)?.[1] || "";
+  const core = label ? text.slice(0, -label.length) : text;
+  const parts = core.split("/").map((part) => part.trim()).filter(Boolean);
   if (parts.length <= 1) return parts;
   const first = parts[0];
   const numberBase = first.match(/^(.*?)(\d{1,3})$/);
   if (numberBase && parts.slice(1).every((part) => /^\d{1,3}$/.test(part))) {
     const width = numberBase[2].length;
-    return [first, ...parts.slice(1).map((part) => `${numberBase[1]}${part.padStart(width, "0")}`)];
+    return [first, ...parts.slice(1).map((part) => `${numberBase[1]}${part.padStart(width, "0")}`)].map((name) => name + label);
   }
   const letterBase = first.match(/^(.*?)([A-Z])$/i);
   if (letterBase && parts.slice(1).every((part) => /^[A-Z]$/i.test(part))) {
-    return [first, ...parts.slice(1).map((part) => `${letterBase[1]}${part.toUpperCase()}`)];
+    return [first, ...parts.slice(1).map((part) => `${letterBase[1]}${part.toUpperCase()}`)].map((name) => name + label);
   }
-  return parts;
+  return text.split("/").map((part) => part.trim()).filter(Boolean);
 }
 
 function issueShortNameFamily(value = "") {
