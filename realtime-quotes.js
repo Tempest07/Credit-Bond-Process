@@ -804,7 +804,11 @@ class RealtimeQuoteController {
     let label = "待导入";
     let status = "idle";
     let detailText = "导入券池后开始轮询";
-    if (this.loading) {
+    if (this.dmSuspended) {
+      label = "DM访问已暂停";
+      status = "paused";
+      detailText = "实时行情的DM访问已暂停，其他DM功能不受影响。";
+    } else if (this.loading) {
       label = "刷新中";
       status = "loading";
       detailText = "正在读取当日最优报价";
@@ -831,10 +835,11 @@ class RealtimeQuoteController {
     }
     if (detail) detail.textContent = detailText;
     if (pause) {
-      pause.textContent = this.paused ? "恢复轮询" : "暂停轮询";
+      pause.textContent = this.dmSuspended ? "访问已暂停" : this.paused ? "恢复轮询" : "暂停轮询";
+      pause.disabled = Boolean(this.dmSuspended);
       pause.setAttribute("aria-pressed", String(this.paused));
     }
-    if (refresh) refresh.disabled = !this.watchlist.length || this.loading;
+    if (refresh) refresh.disabled = this.dmSuspended || !this.watchlist.length || this.loading;
     if (last) last.textContent = this.lastFetchedAt ? formatChinaDateTime(this.lastFetchedAt) : "--";
     if (countdown) {
       const seconds = this.nextRefreshAt ? Math.max(0, Math.ceil((this.nextRefreshAt - Date.now()) / 1_000)) : null;
