@@ -354,6 +354,7 @@ class RealtimeQuoteController {
   }
 
   togglePaused() {
+    if (this.dmSuspended) return;
     this.paused = !this.paused;
     this.syncPolling({ immediate: !this.paused });
     this.renderStatus();
@@ -384,7 +385,7 @@ class RealtimeQuoteController {
   }
 
   shouldPoll() {
-    return !this.paused && this.watchlist.length > 0;
+    return !this.dmSuspended && !this.paused && this.watchlist.length > 0;
   }
 
   isPanelVisible() {
@@ -392,6 +393,7 @@ class RealtimeQuoteController {
   }
 
   async refresh({ manual = false, requestHeaders = {} } = {}) {
+    if (this.dmSuspended) return;
     if ((!manual && this.paused) || !this.watchlist.length || this.loading) return;
     this.fetchController?.abort();
     const controller = new AbortController();
@@ -411,6 +413,7 @@ class RealtimeQuoteController {
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
+      if (payload.code === "DM_REALTIME_SUSPENDED") this.suspendDmAccess(payload.error);
       if (!response.ok || payload.ok !== true) throw new Error(payload.error || `HTTP ${response.status}`);
       if (controller.signal.aborted || sequence !== this.requestSequence) return;
       const nextRows = (Array.isArray(payload.rows) ? payload.rows : []).map((row) => this.attachValuation(row));
@@ -445,6 +448,7 @@ class RealtimeQuoteController {
   }
 
   async maybeRefreshValuations(rows, { force = false, requestHeaders = {} } = {}) {
+    if (this.dmSuspended) return;
     const securityIds = unique(rows.map((row) => normalizeSecurityKey(row.securityId)).filter(Boolean));
     if (!securityIds.length || this.valuationLoading) return;
     const missing = securityIds.some((securityId) => !this.valuations.has(securityId));
@@ -467,6 +471,7 @@ class RealtimeQuoteController {
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
+      if (payload.code === "DM_REALTIME_SUSPENDED") this.suspendDmAccess(payload.error);
       if (!response.ok || payload.ok !== true) throw new Error(payload.error || `HTTP ${response.status}`);
       for (const item of Array.isArray(payload.rows) ? payload.rows : []) {
         const securityId = normalizeSecurityKey(item.securityId);
@@ -484,6 +489,19 @@ class RealtimeQuoteController {
       this.valuationLoading = false;
       this.valuationController = null;
       this.renderValuationStatus();
+    }
+  }
+
+  suspendDmAccess(message) {
+    this.dmSuspended = true;
+    this.paused = true;
+    this.error = message;
+    window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+    this.nextRefreshAt = 0;
+    for (const id of ["realtimeQuotePauseButton", "realtimeQuoteRefreshButton"]) {
+      const button = this.root.querySelector(`#${id}`);
+      if (button) { button.disabled = true; button.title = message; }
     }
   }
 
