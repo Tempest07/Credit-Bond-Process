@@ -90,6 +90,55 @@ test("recovers one explicit weekday payment phrase when the model omits the fiel
   }
 });
 
+test("paired relative and explicit dates agree, including parentheses and New Year", () => {
+  for (const phrase of ["明日9.18", "明日9.18缴款", "明天（9月18日）缴款", "周五2026-09-18", "明日 ９．１８"])
+    assert.equal(resolveNoticeDate(phrase, "2026-09-17"), "2026-09-18", phrase);
+  assert.equal(resolveNoticeDate("明日1.1", "2026-12-31"), "2027-01-01");
+  assert.throws(() => resolveNoticeDate("明日9.19", "2026-09-17"), /不一致/);
+  assert.throws(() => resolveNoticeDate("明日9.18", ""), /原通知日期/);
+  assert.throws(() => resolveNoticeDate("明日2.30", "2026-02-28"), /日期不存在/);
+});
+
+test("original Yuexiu notice works without edits regardless of model date segmentation", () => {
+  const original = "【结果】26越秀租赁SCP007，012682298，最终票面1.43%，边际1.64倍，全场3.19倍，明日9.18缴款，感谢关注";
+  const input = { text: original, noticeDate: "2026-09-17", tranches: [{ id: "yuexiu", shortName: "26越秀租赁SCP007", securityCode: "012682298" }] };
+  for (const raw of ["明日9.18", "明日", "9.18", null]) {
+    const model = { items: [{ shortName: input.tranches[0].shortName, sourceText: original, outcome: "issued", fields: {
+      securityCode: { raw: "012682298", evidence: "012682298" },
+      couponRate: { raw: "1.43%", evidence: "最终票面1.43%" },
+      fullMarketMultiple: { raw: "3.19倍", evidence: "全场3.19倍" },
+      marginalMultiple: { raw: "1.64倍", evidence: "边际1.64倍" },
+      paymentDate: { raw, evidence: raw ? "明日9.18缴款" : "" },
+    } }] };
+    const parsed = validateSemanticResult(input, model);
+    assert.equal(parsed.canApply, true, parsed.errors.join("；"));
+    assert.equal(parsed.items[0].paymentDate, "2026-09-18");
+    assert.equal(parsed.items[0].couponRate, 1.43);
+    assert.equal(parsed.items[0].fullMarketMultiple, 3.19);
+    assert.equal(parsed.items[0].marginalMultiple, 1.64);
+    assert.equal(parsed.items[0].issueScale, null);
+    assert.equal(parsed.items[0].startDate, "");
+    assert.equal(parsed.items[0].sourceText, original);
+    // Even partial or omitted extraction must not hide a contradiction in the original.
+    const conflicting = validateSemanticResult({ ...input, noticeDate: "2026-09-16" }, model);
+    assert.equal(conflicting.canApply, false);
+    assert.equal(conflicting.items[0].paymentDate, "");
+    assert.match(conflicting.errors.join("；"), /不一致/);
+  }
+});
+
+test("recovers paired payment dates in both payment phrase positions", () => {
+  for (const phrase of ["明日（9月18日）缴款", "缴款日期为明日9.18"]) {
+    const input = { ...request, noticeDate: "2026-09-17", text: text.replace("2026年9月3日缴款", phrase) };
+    const model = extracted();
+    model.items[0].sourceText = input.text;
+    model.items[0].fields.paymentDate = { raw: null, evidence: "" };
+    const parsed = validateSemanticResult(input, model);
+    assert.equal(parsed.canApply, true, parsed.errors.join("；"));
+    assert.equal(parsed.items[0].paymentDate, "2026-09-18");
+  }
+});
+
 test("does not guess between conflicting relative payment weekdays", () => {
   const input = { ...request, noticeDate: "2026-09-04", text: text.replace("2026年9月3日缴款", "A周一缴款，B周二缴款") };
   const model = extracted();

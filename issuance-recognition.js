@@ -7,6 +7,9 @@ export const ISSUANCE_FIELDS = {
 export const ISSUANCE_OUTCOMES = { issued: "正常发行", cancelled: "取消发行", reallocated: "全部回拨", unknown: "尚未确认发行结果" };
 
 const compact = (value) => String(value ?? "").normalize("NFKC").replace(/\s+/g, "");
+const relativeDatePattern = "(?:今天|今日|明天|明日|次日|后天|后日|(?:(?:本|这|下)?周|星期)[一二三四五六日天])";
+const explicitDatePattern = "(?:(?:\\d{4})[年/.-])?\\d{1,2}[月/.-]\\d{1,2}日?";
+const combinedDatePattern = `${relativeDatePattern}(?:${explicitDatePattern}|\\(${explicitDatePattern}\\))`;
 const nameKey = (value) => compact(value).toUpperCase().replace(/[（(](?:科创债?|绿色债?|碳中和债?)[）)]/g, "");
 const codeKey = (value) => compact(value).toUpperCase().replace(/\.(?:SH|SZ|IB)$/, "");
 const hasQuote = (text, quote) => Boolean(compact(quote)) && compact(text).includes(compact(quote));
@@ -18,6 +21,8 @@ function mentionsTranche(text, tranche) {
 function hasValueQuote(text, raw) {
   const value = compact(raw);
   if (!hasQuote(text, value)) return false;
+  // A complete relative-date word remains valid next to its explicit date ("明日9.18").
+  if (new RegExp(`^${relativeDatePattern}$`).test(value)) return true;
   // A model cannot justify "1" using the token "1.99" (or "5亿" using "25亿").
   const escaped = escapePattern(value);
   return new RegExp(`(?<![\\d.])${escaped}(?![\\d.])`).test(compact(text));
@@ -110,7 +115,7 @@ export function validateSemanticResult(request, result) {
         item.evidence[field] = cell.evidence;
       } catch (error) { errors.push(`${prefix}${label}：${error.message}`); }
     }
-    if (!noIssue && !item.paymentDate) {
+    if (!noIssue) {
       const scopedNoticeEvidence = request.text
         .split(/[\r\n。；;！？!?]+/)
         .map((quote) => quote.trim())
@@ -119,7 +124,11 @@ export function validateSemanticResult(request, result) {
         [source, ...shared.filter((quote) => isSharedFor(quote, target, request.tranches)), ...scopedNoticeEvidence],
         request.noticeDate,
       );
-      if (inferredPayment) {
+      if (inferredPayment?.error) {
+        errors.push(`${prefix}缴款日期：${inferredPayment.error}`);
+        item.paymentDate = "";
+        delete item.evidence.paymentDate;
+      } else if (inferredPayment && !item.paymentDate) {
         item.paymentDate = inferredPayment.date;
         item.evidence.paymentDate = inferredPayment.evidence;
       }
@@ -145,14 +154,25 @@ function isSharedFor(quote, target, tranches) {
 }
 
 function explicitPaymentDateFromEvidence(sources, noticeDate) {
-  if (!validDate(noticeDate)) return null;
-  const relative = "(?:今天|今日|明天|明日|次日|后天|后日|(?:(?:本|这|下)?周|星期)[一二三四五六日天])";
+  const relative = relativeDatePattern;
+  const combinedPatterns = [
+    new RegExp(`(${combinedDatePattern})(?:为|是|进行|安排)?(?:缴款|缴付|付款|到账)`, "g"),
+    new RegExp(`(?:缴款|缴付|付款|到账)(?:日期|时间|日)?(?:为|是|安排在|定于)?(${combinedDatePattern})`, "g"),
+  ];
   const patterns = [
     new RegExp(`(${relative})(?:为|是|进行|安排)?(?:缴款|缴付|付款|到账)`, "g"),
     new RegExp(`(?:缴款|缴付|付款|到账)(?:日|日期|时间)?(?:为|是|安排在|定于)?(${relative})`, "g"),
   ];
   const matches = [];
   for (const source of [...new Set(sources.filter(Boolean))]) {
+    // Check both parts even when the model extracts only "明日" or "9.18".
+    for (const pattern of combinedPatterns) {
+      for (const match of compact(source).matchAll(pattern)) {
+        try {
+          matches.push({ date: resolveNoticeDate(match[1], noticeDate), evidence: match[0] });
+        } catch (error) { return { error: error.message }; }
+      }
+    }
     for (const pattern of patterns) {
       pattern.lastIndex = 0;
       for (const match of source.matchAll(pattern)) {
@@ -217,6 +237,15 @@ function chineseNumber(text) {
 
 export function resolveNoticeDate(raw, reference) {
   const value = compact(raw);
+  const combined = value.match(new RegExp(`^(?:于)?(${relativeDatePattern})(?:(${explicitDatePattern})|\\((${explicitDatePattern})\\))(?:缴款|缴付|付款|到账|起息)?$`));
+  if (combined) {
+    const relativeDate = resolveNoticeDate(combined[1], reference);
+    const explicit = combined[2] || combined[3];
+    // The relative date also determines the year for a paired yearless date at New Year.
+    const explicitDate = resolveNoticeDate(explicit, relativeDate);
+    if (relativeDate !== explicitDate) throw new Error(`“${combined[1]}”按原通知日期应为${relativeDate}，与原文“${explicit}”不一致，请核对原通知日期或缴款安排。`);
+    return relativeDate;
+  }
   const relativeValue = value.match(/^(?:于)?(今天|今日|明天|明日|次日|后天|后日)(?:缴款|缴付|付款|到账)?(?:日)?$/)?.[1] || value;
   const offset = { 今天: 0, 今日: 0, 明天: 1, 明日: 1, 次日: 1, 后天: 2, 后日: 2 }[relativeValue];
   if (offset != null) {
