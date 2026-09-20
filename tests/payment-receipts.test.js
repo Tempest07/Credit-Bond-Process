@@ -10,11 +10,41 @@ import {
   selectPaymentReceiptMatch,
 } from "../payment-receipts.js";
 import {
+  assignPaymentReceipt,
   listPaymentReceipts,
   listPendingPaymentReceiptBatches,
   listPendingPaymentReceiptFiles,
   readPaymentProjects,
 } from "../functions/api/_payment-receipts.js";
+
+test("manual receipt assignment backfills the selected tranche payment date", async () => {
+  const statements = [];
+  const db = {
+    prepare(sql) {
+      return {
+        sql,
+        bind(...values) {
+          this.values = values;
+          return this;
+        },
+      };
+    },
+    async batch(items) {
+      statements.push(...items);
+      return items.map(() => ({ meta: { changes: 1 } }));
+    },
+  };
+  await assignPaymentReceipt(db, {
+    ownerUserId: "admin",
+    receiptId: "receipt-1",
+    projectId: "project-1",
+    trancheId: "tranche-1",
+    paymentDate: "2026-07-23",
+  });
+  const update = statements.find((statement) => /SET payment_date/i.test(statement.sql));
+  assert.equal(update.values[0], "2026-07-23");
+  assert.match(update.sql, /match_status = 'matched'/);
+});
 
 test("builds an Explorer-style original PDF tree by payment date and file id", () => {
   const tree = buildPaymentReceiptOriginalFileTree([

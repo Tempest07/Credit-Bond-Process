@@ -152,7 +152,21 @@ export async function listPaymentReceipts(db, ownerUserId, filters = {}) {
       m.tranche_id,
       m.match_source,
       m.match_score,
-      m.match_reason
+      m.match_reason,
+      CASE WHEN r.match_status = 'duplicate' THEN (
+        SELECT original.id
+        FROM payment_receipts original
+        JOIN payment_receipt_files original_file ON original_file.id = original.file_id
+        WHERE original.owner_user_id = r.owner_user_id
+          AND original.id <> r.id
+          AND original.match_status <> 'duplicate'
+          AND (
+            original.sha256 = r.sha256
+            OR (original_file.sha256 = f.sha256 AND original.source_page_label = r.source_page_label)
+          )
+        ORDER BY original.created_at ASC, original.id ASC
+        LIMIT 1
+      ) ELSE NULL END AS duplicate_of_receipt_id
     FROM payment_receipts r
     JOIN payment_receipt_batches b ON b.id = r.batch_id
     JOIN payment_receipt_files f ON f.id = r.file_id
@@ -258,7 +272,21 @@ export async function getPaymentReceipt(db, ownerUserId, receiptId) {
       m.tranche_id,
       m.match_source,
       m.match_score,
-      m.match_reason
+      m.match_reason,
+      CASE WHEN r.match_status = 'duplicate' THEN (
+        SELECT original.id
+        FROM payment_receipts original
+        JOIN payment_receipt_files original_file ON original_file.id = original.file_id
+        WHERE original.owner_user_id = r.owner_user_id
+          AND original.id <> r.id
+          AND original.match_status <> 'duplicate'
+          AND (
+            original.sha256 = r.sha256
+            OR (original_file.sha256 = f.sha256 AND original.source_page_label = r.source_page_label)
+          )
+        ORDER BY original.created_at ASC, original.id ASC
+        LIMIT 1
+      ) ELSE NULL END AS duplicate_of_receipt_id
     FROM payment_receipts r
     JOIN payment_receipt_batches b ON b.id = r.batch_id
     JOIN payment_receipt_files f ON f.id = r.file_id
@@ -268,14 +296,16 @@ export async function getPaymentReceipt(db, ownerUserId, receiptId) {
   return row ? paymentReceiptFromRow(row) : null;
 }
 
-export async function findPaymentReceiptBySha(db, ownerUserId, sha256) {
+export async function findPaymentReceiptBySha(db, ownerUserId, sha256, excludeReceiptId = "") {
   const row = await db.prepare(`
     SELECT id, batch_id, file_id, source_page_label, created_at
     FROM payment_receipts
     WHERE owner_user_id = ?1 AND sha256 = ?2
+      AND match_status <> 'duplicate'
+      AND (?3 = '' OR id <> ?3)
     ORDER BY created_at ASC
     LIMIT 1
-  `).bind(ownerUserId, sha256).first();
+  `).bind(ownerUserId, sha256, excludeReceiptId).first();
   return row ? {
     id: String(row.id || ""),
     batchId: String(row.batch_id || ""),
@@ -482,6 +512,85 @@ export async function insertPaymentReceipt(db, input) {
   ).run();
 }
 
+export async function updatePaymentReceiptRecognition(db, input) {
+  await db.prepare(`
+    UPDATE payment_receipts
+    SET sha256 = ?1,
+        payment_date = ?2,
+        amount_fen = ?3,
+        payer_name = ?4,
+        payee_name = ?5,
+        bond_short_name = ?6,
+        security_code = ?7,
+        prepayment_number = ?8,
+        bank_reference = ?9,
+        recognized_text = ?10,
+        recognition_status = ?11,
+        match_status = ?12,
+        candidate_json = ?13,
+        error_message = ?14,
+        updated_at = ?15
+    WHERE owner_user_id = ?16 AND id = ?17
+  `).bind(
+    input.sha256,
+    input.paymentDate || null,
+    input.amountFen ?? null,
+    input.payerName || "",
+    input.payeeName || "",
+    input.bondShortName || "",
+    input.securityCode || "",
+    input.prepaymentNumber || "",
+    input.bankReference || "",
+    input.recognizedText || "",
+    input.recognitionStatus || "review",
+    input.matchStatus || "review",
+    JSON.stringify(input.candidates || []),
+    input.errorMessage || "",
+    input.updatedAt || new Date().toISOString(),
+    input.ownerUserId,
+    input.receiptId,
+  ).run();
+}
+
+export async function listPaymentReceiptsForFile(db, ownerUserId, fileId) {
+  const result = await db.prepare(`
+    SELECT r.id, r.object_key, r.match_status, r.source_pages_json,
+           m.project_id, m.tranche_id
+    FROM payment_receipts r
+    LEFT JOIN payment_receipt_matches m
+      ON m.owner_user_id = r.owner_user_id AND m.receipt_id = r.id
+    WHERE r.owner_user_id = ?1 AND r.file_id = ?2
+    ORDER BY r.created_at ASC, r.id ASC
+  `).bind(ownerUserId, fileId).all();
+  return (result?.results || []).map((row) => ({
+    id: String(row.id || ""),
+    objectKey: String(row.object_key || ""),
+    matchStatus: String(row.match_status || "unmatched"),
+    sourcePages: jsonArray(row.source_pages_json),
+    projectId: String(row.project_id || ""),
+    trancheId: String(row.tranche_id || ""),
+  }));
+}
+
+export async function deleteUnmatchedPaymentReceipts(db, ownerUserId, receiptIds = []) {
+  const ids = [...new Set(receiptIds.map((value) => String(value || "")).filter(Boolean))];
+  if (!ids.length) return;
+  if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
+  const placeholders = ids.map((_, index) => `?${index + 2}`).join(", ");
+  await db.batch([
+    db.prepare(`
+      DELETE FROM payment_receipt_matches
+      WHERE owner_user_id = ?1 AND receipt_id IN (${placeholders})
+    `).bind(ownerUserId, ...ids),
+    db.prepare(`
+      DELETE FROM payment_receipts
+      WHERE owner_user_id = ?1
+        AND id IN (${placeholders})
+        AND match_status <> 'matched'
+    `).bind(ownerUserId, ...ids),
+  ]);
+}
+
 export async function insertPaymentReceiptMatch(db, input) {
   const now = input.createdAt || new Date().toISOString();
   if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
@@ -533,9 +642,10 @@ export async function assignPaymentReceipt(db, input) {
     ),
     db.prepare(`
       UPDATE payment_receipts
-      SET match_status = 'matched', candidate_json = '[]', error_message = '', updated_at = ?1
-      WHERE owner_user_id = ?2 AND id = ?3
-    `).bind(now, input.ownerUserId, input.receiptId),
+      SET payment_date = CASE WHEN ?1 <> '' THEN ?1 ELSE payment_date END,
+          match_status = 'matched', candidate_json = '[]', error_message = '', updated_at = ?2
+      WHERE owner_user_id = ?3 AND id = ?4
+    `).bind(input.paymentDate || "", now, input.ownerUserId, input.receiptId),
   ];
   if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
   await db.batch(statements);
@@ -700,6 +810,7 @@ export function paymentReceiptFromRow(row = {}) {
     matchSource: String(row.match_source || ""),
     matchScore: Number(row.match_score) || 0,
     matchReason: String(row.match_reason || ""),
+    duplicateOfReceiptId: String(row.duplicate_of_receipt_id || ""),
     sender: String(row.sender || ""),
     subject: decodePaymentReceiptSubject(row.subject),
     receivedAt: String(row.received_at || ""),

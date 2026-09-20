@@ -1,5 +1,5 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260917-release-5201';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20260917-release-5201';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260920-release-5202';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20260920-release-5202';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -35,7 +35,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260917-release-5201";
+} from "./core.js?v=20260920-release-5202";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -64,15 +64,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260917-release-5201";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260917-release-5201";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260917-release-5201";
+} from "./lifecycle.js?v=20260920-release-5202";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260920-release-5202";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260920-release-5202";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260917-release-5201";
+} from "./history-parser.js?v=20260920-release-5202";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -89,23 +89,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260917-release-5201";
+} from "./protocol-transfer.js?v=20260920-release-5202";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260917-release-5201";
+} from "./protocol-transfer-templates.js?v=20260920-release-5202";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260917-release-5201";
+} from "./protocol-transfer-docx.js?v=20260920-release-5202";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260917-release-5201";
+} from "./reminders.js?v=20260920-release-5202";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -133,11 +133,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260917-release-5201";
+} from "./secondary-inventory.js?v=20260920-release-5202";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260917-release-5201";
+} from "./trade-record-converter.js?v=20260920-release-5202";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -148,16 +148,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260917-release-5201";
+} from "./trade-record-grid.js?v=20260920-release-5202";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260917-release-5201";
-import { initializeDatePickers } from "./date-picker.js?v=20260917-release-5201";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260917-release-5201";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260917-release-5201";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260917-release-5201";
+} from "./trade-record-ledger.js?v=20260920-release-5202";
+import { initializeDatePickers } from "./date-picker.js?v=20260920-release-5202";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260920-release-5202";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260920-release-5202";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260920-release-5202";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -166,30 +166,30 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260917-release-5201";
+} from "./project-screenshot-ocr.js?v=20260920-release-5202";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260917-release-5201";
+} from "./project-screenshot-layout.js?v=20260920-release-5202";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260917-release-5201";
+} from "./project-screenshot-image.js?v=20260920-release-5202";
 import {
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260917-release-5201";
+} from "./payment-receipts.js?v=20260920-release-5202";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260917-release-5201";
+} from "./issuer-search.js?v=20260920-release-5202";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260917-release-5201";
+} from "./state-history.js?v=20260920-release-5202";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -727,8 +727,16 @@ function bindPaymentReceipts() {
 }
 
 async function handlePaymentReceiptArchiveClick(event) {
-  const button = event.target.closest("[data-receipt-match], [data-receipt-assign], [data-receipt-unlink], [data-receipt-delete]");
+  const button = event.target.closest("[data-receipt-match], [data-receipt-assign], [data-receipt-unlink], [data-receipt-delete], [data-receipt-reprocess], [data-receipt-original]");
   if (!button) return;
+  if (button.dataset.receiptReprocess) {
+    await reprocessPaymentReceiptFile(button.dataset.receiptReprocess, button);
+    return;
+  }
+  if (button.dataset.receiptOriginal) {
+    await revealOriginalPaymentReceipt(button.dataset.receiptOriginal);
+    return;
+  }
   const receiptId = button.dataset.receiptMatch || button.dataset.receiptAssign || button.dataset.receiptUnlink || button.dataset.receiptDelete;
   if (!receiptId) return;
 
@@ -774,6 +782,42 @@ async function handlePaymentReceiptArchiveClick(event) {
     button.disabled = false;
     showToast(`对应失败：${error.message || "请稍后重试"}`);
   }
+}
+
+async function reprocessPaymentReceiptFile(fileId, button) {
+  if (!fileId) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/payment-receipt-files/${encodeURIComponent(fileId)}/reprocess`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    await loadPaymentReceipts({ silent: true });
+    showToast("已申请重新识别；原始 PDF 保留不变，后台会自动更新识别和对应结果。");
+  } catch (error) {
+    button.disabled = false;
+    showToast(`重新识别失败：${error.message || "请稍后重试"}`);
+  }
+}
+
+async function revealOriginalPaymentReceipt(receiptId) {
+  if (!receiptId) return;
+  if ($("#paymentReceiptDateFilter")) $("#paymentReceiptDateFilter").value = "";
+  if ($("#paymentReceiptStatusFilter")) $("#paymentReceiptStatusFilter").value = "";
+  await loadPaymentReceipts({ silent: true });
+  const card = [...document.querySelectorAll("[data-receipt-id]")]
+    .find((element) => element.dataset.receiptId === receiptId);
+  if (!card) {
+    showToast("原始单据当前未找到，可能已被删除或仍在重新识别。");
+    return;
+  }
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.focus({ preventScroll: true });
+  card.classList.add("payment-receipt-highlight");
+  setTimeout(() => card.classList.remove("payment-receipt-highlight"), 1800);
 }
 
 async function unlinkPaymentReceipt(receiptId, button) {
@@ -1130,6 +1174,7 @@ function renderPendingPaymentReceiptFile(file) {
       </div>
       <div class="payment-receipt-file-actions">
         <a class="button subtle" href="${paymentReceiptPendingFileUrl(file.id)}" target="_blank" rel="noopener">原始 PDF</a>
+        ${["processed", "review", "error"].includes(file.processingStatus) ? `<button class="button subtle" type="button" data-receipt-reprocess="${escapeAttribute(file.id)}">重新识别</button>` : ""}
         ${file.pageCount && ["processed", "review", "error"].includes(file.processingStatus) ? `<button class="button subtle" type="button" data-receipt-regroup="${escapeAttribute(file.id)}">修正拆页</button>` : ""}
         <a class="text-button" href="${paymentReceiptPendingEmailUrl(file.id)}">原始邮件</a>
       </div>
@@ -1142,6 +1187,7 @@ function paymentReceiptFileStatusLabel(status) {
     received: "已收件",
     queued: "等待识别",
     processing: "识别中",
+    reprocess_requested: "等待重新识别",
     regrouping: "人工修正拆页中",
     processed: "处理完成（未提取到单据）",
     review: "待复核",
@@ -1160,7 +1206,7 @@ function renderPaymentReceiptCard(receipt) {
     receipt.blankPages?.length ? `空白页 ${receipt.blankPages.join("、")}` : "",
   ].filter(Boolean).join(" · ");
   return `
-    <article class="payment-receipt-card">
+    <article class="payment-receipt-card" data-receipt-id="${escapeAttribute(receipt.id)}" tabindex="-1">
       <div class="payment-receipt-card-main">
         <div class="payment-receipt-card-title">
           <strong>${escapeHtml(title)}</strong>
@@ -1180,8 +1226,10 @@ function renderPaymentReceiptCard(receipt) {
       <div class="payment-receipt-file-actions">
         <a class="button subtle payment-receipt-open" href="${paymentReceiptFileUrl(receipt.id)}" target="_blank" rel="noopener">拆分单据</a>
         <a class="button subtle" href="${paymentReceiptSourceUrl(receipt.id)}" target="_blank" rel="noopener">原始 PDF</a>
+        ${["review", "unmatched", "error"].includes(receipt.matchStatus) && ["processed", "review", "error"].includes(receipt.fileProcessingStatus) ? `<button class="button subtle" type="button" data-receipt-reprocess="${escapeAttribute(receipt.fileId)}">重新识别</button>` : ""}
         <button class="button subtle" type="button" data-receipt-regroup="${escapeAttribute(receipt.fileId)}">修正拆页</button>
         <a class="text-button" href="${paymentReceiptEmailUrl(receipt.id)}">原始邮件</a>
+        ${receipt.matchStatus === "duplicate" && receipt.duplicateOfReceiptId ? `<button class="button subtle" type="button" data-receipt-original="${escapeAttribute(receipt.duplicateOfReceiptId)}">查看原始记录</button>` : ""}
         ${receipt.matchStatus === "duplicate" ? `<button class="button subtle danger-button" type="button" data-receipt-delete="${escapeAttribute(receipt.id)}">删除重复单据</button>` : ""}
       </div>
     </article>

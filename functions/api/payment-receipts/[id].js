@@ -35,6 +35,7 @@ export async function onRequestPatch(context) {
       receiptId,
       projectId,
       trancheId,
+      paymentDate: tranche.paymentDate || "",
       matchReason: "Bond Centre 人工确认对应",
     });
     await insertPaymentReceiptEvent(context.env.DB, {
@@ -43,9 +44,9 @@ export async function onRequestPatch(context) {
       receiptId,
       batchId: receipt.batchId,
       eventType: "receipt_manually_matched",
-      detail: { projectId, trancheId },
+      detail: { projectId, trancheId, paymentDate: tranche.paymentDate || "" },
     });
-    return json({ ok: true, receiptId, projectId, trancheId });
+    return json({ ok: true, receiptId, projectId, trancheId, paymentDate: tranche.paymentDate || "" });
   } catch (error) {
     const message = error.message || "人工对应缴款单失败";
     const conflict = /UNIQUE|constraint/i.test(message);

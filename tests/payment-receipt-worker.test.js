@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { PDFDocument } from "pdf-lib";
+import { deflateSync, inflateSync } from "node:zlib";
+import { PDFDocument, PDFName } from "pdf-lib";
 
 import {
   analyzePaymentReceiptPage,
+  encodeMonochromePng,
   extractPaymentReceiptPageImage,
   finalizeBatchStatus,
   paymentReceiptFingerprintMaterial,
@@ -157,7 +159,7 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
   assert.match(request.input.messages[0].content[0].text, /绝不能返回 blank/);
   assert.match(request.input.messages[0].content[0].text, /"classification":"receipt_start"/);
   assert.equal(result.classification, "receipt_start");
-  assert.equal(result.analysisVersion, 3);
+  assert.equal(result.analysisVersion, 4);
   assert.equal(result.analysisSource, "workers-ai-page-image");
   assert.equal(result.fields.securityCode, "283234.SH");
   assert.match(result.recognizedText, /9,000万元/);
@@ -391,6 +393,40 @@ test("extracts the full-page JPEG scan and rejects placeholder Markdown as OCR",
   assert.equal(fallback.recognizedText, "");
 });
 
+test("decodes a FlateDecode-wrapped independent JPEG scan", async () => {
+  const document = await PDFDocument.create();
+  const page = document.addPage([100, 100]);
+  const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+  const image = document.context.stream(deflateSync(jpegBytes), {
+    Type: "XObject",
+    Subtype: "Image",
+    Width: 2,
+    Height: 2,
+    ColorSpace: "DeviceRGB",
+    BitsPerComponent: 8,
+    Filter: [PDFName.of("FlateDecode"), PDFName.of("DCTDecode")],
+  });
+  page.node.newXObject("Image", document.context.register(image));
+  const extracted = await extractPaymentReceiptPageImage(await document.save({ useObjectStreams: false }));
+  assert.equal(extracted.mimeType, "image/jpeg");
+  assert.deepEqual([...extracted.bytes], [...jpegBytes]);
+});
+
+test("encodes and physically rotates a one-bit JBIG2 bitmap into PNG", async () => {
+  const png = await encodeMonochromePng(new Uint8Array([0xa0, 0x40]), 3, 2, 270, false);
+  assert.equal(png.width, 2);
+  assert.equal(png.height, 3);
+  assert.deepEqual([...png.bytes.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  const view = new DataView(png.bytes.buffer, png.bytes.byteOffset, png.bytes.byteLength);
+  assert.equal(view.getUint32(16), 2);
+  assert.equal(view.getUint32(20), 3);
+  assert.equal(png.bytes[24], 1);
+  assert.equal(png.bytes[25], 0);
+  const idatLength = view.getUint32(33);
+  const scanlines = inflateSync(png.bytes.slice(41, 41 + idatLength));
+  assert.deepEqual([...scanlines], [0, 0x80, 0, 0x40, 0, 0x80]);
+});
+
 test("keeps meaningful embedded-text pages as continuations only after a trusted prior page", async () => {
   const document = await PDFDocument.create();
   document.addPage([100, 100]);
@@ -474,6 +510,8 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(app, /data-receipt-regroup/);
   assert.match(app, /data-receipt-delete="\$\{escapeAttribute\(receipt\.id\)\}"/);
   assert.match(app, /\?action=delete-duplicate/);
+  assert.match(app, /data-receipt-reprocess/);
+  assert.match(app, /data-receipt-original/);
   assert.match(app, /被判定为原件的缴款单不会删除/);
   assert.match(worker, /kind: "email"/);
   assert.match(worker, /processPaymentReceiptEmail/);

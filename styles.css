@@ -1541,6 +1541,7 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .payment-receipt-date-group > header strong { font-size: 14px; }
 .payment-receipt-date-group > header span { color: var(--muted); font-size: 10px; }
 .payment-receipt-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 14px 15px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, #fff, #fafbff); }
+.payment-receipt-card.payment-receipt-highlight { border-color: rgba(77, 103, 255, .7); box-shadow: 0 0 0 4px rgba(77, 103, 255, .14), 0 18px 44px rgba(34, 55, 120, .12); transition: border-color .18s ease, box-shadow .18s ease; }
 .payment-receipt-card-main { display: grid; gap: 6px; min-width: 0; }
 .payment-receipt-file-actions { display: grid; gap: 6px; min-width: 104px; }
 .payment-receipt-file-actions .text-button { min-height: 25px; font-size: 9px; text-decoration: none; }

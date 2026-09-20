@@ -1,9 +1,11 @@
 import PostalMime from "postal-mime";
-import { PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
+import createJbig2 from "pdfjs-dist/wasm/jbig2_nowasm_fallback.js";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 
 import {
   ensurePaymentReceiptSchema,
   decodePaymentReceiptSubject,
+  deleteUnmatchedPaymentReceipts,
   findPaymentReceiptBySha,
   findPaymentReceiptBatch,
   findPaymentReceiptFile,
@@ -13,10 +15,12 @@ import {
   insertPaymentReceiptEvent,
   insertPaymentReceiptFile,
   insertPaymentReceiptMatch,
+  listPaymentReceiptsForFile,
   readPaymentProjects,
   updatePaymentReceiptBatch,
   updatePaymentReceiptFile,
   updatePaymentReceiptMatchStatus,
+  updatePaymentReceiptRecognition,
 } from "./functions/api/_payment-receipts.js";
 import {
   classifyPaymentReceiptPage,
@@ -35,7 +39,7 @@ const MAX_PDF_PAGES = 60;
 const STALE_JOB_MINUTES = 20;
 const RECONCILE_LIMIT = 50;
 const RECEIPT_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
-const PAGE_ANALYSIS_VERSION = 3;
+const PAGE_ANALYSIS_VERSION = 4;
 
 export default {
   async fetch(request, env) {
@@ -286,8 +290,10 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
            b.owner_user_id, b.message_id, b.received_date
     FROM payment_receipt_files f
     JOIN payment_receipt_batches b ON b.id = f.batch_id
-    WHERE f.processing_status IN ('received', 'queued', 'processing', 'error')
-      AND f.updated_at < ?1
+    WHERE (
+      f.processing_status = 'reprocess_requested'
+      OR (f.processing_status IN ('received', 'queued', 'processing', 'error') AND f.updated_at < ?1)
+    )
     ORDER BY f.updated_at
     LIMIT ?2
   `).bind(cutoff, RECONCILE_LIMIT).all();
@@ -303,6 +309,7 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
         filename: file.filename,
         receivedDate: file.received_date,
         messageIdConflict: paymentReceiptMessageIdConflict(file.message_id),
+        forceReanalyze: file.processing_status === "reprocess_requested",
       });
       summary.fileJobs += 1;
     } catch (error) {
@@ -443,7 +450,9 @@ export async function processPaymentReceiptFile(env, job = {}) {
   if (sourcePdf.getPageCount() > MAX_PDF_PAGES) {
     throw permanentReceiptError(`PDF 共 ${sourcePdf.getPageCount()} 页，超过 ${MAX_PDF_PAGES} 页自动处理上限`);
   }
-  let pageAnalyses = reusablePageAnalysis(storedFile?.pageAnalysis, sourcePdf.getPageCount());
+  let pageAnalyses = job.forceReanalyze === true
+    ? null
+    : reusablePageAnalysis(storedFile?.pageAnalysis, sourcePdf.getPageCount());
   if (!pageAnalyses) {
     pageAnalyses = [];
     let previousPageContext = null;
@@ -467,7 +476,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
     startsReceipt: page.classification === "receipt_start",
   })));
   const hasTrustedReceiptStart = pageAnalyses.some(isTrustedReceiptStart);
-  const fileNeedsReview = grouped.uncertainPages.length > 0 || !hasTrustedReceiptStart || job.messageIdConflict === true;
+  let fileNeedsReview = grouped.uncertainPages.length > 0 || !hasTrustedReceiptStart || job.messageIdConflict === true;
   await updatePaymentReceiptFile(env.DB, job.fileId, {
     pageCount: sourcePdf.getPageCount(),
     blankPages: grouped.blankPages,
@@ -482,6 +491,9 @@ export async function processPaymentReceiptFile(env, job = {}) {
     errorMessage: "",
   });
   const projects = await readPaymentProjects(env.DB, job.ownerUserId);
+  const existingFileReceipts = job.forceReanalyze === true
+    ? await listPaymentReceiptsForFile(env.DB, job.ownerUserId, job.fileId)
+    : [];
   const createdReceiptIds = [];
 
   for (const group of grouped.groups) {
@@ -500,16 +512,11 @@ export async function processPaymentReceiptFile(env, job = {}) {
     const hasUncertainPage = groupPageAnalyses.some((item) => item.classification === "uncertain");
     const hasGroupReceiptStart = groupPageAnalyses.some(isTrustedReceiptStart);
     const requiresReview = hasUncertainPage || !hasGroupReceiptStart || job.messageIdConflict === true;
-    const existingReceipt = await getPaymentReceipt(env.DB, job.ownerUserId, receiptId);
-    if (existingReceipt) {
-      await recoverAutomaticReceiptMatch(env, job.ownerUserId, existingReceipt, match, requiresReview);
-      createdReceiptIds.push(receiptId);
-      continue;
-    }
     const receiptFingerprint = await sha256Hex(new TextEncoder().encode(
       paymentReceiptFingerprintMaterial(recognized, sourceSha256, group.pageNumbers),
     ));
-    const duplicateOf = await findPaymentReceiptBySha(env.DB, job.ownerUserId, receiptFingerprint);
+    const existingReceipt = await getPaymentReceipt(env.DB, job.ownerUserId, receiptId);
+    const duplicateOf = await findPaymentReceiptBySha(env.DB, job.ownerUserId, receiptFingerprint, receiptId);
     const effectiveMatchStatus = duplicateOf
       ? "duplicate"
       : requiresReview && match.status === "matched"
@@ -524,6 +531,38 @@ export async function processPaymentReceiptFile(env, job = {}) {
         : hasUncertainPage
         ? "部分页面未能可靠识别，请复核单据边界"
         : "";
+
+    if (existingReceipt) {
+      const preservedMatch = existingReceipt.matchStatus === "matched";
+      const preservedDuplicate = existingReceipt.matchStatus === "duplicate";
+      const recognitionStatus = requiresReview ? "review" : "recognized";
+      const nextMatchStatus = preservedMatch
+        ? "matched"
+        : preservedDuplicate || duplicateOf
+          ? "duplicate"
+          : effectiveMatchStatus === "matched" ? "review" : effectiveMatchStatus;
+      await updatePaymentReceiptRecognition(env.DB, {
+        ownerUserId: job.ownerUserId,
+        receiptId,
+        sha256: receiptFingerprint,
+        ...recognized,
+        recognitionStatus,
+        matchStatus: nextMatchStatus,
+        candidates: preservedMatch ? [] : match.candidates,
+        errorMessage: preservedMatch
+          ? ""
+          : nextMatchStatus === "duplicate"
+            ? `与已归档缴款单 ${duplicateOf?.id || existingReceipt.duplicateOfReceiptId || "原件"} 内容相同`
+            : effectiveMatchStatus === "matched" ? "自动匹配待提交" : receiptError,
+      });
+      await recoverAutomaticReceiptMatch(env, job.ownerUserId, {
+        ...existingReceipt,
+        recognitionStatus,
+        matchStatus: nextMatchStatus,
+      }, match, requiresReview);
+      createdReceiptIds.push(receiptId);
+      continue;
+    }
 
     await env.PAYMENT_RECEIPTS.put(objectKey, groupBytes, {
       httpMetadata: { contentType: "application/pdf" },
@@ -579,6 +618,19 @@ export async function processPaymentReceiptFile(env, job = {}) {
     createdReceiptIds.push(receiptId);
   }
 
+  const obsoleteReceipts = existingFileReceipts.filter((receipt) => !createdReceiptIds.includes(receipt.id));
+  const obsoleteMatchedReceipts = obsoleteReceipts.filter((receipt) => receipt.matchStatus === "matched");
+  if (obsoleteMatchedReceipts.length) {
+    fileNeedsReview = true;
+  } else if (obsoleteReceipts.length) {
+    await deleteUnmatchedPaymentReceipts(env.DB, job.ownerUserId, obsoleteReceipts.map((receipt) => receipt.id));
+    await cleanupPaymentReceiptObjects(
+      env.PAYMENT_RECEIPTS,
+      obsoleteReceipts.map((receipt) => receipt.objectKey),
+      "payment_receipt_reanalysis_cleanup_failed",
+    );
+  }
+
   await updatePaymentReceiptFile(env.DB, job.fileId, {
     pageCount: sourcePdf.getPageCount(),
     blankPages: grouped.blankPages,
@@ -587,6 +639,8 @@ export async function processPaymentReceiptFile(env, job = {}) {
       ? "Message-ID 与既有邮件相同但内容不同，请人工复核"
       : !hasTrustedReceiptStart
       ? "未能可靠识别任何缴款单首页，已保留原始 PDF 并转人工复核"
+      : obsoleteMatchedReceipts.length
+      ? "重新识别后的拆页边界发生变化，旧单据已对应项目，请人工复核"
       : grouped.uncertainPages.length
       ? `第 ${grouped.uncertainPages.join("、")} 页未能可靠识别`
       : "",
@@ -785,13 +839,35 @@ export async function extractPaymentReceiptPageImage(pageBytes) {
   if (!page) return null;
   const resources = page.node.Resources();
   const xObjects = resources?.lookupMaybe(PDFName.of("XObject"), PDFDict);
-  const largest = findLargestJpegXObject(document.context, xObjects, new Set());
-  return largest ? { mimeType: "image/jpeg", ...largest } : null;
+  const rotation = normalizePageRotation(page.getRotation()?.angle);
+  const images = await findPageImageXObjects(document.context, xObjects, new Set());
+  const mask = images.masks.sort(comparePageImageCandidates)[0];
+  if (mask) {
+    try {
+      const packed = await decodeJbig2Mask(mask);
+      const png = await encodeMonochromePng(packed, mask.width, mask.height, rotation, mask.blackIs1);
+      return {
+        mimeType: "image/png",
+        bytes: png.bytes,
+        width: png.width,
+        height: png.height,
+        rotation: 0,
+        source: "jbig2-mask",
+      };
+    } catch (error) {
+      console.warn(JSON.stringify({
+        event: "payment_receipt_jbig2_mask_decode_failed",
+        error: error?.message || String(error),
+      }));
+    }
+  }
+  const jpeg = images.jpegs.sort(comparePageImageCandidates)[0];
+  return jpeg ? { mimeType: "image/jpeg", rotation, source: "jpeg-xobject", ...jpeg } : null;
 }
 
-function findLargestJpegXObject(context, xObjects, visited) {
-  if (!xObjects) return null;
-  let largest = null;
+async function findPageImageXObjects(context, xObjects, visited) {
+  const result = { masks: [], jpegs: [] };
+  if (!xObjects) return result;
   for (const [, ref] of xObjects.entries()) {
     const refKey = String(ref);
     if (visited.has(refKey)) continue;
@@ -799,26 +875,235 @@ function findLargestJpegXObject(context, xObjects, visited) {
     const stream = context.lookup(ref);
     if (!(stream instanceof PDFRawStream)) continue;
     const subtype = String(stream.dict.get(PDFName.of("Subtype")) || "");
-    if (subtype === "/Image" && String(stream.dict.get(PDFName.of("Filter")) || "").includes("DCTDecode")) {
+    if (subtype === "/Image") {
       const width = Number(String(stream.dict.get(PDFName.of("Width")) || 0)) || 0;
       const height = Number(String(stream.dict.get(PDFName.of("Height")) || 0)) || 0;
-      const imageBytes = stream.contents;
-      if (imageBytes?.[0] === 0xff && imageBytes?.[1] === 0xd8) {
-        const candidate = { bytes: imageBytes, width, height, area: width * height };
-        if (!largest || candidate.area > largest.area || (candidate.area === largest.area && candidate.bytes.length > largest.bytes.length)) {
-          largest = candidate;
+      if (validPageImageDimensions(width, height)) {
+        const maskStream = lookupRawStream(context, stream.dict.get(PDFName.of("Mask")))
+          || lookupRawStream(context, stream.dict.get(PDFName.of("SMask")));
+        if (maskStream && pdfFilterNames(maskStream.dict.get(PDFName.of("Filter"))).includes("/JBIG2Decode")) {
+          const maskWidth = Number(String(maskStream.dict.get(PDFName.of("Width")) || width)) || width;
+          const maskHeight = Number(String(maskStream.dict.get(PDFName.of("Height")) || height)) || height;
+          if (validPageImageDimensions(maskWidth, maskHeight)) {
+            result.masks.push({
+              bytes: maskStream.contents,
+              globals: await readJbig2Globals(context, maskStream),
+              width: maskWidth,
+              height: maskHeight,
+              area: maskWidth * maskHeight,
+              blackIs1: readPdfBoolean(maskStream.dict.get(PDFName.of("BlackIs1"))),
+            });
+          }
+        }
+
+        const hasMask = Boolean(stream.dict.get(PDFName.of("Mask")) || stream.dict.get(PDFName.of("SMask")));
+        if (!hasMask && pdfFilterNames(stream.dict.get(PDFName.of("Filter"))).includes("/DCTDecode")) {
+          const imageBytes = await decodeJpegXObjectBytes(stream);
+          if (imageBytes?.[0] === 0xff && imageBytes?.[1] === 0xd8) {
+            result.jpegs.push({ bytes: imageBytes, width, height, area: width * height });
+          }
         }
       }
     } else if (subtype === "/Form") {
       const nestedResources = stream.dict.lookupMaybe(PDFName.of("Resources"), PDFDict);
       const nestedXObjects = nestedResources?.lookupMaybe(PDFName.of("XObject"), PDFDict);
-      const nested = findLargestJpegXObject(context, nestedXObjects, visited);
-      if (nested && (!largest || nested.area > largest.area || (nested.area === largest.area && nested.bytes.length > largest.bytes.length))) {
-        largest = nested;
-      }
+      const nested = await findPageImageXObjects(context, nestedXObjects, visited);
+      result.masks.push(...nested.masks);
+      result.jpegs.push(...nested.jpegs);
     }
   }
-  return largest;
+  return result;
+}
+
+function lookupRawStream(context, value) {
+  if (!value) return null;
+  const resolved = context.lookup(value);
+  return resolved instanceof PDFRawStream ? resolved : null;
+}
+
+async function readJbig2Globals(context, stream) {
+  const filters = pdfFilterNames(stream.dict.get(PDFName.of("Filter")));
+  const jbig2Index = filters.indexOf("/JBIG2Decode");
+  if (jbig2Index < 0) return null;
+  const rawDecodeParams = stream.dict.get(PDFName.of("DecodeParms"));
+  const decodeParams = rawDecodeParams instanceof PDFArray
+    ? rawDecodeParams.asArray()[jbig2Index]
+    : rawDecodeParams;
+  const params = decodeParams ? context.lookup(decodeParams) : null;
+  if (!(params instanceof PDFDict)) return null;
+  const globals = lookupRawStream(context, params.get(PDFName.of("JBIG2Globals")));
+  if (!globals) return null;
+  const globalFilters = pdfFilterNames(globals.dict.get(PDFName.of("Filter")));
+  if (!globalFilters.length) return globals.contents;
+  if (globalFilters.every((filter) => filter === "/FlateDecode")) {
+    let bytes = globals.contents;
+    for (const _filter of globalFilters) bytes = await inflateBytes(bytes);
+    return bytes;
+  }
+  return null;
+}
+
+async function decodeJbig2Mask(mask) {
+  const stride = Math.ceil(mask.width / 8);
+  const expectedLength = stride * mask.height;
+  if (expectedLength <= 0 || expectedLength > 8 * 1024 * 1024) throw new Error("JBIG2 蒙版尺寸超出安全上限");
+  const module = await createJbig2({ print() {}, printErr() {} });
+  let imagePointer = 0;
+  let globalsPointer = 0;
+  try {
+    imagePointer = module._malloc(mask.bytes.length);
+    module.writeArrayToMemory(mask.bytes, imagePointer);
+    const globals = mask.globals instanceof Uint8Array ? mask.globals : null;
+    if (globals?.length) {
+      globalsPointer = module._malloc(globals.length);
+      module.writeArrayToMemory(globals, globalsPointer);
+    }
+    module._jbig2_decode(
+      imagePointer,
+      mask.bytes.length,
+      mask.width,
+      mask.height,
+      globalsPointer,
+      globals?.length || 0,
+    );
+    if (!module.imageData || module.errorMessages) {
+      throw new Error(String(module.errorMessages || "JBIG2 解码器没有返回图像"));
+    }
+    const decoded = new Uint8Array(module.imageData);
+    if (decoded.length < expectedLength) throw new Error("JBIG2 解码结果不完整");
+    return decoded.slice(0, expectedLength);
+  } finally {
+    if (globalsPointer) module._free(globalsPointer);
+    if (imagePointer) module._free(imagePointer);
+  }
+}
+
+export async function encodeMonochromePng(packed, sourceWidth, sourceHeight, rotation = 0, blackIs1 = false) {
+  if (!validPageImageDimensions(sourceWidth, sourceHeight)) throw new Error("单色图像尺寸无效");
+  const normalizedRotation = normalizePageRotation(rotation);
+  const outputWidth = [90, 270].includes(normalizedRotation) ? sourceHeight : sourceWidth;
+  const outputHeight = [90, 270].includes(normalizedRotation) ? sourceWidth : sourceHeight;
+  const outputStride = Math.ceil(outputWidth / 8);
+  const scanlines = new Uint8Array((outputStride + 1) * outputHeight);
+  const sourceStride = Math.ceil(sourceWidth / 8);
+  for (let y = 0; y < outputHeight; y += 1) {
+    const rowOffset = y * (outputStride + 1) + 1;
+    for (let x = 0; x < outputWidth; x += 1) {
+      const { x: sourceX, y: sourceY } = rotatedSourceCoordinate(x, y, sourceWidth, sourceHeight, normalizedRotation);
+      const sourceBit = (packed[sourceY * sourceStride + (sourceX >> 3)] >> (7 - (sourceX & 7))) & 1;
+      const grayscaleBit = blackIs1 ? 1 - sourceBit : sourceBit;
+      if (grayscaleBit) scanlines[rowOffset + (x >> 3)] |= 1 << (7 - (x & 7));
+    }
+  }
+  const idat = await deflateBytes(scanlines);
+  const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const header = new Uint8Array(13);
+  const headerView = new DataView(header.buffer);
+  headerView.setUint32(0, outputWidth);
+  headerView.setUint32(4, outputHeight);
+  header.set([1, 0, 0, 0, 0], 8);
+  return {
+    bytes: concatBytes(signature, pngChunk("IHDR", header), pngChunk("IDAT", idat), pngChunk("IEND", new Uint8Array())),
+    width: outputWidth,
+    height: outputHeight,
+  };
+}
+
+function rotatedSourceCoordinate(x, y, width, height, rotation) {
+  if (rotation === 90) return { x: y, y: height - 1 - x };
+  if (rotation === 180) return { x: width - 1 - x, y: height - 1 - y };
+  if (rotation === 270) return { x: width - 1 - y, y: x };
+  return { x, y };
+}
+
+async function deflateBytes(bytes) {
+  const body = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+  return new Uint8Array(await new Response(body).arrayBuffer());
+}
+
+function pngChunk(type, data) {
+  const typeBytes = new TextEncoder().encode(type);
+  const chunk = new Uint8Array(12 + data.length);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, data.length);
+  chunk.set(typeBytes, 4);
+  chunk.set(data, 8);
+  view.setUint32(8 + data.length, crc32(concatBytes(typeBytes, data)));
+  return chunk;
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function concatBytes(...parts) {
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
+function validPageImageDimensions(width, height) {
+  return Number.isInteger(width) && width > 0
+    && Number.isInteger(height) && height > 0
+    && width * height <= 40_000_000;
+}
+
+function readPdfBoolean(value) {
+  return String(value || "").toLowerCase() === "true";
+}
+
+function pdfFilterNames(value) {
+  if (value instanceof PDFName) return [String(value)];
+  if (value instanceof PDFArray) return value.asArray().map((item) => String(item));
+  return [];
+}
+
+async function decodeJpegXObjectBytes(stream) {
+  const filters = pdfFilterNames(stream.dict.get(PDFName.of("Filter")));
+  const jpegIndex = filters.indexOf("/DCTDecode");
+  if (jpegIndex < 0) return null;
+  let bytes = stream.contents;
+  for (const filter of filters.slice(0, jpegIndex)) {
+    if (filter !== "/FlateDecode") return null;
+    bytes = await inflateBytes(bytes);
+  }
+  return bytes;
+}
+
+async function inflateBytes(bytes) {
+  const body = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new Uint8Array(await new Response(body).arrayBuffer());
+}
+
+function comparePageImageCandidates(left, right) {
+  return right.area - left.area || right.bytes.length - left.bytes.length;
+}
+
+function normalizePageRotation(value) {
+  const rotation = Number(value) || 0;
+  return ((rotation % 360) + 360) % 360;
+}
+
+async function cleanupPaymentReceiptObjects(bucket, objectKeys, event) {
+  const keys = [...new Set(objectKeys.map((key) => String(key || "")).filter((key) => key.startsWith("receipts/")))];
+  if (!keys.length || typeof bucket?.delete !== "function") return;
+  const results = await Promise.allSettled(keys.map((key) => bucket.delete(key)));
+  results.forEach((result, index) => {
+    if (result.status === "rejected") console.error(JSON.stringify({
+      event,
+      objectKey: keys[index],
+      error: result.reason?.message || String(result.reason),
+    }));
+  });
 }
 
 function hasMeaningfulReceiptText(value) {
@@ -969,7 +1254,7 @@ async function reclaimStaleFileForQueue(db, fileId, expectedUpdatedAt) {
     UPDATE payment_receipt_files
     SET processing_status = 'queued', error_message = '', updated_at = ?1
     WHERE id = ?2 AND updated_at = ?3
-      AND processing_status IN ('received', 'queued', 'processing', 'error')
+      AND processing_status IN ('received', 'queued', 'processing', 'error', 'reprocess_requested')
   `).bind(new Date().toISOString(), fileId, expectedUpdatedAt).run();
   return changedRows(result) > 0;
 }
@@ -1009,7 +1294,7 @@ export async function finalizeBatchStatus(db, batchId) {
   if (!extraction?.complete) return false;
   const row = await db.prepare(`
     SELECT
-      SUM(CASE WHEN processing_status IN ('received', 'queued', 'processing', 'regrouping') THEN 1 ELSE 0 END) AS pending_count,
+      SUM(CASE WHEN processing_status IN ('received', 'queued', 'processing', 'regrouping', 'reprocess_requested') THEN 1 ELSE 0 END) AS pending_count,
       SUM(CASE WHEN processing_status IN ('error', 'review') THEN 1 ELSE 0 END) AS issue_count
     FROM payment_receipt_files
     WHERE batch_id = ?1

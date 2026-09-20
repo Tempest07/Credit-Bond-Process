@@ -18,6 +18,7 @@ import { onRequestGet as onPendingReceiptFileGet } from "../functions/api/paymen
 import { onRequestGet as onPendingReceiptEmailGet } from "../functions/api/payment-receipt-files/[id]/email.js";
 import { onRequestGet as onPendingReceiptPagesGet } from "../functions/api/payment-receipt-files/[id]/pages.js";
 import { onRequestPost as onPendingReceiptRegroupPost } from "../functions/api/payment-receipt-files/[id]/regroup.js";
+import { onRequestPost as onPendingReceiptReprocessPost } from "../functions/api/payment-receipt-files/[id]/reprocess.js";
 import { onRequestGet as onPendingReceiptBatchEmailGet } from "../functions/api/payment-receipt-batches/[id]/email.js";
 import { onRequestGet, onRequestPut } from "../functions/api/state.js";
 import { onRequestGet as onStateHistoryGet } from "../functions/api/state-history.js";
@@ -55,6 +56,7 @@ test("protects every payment-receipt archive, mutation and original-file route",
     () => onPendingReceiptEmailGet({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/email") }),
     () => onPendingReceiptPagesGet({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/pages") }),
     () => onPendingReceiptRegroupPost({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/regroup", { method: "POST" }) }),
+    () => onPendingReceiptReprocessPost({ env: {}, params: { id: "file-1" }, request: new Request("https://example.com/api/payment-receipt-files/file-1/reprocess", { method: "POST" }) }),
     () => onPendingReceiptBatchEmailGet({ env: {}, params: { id: "batch-1" }, request: new Request("https://example.com/api/payment-receipt-batches/batch-1/email") }),
   ];
 
@@ -163,6 +165,20 @@ test("refuses to delete a non-duplicate payment receipt", async () => {
   assert.equal(response.status, 409);
   assert.equal(storageTouched, false);
   assert.equal(DB.mutations.some((sql) => /DELETE FROM payment_receipts/i.test(sql)), false);
+});
+
+test("queues an unmatched receipt file for a forced recognition refresh", async () => {
+  const DB = createReceiptReprocessDb();
+  const response = await onPendingReceiptReprocessPost({
+    env: { DB },
+    params: { id: "file-review" },
+    request: new Request("http://127.0.0.1:8788/api/payment-receipt-files/file-review/reprocess", { method: "POST" }),
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 202);
+  assert.equal(payload.processingStatus, "reprocess_requested");
+  assert.ok(DB.mutations.some((sql) => /processing_status = 'reprocess_requested'/i.test(sql)));
+  assert.ok(DB.mutations.some((sql) => /INSERT INTO payment_receipt_events/i.test(sql)));
 });
 
 test("blocks manual receipt regrouping while automatic PDF processing is active", async () => {
@@ -780,6 +796,52 @@ function createRegroupGuardDb(file) {
           return null;
         },
       };
+    },
+  };
+}
+
+function createReceiptReprocessDb() {
+  const mutations = [];
+  return {
+    mutations,
+    prepare(sql) {
+      let values = [];
+      return {
+        sql,
+        bind(...args) {
+          values = args;
+          return this;
+        },
+        async run() {
+          if (/INSERT|UPDATE|DELETE/i.test(sql)) mutations.push(sql);
+          return { meta: { changes: 1 } };
+        },
+        async all() {
+          if (/PRAGMA table_info\(user_app_state\)/i.test(sql)) return { results: [{ name: "revision" }] };
+          if (/PRAGMA table_info\(payment_receipt_files\)/i.test(sql)) {
+            return { results: [{ name: "page_analysis_json" }, { name: "grouping_json" }] };
+          }
+          if (/PRAGMA table_info\(payment_receipt_batches\)/i.test(sql)) return { results: [{ name: "raw_sha256" }] };
+          return { results: [] };
+        },
+        async first() {
+          if (/SELECT id FROM users WHERE username/i.test(sql)) return { id: "admin" };
+          if (/SELECT user_id FROM user_app_state WHERE user_id/i.test(sql)) return { user_id: "admin" };
+          if (/SELECT f\.id, f\.batch_id, f\.processing_status/i.test(sql)) {
+            return values[1] === "file-review" ? {
+              id: "file-review",
+              batch_id: "batch-review",
+              processing_status: "review",
+              updated_at: "2026-09-20T01:00:00.000Z",
+              matched_count: 0,
+            } : null;
+          }
+          return null;
+        },
+      };
+    },
+    async batch(statements) {
+      return statements.map(() => ({ meta: { changes: 1 } }));
     },
   };
 }
