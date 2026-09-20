@@ -159,7 +159,8 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
   assert.match(request.input.messages[0].content[0].text, /绝不能返回 blank/);
   assert.match(request.input.messages[0].content[0].text, /"classification":"receipt_start"/);
   assert.equal(result.classification, "receipt_start");
-  assert.equal(result.analysisVersion, 4);
+  assert.equal(result.analysisVersion, 5);
+  assert.match(request.input.messages[0].content[0].text, /缴款金额（万元）【5000】/);
   assert.equal(result.analysisSource, "workers-ai-page-image");
   assert.equal(result.fields.securityCode, "283234.SH");
   assert.match(result.recognizedText, /9,000万元/);
