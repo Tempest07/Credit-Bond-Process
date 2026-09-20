@@ -84,6 +84,74 @@ export function buildPaymentReceiptOriginalFileTree(receipts = [], pendingFiles 
   };
 }
 
+export function applyPaymentReceiptArchiveMutation(receipts = [], mutation = {}, filters = {}) {
+  const removedReceiptIds = new Set((mutation.removedReceiptIds || []).map(String).filter(Boolean));
+  const removedFileIds = new Set((mutation.removedFileIds || []).map(String).filter(Boolean));
+  const nextReceipts = (Array.isArray(mutation.receipts) ? mutation.receipts : []).filter((receipt) => receipt?.id);
+  const nextReceiptIds = new Set(nextReceipts.map((receipt) => String(receipt.id)));
+  const kept = (Array.isArray(receipts) ? receipts : []).filter((receipt) => (
+    receipt?.id
+    && !removedReceiptIds.has(String(receipt.id))
+    && !removedFileIds.has(String(receipt.fileId || ""))
+    && !nextReceiptIds.has(String(receipt.id))
+  ));
+  return [...kept, ...nextReceipts.filter((receipt) => paymentReceiptMatchesArchiveFilters(receipt, filters))]
+    .sort(comparePaymentReceiptArchiveOrder);
+}
+
+export function applyPaymentReceiptCoverageMutation(coverage = {}, mutation = {}) {
+  const removedReceiptIds = new Set((mutation.removedReceiptIds || []).map(String).filter(Boolean));
+  const nextReceipts = (Array.isArray(mutation.receipts) ? mutation.receipts : [])
+    .filter((receipt) => receipt?.id && receipt.matchStatus === "matched" && receipt.projectId && receipt.trancheId);
+  const nextByTarget = new Map(nextReceipts.map((receipt) => [
+    `${receipt.projectId}:${receipt.trancheId}`,
+    receipt,
+  ]));
+  const targets = (Array.isArray(coverage.targets) ? coverage.targets : []).map((target) => {
+    const targetKey = `${target.projectId}:${target.trancheId}`;
+    const nextReceipt = nextByTarget.get(targetKey);
+    if (nextReceipt) {
+      return {
+        ...target,
+        receiptId: String(nextReceipt.id),
+        matchSource: String(nextReceipt.matchSource || ""),
+        covered: true,
+      };
+    }
+    if (removedReceiptIds.has(String(target.receiptId || ""))) {
+      return { ...target, receiptId: "", matchSource: "", covered: false };
+    }
+    return target;
+  });
+  const covered = targets.filter((target) => target.covered).length;
+  return {
+    ...coverage,
+    expected: targets.length,
+    covered,
+    missing: targets.length - covered,
+    targets,
+  };
+}
+
+function paymentReceiptMatchesArchiveFilters(receipt, filters = {}) {
+  const date = normalizeDate(filters.date);
+  const status = String(filters.status || "");
+  if (date && normalizeDate(receipt?.paymentDate || receipt?.archiveDate) !== date) return false;
+  if (status && String(receipt?.matchStatus || "") !== status) return false;
+  return true;
+}
+
+function comparePaymentReceiptArchiveOrder(left, right) {
+  const leftDate = normalizeDate(left?.paymentDate || left?.archiveDate);
+  const rightDate = normalizeDate(right?.paymentDate || right?.archiveDate);
+  if (Boolean(leftDate) !== Boolean(rightDate)) return leftDate ? -1 : 1;
+  if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+  const leftCreatedAt = String(left?.createdAt || "");
+  const rightCreatedAt = String(right?.createdAt || "");
+  if (leftCreatedAt !== rightCreatedAt) return rightCreatedAt.localeCompare(leftCreatedAt);
+  return String(right?.id || "").localeCompare(String(left?.id || ""));
+}
+
 function originalFileTreeItem(source, fileId, pending) {
   const rawName = cleanTextField(source?.sourceFilename || source?.filename);
   const baseName = rawName || `原始缴款单-${fileId.slice(0, 8)}`;

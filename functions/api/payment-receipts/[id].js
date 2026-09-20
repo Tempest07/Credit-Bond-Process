@@ -46,7 +46,15 @@ export async function onRequestPatch(context) {
       eventType: "receipt_manually_matched",
       detail: { projectId, trancheId, paymentDate: tranche.paymentDate || "" },
     });
-    return json({ ok: true, receiptId, projectId, trancheId, paymentDate: tranche.paymentDate || "" });
+    const updatedReceipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
+    return json({
+      ok: true,
+      receiptId,
+      projectId,
+      trancheId,
+      paymentDate: tranche.paymentDate || "",
+      receipt: updatedReceipt,
+    });
   } catch (error) {
     const message = error.message || "人工对应缴款单失败";
     const conflict = /UNIQUE|constraint/i.test(message);
@@ -99,7 +107,8 @@ export async function onRequestDelete(context) {
       eventType: "receipt_manually_unmatched",
       detail: { previousProjectId: receipt.projectId, previousTrancheId: receipt.trancheId },
     });
-    return json({ ok: true, receiptId });
+    const updatedReceipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
+    return json({ ok: true, receiptId, receipt: updatedReceipt });
   } catch (error) {
     return json({ error: error.message || "解除缴款单对应失败" }, 500);
   }

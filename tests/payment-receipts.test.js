@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyPaymentReceiptArchiveMutation,
+  applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   buildPaymentReceiptCoverage,
   groupPaymentReceiptPages,
@@ -9,6 +11,56 @@ import {
   recognizePaymentReceiptText,
   selectPaymentReceiptMatch,
 } from "../payment-receipts.js";
+
+test("updates a receipt action locally while honoring the active archive filters", () => {
+  const before = [
+    { id: "receipt-1", fileId: "file-1", paymentDate: "2026-07-21", matchStatus: "review", createdAt: "2026-07-21T10:00:00Z" },
+    { id: "receipt-2", fileId: "file-2", paymentDate: "2026-07-21", matchStatus: "review", createdAt: "2026-07-21T09:00:00Z" },
+  ];
+  const matched = {
+    ...before[0],
+    matchStatus: "matched",
+    projectId: "project-1",
+    trancheId: "tranche-1",
+  };
+
+  assert.deepEqual(applyPaymentReceiptArchiveMutation(before, {
+    removedReceiptIds: ["receipt-1"],
+    receipts: [matched],
+  }, { date: "2026-07-21", status: "review" }).map((receipt) => receipt.id), ["receipt-2"]);
+  assert.deepEqual(applyPaymentReceiptArchiveMutation(before, {
+    removedReceiptIds: ["receipt-1"],
+    receipts: [matched],
+  }, { date: "2026-07-21" }).map((receipt) => receipt.id), ["receipt-1", "receipt-2"]);
+});
+
+test("moves receipt coverage locally without refetching the archive", () => {
+  const coverage = {
+    expected: 2,
+    covered: 1,
+    missing: 1,
+    targets: [
+      { projectId: "project-old", trancheId: "tranche-old", receiptId: "receipt-1", matchSource: "manual", covered: true },
+      { projectId: "project-new", trancheId: "tranche-new", receiptId: "", matchSource: "", covered: false },
+    ],
+  };
+  const updated = applyPaymentReceiptCoverageMutation(coverage, {
+    removedReceiptIds: ["receipt-1"],
+    receipts: [{
+      id: "receipt-1",
+      projectId: "project-new",
+      trancheId: "tranche-new",
+      matchStatus: "matched",
+      matchSource: "manual",
+    }],
+  });
+
+  assert.equal(updated.covered, 1);
+  assert.equal(updated.missing, 1);
+  assert.equal(updated.targets[0].covered, false);
+  assert.equal(updated.targets[1].covered, true);
+  assert.equal(updated.targets[1].receiptId, "receipt-1");
+});
 import {
   assignPaymentReceipt,
   listPaymentReceipts,

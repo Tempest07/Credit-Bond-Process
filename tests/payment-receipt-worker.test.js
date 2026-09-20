@@ -514,6 +514,19 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(app, /data-receipt-reprocess/);
   assert.match(app, /data-receipt-original/);
   assert.match(app, /被判定为原件的缴款单不会删除/);
+  const localMutationActions = [
+    ["async function handlePaymentReceiptArchiveClick", "async function reprocessPaymentReceiptFile"],
+    ["async function reprocessPaymentReceiptFile", "async function revealOriginalPaymentReceipt"],
+    ["async function unlinkPaymentReceipt", "async function deleteDuplicatePaymentReceipt"],
+    ["async function deleteDuplicatePaymentReceipt", "function applyLocalPaymentReceiptMutation"],
+    ["async function savePaymentReceiptRegroup", "function closePaymentReceiptRegroup"],
+  ];
+  localMutationActions.forEach(([start, end]) => {
+    const actionSource = app.slice(app.indexOf(start), app.indexOf(end));
+    assert.ok(actionSource.length > 0, `${start} should exist`);
+    assert.doesNotMatch(actionSource, /loadPaymentReceipts\(/, `${start} should update locally without refetching the archive`);
+  });
+  assert.match(app, /applyLocalPaymentReceiptMutation/);
   assert.match(worker, /kind: "email"/);
   assert.match(worker, /processPaymentReceiptEmail/);
   assert.match(worker, /recordDeadLetterFailure/);

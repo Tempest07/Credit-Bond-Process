@@ -1,5 +1,5 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260920-release-5202';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20260920-release-5202';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260920-release-5203';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20260920-release-5203';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -35,7 +35,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260920-release-5202";
+} from "./core.js?v=20260920-release-5203";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -64,15 +64,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260920-release-5202";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260920-release-5202";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260920-release-5202";
+} from "./lifecycle.js?v=20260920-release-5203";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260920-release-5203";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260920-release-5203";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260920-release-5202";
+} from "./history-parser.js?v=20260920-release-5203";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -89,23 +89,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260920-release-5202";
+} from "./protocol-transfer.js?v=20260920-release-5203";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260920-release-5202";
+} from "./protocol-transfer-templates.js?v=20260920-release-5203";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260920-release-5202";
+} from "./protocol-transfer-docx.js?v=20260920-release-5203";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260920-release-5202";
+} from "./reminders.js?v=20260920-release-5203";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -133,11 +133,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260920-release-5202";
+} from "./secondary-inventory.js?v=20260920-release-5203";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260920-release-5202";
+} from "./trade-record-converter.js?v=20260920-release-5203";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -148,16 +148,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260920-release-5202";
+} from "./trade-record-grid.js?v=20260920-release-5203";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260920-release-5202";
-import { initializeDatePickers } from "./date-picker.js?v=20260920-release-5202";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260920-release-5202";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260920-release-5202";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260920-release-5202";
+} from "./trade-record-ledger.js?v=20260920-release-5203";
+import { initializeDatePickers } from "./date-picker.js?v=20260920-release-5203";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260920-release-5203";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260920-release-5203";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260920-release-5203";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -166,30 +166,32 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260920-release-5202";
+} from "./project-screenshot-ocr.js?v=20260920-release-5203";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260920-release-5202";
+} from "./project-screenshot-layout.js?v=20260920-release-5203";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260920-release-5202";
+} from "./project-screenshot-image.js?v=20260920-release-5203";
 import {
+  applyPaymentReceiptArchiveMutation,
+  applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260920-release-5202";
+} from "./payment-receipts.js?v=20260920-release-5203";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260920-release-5202";
+} from "./issuer-search.js?v=20260920-release-5203";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260920-release-5202";
+} from "./state-history.js?v=20260920-release-5203";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -774,9 +776,25 @@ async function handlePaymentReceiptArchiveClick(event) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    invalidateProjectPaymentReceiptCache(receiptId, projectId);
-    await loadPaymentReceipts({ silent: true });
-    if (selectedProjectId) await loadProjectPaymentReceipts(selectedProjectId, { refresh: true });
+    const current = paymentReceipts.find((receipt) => receipt.id === receiptId);
+    const updated = payload.receipt || {
+      ...current,
+      id: receiptId,
+      projectId,
+      trancheId,
+      paymentDate: payload.paymentDate || current?.paymentDate || "",
+      archiveDate: payload.paymentDate || current?.archiveDate || "",
+      matchStatus: "matched",
+      matchSource: "manual",
+      matchScore: 100,
+      matchReason: "Bond Centre 人工确认对应",
+      candidates: [],
+      errorMessage: "",
+    };
+    applyLocalPaymentReceiptMutation({
+      removedReceiptIds: [receiptId],
+      receipts: [updated],
+    });
     showToast("已人工确认缴款单对应关系；缴款状态未改变。");
   } catch (error) {
     button.disabled = false;
@@ -795,7 +813,24 @@ async function reprocessPaymentReceiptFile(fileId, button) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    await loadPaymentReceipts({ silent: true });
+    const affected = paymentReceipts.filter((receipt) => receipt.fileId === fileId);
+    applyLocalPaymentReceiptMutation({
+      removedReceiptIds: affected.map((receipt) => receipt.id),
+      receipts: affected.map((receipt) => ({
+        ...receipt,
+        fileProcessingStatus: payload.processingStatus || "reprocess_requested",
+        batchProcessingStatus: "processing",
+        errorMessage: "已申请重新识别，等待后台任务",
+      })),
+    });
+    paymentReceiptPendingFiles = paymentReceiptPendingFiles.map((file) => file.id === fileId
+      ? {
+          ...file,
+          processingStatus: payload.processingStatus || "reprocess_requested",
+          errorMessage: "已申请重新识别，等待后台任务",
+        }
+      : file);
+    renderPaymentReceiptArchive();
     showToast("已申请重新识别；原始 PDF 保留不变，后台会自动更新识别和对应结果。");
   } catch (error) {
     button.disabled = false;
@@ -830,9 +865,22 @@ async function unlinkPaymentReceipt(receiptId, button) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    invalidateProjectPaymentReceiptCache(receiptId);
-    await loadPaymentReceipts({ silent: true });
-    if (selectedProjectId) await loadProjectPaymentReceipts(selectedProjectId, { refresh: true });
+    const current = paymentReceipts.find((receipt) => receipt.id === receiptId);
+    const updated = payload.receipt || {
+      ...current,
+      id: receiptId,
+      projectId: "",
+      trancheId: "",
+      matchStatus: "review",
+      matchSource: "",
+      matchScore: 0,
+      matchReason: "",
+      errorMessage: "人工解除对应，等待重新确认",
+    };
+    applyLocalPaymentReceiptMutation({
+      removedReceiptIds: [receiptId],
+      receipts: [updated],
+    });
     showToast("已解除缴款单对应关系；缴款状态未改变。");
   } catch (error) {
     button.disabled = false;
@@ -852,8 +900,10 @@ async function deleteDuplicatePaymentReceipt(receiptId, button) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    invalidateProjectPaymentReceiptCache(receiptId);
-    await loadPaymentReceipts({ silent: true });
+    applyLocalPaymentReceiptMutation({ removedReceiptIds: [receiptId] });
+    if (payload.deletedSourceFile) {
+      paymentReceiptPendingFiles = paymentReceiptPendingFiles.filter((file) => file.id !== payload.fileId);
+    }
     showToast(payload.storageCleanup === false
       ? "重复单据记录已删除，但存储文件清理失败，请稍后告知管理员。"
       : "重复单据已删除；原件和项目缴款状态未改变。");
@@ -863,10 +913,40 @@ async function deleteDuplicatePaymentReceipt(receiptId, button) {
   }
 }
 
-function invalidateProjectPaymentReceiptCache(receiptId, nextProjectId = "") {
-  const current = paymentReceipts.find((receipt) => receipt.id === receiptId);
-  if (current?.projectId) projectPaymentReceiptCache.delete(current.projectId);
-  if (nextProjectId) projectPaymentReceiptCache.delete(nextProjectId);
+function applyLocalPaymentReceiptMutation(mutation = {}) {
+  const filters = {
+    date: $("#paymentReceiptDateFilter")?.value || "",
+    status: $("#paymentReceiptStatusFilter")?.value || "",
+  };
+  const removedReceiptIds = [...new Set((mutation.removedReceiptIds || []).map(String).filter(Boolean))];
+  const removedFileIds = [...new Set((mutation.removedFileIds || []).map(String).filter(Boolean))];
+  const receipts = Array.isArray(mutation.receipts) ? mutation.receipts.filter((receipt) => receipt?.id) : [];
+  paymentReceipts = applyPaymentReceiptArchiveMutation(paymentReceipts, {
+    removedReceiptIds,
+    removedFileIds,
+    receipts,
+  }, filters);
+  paymentReceiptCoverage = applyPaymentReceiptCoverageMutation(paymentReceiptCoverage, {
+    removedReceiptIds,
+    receipts,
+  });
+  paymentReceiptPendingFiles = paymentReceiptPendingFiles.filter((file) => !removedFileIds.includes(String(file.id || "")));
+  syncProjectPaymentReceiptCaches({ removedReceiptIds, removedFileIds, receipts });
+  renderPaymentReceiptArchive();
+  renderPaymentReceiptCoverage();
+}
+
+function syncProjectPaymentReceiptCaches(mutation = {}) {
+  for (const [projectId, cachedReceipts] of projectPaymentReceiptCache.entries()) {
+    const nextReceipts = (mutation.receipts || []).filter((receipt) => receipt.projectId === projectId);
+    projectPaymentReceiptCache.set(projectId, applyPaymentReceiptArchiveMutation(cachedReceipts, {
+      removedReceiptIds: mutation.removedReceiptIds,
+      removedFileIds: mutation.removedFileIds,
+      receipts: nextReceipts,
+    }));
+    projectPaymentReceiptErrors.delete(projectId);
+  }
+  refreshVisibleProjectReceiptPanels();
 }
 
 async function loadPaymentReceipts(options = {}) {
@@ -1668,8 +1748,13 @@ async function savePaymentReceiptRegroup(event) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    const fileId = activePaymentReceiptRegroupFileId;
     closePaymentReceiptRegroup({ restoreFocus: false });
-    await loadPaymentReceipts({ silent: true });
+    applyLocalPaymentReceiptMutation({
+      removedReceiptIds: payload.replacedReceiptIds || [],
+      removedFileIds: [fileId],
+      receipts: payload.receipts || [],
+    });
     showToast(`已按人工设置生成 ${payload.receiptCount} 张单据；保留 ${payload.preservedMatchCount} 个未变页组的项目对应。`);
   } catch (error) {
     button.disabled = false;

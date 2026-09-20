@@ -104,11 +104,20 @@ export async function onRequestPost(context) {
     });
     committed = true;
     await cleanupDerivedReceiptObjects(context.env.PAYMENT_RECEIPTS, oldReceipts, newReceipts);
+    const fileProcessingStatus = newReceipts.some((receipt) => !receipt.preservedMatch) ? "review" : "processed";
     return json({
       ok: true,
       fileId: file.id,
       receiptCount: newReceipts.length,
       preservedMatchCount: newReceipts.filter((receipt) => receipt.preservedMatch).length,
+      replacedReceiptIds: oldReceipts.map((receipt) => receipt.id),
+      receipts: newReceipts.map((receipt) => paymentReceiptResponseFromRegroup({
+        receipt,
+        file,
+        blankPages: normalized.blankPages,
+        fileProcessingStatus,
+        createdAt,
+      })),
       groups: normalized.groups,
       blankPages: normalized.blankPages,
       updatedAt: createdAt,
@@ -131,11 +140,54 @@ export async function onRequestOptions() {
 
 async function readOwnedFile(db, ownerUserId, fileId) {
   return db.prepare(`
-    SELECT f.*, b.received_date
+    SELECT f.*, b.received_date, b.sender, b.subject, b.received_at
     FROM payment_receipt_files f
     JOIN payment_receipt_batches b ON b.id = f.batch_id
     WHERE b.owner_user_id = ?1 AND f.id = ?2
   `).bind(ownerUserId, fileId).first();
+}
+
+function paymentReceiptResponseFromRegroup({ receipt, file, blankPages, fileProcessingStatus, createdAt }) {
+  const recognized = receipt.recognized || {};
+  const preserved = receipt.preservedMatch || null;
+  const paymentDate = String(recognized.paymentDate || "");
+  return {
+    id: String(receipt.id || ""),
+    batchId: String(file.batch_id || ""),
+    fileId: String(file.id || ""),
+    sourcePages: receipt.pageNumbers || [],
+    sourcePageLabel: String(receipt.pageLabel || ""),
+    sourceFilename: String(file.filename || ""),
+    blankPages: blankPages || [],
+    fileProcessingStatus,
+    batchProcessingStatus: fileProcessingStatus,
+    mimeType: "application/pdf",
+    paymentDate,
+    archiveDate: paymentDate,
+    amountFen: Number.isSafeInteger(Number(recognized.amountFen)) ? Number(recognized.amountFen) : null,
+    payerName: String(recognized.payerName || ""),
+    payeeName: String(recognized.payeeName || ""),
+    bondShortName: String(recognized.bondShortName || ""),
+    securityCode: String(recognized.securityCode || ""),
+    prepaymentNumber: String(recognized.prepaymentNumber || ""),
+    bankReference: String(recognized.bankReference || ""),
+    recognizedText: String(recognized.recognizedText || ""),
+    recognitionStatus: "recognized",
+    matchStatus: preserved ? "matched" : "review",
+    candidates: preserved ? [] : receipt.candidates || [],
+    errorMessage: preserved ? "" : "人工修正拆页后，请确认项目对应",
+    projectId: String(preserved?.project_id || ""),
+    trancheId: String(preserved?.tranche_id || ""),
+    matchSource: String(preserved?.match_source || ""),
+    matchScore: Number(preserved?.match_score) || 0,
+    matchReason: String(preserved?.match_reason || ""),
+    duplicateOfReceiptId: "",
+    sender: String(file.sender || ""),
+    subject: String(file.subject || ""),
+    receivedAt: String(file.received_at || ""),
+    createdAt,
+    updatedAt: createdAt,
+  };
 }
 
 async function readExistingReceipts(db, ownerUserId, fileId) {
