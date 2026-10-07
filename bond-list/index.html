@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OFR / BID · 清单编辑器</title><link rel="stylesheet" href="./style.css?v=20261007">
+  <script defer src="./app.js?v=20261007"></script>
+</head>
+<body>
+<header><div class="brand"><a class="mark" href="/gateway/" aria-label="返回 PERSONA_WEBSITE">B.</a><div><div class="eyebrow">TRADING DESK / DAILY LIST</div><h1>OFR <span>/</span> BID</h1></div></div><div class="save"><span id="save-dot">●</span> <span id="save-state">正在读取清单</span><small>账号同步 · DM 补码</small></div></header>
+<main>
+  <div class="intro"><div><h2>今天的报价，整理好了再发。</h2></div><div class="toolbar"><button id="fill" disabled>补齐代码</button><button id="export" disabled>导出草稿</button><button id="copy" class="primary" disabled>复制发送版 <span>↗</span></button></div></div>
+  <a id="login-link" href="/login/?next=/bond-centre/bond-list/" hidden>登录后继续保存清单</a>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <div id="recovery-box" hidden>发现未保存的旧草稿，可先下载留存。 <button id="recovery-download">下载恢复草稿</button></div>
+  <div class="workspace"><section class="editor"><div class="panel-heading"><div><span class="eyebrow">01 / EDIT</span><h3>分行清单</h3></div><label class="toggle"><input type="checkbox" id="auto" checked>自动补码</label></div><div class="editor-tools"><label><input type="checkbox" id="hide-empty">只看有券分行</label><span id="counts"></span></div><div id="branches"></div></section>
+  <aside><section class="preview-panel"><div class="panel-heading"><div><span class="eyebrow">02 / SEND</span><h3>发送预览</h3></div><span class="tag">纯文本</span></div><pre id="preview"></pre><div id="copy-hint" class="footer-hint"></div></section></aside></div>
+  <footer>OFR / BID WORKSPACE <span>PERSONA_WEBSITE · 云端清单</span></footer>
+</main>
+</body></html>
