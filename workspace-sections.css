@@ -622,7 +622,8 @@ html[data-ui="beta"] .main.connection-entering.connection-entry-content .view.ac
   scrollbar-width: thin;
   scrollbar-color: #c6c6c6 #fff;
 }
-[data-view="generator"] .opinion-workspace .opinion-output:focus-visible { outline: 2px solid #555; outline-offset: -3px; }
+/* The document's focus-within ring is the editor focus indicator. */
+[data-view="generator"] .opinion-workspace .opinion-output:focus-visible { outline: none; }
 [data-view="generator"] .opinion-workspace .rule-trace { justify-content: center; gap: 9px; margin-top: 22px; }
 [data-view="generator"] .opinion-workspace .trace-item {
   max-width: 100%;

@@ -62,8 +62,15 @@ export function createOpinionFieldLocator({ textarea, trace, status, onMissing }
     }
     layer.style.left = `${textarea.offsetLeft + textarea.clientLeft}px`;
     layer.style.top = `${textarea.offsetTop + textarea.clientTop}px`;
-    layer.style.width = `${textarea.clientWidth}px`;
-    layer.style.height = `${textarea.clientHeight}px`;
+    // clientWidth/Height are rounded integers. At fractional widths (including
+    // browser zoom), rounding can fit an extra CJK glyph on each line and move
+    // later highlights several characters away from the editable text.
+    const px = property => Number.parseFloat(style[property]) || 0;
+    const borderBox = style.boxSizing === 'border-box';
+    const width = px('width') + (borderBox ? 0 : px('paddingLeft') + px('paddingRight') + px('borderLeftWidth') + px('borderRightWidth'));
+    const height = px('height') + (borderBox ? 0 : px('paddingTop') + px('paddingBottom') + px('borderTopWidth') + px('borderBottomWidth'));
+    layer.style.width = `${width - (textarea.offsetWidth - textarea.clientWidth)}px`;
+    layer.style.height = `${height - (textarea.offsetHeight - textarea.clientHeight)}px`;
     syncScroll();
   }
   function clear() {
