@@ -273,6 +273,13 @@ label[data-recognition-source="derived"]::after {
 .valuation-comparable-list { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .valuation-comparable-list span { max-width: 100%; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: var(--panel-soft); font-size: 9px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
 .opinion-output { min-height: 210px; padding: 15px; resize: vertical; font-size: 13px; line-height: 1.9; }
+.opinion-editor { position: relative; min-width: 0; }
+.opinion-highlight-layer { position: absolute; z-index: 1; overflow: hidden; pointer-events: none; border-radius: 0 0 17px 17px; }
+.opinion-highlight-layer[hidden] { display: none; }
+.opinion-highlight-text { box-sizing: border-box; width: 100%; white-space: pre-wrap; color: transparent; }
+.opinion-field-highlight { border-radius: 4px; color: transparent; background: rgb(0 0 0 / 5%); box-shadow: 0 0 0 2px #555; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.rule-trace button.trace-item { font-family: inherit; cursor: pointer; border: 1px solid var(--line); }
+.rule-trace button.trace-item[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .field-grid label { display: grid; min-width: 0; max-width: 100%; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .field-grid input, .field-grid select, .field-grid textarea, .search-input { min-height: 38px; padding: 8px 10px; font-size: 12px; }

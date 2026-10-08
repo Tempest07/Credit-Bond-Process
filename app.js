@@ -1,5 +1,6 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20260920-release-5203';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20260920-release-5203';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261008-release-521';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261008-release-521';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261008-release-521';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -35,7 +36,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20260920-release-5203";
+} from "./core.js?v=20261008-release-521";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -64,15 +65,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20260920-release-5203";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20260920-release-5203";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20260920-release-5203";
+} from "./lifecycle.js?v=20261008-release-521";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261008-release-521";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261008-release-521";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20260920-release-5203";
+} from "./history-parser.js?v=20261008-release-521";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -89,23 +90,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20260920-release-5203";
+} from "./protocol-transfer.js?v=20261008-release-521";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20260920-release-5203";
+} from "./protocol-transfer-templates.js?v=20261008-release-521";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20260920-release-5203";
+} from "./protocol-transfer-docx.js?v=20261008-release-521";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20260920-release-5203";
+} from "./reminders.js?v=20261008-release-521";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -133,11 +134,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20260920-release-5203";
+} from "./secondary-inventory.js?v=20261008-release-521";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20260920-release-5203";
+} from "./trade-record-converter.js?v=20261008-release-521";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -148,16 +149,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20260920-release-5203";
+} from "./trade-record-grid.js?v=20261008-release-521";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20260920-release-5203";
-import { initializeDatePickers } from "./date-picker.js?v=20260920-release-5203";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20260920-release-5203";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20260920-release-5203";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20260920-release-5203";
+} from "./trade-record-ledger.js?v=20261008-release-521";
+import { initializeDatePickers } from "./date-picker.js?v=20261008-release-521";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261008-release-521";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261008-release-521";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261008-release-521";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -166,32 +167,32 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20260920-release-5203";
+} from "./project-screenshot-ocr.js?v=20261008-release-521";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20260920-release-5203";
+} from "./project-screenshot-layout.js?v=20261008-release-521";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20260920-release-5203";
+} from "./project-screenshot-image.js?v=20261008-release-521";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20260920-release-5203";
+} from "./payment-receipts.js?v=20261008-release-521";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20260920-release-5203";
+} from "./issuer-search.js?v=20261008-release-521";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20260920-release-5203";
+} from "./state-history.js?v=20261008-release-521";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -310,6 +311,7 @@ let bondActivityChannel = null;
 const stateClientId = loadStateClientId();
 let project = parseProjectBrief("");
 let opinionManuallyEdited = false;
+let opinionFieldLocator = null;
 let resultConnectingOrb = null;
 let newProjectCutoffMode = "auto";
 let newProjectCutoffPreview = null;
@@ -4583,6 +4585,9 @@ function bindGenerator() {
     scheduleProjectDmHistorySave();
   });
 
+  opinionFieldLocator = createOpinionFieldLocator({
+    textarea: $("#opinionOutput"), trace: $("#ruleTrace"), status: $("#opinionFieldStatus"), onMissing: showToast,
+  });
   $("#copyButton").addEventListener("click", async () => {
     const value = $("#opinionOutput").value;
     if (!value) return;
@@ -4653,6 +4658,7 @@ function resetProjectDmWorkspace(options = {}) {
   $("#valuationAssist").hidden = true;
   $("#valuationAssist").innerHTML = "";
   $("#opinionOutput").value = "";
+  opinionFieldLocator?.clear();
   $("#suggestionSummary").textContent = "建议比例待补充";
   $("#ruleTrace").innerHTML = "";
   $("#matchedIssuerPill").textContent = "未匹配主体";
@@ -7238,22 +7244,29 @@ function renderRuleTrace(generated, issuer) {
   const suggestion = generated.suggestion;
   const items = isAbsProject(project)
     ? [
-        `类型：${project.instrumentType || "ABS"}`,
-        project.absInfo?.planName ? `产品：${project.absInfo.planName}` : "专项计划待补",
-        ...(suggestion.trancheSuggestions || []).map((item) => `${item.className || item.shortName || item.durationText}：${Number.isFinite(item.suggestedRatio) ? `${formatNumber(item.suggestedRatio)}%` : "比例待补"}`),
-        Number.isFinite(suggestion.investmentAmount) ? `申请金额：${formatNumber(suggestion.investmentAmount)}亿元` : "申请金额待补",
-        generated.approver,
+        { label: `类型：${project.instrumentType || "ABS"}` },
+        { label: project.absInfo?.planName ? `产品：${project.absInfo.planName}` : "专项计划待补", field: { kind: 'issuer' } },
+        ...(suggestion.trancheSuggestions || []).map((item) => ({
+          label: `${item.className || item.shortName || item.durationText}：${Number.isFinite(item.suggestedRatio) ? `${formatNumber(item.suggestedRatio)}%` : "比例待补"}`,
+          field: { kind: 'literal', value: item.className || item.shortName || item.durationText },
+        })),
+        { label: Number.isFinite(suggestion.investmentAmount) ? `申请金额：${formatNumber(suggestion.investmentAmount)}亿元` : "申请金额待补", field: { kind: 'amount' } },
+        { label: generated.approver, field: { kind: 'approver' } },
       ]
     : [
-        issuer ? `已匹配：${issuer.legalName}` : "未匹配主体",
-        Number.isFinite(suggestion.approvedRatio) ? `授信比例：${formatNumber(suggestion.approvedRatio)}%` : "授信比例待补",
-        ...suggestion.caps.map((cap) => cap.reason),
-        Number.isFinite(suggestion.investmentAmount) ? `投资金额：${formatNumber(suggestion.investmentAmount)}亿元` : "投资金额待补",
-        generated.approver,
+        { label: issuer ? `已匹配：${issuer.legalName}` : "未匹配主体", field: { kind: 'issuer' } },
+        { label: Number.isFinite(project.issueScale) ? `发行规模：${formatNumber(project.issueScale)}亿元` : '发行规模待补', field: { kind: 'scale' } },
+        { label: Number.isFinite(suggestion.approvedRatio) ? `授信比例：${formatNumber(suggestion.approvedRatio)}%` : "授信比例待补", field: { kind: 'creditRatio', value: suggestion.approvedRatio } },
+        ...suggestion.caps.map((cap) => ({ label: cap.reason, field: { kind: 'suggestedRatio' } })),
+        { label: Number.isFinite(suggestion.investmentAmount) ? `投资金额：${formatNumber(suggestion.investmentAmount)}亿元` : "投资金额待补", field: { kind: 'amount' } },
+        { label: generated.approver, field: { kind: 'approver' } },
       ];
   $("#ruleTrace").innerHTML = items.map((item, index) =>
-    `<span class="trace-item ${index ? "active" : ""}">${escapeHtml(item)}</span>`,
+    item.field
+      ? `<button type="button" class="trace-item ${index ? "active" : ""}" data-opinion-field="${index}" aria-pressed="false" aria-controls="opinionOutput" title="定位正文中的对应内容">${escapeHtml(item.label)}</button>`
+      : `<span class="trace-item">${escapeHtml(item.label)}</span>`,
   ).join("");
+  opinionFieldLocator?.setFields(items);
 }
 
 function renderProjectWorkspace() {

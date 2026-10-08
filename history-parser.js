@@ -1,4 +1,4 @@
-import { durationToDays, parseProjectBrief } from "./core.js?v=20260920-release-5203";
+import { durationToDays, parseProjectBrief } from "./core.js?v=20261008-release-521";
 
 const HEADER_STATUS_PATTERNS = [
   ["我行牵头、独立主承", "牵头"],
