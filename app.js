@@ -1,6 +1,7 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261015-release-521-r3';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261015-release-521-r3';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261015-release-521-r3';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261015-release-521-r4';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261015-release-521-r4';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261015-release-521-r4';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261015-release-521-r4';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -36,7 +37,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261015-release-521-r3";
+} from "./core.js?v=20261015-release-521-r4";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -65,15 +66,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261015-release-521-r3";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261015-release-521-r3";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261015-release-521-r3";
+} from "./lifecycle.js?v=20261015-release-521-r4";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261015-release-521-r4";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261015-release-521-r4";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261015-release-521-r3";
+} from "./history-parser.js?v=20261015-release-521-r4";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -90,23 +91,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261015-release-521-r3";
+} from "./protocol-transfer.js?v=20261015-release-521-r4";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261015-release-521-r3";
+} from "./protocol-transfer-templates.js?v=20261015-release-521-r4";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261015-release-521-r3";
+} from "./protocol-transfer-docx.js?v=20261015-release-521-r4";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261015-release-521-r3";
+} from "./reminders.js?v=20261015-release-521-r4";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -134,11 +135,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261015-release-521-r3";
+} from "./secondary-inventory.js?v=20261015-release-521-r4";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261015-release-521-r3";
+} from "./trade-record-converter.js?v=20261015-release-521-r4";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -149,16 +150,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261015-release-521-r3";
+} from "./trade-record-grid.js?v=20261015-release-521-r4";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261015-release-521-r3";
-import { initializeDatePickers } from "./date-picker.js?v=20261015-release-521-r3";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261015-release-521-r3";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261015-release-521-r3";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261015-release-521-r3";
+} from "./trade-record-ledger.js?v=20261015-release-521-r4";
+import { initializeDatePickers } from "./date-picker.js?v=20261015-release-521-r4";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261015-release-521-r4";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261015-release-521-r4";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261015-release-521-r4";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -167,32 +168,32 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261015-release-521-r3";
+} from "./project-screenshot-ocr.js?v=20261015-release-521-r4";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261015-release-521-r3";
+} from "./project-screenshot-layout.js?v=20261015-release-521-r4";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261015-release-521-r3";
+} from "./project-screenshot-image.js?v=20261015-release-521-r4";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261015-release-521-r3";
+} from "./payment-receipts.js?v=20261015-release-521-r4";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261015-release-521-r3";
+} from "./issuer-search.js?v=20261015-release-521-r4";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261015-release-521-r3";
+} from "./state-history.js?v=20261015-release-521-r4";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -368,6 +369,8 @@ let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
 let customProtocolTransferTemplates = [];
 let dmLastPayload = null;
+let projectDmRequest = null;
+let dmLookupRequest = null;
 let projectDmHistory = loadProjectDmHistory();
 let projectDmHistorySaveTimer = null;
 let renderedValuationPayload = null;
@@ -3704,7 +3707,7 @@ async function requestProjectScreenshotDmLookup(query = {}, { signal } = {}) {
     } catch {
       payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
     }
-    return { response, payload };
+    return { response, payload: checkedDmLookupPayload(payload, query) };
   } catch (error) {
     if (error?.name === "AbortError" && timedOut) throw new Error("DM 查询超过 12 秒，已跳过本条");
     if (error?.name === "AbortError") throw new Error("本条旧查询已取消");
@@ -4365,6 +4368,7 @@ function bindGenerator() {
     button.addEventListener("click", () => setNewProjectCutoffMode(button.dataset.newProjectCutoffMode));
   });
   $("#projectDmSeedInput").addEventListener("input", () => {
+    cancelProjectDmLookup();
     project.shortName = $("#projectDmSeedInput").value.trim();
     $('[data-project-field="shortName"]').value = project.shortName;
     regenerate();
@@ -4412,6 +4416,7 @@ function bindGenerator() {
     input.addEventListener("input", () => {
       clearRecognitionForInput(input);
       const field = input.dataset.projectField;
+      cancelProjectDmLookup();
       project[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
       if (field === "hiddenRating") {
         project.hiddenRatingSource = "manual";
@@ -4636,6 +4641,7 @@ function saveCurrentProject() {
 }
 
 function resetProjectDmWorkspace(options = {}) {
+  cancelProjectDmLookup();
   const { preserveCurrentAsHistory = true, showToastMessage = true } = options;
   if (preserveCurrentAsHistory) pushProjectDmHistoryFromCurrent();
   clearTimeout(projectDmHistorySaveTimer);
@@ -4742,6 +4748,7 @@ function restorePreviousProjectDmHistory() {
 function restoreProjectDmHistoryItem(id) {
   const item = projectDmHistory.find((entry) => entry.id === id);
   if (!item?.project) return;
+  cancelProjectDmLookup();
   pushProjectDmHistoryFromCurrent();
   project = clonePlain(item.project);
   opinionManuallyEdited = typeof item.opinion === "string";
@@ -5049,6 +5056,7 @@ function bindLedger() {
     for (const event of ["input", "change"]) $(selector).addEventListener(event, () => resetIssuanceReview());
   }
   $("#editProjectOpinionButton").addEventListener("click", () => {
+    cancelProjectDmLookup();
     const record = readProjectForm();
     // Entering an existing project must not reuse another project's explicit date choice.
     newProjectCutoffMode = "auto";
@@ -5130,6 +5138,7 @@ function bindLedger() {
 }
 
 function parseAndRender() {
+  cancelProjectDmLookup();
   const missing = briefTemplatePlaceholders($("#briefInput").value);
   if (missing.length) {
     clearProjectRecognitionMarks();
@@ -5151,6 +5160,7 @@ function parseAndRender() {
 }
 
 async function runProjectDmLookup(queryOverride = "") {
+  cancelProjectDmLookup();
   const seedInput = $("#projectDmSeedInput");
   const fieldInput = $('[data-project-field="shortName"]');
   const query = String(queryOverride || seedInput?.value || fieldInput?.value || project.shortName || "").trim();
@@ -5165,14 +5175,19 @@ async function runProjectDmLookup(queryOverride = "") {
   if (looksLikeSecurityId(query)) params.set("securityId", query);
   else params.set("shortName", query);
 
+  const request = { controller: new AbortController(), query };
+  projectDmRequest = request;
+  const isCurrent = () => projectDmRequest === request && String(seedInput?.value || "").trim() === query;
   setProjectDmLookupBusy(true);
   try {
     const response = await fetch(`./api/dm/lookup?${params.toString()}`, {
       cache: "no-store",
       credentials: "same-origin",
       headers: authHeaders(),
+      signal: request.controller.signal,
     });
-    const payload = await response.json();
+    const payload = checkedDmLookupPayload(await response.json(), Object.fromEntries(params));
+    if (!isCurrent()) return;
     renderProjectDmAssist(payload);
     if (!payload.ok) {
       $("#projectDmStatus").textContent = payload.noResult ? "DM 无结果" : "DM 查询失败";
@@ -5194,13 +5209,31 @@ async function runProjectDmLookup(queryOverride = "") {
         : "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
       : `已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
   } catch (error) {
+    if (!isCurrent() || error?.name === "AbortError") return;
     renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });
     $("#projectDmStatus").textContent = "DM 查询失败";
     $("#projectDmStatus").className = "pill warning";
     showToast(error.message || "DM 查询失败。");
   } finally {
-    setProjectDmLookupBusy(false);
+    if (projectDmRequest === request) {
+      projectDmRequest = null;
+      setProjectDmLookupBusy(false);
+    }
   }
+}
+
+function checkedDmLookupPayload(payload, query = payload?.query) {
+  const checked = normalizeLookupPayload({ ...payload, query });
+  return checked.identityError ? { ...checked, ok: false, error: checked.identityError } : checked;
+}
+
+function cancelProjectDmLookup() {
+  if (!projectDmRequest) return;
+  projectDmRequest.controller.abort();
+  projectDmRequest = null;
+  setProjectDmLookupBusy(false);
+  $("#projectDmStatus").textContent = "待重新读取 DM";
+  $("#projectDmStatus").className = "pill muted";
 }
 
 function setProjectDmLookupBusy(isBusy) {
@@ -5215,6 +5248,8 @@ function setProjectDmLookupBusy(isBusy) {
 }
 
 function applyDmLookupToCurrentProject(payload) {
+  payload = checkedDmLookupPayload(payload);
+  if (!payload.ok) return;
   const patch = projectPatchFromDmLookup(payload);
   const { sourceMap: _sourceMap, ...projectPatch } = patch;
   resetOpinionForDifferentProject(projectPatch);
@@ -5263,8 +5298,10 @@ function updateDynamicPricingField(input) {
 }
 
 function projectPatchFromDmLookup(payload) {
+  payload = checkedDmLookupPayload(payload);
+  if (payload.identityError) return {};
   const normalized = payload?.normalized || {};
-  const issueGroup = projectDmIssueGroupForIdentity(payload);
+  const issueGroup = payload.issueGroup;
   const tranches = projectDmUsableTranches(issueGroup);
   const patch = {};
   const warnings = [];
@@ -5632,32 +5669,6 @@ function normalizeSourceComparable(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function projectDmIssueGroupForIdentity(payload) {
-  const normalized = payload?.normalized || {};
-  const group = payload?.issueGroup || normalized.issueGroup || null;
-  if (!group || normalized.isAbs || normalized.absInfo || /^(ABS|ABN)$/i.test(String(group.instrumentType || ""))) return group;
-  const names = [normalized.shortName, payload?.query?.shortName].map(normalizeProjectShortNameForSort).filter(Boolean);
-  const codes = [normalized.securityId, payload?.query?.securityId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean);
-  const tranches = Array.isArray(group.tranches) ? group.tranches : [];
-  const matchesCode = (left, right) => left && right && (left === right
-    || (!left.includes(".") || !right.includes(".")) && left.split(".")[0] === right.split(".")[0]);
-  const matchesIdentity = (tranche) => {
-    const name = normalizeProjectShortNameForSort(tranche.shortName);
-    const code = String(tranche.securityId || "").trim().toUpperCase();
-    return names.some((target) => name === target
-      || (/MTN\d+$/.test(target) && /^[AB]$/.test(name.slice(target.length)) && name.startsWith(target)))
-      || codes.some((target) => matchesCode(code, target));
-  };
-  // A historical group's generic full name or opinion is not evidence that it contains this bond.
-  const anchors = tranches.filter(matchesIdentity);
-  const hasConfirmedTarget = (tranche) => tranches.some((target) => target !== tranche && (
-    tranche.reallocationTargetShortName
-      && normalizeProjectShortNameForSort(target.shortName) === normalizeProjectShortNameForSort(tranche.reallocationTargetShortName)
-    || matchesCode(String(target.securityId || "").toUpperCase(), String(tranche.reallocationTargetSecurityId || "").toUpperCase())
-  ));
-  return anchors.some((tranche) => tranche.status !== "reallocated" || hasConfirmedTarget(tranche)) ? group : null;
-}
-
 function projectDmUsableTranches(issueGroup) {
   const tranches = Array.isArray(issueGroup?.tranches) ? issueGroup.tranches : [];
   if (!tranches.length) return [];
@@ -5734,6 +5745,7 @@ function buildAbsProjectSourceText(projectValue) {
 }
 
 function renderProjectDmAssist(payload) {
+  payload = checkedDmLookupPayload(payload);
   const output = $("#projectDmAssist");
   if (!output) return;
   output.hidden = false;
@@ -6035,6 +6047,7 @@ function findIssuerForProject(projectValue) {
 }
 
 function loadBlankBriefTemplate() {
+  cancelProjectDmLookup();
   $("#briefInput").value = BLANK_BRIEF_TEMPLATE;
   project = parseProjectBrief("");
   opinionManuallyEdited = false;
@@ -12197,6 +12210,10 @@ function bindDatabase() {
 function bindDmTest() {
   const form = $("#dmLookupForm");
   if (!form) return;
+  for (const selector of ["#dmLookupInput", "#dmLookupStartDate", "#dmLookupEndDate"]) {
+    $(selector).addEventListener("input", cancelDmLookup);
+    $(selector).addEventListener("change", cancelDmLookup);
+  }
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -12238,6 +12255,7 @@ function bindDmTest() {
 }
 
 async function runDmLookup() {
+  cancelDmLookup();
   const query = $("#dmLookupInput").value.trim();
   if (!query) {
     showToast("请先输入债券简称或代码。");
@@ -12252,6 +12270,11 @@ async function runDmLookup() {
   if (startDate) params.set("startDate", startDate);
   if (endDate) params.set("endDate", endDate);
 
+  const request = { controller: new AbortController() };
+  dmLookupRequest = request;
+  const isCurrent = () => dmLookupRequest === request
+    && $("#dmLookupInput").value.trim() === query
+    && $("#dmLookupStartDate").value === startDate && $("#dmLookupEndDate").value === endDate;
   setDmLookupBusy(true);
   const startedAt = performance.now();
   try {
@@ -12259,6 +12282,7 @@ async function runDmLookup() {
       cache: "no-store",
       credentials: "same-origin",
       headers: authHeaders(),
+      signal: request.controller.signal,
     });
     const elapsedMs = Math.round(performance.now() - startedAt);
     let payload;
@@ -12267,24 +12291,40 @@ async function runDmLookup() {
     } catch {
       payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
     }
-    await renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs });
+    if (!isCurrent()) return;
+    payload = checkedDmLookupPayload(payload, Object.fromEntries(params));
+    await renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs }, isCurrent);
+    if (!isCurrent()) return;
     const hasSuggestions = Array.isArray(payload.suggestions) && payload.suggestions.length > 0;
     showToast(payload.ok ? "DM 查询成功。" : payload.noResult ? (hasSuggestions ? "DM 无结果，可查看相近候选。" : "DM 无结果。") : "DM 查询失败，请看诊断信息。");
   } catch (error) {
+    if (!isCurrent() || error?.name === "AbortError") return;
     const elapsedMs = Math.round(performance.now() - startedAt);
     await renderDmLookupResult({
       ok: false,
       error: error.message || "DM 查询请求失败",
       diagnostic: { responsePreview: "浏览器请求失败，未收到接口响应。" },
       elapsedMs,
-    });
+    }, isCurrent);
+    if (!isCurrent()) return;
     showToast("DM 查询请求失败。");
   } finally {
-    setDmLookupBusy(false);
+    if (dmLookupRequest === request) {
+      dmLookupRequest = null;
+      setDmLookupBusy(false);
+    }
   }
 }
 
+function cancelDmLookup() {
+  if (!dmLookupRequest) return;
+  dmLookupRequest.controller.abort();
+  dmLookupRequest = null;
+  setDmLookupBusy(false);
+}
+
 function clearDmLookup() {
+  cancelDmLookup();
   dmLastPayload = null;
   $("#dmLookupInput").value = "";
   $("#dmLookupStartDate").value = "";
@@ -12307,8 +12347,9 @@ function setDmLookupBusy(isBusy) {
   $("#dmLookupButton").textContent = isBusy ? "查询中..." : "查询 DM";
 }
 
-async function renderDmLookupResult(payload) {
-  const enrichedPayload = await enrichDmLookupWithLocalIssuer(payload);
+async function renderDmLookupResult(payload, isCurrent = () => true) {
+  const enrichedPayload = checkedDmLookupPayload(await enrichDmLookupWithLocalIssuer(checkedDmLookupPayload(payload)));
+  if (!isCurrent()) return;
   dmLastPayload = enrichedPayload;
   $("#dmLookupCopyButton").disabled = false;
 

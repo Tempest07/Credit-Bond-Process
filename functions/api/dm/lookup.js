@@ -1,5 +1,6 @@
 import { readUserAppState, requireUser } from "../_auth.js";
 import { lookupWindImpliedRating, windImpliedRatingEnabled } from "../_wind.js";
+import { sameBondIdentity, sameSecurityCode, sameIssuance, validateIssueGroup, normalizeLookupPayload } from "../../../bond-identity.js";
 
 const DM_BASE_URL = "https://gapi-ext.innodealing.com";
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
@@ -78,6 +79,10 @@ export async function onRequestGet(context) {
       securityId = discovery.securityId;
     }
     const basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
+    const ambiguousBonds = ambiguousLookupBonds(basic.rows, { shortName, securityId });
+    if (ambiguousBonds.length) return json({ ok: false, requiresSelection: true,
+      error: "查询对应多个不同证券代码，请选择准确债券。", suggestions: ambiguousBonds,
+      query: { shortName, securityId, fullName } });
     const basicRow = firstRow(basic);
     let primary = await lookupPrimaryData(dm, {
       shortName,
@@ -173,7 +178,7 @@ export async function onRequestGet(context) {
     const noDmBondResult = !dmMatched && !issueGroup && Boolean(issuerIdentityFallback || issuerRatingFallback);
     const normalizedWithIssueGroup = issueGroup ? { ...enrichedNormalized, issueGroup } : enrichedNormalized;
 
-    return json({
+    return json(normalizeLookupPayload({
       ok: true,
       noDmBondResult,
       query: { shortName, securityId, fullName, startDate: primary.window.startDate, endDate: primary.window.endDate },
@@ -211,7 +216,7 @@ export async function onRequestGet(context) {
         dmRatingDiscovery: Object.fromEntries((dmRatingDiscovery.sources || []).map((source) => [source.name, source.raw])),
         windImpliedRating,
       },
-    });
+    }));
   } catch (error) {
     return json({
       ok: false,
@@ -679,7 +684,11 @@ function levenshteinDistance(left, right) {
 
 function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, company }) {
   const basicRow = firstRow(basic);
-  const primaryRow = bestPrimaryRow(primary, shortName, securityId, fullName);
+  const basicIdentity = dmRowIssueEntry(basicRow);
+  const primaryCandidate = bestPrimaryRow(primary, basicIdentity.shortName || shortName, securityId || basicIdentity.securityId, fullName);
+  const primaryIdentity = dmRowIssueEntry(primaryCandidate);
+  const primaryRow = basicIdentity.securityId && primaryIdentity.securityId
+    && !rowMatchesSecurityId(primaryCandidate, basicIdentity.securityId) ? {} : primaryCandidate;
   const companyRow = firstRow(company);
   const resolvedDuration = resolveDmDurationText(primaryRow, basicRow);
   const issuerName = pickFirstString(primaryRow, ["issuer_full_name", "issuerFullName"])
@@ -706,6 +715,7 @@ function normalizeDmLookup({ shortName, securityId, fullName, basic, primary, co
   return {
     instrumentType: absInfo?.type || "",
     securityId: primarySecurityId || basicSecurityId || securityId,
+    identityAliases: parseCrossMarketEntries(primarySecurityId ? primaryRow : basicRow),
     shortName: resolvedShortName,
     fullName: pickFirstString(primaryRow, ["sec_full_name", "secFullName"]) || pickFirstString(basicRow, ["sec_full_name", "secFullName"]),
     issuerName,
@@ -1925,7 +1935,7 @@ function lookupIssueGroup(data, normalized, query, primary, basic) {
   const group = dmGroup
     ? mergeIssueGroups(dmGroup, dbGroup, { includeUnmatchedSecondary: false }) || dmGroup
     : dbGroup;
-  const annotatedGroup = annotateIssueGroupReallocationTargets(group);
+  const annotatedGroup = validateIssueGroup(annotateIssueGroupReallocationTargets(group), normalized, query);
   return shouldExposeIssueGroup(annotatedGroup, query, normalized) ? annotatedGroup : null;
 }
 
@@ -1951,10 +1961,13 @@ function buildIssueGroupFromProjects(normalized, query, projects) {
     const entries = projectIssueEntries(project);
     if (!entries.length) continue;
     const score = projectIssueGroupScore(project, entries, targets);
-    if (score > (best?.score || 0)) best = { project, entries, score };
+    if (score >= 90 && score > (best?.score || 0)) {
+      const group = validateIssueGroup(annotateIssueGroupReallocationTargets(issueGroupFromProject(project, entries, targets, score)), normalized, query);
+      if (group) best = { group, score };
+    }
   }
   if (!best || best.score < 90) return null;
-  const group = issueGroupFromProject(best.project, best.entries, targets, best.score);
+  const group = best.group;
   return group?.tranches?.length ? group : null;
 }
 
@@ -1963,8 +1976,10 @@ function projectIssueGroupScore(project, entries, targets) {
   const projectIssuer = normalizeIssuerMatchText(project?.issuerName || "");
   const issuerScore = targets.issuerTargets.reduce((maxScore, target) =>
     Math.max(maxScore, issuerMatchScore(projectIssuer, normalizeIssuerMatchText(target))), 0);
+  if (projectIssuer && targets.issuerTargets.length && issuerScore < 80) return 0;
   for (const entry of entries) {
     const entrySecurityId = normalizeSecurityId(entry.securityId);
+    if (entrySecurityId && targets.securityIds.length && !targets.securityIds.some(target => sameSecurityCode(entrySecurityId, target))) continue;
     if (entrySecurityId && targets.securityIds.some((target) => securityIdMatches(entrySecurityId, target))) score = Math.max(score, 160);
     const entryName = normalizeLookupName(entry.shortName);
     if (entryName && targets.names.some((target) => normalizeLookupName(target) === entryName)) score = Math.max(score, 140);
@@ -1997,7 +2012,9 @@ function issueGroupFromProject(project, entries, targets, score) {
     return cleanIssueTranche({
       shortName: entry.shortName || `${project?.shortName || "品种"}-${index + 1}`,
       securityId: entry.securityId || "",
-      fullName: "",
+      fullName: entry.fullName || "",
+      issuerName: project?.issuerName || "",
+      subscribeDate: entry.subscribeDate || project?.cutoffAt?.slice(0, 10) || "",
       tenor: entry.durationText || "",
       planScale: entry.planScale,
       actualScale: entry.actualScale,
@@ -2005,6 +2022,8 @@ function issueGroupFromProject(project, entries, targets, score) {
       couponRate: entry.couponRate,
       status,
       statusReason: issueTrancheStatusReason(status),
+      reallocationTargetShortName: entry.reallocationTargetShortName,
+      reallocationTargetSecurityId: entry.reallocationTargetSecurityId,
       source: "cloud-db",
       isQueriedInput: entry.isQueriedInput,
       isDmMatched: entry.isDmMatched,
@@ -2058,7 +2077,10 @@ function buildIssueGroupFromDmRows(normalized, query, primary, basic) {
       const base = normalizeLookupName(name).replace(/(\d)[A-Z]$/i, '$1');
       return targetNames.some((target) => base === normalizeLookupName(target).replace(/(\d)[A-Z]$/i, '$1'));
     });
-    if (!exactBond && !sameNumberedTranche && !(issuerMatched && subscribeDate && rowDate === subscribeDate)) return false;
+    if (!exactBond && !sameNumberedTranche && !sameIssuance(dmRowIssueEntry(row), normalized)) return false;
+    if (rowNames.some(name => normalizeLookupName(name) === normalizeLookupName(normalized.shortName))
+      && normalized.securityId && rowSecurityIds(row).length
+      && !rowSecurityIds(row).some(id => sameSecurityCode(id, normalized.securityId))) return false;
     return true;
   });
   const entries = sortIssueEntries(uniqueIssueEntries(collapseCancelledReissueEntries(
@@ -2082,6 +2104,8 @@ function buildIssueGroupFromDmRows(normalized, query, primary, basic) {
       shortName: entry.shortName,
       securityId: entry.securityId,
       fullName: entry.fullName,
+      issuerName: entry.issuerName,
+      subscribeDate: entry.subscribeDate,
       tenor: entry.durationText,
       planScale: entry.planScale,
       actualScale: entry.actualScale,
@@ -2104,6 +2128,8 @@ function dmRowIssueEntry(row) {
     shortName: pickFirstString(row, ["sec_short_name", "secShortName"]),
     securityId: pickFirstString(row, ["security_id", "securityId"]),
     fullName: pickFirstString(row, ["sec_full_name", "secFullName"]),
+    issuerName: pickFirstString(row, ["issuer_full_name", "issuerFullName", "issuer_name", "issuerName"]),
+    subscribeDate: pickFirstDateString(row, ["subscribe_date", "subscribeDate", "issue_start_date", "issueStartDate"]),
     durationText: pickFirstString(row, ["bond_issue_tenor", "bondIssueTenor", "bond_matu", "bondMatu"]),
     planScale: Number.isFinite(planWan) ? round(planWan / 10000, 4) : null,
     actualScale: Number.isFinite(actualWan) ? round(actualWan / 10000, 4) : null,
@@ -2303,6 +2329,7 @@ function buildAbsIssueGroupFromDmRows(normalized, query, rows) {
         shortName: entry.shortName,
         securityId: entry.securityId,
         fullName: entry.fullName,
+        planIdentity: normalizeAbsPlanComparable(normalized?.absInfo?.planName || normalized?.fullName),
         tenor: entry.durationText,
         planScale: entry.planScale,
         actualScale: entry.actualScale,
@@ -2375,6 +2402,11 @@ function projectIssueEntries(project) {
     entries.push({
       shortName: tranche?.shortName || "",
       securityId: tranche?.securityId || tranche?.security_id || tranche?.securityCode || tranche?.bondCode || tranche?.code || "",
+      fullName: tranche?.fullName || "",
+      subscribeDate: tranche?.subscribeDate || "",
+      status: tranche?.status || "",
+      reallocationTargetShortName: tranche?.reallocationTargetShortName || "",
+      reallocationTargetSecurityId: tranche?.reallocationTargetSecurityId || "",
       durationText: tranche?.durationText || "",
       planScale: numberOrNull(tranche?.planScale) ?? issueScale,
       actualScale: explicitActualScale ?? (hasResultEvidence ? issueScale : null),
@@ -2520,24 +2552,18 @@ function annotateIssueGroupReallocationTargets(group) {
 }
 
 function reallocationTargetForTranche(tranche, issuedTranches) {
-  if (issuedTranches.length === 1) return issuedTranches[0];
-  const family = issueShortNameFamily(tranche.shortName);
-  if (!family) return null;
-  const sameFamily = issuedTranches.filter((item) => issueShortNameFamily(item.shortName) === family);
-  if (sameFamily.length === 1) return sameFamily[0];
-  return null;
+  return issuedTranches.find(item => sameBondIdentity(item, {
+    shortName: tranche.reallocationTargetShortName, securityId: tranche.reallocationTargetSecurityId,
+  })) || null;
 }
 
 function issueTranchesMatch(a, b) {
-  if (a?.securityId && b?.securityId && securityIdMatches(a.securityId, normalizeSecurityId(b.securityId))) return true;
-  const aName = normalizeLookupName(a?.shortName);
-  const bName = normalizeLookupName(b?.shortName);
-  return Boolean(aName && bName && aName === bName);
+  return sameBondIdentity(a, b);
 }
 
 function entryMatchesTargets(entry, names, securityIds) {
   const securityId = normalizeSecurityId(entry?.securityId);
-  if (securityId && securityIds.some((target) => securityIdMatches(securityId, target))) return true;
+  if (securityId && securityIds.length) return securityIds.some((target) => securityIdMatches(securityId, target));
   const name = normalizeLookupName(entry?.shortName);
   return Boolean(name && names.some((target) => normalizeLookupName(target) === name));
 }
@@ -2553,8 +2579,8 @@ function shouldExposeIssueGroup(group, query, normalized) {
 
 function inferIssueTrancheStatus(entry, { groupHasIssued, projectResultConfirmed }) {
   if (isExplicitlyCancelledIssueEntry(entry)) return "cancelled";
+  if (entry.status === "reallocated" && (entry.reallocationTargetShortName || entry.reallocationTargetSecurityId)) return "reallocated";
   if (entryHasIssuedFields(entry)) return "issued";
-  if (groupHasIssued && projectResultConfirmed) return "reallocated";
   return "unknown";
 }
 
@@ -2579,6 +2605,9 @@ function cleanIssueTranche(tranche) {
     shortName: tranche.shortName || "",
     securityId: tranche.securityId || "",
     fullName: tranche.fullName || "",
+    issuerName: tranche.issuerName || "",
+    subscribeDate: tranche.subscribeDate || "",
+    planIdentity: tranche.planIdentity || "",
     tenor: tranche.tenor || "",
     planScale: numberOrNull(tranche.planScale),
     actualScale: numberOrNull(tranche.actualScale),
@@ -2822,10 +2851,22 @@ function stripIssueCancellationMarker(value = "") {
 }
 
 function primaryRowMatchesQuery(row, { shortName, securityId, fullName }) {
+  if (securityId && rowSecurityIds(row).length) return rowMatchesSecurityId(row, securityId);
   return rowMatchesSecurityId(row, securityId)
     || rowMatchesShortName(row, shortName)
     || rowMatchesFullName(row, fullName)
     || rowMatchesLikelyShortName(row, shortName);
+}
+
+function ambiguousLookupBonds(rows = [], query = {}) {
+  if (!query.securityId && splitCombinedShortNames(query.shortName).length !== 1) return [];
+  const exact = rows.filter(row => !isExplicitlyCancelledIssueRow(row)
+    && (query.securityId ? rowMatchesSecurityId(row, query.securityId) : rowMatchesShortName(row, query.shortName)));
+  const entries = exact.map(row => ({ row, entry: dmRowIssueEntry(row) })).filter(({ entry }) => entry.securityId);
+  const conflict = entries.some(({ row, entry }, index) => entries.slice(index + 1).some(other =>
+    !sameSecurityCode(entry.securityId, other.entry.securityId)
+    && !rowMatchesSecurityId(row, other.entry.securityId) && !rowMatchesSecurityId(other.row, entry.securityId)));
+  return conflict ? exact.map(row => dmLookupSuggestionFromRow(row, 100, ["精确查询存在多个代码"])) : [];
 }
 
 function primaryRowDedupKey(row = {}) {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261015-release-521-r3";
+const VERSION = "20261015-release-521-r4";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -456,7 +456,7 @@ test("lets new projects choose a smart, same-day or next-business-day cutoff", a
   assert.doesNotMatch(app, /cutoffAt: existing.cutoffAt \|\| created.cutoffAt/);
   assert.match(html, /id="newProjectCutoffHint"/);
   assert.match(app, /dayMode: existing \? "auto" : newProjectCutoffMode/);
-  assert.match(app, /editProjectOpinionButton"\)\.addEventListener\("click", \(\) => \{\s*const record = readProjectForm\(\);\s*\/\/[^\n]+\n\s*newProjectCutoffMode = "auto"/);
+  assert.match(app, /editProjectOpinionButton"\)\.addEventListener\("click", \(\) => \{\s*cancelProjectDmLookup\(\);\s*const record = readProjectForm\(\);\s*\/\/[^\n]+\n\s*newProjectCutoffMode = "auto"/);
   assert.match(styles, /\.new-project-cutoff-modes button\.active\s*\{/);
   assert.match(styles, /@media \(max-width: 760px\)[\s\S]+\.new-project-cutoff-modes\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
 });

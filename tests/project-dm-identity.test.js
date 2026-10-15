@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { replaceProjectWithDmLookup } from "../core.js";
+import { normalizeLookupPayload } from "../bond-identity.js";
 
 const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
 function harness() {
   const context = vm.createContext({
+    normalizeLookupPayload,
     normalizeDmTenor: value => value || "",
     parseDmInquiryRange: () => ({ low: null, high: null }),
     sumFinite: () => null,
@@ -16,7 +18,7 @@ function harness() {
     escapeRegExpForPattern: value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
   });
   for (const name of [
-    "projectPatchFromDmLookup", "projectDmIssueGroupForIdentity", "projectDmUsableTranches",
+    "projectPatchFromDmLookup", "checkedDmLookupPayload", "projectDmUsableTranches",
     "sortProjectDmTranches", "compactProjectShortNames", "projectCompactShortNameParts",
     "compareProjectShortNameOrder", "projectShortNameSortParts", "normalizeProjectShortNameForSort",
     "projectLetterSortValue", "uniqueNonEmpty", "assignProjectDmValueWithSource", "assignProjectDmValue",
@@ -45,11 +47,14 @@ test("DM 26鄂交05 remains 05 when a stale cloud group contains only 03/04", ()
   assert.equal(project.tranchePricing.length, 1);
 });
 
-test("a direct code match keeps a valid group even when queried by a bare code", () => {
+test("a direct code match keeps the target but does not admit an unproven sibling", () => {
   const context = harness();
   const group = { tranches: [{ shortName: "26鄂交05", securityId: "525044.SZ" }, { shortName: "26鄂交06" }] };
-  assert.equal(context.projectDmIssueGroupForIdentity({ query: { securityId: "525044" }, issueGroup: group }), group);
-  assert.equal(context.projectDmIssueGroupForIdentity({ query: { securityId: "525044.SH" }, issueGroup: group }), null);
+  const payload = { query: { securityId: "525044" }, normalized: { shortName: "26鄂交05", securityId: "525044.SZ" }, issueGroup: group };
+  const checked = context.checkedDmLookupPayload(payload);
+  assert.deepEqual(checked.issueGroup.tranches.map(row => row.shortName), ["26鄂交05"]);
+  assert.equal(context.projectPatchFromDmLookup(payload).shortName, "26鄂交05");
+  assert.equal(context.checkedDmLookupPayload({ query: { securityId: "525044.SH" }, issueGroup: group }).issueGroup, null);
 });
 
 test("base MTN queries retain A/B tranches without crossing issuance numbers", () => {
@@ -57,7 +62,7 @@ test("base MTN queries retain A/B tranches without crossing issuance numbers", (
   const group = { tranches: [{ shortName: "26广州产投MTN003A" }, { shortName: "26广州产投MTN003B" }] };
   const payload = { normalized: { shortName: "26广州产投MTN003" }, issueGroup: group };
   assert.equal(context.projectPatchFromDmLookup(payload).shortName, "26广州产投MTN003A/B");
-  assert.equal(context.projectDmIssueGroupForIdentity({ ...payload, normalized: { shortName: "26广州产投MTN005" } }), null);
+  assert.equal(context.checkedDmLookupPayload({ ...payload, normalized: { shortName: "26广州产投MTN005" } }).issueGroup, null);
 });
 
 test("an explicit reallocation from the queried bond retains the destination", () => {
@@ -75,7 +80,7 @@ test("an explicit reallocation from the queried bond retains the destination", (
 test("ABS plan and class grouping retains its existing identity rules", () => {
   const context = harness();
   const group = { instrumentType: "ABS", tranches: [{ shortName: "优先A" }, { shortName: "优先B" }] };
-  assert.equal(context.projectDmIssueGroupForIdentity({ query: { fullName: "测试专项计划" }, issueGroup: group }), group);
+  assert.deepEqual(context.checkedDmLookupPayload({ query: { fullName: "测试专项计划" }, issueGroup: group }).issueGroup, group);
   const normalizedGroup = { tranches: group.tranches };
-  assert.equal(context.projectDmIssueGroupForIdentity({ normalized: { isAbs: true, issueGroup: normalizedGroup } }), normalizedGroup);
+  assert.deepEqual(context.checkedDmLookupPayload({ normalized: { isAbs: true, issueGroup: normalizedGroup } }).issueGroup, normalizedGroup);
 });

@@ -1557,7 +1557,7 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
       data = [{
         security_id: "260001.SH",
         sec_short_name: "26ACME01",
-        sec_full_name: "ACME 2026 corporate bond tranche 01",
+        sec_full_name: "ACME 2026 corporate bond issue 1",
         issuer_name: "ACME Group Co Ltd",
       }];
     } else if (url.includes("/bond/primary/data")) {
@@ -1566,7 +1566,8 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
           {
             security_id: "260001.SH",
             sec_short_name: "26ACME01",
-            issuer_full_name: "ACME Group Co Ltd",
+            sec_full_name: "ACME 2026 corporate bond issue 1",
+        issuer_full_name: "ACME Group Co Ltd",
             bond_issue_tenor: "3Y",
             plan_issue_amount: 30000,
             subscribe_rate: "2.000000 ~ 2.500000",
@@ -1575,7 +1576,8 @@ test("DM lookup builds an issue group from same-issue DM primary rows", async ()
           {
             security_id: "260002.SH",
             sec_short_name: "26ACME02",
-            issuer_full_name: "ACME Group Co Ltd",
+            sec_full_name: "ACME 2026 corporate bond issue 1",
+        issuer_full_name: "ACME Group Co Ltd",
             bond_issue_tenor: "5Y",
             plan_issue_amount: 50000,
             subscribe_rate: "2.300000 ~ 2.800000",
@@ -1621,7 +1623,7 @@ test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async
       data = [{
         security_id: "245901.SH",
         sec_short_name: "26广越09",
-        sec_full_name: "广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券（第五期）（品种一）",
+        sec_full_name: "广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券（第五期）",
         issuer_name: "广州越秀集团股份有限公司",
         bond_matu: "2Y",
       }];
@@ -1629,6 +1631,7 @@ test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async
       data = { list: [{
         security_id: "245901.SH",
         sec_short_name: "26广越09",
+        sec_full_name: "广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券（第五期）",
         issuer_full_name: "广州越秀集团股份有限公司",
         bond_issue_tenor: "2Y",
         plan_issue_amount: 75000,
@@ -1637,6 +1640,7 @@ test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async
       }, {
         security_id: "245902.SH",
         sec_short_name: "26广越10",
+        sec_full_name: "广州越秀集团股份有限公司2026年面向专业投资者公开发行公司债券（第五期）",
         issuer_full_name: "广州越秀集团股份有限公司",
         bond_issue_tenor: "10Y",
         plan_issue_amount: 75000,
@@ -1715,7 +1719,7 @@ test("DM current tranches remain authoritative when a cloud project contains sta
       data = [{
         security_id: "245901.SH",
         sec_short_name: "26ACME09",
-        sec_full_name: "ACME 2026 corporate bond issue 5 tranche 1",
+        sec_full_name: "ACME 2026 corporate bond issue 5",
         issuer_name: "ACME Group Co Ltd",
         bond_matu: "2Y",
       }];
@@ -1723,6 +1727,7 @@ test("DM current tranches remain authoritative when a cloud project contains sta
       data = { list: [{
         security_id: "245901.SH",
         sec_short_name: "26ACME09",
+        sec_full_name: "ACME 2026 corporate bond issue 5",
         issuer_full_name: "ACME Group Co Ltd",
         bond_issue_tenor: "2Y",
         plan_issue_amount: 75000,
@@ -1731,6 +1736,7 @@ test("DM current tranches remain authoritative when a cloud project contains sta
       }, {
         security_id: "",
         sec_short_name: "26ACME10",
+        sec_full_name: "ACME 2026 corporate bond issue 5",
         issuer_full_name: "ACME Group Co Ltd",
         bond_issue_tenor: "10Y",
         plan_issue_amount: 75000,
@@ -1785,7 +1791,7 @@ test("DM current tranches remain authoritative when a cloud project contains sta
     assert.equal(payload.diagnostic.dmMatched, true);
     assert.deepEqual(payload.issueGroup.tranches.map((item) => item.shortName), ["26ACME09", "26ACME10"]);
     assert.equal(payload.issueGroup.tranches.some((item) => ["26ACME07", "26ACME08"].includes(item.shortName)), false);
-    assert.equal(payload.issueGroup.tranches[1].securityId, "245902.SH");
+    assert.equal(payload.issueGroup.tranches[1].securityId, ""); // unverified cloud sibling may not supply a code
     assert.ok(payload.issueGroup.tranches.every((item) => item.status === "unknown"));
   } finally {
     globalThis.fetch = originalFetch;
@@ -2278,7 +2284,7 @@ test("DM lookup reads documented guarantor fields and enriches guarantor ratings
   }
 });
 
-test("DM lookup marks a queried cancelled tranche from D1 issue group", async () => {
+test("DM lookup preserves a documented exchange reallocation from D1", async () => {
   const originalFetch = globalThis.fetch;
   const secret = "1234567890abcdef";
   globalThis.fetch = async (url) => {
@@ -2300,12 +2306,13 @@ test("DM lookup marks a queried cancelled tranche from D1 issue group", async ()
                 shortName: "26ACME01/02",
                 shortNames: ["26ACME01", "26ACME02"],
                 issuerName: "ACME Group Co Ltd",
+                cutoffAt: "2026-06-27T18:00",
                 venue: "Exchange",
                 leadUnderwriter: "Lead Bank",
                 resultConfirmed: true,
                 tranches: [
-                  { shortName: "26ACME01", durationText: "3Y" },
-                  { shortName: "26ACME02", durationText: "5Y", securityCode: "260002.SH", issueScale: 5, winningRate: 2.6 },
+                  { shortName: "26ACME01", durationText: "3Y", fullName: "ACME 2026 issue 1", status: "reallocated", reallocationTargetShortName: "26ACME02" },
+                  { shortName: "26ACME02", durationText: "5Y", fullName: "ACME 2026 issue 1", securityCode: "260002.SH", issueScale: 5, winningRate: 2.6 },
                 ],
               }],
             }),
@@ -2585,8 +2592,8 @@ test("DM lookup points A/B reallocated tranches to the final issued MTN tranche"
                 resultConfirmed: true,
                 tranches: [
                   { shortName: "26金川MTN001", durationText: "5Y", securityCode: "102681001.IB", issueScale: 10, winningRate: 1.96 },
-                  { shortName: "26金川MTN001A", durationText: "3Y" },
-                  { shortName: "26金川MTN001B", durationText: "5Y" },
+                  { shortName: "26金川MTN001A", durationText: "3Y", status: "reallocated", reallocationTargetShortName: "26金川MTN001" },
+                  { shortName: "26金川MTN001B", durationText: "5Y", status: "reallocated", reallocationTargetShortName: "26金川MTN001" },
                 ],
               }],
             }),
@@ -2674,6 +2681,8 @@ test("DM lookup matches primary cross-market aliases before normalization", asyn
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.identityError, "");
     assert.equal(payload.normalized.securityId, "2600007.IB");
     assert.equal(payload.normalized.shortName, "26MAIN07");
     assert.equal(payload.normalized.issuerName, "Target Issuer");

@@ -21,6 +21,7 @@ function harness(record) {
     $, record, readProjectForm:()=>context.record,
     parseProjectBrief, isAbsProject, createProjectRecord, normalizeProjectRecord,
     compactProjectDurations:parts=>parts.join("/"),
+    cancelledDmLookups:0, cancelProjectDmLookup(){context.cancelledDmLookups++;},
     fillProjectFields(){}, renderIssuerOptions(){}, regenerate(){}, switchView(){},
     newProjectCutoffMode:"auto", project:null, selectedIssuerId:"", opinionManuallyEdited:false,
   });
@@ -46,6 +47,7 @@ for (const offering of ["公募","私募",""]) test(`return to opinion and save 
   for(let i=0;i<3;i++) {
     const before=context.record;
     returnToOpinion();
+    assert.equal(context.cancelledDmLookups,i+1,"entering a stored project cancels any prior DM lookup");
     assert.equal(context.project.offeringType,offering);
     const saved=context.buildLedgerProjectRecord(context.project,null,{opinion:before.opinion,suggestion:{trancheSuggestions:[{suggestedRatio:20}]}},before,{cutoffAt:before.cutoffAt});
     assert.equal(saved.offeringType,offering);
