@@ -94,6 +94,10 @@
   border-bottom: 0;
 }
 
+.bond-list-view .bond-list-branch.empty:not(:focus-within) {
+  opacity: 0.5;
+}
+
 .bond-list-branch-top {
   flex-wrap: wrap;
   margin-bottom: 12px;
