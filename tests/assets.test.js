@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261015-release-521-r4";
+const VERSION = "20261015-release-522";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -34,7 +34,10 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../reminders.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, new RegExp(`app\\.js\\?v=${VERSION}`));
+  assert.match(html, /app\.js\?v=20261015-release-522/);
+  assert.match(html, /payment-receipt-reader\.css\?v=20261015-release-522/);
+  assert.match(app, /payment-receipt-preview\.js\?v=20261015-release-522/);
+  assert.match(app, /payment-receipt-reader\.js\?v=20261015-release-522/);
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));

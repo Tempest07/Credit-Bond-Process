@@ -484,7 +484,7 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(html, /id="paymentReceiptExplorerPanel"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(html, /缴款单 → 缴款日期 → 原始 PDF/);
   assert.match(html, /缴款状态仍由人工确认/);
-  assert.match(html, /只按缴款日期归档；收件时间仅作辅助信息/);
+  assert.match(html, /按缴款日期归档/);
   assert.match(html, /aria-label="按缴款日期筛选缴款单"/);
   assert.doesNotMatch(html, /按缴款日或收件日筛选缴款单/);
   assert.match(app, /renderTranchePaymentReceipts\(selectedProjectId, tranche\)/);

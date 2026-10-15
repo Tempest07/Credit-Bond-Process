@@ -4,27 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.2.1">
-  <meta name="application-build-version" content="5.2.1">
-  <meta name="application-build" content="20261015-release-521-r4">
-  <title>Bond Centre 5.2.1 - Tempest07</title>
+  <meta name="application-version" content="5.2.2">
+  <meta name="application-build-version" content="5.2.2">
+  <meta name="application-build" content="20261015-release-522">
+  <title>Bond Centre 5.2.2 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261015-release-521-r4"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261015-release-521-r4">
+  <script src="./app-shell-mode.js?v=20261015-release-522"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261015-release-522">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261015-release-521-r4" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261015-release-521-r4" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261015-release-521-r4" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261015-release-521-r4">
-  <script src="./ui-preference.js?v=20261015-release-521-r4"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261015-release-521-r4">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261015-release-521-r4">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261015-release-521-r4">
-  <link rel="stylesheet" href="./release-notes.css?v=20261015-release-521-r4">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261015-release-522" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261015-release-522" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261015-release-522" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261015-release-522">
+  <script src="./ui-preference.js?v=20261015-release-522"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261015-release-522">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261015-release-522">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261015-release-522">
+  <link rel="stylesheet" href="./release-notes.css?v=20261015-release-522">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261015-release-522">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261015-release-522">
 </head>
 <body>
   <div class="app-shell">
@@ -37,7 +39,7 @@
         <button class="nav-item" data-view-target="realtime-quotes" data-view-label="Real Time Information">实时行情</button>
         <button class="nav-item" data-view-target="payment-receipts">缴款单</button>
         <button class="nav-item" data-view-target="secondary-trading" data-view-label="Trading">二级交易</button>
-        <a class="nav-item" href="./bond-list/">OFR/BID 清单</a>
+        <button class="nav-item" data-view-target="bond-list" data-view-label="OFR/BID">OFR/BID 清单</button>
         <button class="nav-item" data-view-target="batch" hidden>批量撰写</button>
         <details class="nav-more" id="navMore">
           <summary class="nav-more-trigger">更多 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
@@ -49,13 +51,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.2.1">v5.2.1</span>
+      <span class="header-version" aria-label="当前版本 5.2.2">v5.2.2</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.2.1 · 2026-10-08 更新">v5.2.1</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.2.2 · 2026-10-15">v5.2.2</span></div>
           <div class="top-actions">
           <button class="button subtle" id="stateHistoryButton">版本历史</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
@@ -1001,6 +1003,48 @@
         </div>
       </section>
 
+      <section class="view bond-list-view" data-view="bond-list" aria-label="OFR/BID 清单">
+        <div class="bond-list-toolbar">
+          <div class="bond-list-save" role="status" aria-live="polite">
+            <span id="bondList-save-dot" aria-hidden="true">●</span>
+            <span id="bondList-save-state">正在读取清单</span>
+            <button class="button subtle" id="bondList-retry" type="button" hidden>重试</button>
+          </div>
+          <div class="bond-list-actions">
+            <button class="button" id="bondList-fill" type="button" disabled>补齐代码</button>
+            <button class="button" id="bondList-export" type="button" disabled>导出草稿</button>
+            <button class="button primary" id="bondList-copy" type="button" disabled>复制发送版</button>
+          </div>
+        </div>
+        <a id="bondList-login-link" class="button" href="/login/?next=%2Fbond-centre%2F%23bond-list" hidden>登录后继续保存清单</a>
+        <div id="bondList-notice" class="bond-list-notice" role="status" aria-live="polite" hidden></div>
+        <div id="bondList-recovery-box" class="bond-list-notice" hidden>
+          <span>发现未保存的旧草稿。</span>
+          <button class="button" id="bondList-recovery-download" type="button">下载恢复草稿</button>
+        </div>
+        <div class="bond-list-workspace">
+          <section class="bond-list-panel bond-list-editor" aria-labelledby="bondList-editor-title">
+            <div class="bond-list-panel-head">
+              <h2 id="bondList-editor-title">分行清单</h2>
+              <label class="bond-list-toggle"><input type="checkbox" id="bondList-auto" checked>自动补码</label>
+            </div>
+            <div class="bond-list-editor-tools">
+              <label class="bond-list-toggle"><input type="checkbox" id="bondList-hide-empty">只看有券分行</label>
+              <span id="bondList-counts">0 个分行 · 0 条报价</span>
+            </div>
+            <div id="bondList-branches"></div>
+          </section>
+          <section class="bond-list-panel bond-list-preview-panel" aria-labelledby="bondList-preview-title">
+            <div class="bond-list-panel-head">
+              <h2 id="bondList-preview-title">发送预览</h2>
+              <span class="pill">纯文本</span>
+            </div>
+            <pre id="bondList-preview" aria-label="OFR/BID 发送预览">OFR/BID</pre>
+            <div id="bondList-copy-hint" class="bond-list-preview-status" role="status" aria-live="polite">添加报价后，这里会生成发送版。</div>
+          </section>
+        </div>
+      </section>
+
       <section class="view realtime-quotes-view" data-view="realtime-quotes">
         <section class="realtime-terminal" aria-labelledby="realtimeQuoteTitle">
           <header class="realtime-command-bar">
@@ -1214,39 +1258,9 @@
         </section>
       </section>
 
-      <section class="view" data-view="payment-receipts">
+      <section class="view payment-receipt-reader-view" data-view="payment-receipts">
         <div class="payment-receipt-workspace">
-          <header class="payment-receipt-hero">
-            <div>
-              <span class="step">RECEIPT</span>
-              <h2>缴款单归档</h2>
-              <p>专用邮箱来件会保留原始邮件和原始 PDF；多项目附件按页拆分，空白页自动排除，续页归入对应单据。</p>
-            </div>
-            <div class="payment-receipt-hero-note">
-              <strong>缴款状态仍由人工确认</strong>
-              <span>自动收取和匹配只建立单据关联，不会代替“缴款”按钮。</span>
-            </div>
-          </header>
-
-          <section class="panel payment-receipt-coverage-panel">
-            <div class="panel-head payment-receipt-coverage-head">
-              <div><span class="step">CHECK</span><h2>应收单据对账</h2></div>
-              <span>覆盖已缴款和未缴款的中标品种；随下方缴款日期筛选，仅检查单据，不改变缴款状态</span>
-            </div>
-            <div class="payment-receipt-summary" id="paymentReceiptCoverageSummary" aria-live="polite"></div>
-            <div class="payment-receipt-coverage" id="paymentReceiptCoverage" aria-live="polite"></div>
-          </section>
-
-          <section class="panel payment-receipt-archive-panel">
-            <div class="panel-head payment-receipt-archive-head">
-              <div><span class="step">ALL</span><h2>全部缴款单</h2></div>
-              <span>只按缴款日期归档；收件时间仅作辅助信息</span>
-              <div class="payment-receipt-archive-actions">
-                <button class="button primary" id="paymentReceiptExplorerButton" type="button">打开文件管理器</button>
-                <button class="button subtle" id="paymentReceiptRefreshButton" type="button">刷新邮箱识别结果</button>
-              </div>
-            </div>
-            <div class="payment-receipt-toolbar">
+          <div class="payment-receipt-page-toolbar">
               <label>缴款日期<input id="paymentReceiptDateFilter" type="date" aria-label="按缴款日期筛选缴款单"></label>
               <label>对应状态
                 <select id="paymentReceiptStatusFilter">
@@ -1262,10 +1276,38 @@
                 <button class="button subtle" id="paymentReceiptTodayButton" type="button">今日</button>
                 <button class="button subtle" id="paymentReceiptAllDatesButton" type="button">全部日期</button>
               </div>
-            </div>
-            <div class="payment-receipt-summary" id="paymentReceiptSummary" aria-live="polite"></div>
-            <div class="payment-receipt-archive" id="paymentReceiptArchive" aria-live="polite"></div>
-          </section>
+              <div class="payment-receipt-page-actions">
+                <button class="button" id="paymentReceiptExplorerButton" type="button">打开文件管理器</button>
+                <button class="button primary" id="paymentReceiptRefreshButton" type="button">刷新邮箱识别结果</button>
+              </div>
+          </div>
+          <div class="payment-receipt-reader-grid">
+            <aside class="panel payment-receipt-index-panel" aria-labelledby="paymentReceiptIndexTitle">
+              <div class="panel-head"><h2 id="paymentReceiptIndexTitle">单据清单</h2></div>
+              <div class="payment-receipt-summary" id="paymentReceiptSummary" aria-live="polite"></div>
+              <div class="payment-receipt-index-tabs" role="tablist" aria-label="单据清单视图">
+                <button class="button subtle active" id="receiptIndexAll" type="button" role="tab" data-receipt-index-view="all" aria-selected="true" aria-controls="paymentReceiptArchive">全部</button>
+                <button class="button subtle" id="receiptIndexReview" type="button" role="tab" data-receipt-index-view="review" aria-selected="false" aria-controls="paymentReceiptArchive">待核对</button>
+                <button class="button subtle" id="receiptIndexCoverage" type="button" role="tab" data-receipt-index-view="coverage" aria-selected="false" aria-controls="paymentReceiptCoveragePanel">应收对账</button>
+              </div>
+              <div class="payment-receipt-archive" id="paymentReceiptArchive" role="tabpanel" aria-labelledby="receiptIndexAll" aria-live="polite"></div>
+              <section class="payment-receipt-coverage-panel" id="paymentReceiptCoveragePanel" role="tabpanel" aria-labelledby="receiptIndexCoverage" hidden>
+                <div class="payment-receipt-summary" id="paymentReceiptCoverageSummary" aria-live="polite"></div>
+                <div class="payment-receipt-coverage" id="paymentReceiptCoverage" aria-live="polite"></div>
+              </section>
+            </aside>
+            <section class="panel payment-receipt-inspector" aria-labelledby="paymentReceiptDetailTitle">
+              <div class="panel-head"><h2 id="paymentReceiptDetailTitle">选择一张缴款单</h2><span id="paymentReceiptDetailStatus"></span></div>
+              <div class="payment-receipt-detail-tabs" role="tablist" aria-label="缴款单详情">
+                <button class="button subtle active" id="receiptTabOriginal" type="button" role="tab" data-receipt-detail-tab="original" aria-selected="true" aria-controls="paymentReceiptOriginalPane">原件预览</button>
+                <button class="button subtle" id="receiptTabFields" type="button" role="tab" data-receipt-detail-tab="fields" aria-selected="false" aria-controls="paymentReceiptFieldsPane">识别信息</button>
+              </div>
+              <div id="paymentReceiptOriginalPane" role="tabpanel" aria-labelledby="receiptTabOriginal"><div id="paymentReceiptPdfPreview"></div></div>
+              <div id="paymentReceiptFieldsPane" role="tabpanel" aria-labelledby="receiptTabFields" hidden></div>
+              <div id="paymentReceiptDetailActions" class="payment-receipt-detail-actions" hidden></div>
+            </section>
+          </div>
+          <div class="payment-receipt-reader-note"><span>按缴款日期归档</span><span>缴款状态仍由人工确认</span></div>
         </div>
       </section>
 
@@ -1531,6 +1573,19 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.2.2</strong><time datetime="2026-10-15">2026 / 10 / 15</time></div>
+      <section><h3>OFR/BID 清单内置模块</h3><ul>
+        <li>清单直接在 Bond Centre 内打开，沿用全站导航和界面风格；原有链接自动进入新模块。</li>
+        <li>保留按分行编辑、DM 补码、发送版复制、草稿导出和自动保存；多窗口保存冲突时提示保留草稿。</li>
+      </ul></section>
+      <section><h3>缴款单原件核对工作区</h3><ul>
+        <li>桌面采用左侧单据清单、右侧原件预览与识别信息的布局，窄屏自动上下排列。</li>
+        <li>原件支持页内预览、翻页及定位到单据对应页；刷新保留当前选择，待处理附件和未提取到 PDF 的邮件也可查看。</li>
+        <li>保留应收对账、人工对应、解除对应、重新识别、修正拆页和重复件处理；缴款状态仍由人工确认。</li>
+      </ul></section>
+      <section><h3>延续正式版身份校验修复</h3><ul>
+        <li>保留 5.2.1 最新修复：旧期次不会覆盖当前债券，证券代码冲突和无依据的跨期分组会被拦截，过期 DM 查询不会回填。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.2.1</strong><time datetime="2026-10-08">2026 / 10 / 08</time></div>
       <section><h3>流程意见工作区</h3><ul>
         <li>采用与全站一致的黑白灰空间布局，调整意见正文、关联字段和操作按钮的层次。</li>
@@ -1583,10 +1638,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261015-release-521-r4"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261015-release-521-r4"></script>
-  <script type="module" src="./app.js?v=20261015-release-521-r4"></script>
-  <script type="module" src="./todo-fluid.js?v=20261015-release-521-r4"></script>
-  <script type="module" src="./release-notes.js?v=20261015-release-521-r4"></script>
+  <script src="./ui-mode.js?v=20261015-release-522"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261015-release-522"></script>
+  <script type="module" src="./app.js?v=20261015-release-522"></script>
+  <script type="module" src="./todo-fluid.js?v=20261015-release-522"></script>
+  <script type="module" src="./release-notes.js?v=20261015-release-522"></script>
 </body>
 </html>

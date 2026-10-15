@@ -1,0 +1,236 @@
+.bond-list-view {
+  --bond-list-gap: 28px;
+}
+
+.bond-list-toolbar,
+.bond-list-actions,
+.bond-list-save,
+.bond-list-panel-head,
+.bond-list-editor-tools,
+.bond-list-branch-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.bond-list-toolbar {
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.bond-list-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bond-list-save {
+  justify-content: flex-start;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+#bondList-save-dot {
+  font-size: 9px;
+}
+
+.bond-list-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--bond-list-gap);
+}
+
+.bond-list-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.bond-list-panel-head {
+  flex-wrap: wrap;
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bond-list-panel-head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.bond-list-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.bond-list-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.bond-list-editor-tools {
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.bond-list-branch {
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bond-list-branch:last-child {
+  border-bottom: 0;
+}
+
+.bond-list-branch-top {
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  gap: 6px 12px;
+}
+
+.bond-list-branch h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.bond-list-branch-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bond-list-view .bond-list-branch textarea {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.bond-list-branch textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.bond-list-issue {
+  margin-top: 12px;
+  color: var(--warning);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.bond-list-issue:empty {
+  display: none;
+}
+
+.bond-list-issue .button {
+  margin: 6px 6px 0 0;
+}
+
+.bond-list-preview-panel {
+  position: sticky;
+  top: 24px;
+}
+
+#bondList-preview {
+  min-height: 230px;
+  max-height: 60vh;
+  margin: 0;
+  padding: 24px;
+  overflow: auto;
+  color: var(--text);
+  font: 14px/1.9 Consolas, "Microsoft YaHei", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.bond-list-preview-status {
+  padding: 18px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.bond-list-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.bond-list-notice.error {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--line));
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+#bondList-login-link {
+  margin-bottom: 20px;
+}
+
+.bond-list-view [hidden] {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .bond-list-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .bond-list-toolbar {
+    gap: 20px;
+  }
+  .bond-list-actions {
+    width: 100%;
+  }
+  .bond-list-actions .button {
+    flex: 1 1 auto;
+  }
+  .bond-list-panel-head,
+  .bond-list-branch {
+    padding: 20px;
+  }
+  .bond-list-editor-tools,
+  .bond-list-preview-status {
+    padding: 16px 20px;
+  }
+  .bond-list-preview-panel {
+    position: static;
+  }
+  #bondList-preview {
+    max-height: 450px;
+    padding: 20px;
+  }
+}
