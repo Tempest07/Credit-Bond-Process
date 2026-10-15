@@ -2036,6 +2036,7 @@ function buildIssueGroupFromDmRows(normalized, query, primary, basic) {
   const targets = issueGroupTargets(normalized, query);
   const issuerTarget = normalizeIssuerMatchText(normalized?.issuerName || "");
   const subscribeDate = normalized?.subscribeDate || "";
+  const targetNames = targets.names.flatMap(splitCombinedShortNames);
   const candidates = rows.filter((row) => {
     const rowNames = rowShortNames(row);
     const rowNameMatch = rowNames.map((name) => issueNameGroupMatchType(name, targets)).find(Boolean);
@@ -2046,6 +2047,17 @@ function buildIssueGroupFromDmRows(normalized, query, primary, basic) {
     if (issuerTarget && rowIssuer && issuerMatchScore(rowIssuer, issuerTarget) < 90) return false;
     const rowDate = pickFirstDateString(row, ["subscribe_date", "subscribeDate", "issue_start_date", "issueStartDate"]);
     if (subscribeDate && rowDate && rowDate !== subscribeDate) return false;
+    const exactBond = rowSecurityIds(row).some((id) => targets.securityIds.some((target) => securityIdMatches(id, target)))
+      || rowNames.some((name) => targetNames.some((target) => normalizeLookupName(name) === normalizeLookupName(target)));
+    // Exchange serials such as 03/04/05 share a name family, not necessarily
+    // an issuance. A missing date must not turn previous issues into siblings.
+    const sameNumberedTranche = rowNames.some((name) => {
+      const key = issueShortNameSeriesKey(name);
+      if (key && targets.seriesKeys.includes(key)) return true;
+      const base = normalizeLookupName(name).replace(/(\d)[A-Z]$/i, '$1');
+      return targetNames.some((target) => base === normalizeLookupName(target).replace(/(\d)[A-Z]$/i, '$1'));
+    });
+    if (!exactBond && !sameNumberedTranche && !(issuerMatched && subscribeDate && rowDate === subscribeDate)) return false;
     return true;
   });
   const entries = sortIssueEntries(uniqueIssueEntries(collapseCancelledReissueEntries(
