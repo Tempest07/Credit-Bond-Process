@@ -1971,7 +1971,8 @@ function projectIssueGroupScore(project, entries, targets) {
     const entrySeriesKey = issueShortNameSeriesKey(entry.shortName);
     if (entrySeriesKey && targets.seriesKeys.includes(entrySeriesKey) && issuerScore >= 80) score = Math.max(score, 95);
   }
-  if (issuerScore >= 90 && targets.names.some((name) => projectFullText(project).includes(normalizeLookupName(name)))) score = Math.max(score, 92);
+  // Historical opinion/source prose is not bond identity. A reused full name
+  // there must never attach an older project's tranches to the queried bond.
   return score;
 }
 
@@ -2672,15 +2673,6 @@ function issueNameGroupMatchType(name, targets) {
   }
   const seriesKey = issueShortNameSeriesKey(name);
   return seriesKey && targets.seriesKeys.includes(seriesKey) ? "series" : "";
-}
-
-function projectFullText(project) {
-  return normalizeLookupName([
-    project?.shortName,
-    project?.issuerName,
-    project?.sourceText,
-    project?.opinion,
-  ].filter(Boolean).join(" "));
 }
 
 function formatIssueGroupRange(low, high) {

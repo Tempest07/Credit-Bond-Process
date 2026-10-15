@@ -1,6 +1,6 @@
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261008-release-521-r2';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261008-release-521-r2';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261008-release-521-r2';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261015-release-521-r3';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261015-release-521-r3';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261015-release-521-r3';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -36,7 +36,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261008-release-521-r2";
+} from "./core.js?v=20261015-release-521-r3";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -65,15 +65,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261008-release-521-r2";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261008-release-521-r2";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261008-release-521-r2";
+} from "./lifecycle.js?v=20261015-release-521-r3";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261015-release-521-r3";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261015-release-521-r3";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261008-release-521-r2";
+} from "./history-parser.js?v=20261015-release-521-r3";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -90,23 +90,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261008-release-521-r2";
+} from "./protocol-transfer.js?v=20261015-release-521-r3";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261008-release-521-r2";
+} from "./protocol-transfer-templates.js?v=20261015-release-521-r3";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261008-release-521-r2";
+} from "./protocol-transfer-docx.js?v=20261015-release-521-r3";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261008-release-521-r2";
+} from "./reminders.js?v=20261015-release-521-r3";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -134,11 +134,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261008-release-521-r2";
+} from "./secondary-inventory.js?v=20261015-release-521-r3";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261008-release-521-r2";
+} from "./trade-record-converter.js?v=20261015-release-521-r3";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -149,16 +149,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261008-release-521-r2";
+} from "./trade-record-grid.js?v=20261015-release-521-r3";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261008-release-521-r2";
-import { initializeDatePickers } from "./date-picker.js?v=20261008-release-521-r2";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261008-release-521-r2";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261008-release-521-r2";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261008-release-521-r2";
+} from "./trade-record-ledger.js?v=20261015-release-521-r3";
+import { initializeDatePickers } from "./date-picker.js?v=20261015-release-521-r3";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261015-release-521-r3";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261015-release-521-r3";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261015-release-521-r3";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -167,32 +167,32 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261008-release-521-r2";
+} from "./project-screenshot-ocr.js?v=20261015-release-521-r3";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261008-release-521-r2";
+} from "./project-screenshot-layout.js?v=20261015-release-521-r3";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261008-release-521-r2";
+} from "./project-screenshot-image.js?v=20261015-release-521-r3";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261008-release-521-r2";
+} from "./payment-receipts.js?v=20261015-release-521-r3";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261008-release-521-r2";
+} from "./issuer-search.js?v=20261015-release-521-r3";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261008-release-521-r2";
+} from "./state-history.js?v=20261015-release-521-r3";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -5264,7 +5264,7 @@ function updateDynamicPricingField(input) {
 
 function projectPatchFromDmLookup(payload) {
   const normalized = payload?.normalized || {};
-  const issueGroup = payload?.issueGroup || normalized.issueGroup || null;
+  const issueGroup = projectDmIssueGroupForIdentity(payload);
   const tranches = projectDmUsableTranches(issueGroup);
   const patch = {};
   const warnings = [];
@@ -5630,6 +5630,32 @@ function buildIssuerCloudRecognitionMarks(projectValue, issuer, existingMarks = 
 
 function normalizeSourceComparable(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+function projectDmIssueGroupForIdentity(payload) {
+  const normalized = payload?.normalized || {};
+  const group = payload?.issueGroup || normalized.issueGroup || null;
+  if (!group || normalized.isAbs || normalized.absInfo || /^(ABS|ABN)$/i.test(String(group.instrumentType || ""))) return group;
+  const names = [normalized.shortName, payload?.query?.shortName].map(normalizeProjectShortNameForSort).filter(Boolean);
+  const codes = [normalized.securityId, payload?.query?.securityId].map((value) => String(value || "").trim().toUpperCase()).filter(Boolean);
+  const tranches = Array.isArray(group.tranches) ? group.tranches : [];
+  const matchesCode = (left, right) => left && right && (left === right
+    || (!left.includes(".") || !right.includes(".")) && left.split(".")[0] === right.split(".")[0]);
+  const matchesIdentity = (tranche) => {
+    const name = normalizeProjectShortNameForSort(tranche.shortName);
+    const code = String(tranche.securityId || "").trim().toUpperCase();
+    return names.some((target) => name === target
+      || (/MTN\d+$/.test(target) && /^[AB]$/.test(name.slice(target.length)) && name.startsWith(target)))
+      || codes.some((target) => matchesCode(code, target));
+  };
+  // A historical group's generic full name or opinion is not evidence that it contains this bond.
+  const anchors = tranches.filter(matchesIdentity);
+  const hasConfirmedTarget = (tranche) => tranches.some((target) => target !== tranche && (
+    tranche.reallocationTargetShortName
+      && normalizeProjectShortNameForSort(target.shortName) === normalizeProjectShortNameForSort(tranche.reallocationTargetShortName)
+    || matchesCode(String(target.securityId || "").toUpperCase(), String(tranche.reallocationTargetSecurityId || "").toUpperCase())
+  ));
+  return anchors.some((tranche) => tranche.status !== "reallocated" || hasConfirmedTarget(tranche)) ? group : null;
 }
 
 function projectDmUsableTranches(issueGroup) {
