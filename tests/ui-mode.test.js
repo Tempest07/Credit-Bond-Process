@@ -25,6 +25,7 @@ test("startup login placeholder stays hidden only until the gate receives a real
     };
     const context = vm.createContext({
       $: getNode, syncConflictActive: false, isLocalApiMode: () => false,
+      syncBondListCloudGate() {},
       updateCloudGateCopy() {}, document: { dispatchEvent() {} },
       CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     });

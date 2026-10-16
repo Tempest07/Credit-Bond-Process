@@ -1,8 +1,8 @@
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 
-export function initializeBondList({ onToast } = {}) {
+export function initializeBondList({ onToast, onAccessChange } = {}) {
   const root = document.querySelector('.view[data-view="bond-list"]');
-  if (!root) return { setActive: async () => {}, flushSave: async () => true, hasPendingChanges: () => false };
+  if (!root) return { setActive: async () => {}, flushSave: async () => true, hasPendingChanges: () => false, hasAccess: () => false, clearAccess: () => {}, resume: () => {} };
   const $ = id => root.querySelector('#bondList-' + id);
   const apiRoot = new URL('./api/bond-list/', location.href).pathname;
   const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
@@ -11,8 +11,15 @@ export function initializeBondList({ onToast } = {}) {
   let active = false, loaded = false, loading = null, dirty = false, conflict = false, flushing = false;
   let saveTimer, lookupTimer, savePromise = null, lookupPromise = null, lookupAbort = null;
   let backupKey, recoveryKey, archived = [], busy = false;
+  let access = false, accessVersion = 0, retryMode = '';
   const failedNames = new Set();
   let lookupResults = {};
+
+  function setAccess(value) {
+    if (access === value) return;
+    access = value;
+    onAccessChange?.();
+  }
 
   function notify(message, error = false) {
     $('notice').textContent = message;
@@ -20,17 +27,21 @@ export function initializeBondList({ onToast } = {}) {
     $('notice').classList.toggle('error', error);
   }
   function retryState(mode = '') {
+    retryMode = mode;
     $('retry').hidden = !mode;
     $('retry').disabled = mode === 'conflict';
     $('retry').textContent = mode === 'load' ? '重新读取' : mode === 'conflict' ? '请导出后刷新' : '重试保存';
   }
   async function api(path, body, signal) {
+    const requestAccessVersion = accessVersion;
     const response = await fetch(apiRoot + path, body === undefined ? { signal } : {
       method: 'POST', signal,
       headers: { 'Content-Type': 'application/json', 'X-Bond-List': '1' },
       body: JSON.stringify(body)
     });
     if (response.status === 401) {
+      accessVersion++;
+      setAccess(false);
       $('login-link').hidden = false;
       const error = new Error('请重新登录；未保存的输入可先导出草稿。');
       error.status = 401;
@@ -42,7 +53,10 @@ export function initializeBondList({ onToast } = {}) {
       error.status = response.status;
       throw error;
     }
-    $('login-link').hidden = true;
+    if (requestAccessVersion === accessVersion) {
+      if (result && typeof result === 'object' && !Array.isArray(result)) setAccess(true);
+      $('login-link').hidden = true;
+    }
     return result;
   }
   function lineInfo(line) {
@@ -169,13 +183,13 @@ export function initializeBondList({ onToast } = {}) {
     $('copy-hint').textContent = unresolved ? unresolved + ' 条待补码或补全 · 处理后可复制发送版'
       : populated ? '已略过 ' + (sections.length - populated) + ' 个空分行 · 可直接粘贴发送'
       : '添加报价后，这里会生成发送版。';
-    $('copy').disabled = !populated || unresolved > 0 || busy;
-    $('fill').disabled = busy || !pendingNames().length;
+    $('copy').disabled = !loaded || Boolean(loading) || !populated || unresolved > 0 || busy;
+    $('fill').disabled = !loaded || Boolean(loading) || busy || !pendingNames().length;
     $('fill').textContent = busy ? 'DM 查询中…' : '补齐代码';
   }
   function scheduleLookup() {
     clearTimeout(lookupTimer);
-    if (active && loaded && !flushing && $('auto').checked && !busy && !root.querySelector('[data-composing]')) {
+    if (active && loaded && !loading && !flushing && $('auto').checked && !busy && !root.querySelector('[data-composing]')) {
       lookupTimer = setTimeout(() => { void fill(false); }, 1200);
     }
   }
@@ -210,7 +224,7 @@ export function initializeBondList({ onToast } = {}) {
     return inserted;
   }
   function fill(manual) {
-    if (!active || !loaded || flushing || busy || root.querySelector('[data-composing]')) return Promise.resolve();
+    if (!active || !loaded || loading || flushing || busy || root.querySelector('[data-composing]')) return Promise.resolve();
     const names = pendingNames().filter(name => manual || !failedNames.has(name));
     if (!names.length) return Promise.resolve();
     const snapshots = sections.map(section => section.text), version = editVersion;
@@ -272,25 +286,37 @@ export function initializeBondList({ onToast } = {}) {
     archived = Array.isArray(archived) ? archived.filter(validDraft) : [];
     $('recovery-box').hidden = !archived.length;
   }
-  function load() {
-    if (loaded) return Promise.resolve();
+  function load({ refresh = false } = {}) {
+    if (loaded && (!refresh || dirty || savePromise)) return Promise.resolve();
     if (loading) return loading;
+    const version = editVersion;
     retryState();
     notify('');
     $('save-state').textContent = '正在读取清单…';
+    $('fill').disabled = true;
+    $('copy').disabled = true;
+    clearTimeout(lookupTimer);
     loading = (async () => {
       try {
         const state = await api('state');
+        // A refresh must not replace input or a write started while it was reading.
+        if (refresh && (editVersion !== version || dirty || savePromise)) return;
         sections = state.sections; revision = state.revision;
         restoreBackup(state.userId);
+        failedNames.clear(); lookupResults = {};
         loaded = true; renderEditors(); renderSummary(); $('export').disabled = false;
         $('save-state').textContent = dirty ? '正在保存…' : savedLabel;
         $('save-dot').style.color = 'var(--success, #628a66)';
         if (dirty) void save();
-        scheduleLookup();
       } catch (error) {
-        notify(error.message, true); $('save-state').textContent = '读取失败'; retryState('load');
-      } finally { loading = null; }
+        if (refresh && (editVersion !== version || dirty || savePromise)) return;
+        notify(error.message, true);
+        if (editVersion === version) $('save-state').textContent = loaded ? '刷新失败 · 已载入内容保留' : '读取失败';
+        retryState('load');
+      } finally {
+        loading = null;
+        if (loaded) { renderSummary(); scheduleLookup(); }
+      }
     })();
     return loading;
   }
@@ -301,7 +327,7 @@ export function initializeBondList({ onToast } = {}) {
   $('recovery-download').addEventListener('click', () => download(archived.map((item, index) => '恢复草稿 ' + (index + 1)
     + '\nOFR/BID' + item.sections.map(section => '\n\n' + section.title + '\n' + section.text).join(''))
     .join('\n\n==========\n\n'), 'OFR-BID-恢复草稿.txt'));
-  $('retry').addEventListener('click', () => loaded ? save() : load());
+  $('retry').addEventListener('click', () => retryMode === 'load' ? load({ refresh: true }) : save());
   $('copy').addEventListener('click', async () => {
     const area = document.createElement('textarea');
     area.value = output(); area.setAttribute('readonly', ''); area.setAttribute('aria-label', '复制用文本');
@@ -326,9 +352,10 @@ export function initializeBondList({ onToast } = {}) {
 
   return {
     async setActive(nextActive) {
+      const entering = Boolean(nextActive) && !active;
       active = Boolean(nextActive);
       if (!active) { clearTimeout(lookupTimer); lookupAbort?.abort(); return; }
-      await load();
+      await load({ refresh: entering && !flushing });
       if (loaded && active) { fitEditors(); scheduleLookup(); }
     },
     async flushSave() {
@@ -336,13 +363,16 @@ export function initializeBondList({ onToast } = {}) {
       clearTimeout(saveTimer);
       // A pending DM response may insert codes, so finish/cancel it before the final save.
       clearTimeout(lookupTimer);
-      try {
-        if (loading) await loading;
-        if (lookupPromise) { lookupAbort?.abort(); await lookupPromise; }
-        do { if (!await save()) return false; } while (dirty);
-        return true;
-      } finally { flushing = false; }
+      if (loading) await loading;
+      if (lookupPromise) { lookupAbort?.abort(); await lookupPromise; }
+      do { if (!await save()) return false; } while (dirty);
+      return true;
     },
+    // Only resume after an attempted logout has stopped; no lookup may add codes
+    // between the last confirmed save and the logout request.
+    resume() { flushing = false; scheduleLookup(); },
+    hasAccess() { return access; },
+    clearAccess() { accessVersion++; setAccess(false); },
     hasPendingChanges() { return dirty || Boolean(savePromise); }
   };
 }

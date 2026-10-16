@@ -196,7 +196,7 @@ import {
   formatStateChangeSummary,
   statePayloadEquals,
 } from "./state-history.js?v=20261015-release-522";
-import { initializeBondList } from "./bond-list-editor.js?v=20261015-release-522";
+import { initializeBondList } from "./bond-list-editor.js?v=20261016-release-522-r3";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -458,7 +458,7 @@ async function initialize() {
   bindWorkspaceChrome();
   realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast });
   configureLocalBetaQuotes(realtimeQuoteController);
-  bondListController = initializeBondList({ onToast: showToast });
+  bondListController = initializeBondList({ onToast: showToast, onAccessChange: syncBondListCloudGate });
   bindRouteHashNavigation();
   bindProjectScreenshotTool();
   bindIssuerPicker();
@@ -2300,6 +2300,7 @@ function switchView(viewName, options = {}) {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isUiBeta() ? "#ffffff" : viewName === "realtime-quotes" ? "#070a10" : "#f4f6fb");
   realtimeQuoteController?.setActive(viewName === "realtime-quotes");
   void bondListController?.setActive(viewName === "bond-list");
+  syncBondListCloudGate();
   if (button) $("#pageTitle").textContent = (isUiBeta() && button.dataset.viewLabel) || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
   if (viewName === "payment-receipts") renderPaymentReceiptArchive();
@@ -14226,6 +14227,7 @@ async function performIdleSaveAndLogout() {
     location.replace("/login/?next=%2Fbond-centre%2F");
   } catch (error) {
     idleExitInProgress = false;
+    bondListController?.resume();
     $("#idleExitTitle").textContent = "自动退出已暂停";
     $("#idleExitCountdown").textContent = "!";
     $("#idleContinueButton").disabled = false;
@@ -14246,6 +14248,8 @@ function setCurrentUser(user) {
 
 function clearAuthSession() {
   currentGatewayUser = null;
+  bondListController?.clearAccess();
+  syncBondListCloudGate();
   updateAuthUi();
 }
 
@@ -14585,7 +14589,19 @@ function setCloudGate(locked, options = {}) {
   updateCloudGateCopy();
   $("#cloudGateStep").textContent = stateName === "error" ? "ERR" : stateName === "success" ? "OK" : stateName === "connecting" ? "WAIT" : "LOGIN";
   $("#cloudGateSymbol").textContent = stateName === "error" ? "!" : stateName === "success" ? "✓" : stateName === "connecting" ? "..." : "T7";
+  syncBondListCloudGate();
   document.dispatchEvent(new CustomEvent("bond-cloud-gate-change", { detail: { locked: Boolean(locked), state: stateName } }));
+}
+
+function syncBondListCloudGate() {
+  // Quotes use their own authenticated API and drafts. A project-library error
+  // must not block their editor/export; login and connecting gates stay locked.
+  const main = $(".main");
+  const available = Boolean(main?.classList.contains("cloud-locked")
+    && $("#cloudGate")?.classList.contains("cloud-gate-error")
+    && bondListController?.hasAccess()
+    && $('.view[data-view="bond-list"]')?.classList.contains("active"));
+  main?.classList.toggle("bond-list-available", available);
 }
 
 function updateCloudGateCopy() {

@@ -34,7 +34,9 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../reminders.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261015-release-522/);
+  assert.match(html, /app\.js\?v=20261016-release-522-r3/);
+  assert.match(html, /bond-list-editor\.css\?v=20261016-release-522-r3/);
+  assert.match(app, /bond-list-editor\.js\?v=20261016-release-522-r3/);
   assert.match(html, /payment-receipt-reader\.css\?v=20261015-release-522/);
   assert.match(app, /payment-receipt-preview\.js\?v=20261015-release-522/);
   assert.match(app, /payment-receipt-reader\.js\?v=20261015-release-522/);

@@ -271,3 +271,154 @@ test('flush waits for first load and any restored unsaved backup before permitti
     assert.equal(editor.hasPendingChanges(), false);
   });
 });
+
+test('reentering a clean module refreshes another device update, but repeating the active view does not', async () => {
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2.0*ofr' }], revision: 0, userId: 'admin' } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    env.state.sections[0].text = '123456.SH，测试，2.2*ofr'; env.state.revision++;
+    await editor.setActive(false); await editor.setActive(true);
+    assert.equal(env.textarea(0).value, env.state.sections[0].text);
+    assert.equal(env.requests.filter(request => !request.body).length, 2);
+    await editor.setActive(true);
+    assert.equal(env.requests.filter(request => !request.body).length, 2);
+    await env.edit(0, '123456.SH，测试，2.3*ofr');
+    await editor.flushSave();
+    assert.equal(env.requests.at(-1).body.revision, 1);
+  });
+});
+
+test('a failed refresh retains the current list and its retry reads the server again', async () => {
+  let reads = 0;
+  await fixture({ fetch: request => !request.body && ++reads === 2 ? json({ error: '网络暂不可用' }, 503) : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const area = env.textarea(0);
+    await editor.setActive(false); await editor.setActive(true);
+    assert.equal(env.textarea(0), area);
+    assert.equal(env.elements.retry.hidden, false);
+    env.state.sections[0].text = '123456.SH，测试，2.0*bid'; env.state.revision++;
+    await env.elements.retry.click();
+    assert.equal(reads, 3);
+    assert.equal(env.textarea(0).value, env.state.sections[0].text);
+    assert.equal(env.elements.retry.hidden, true);
+  });
+});
+
+test('refresh cannot replace an edit made while its response was pending', async () => {
+  const pending = deferred(); let reads = 0;
+  await fixture({ fetch: request => !request.body && ++reads === 2 ? pending.promise : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    await editor.setActive(false); const entering = editor.setActive(true); await settle();
+    await env.edit(0, '123456.SH，刚刚输入，2.5*ofr');
+    pending.resolve(json({ sections: [{ title: '北京/上海', text: '' }], revision: 0, userId: 'admin' }));
+    await entering;
+    assert.equal(env.textarea(0).value, '123456.SH，刚刚输入，2.5*ofr');
+    assert.equal(editor.hasPendingChanges(), true);
+    assert.equal(await editor.flushSave(), true);
+    assert.equal(env.state.sections[0].text, env.textarea(0).value);
+  });
+});
+
+test('only successful own API responses grant access and 401 revokes it without losing a draft', async () => {
+  let unauthorized = true;
+  await fixture({ fetch: request => request.body && unauthorized ? json({ error: '请登录' }, 401) : null }, async env => {
+    const changes = [];
+    const editor = initializeBondList({ onAccessChange: () => changes.push(editor.hasAccess()) });
+    assert.equal(editor.hasAccess(), false);
+    await editor.setActive(true); assert.deepEqual(changes, [true]);
+    await env.edit(0, '123456.SH，测试，2.0*ofr');
+    assert.equal(await editor.flushSave(), false);
+    assert.equal(editor.hasAccess(), false);
+    assert.equal(env.elements['login-link'].hidden, false);
+    assert.equal(env.textarea(0).value, '123456.SH，测试，2.0*ofr');
+    unauthorized = false; await env.elements.retry.click();
+    assert.equal(editor.hasAccess(), true);
+    editor.clearAccess(); assert.equal(editor.hasAccess(), false);
+    assert.deepEqual(changes, [true, false, true, false]);
+  });
+});
+
+test('a late refresh failure cannot replace the retry for a newer failed save', async () => {
+  const reading = deferred(); let reads = 0, writes = 0;
+  await fixture({ fetch: request => {
+    if (!request.body) return ++reads === 2 ? reading.promise : null;
+    if (request.url.endsWith('/state')) return ++writes === 1 ? json({ error: '保存失败，请重试' }, 503) : null;
+    return null;
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    await editor.setActive(false); const entering = editor.setActive(true); await settle();
+    await env.edit(0, '123456.SH，等待保存，2.6*ofr'); await env.advance(450);
+    assert.equal(env.elements.retry.textContent, '重试保存');
+    reading.resolve(json({ error: '较早的刷新失败' }, 503)); await entering;
+    assert.equal(env.elements.retry.textContent, '重试保存');
+    assert.equal(env.elements.notice.textContent, '保存失败，请重试');
+    await env.elements.retry.click();
+    assert.equal(writes, 2); assert.equal(reads, 2);
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.state.sections[0].text, '123456.SH，等待保存，2.6*ofr');
+  });
+});
+
+test('a response started before shared logout cannot restore the revoked access marker', async () => {
+  const oldRead = deferred(); let reads = 0;
+  await fixture({ fetch: request => !request.body && ++reads === 1 ? oldRead.promise : null }, async env => {
+    const editor = initializeBondList(); const entering = editor.setActive(true); await settle();
+    editor.clearAccess();
+    oldRead.resolve(json({ sections: [{ title: '北京/上海', text: '' }], revision: 0, userId: 'admin' }));
+    await entering; assert.equal(editor.hasAccess(), false);
+    await editor.setActive(false); await editor.setActive(true);
+    assert.equal(editor.hasAccess(), true);
+  });
+});
+
+test('idle flush suspends lookups until a stopped logout explicitly resumes the editor', async () => {
+  await fixture({ auto: true, match: true, state: { sections: [{ title: '北京', text: '26测试，2.0*ofr' }], revision: 0, userId: 'admin' } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await editor.flushSave();
+    await env.advance(1200);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/lookup')).length, 0);
+    editor.resume(); await env.advance(1200);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/lookup')).length, 1);
+    assert.equal(env.textarea(0).value, '102600001.IB，26测试，2.0*ofr');
+    await editor.flushSave();
+  });
+});
+
+test('copy omits empty branches while the downloaded draft preserves all branches, BOM and CRLF', async () => {
+  await fixture({ state: { sections: [{ title: '北京', text: ' 123456.SH，测试A，2.0*ofr\n654321.SZ，测试B，净价100*bid ' }, { title: '杭州', text: '' }], revision: 0, userId: 'admin' } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    let copied, blob, anchor, revoked;
+    env.document.execCommand = () => { copied = env.document.activeElement.value; return true; };
+    await env.elements.copy.click();
+    assert.equal(copied, 'OFR/BID\n\n北京\n123456.SH，测试A，2.0*ofr\n654321.SZ，测试B，净价100*bid');
+    const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL;
+    const createElement = env.document.createElement;
+    env.document.createElement = tag => { const element = createElement(tag); if (tag === 'a') { anchor = element; element.click = () => {}; } return element; };
+    try {
+      URL.createObjectURL = value => { blob = value; return 'blob:test-draft'; };
+      URL.revokeObjectURL = value => { revoked = value; };
+      await env.elements.export.click();
+      assert.equal(anchor.download, 'OFR-BID-草稿.txt');
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      assert.deepEqual([...bytes.slice(0, 3)], [239, 187, 191]);
+      assert.equal(Buffer.from(bytes).toString('utf8'), '\ufeffOFR/BID\r\n\r\n北京\r\n123456.SH，测试A，2.0*ofr\r\n654321.SZ，测试B，净价100*bid\r\n\r\n杭州\r\n');
+      await env.advance(1000); assert.equal(revoked, 'blob:test-draft');
+    } finally { URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke; }
+  });
+});
+
+test('leaving and immediately returning cannot apply a late lookup to a different bond', async () => {
+  const old = deferred(); let lookups = 0;
+  await fixture({ auto: true, match: true, state: { sections: [{ title: '北京', text: '26旧券，2.0*ofr' }], revision: 0, userId: 'admin' },
+    fetch: request => request.url.endsWith('/lookup') && ++lookups === 1 ? old.promise : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const filling = env.elements.fill.click(); await settle();
+    await editor.setActive(false); await editor.setActive(true); await env.edit(0, '26新券，2.2*ofr');
+    assert.equal(env.requests.find(request => request.url.endsWith('/lookup')).init.signal.aborted, true);
+    old.resolve(json({ results: { '26旧券': { status: 'matched', matches: [{ code: '102600009.IB', market: '银行间' }] } } }));
+    await filling;
+    assert.equal(env.textarea(0).value, '26新券，2.2*ofr');
+    await env.advance(1200);
+    assert.equal(lookups, 2);
+    assert.equal(env.textarea(0).value, '102600001.IB，26新券，2.2*ofr');
+    await editor.flushSave();
+  });
+});

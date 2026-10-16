@@ -2,6 +2,18 @@
   --bond-list-gap: 28px;
 }
 
+.main.cloud-locked.bond-list-available .view.active[data-view="bond-list"] {
+  display: block !important;
+}
+
+html[data-ui="beta"]:not(.android-app) .main.cloud-locked.bond-list-available > .topbar {
+  display: flex;
+}
+
+html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:first-child {
+  display: block;
+}
+
 .bond-list-toolbar,
 .bond-list-actions,
 .bond-list-save,
@@ -126,6 +138,7 @@
   border-radius: 12px;
   background: var(--panel-soft);
   color: var(--text);
+  font-family: Consolas, "Microsoft YaHei", monospace;
   font-size: 14px;
   line-height: 1.8;
   overflow-wrap: anywhere;
