@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { initializeBondList } from '../bond-list-editor.js';
 
 const ids = ['save-state', 'save-dot', 'branches', 'fill', 'auto', 'export', 'copy', 'recovery-box',
-  'recovery-download', 'login-link', 'hide-empty', 'counts', 'notice', 'preview', 'copy-hint', 'retry'];
+  'recovery-download', 'login-link', 'hide-empty', 'counts', 'notice', 'preview', 'copy-hint', 'retry', 'coupons-refresh',
+  'tab-results', 'tab-editor', 'results-panel', 'editor-panel', 'types-options', 'types-label', 'coupon-op', 'coupon-min', 'coupon-max',
+  'coupon-max-wrap', 'missing', 'side-all', 'side-ofr', 'side-bid', 'filters-clear', 'filter-error', 'results-counts', 'metadata-status',
+  'results-body', 'results-empty', 'result-preview', 'result-copy-hint'];
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status });
 const clone = value => JSON.parse(JSON.stringify(value));
 const deferred = () => {
@@ -29,7 +32,7 @@ class Element {
   replaceChildren(...items) { this.children = []; this.append(...items); }
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(name, callback) { (this.listeners[name] ||= []).push(callback); }
-  emit(name) { return Promise.all((this.listeners[name] || []).map(callback => callback({ target: this }))); }
+  emit(name, details = {}) { return Promise.all((this.listeners[name] || []).map(callback => callback({ target: this, ...details }))); }
   click() { return this.emit('click'); }
   focus() { this.owner.activeElement = this; }
   select() { this.focus(); this.setSelectionRange(0, this.value.length); }
@@ -62,6 +65,7 @@ async function fixture(options, work) {
   }));
   elements.retry.hidden = true; elements['recovery-box'].hidden = true; elements['login-link'].hidden = true;
   elements.export.disabled = true; elements.auto.checked = options.auto ?? false;
+  elements['coupon-op'].value = 'any'; elements.missing.value = 'all';
   const storage = options.storage || new Map();
   const state = clone(options.state || { sections: [{ title: '北京/上海', text: '' }], revision: 0, userId: 'admin' });
   const requests = [], timers = new Map(); let time = 0, nextTimer = 1;
@@ -93,6 +97,9 @@ async function fixture(options, work) {
           matches: options.match ? [{ code: '102600001.IB', name, market: '银行间' }] : []
         }])) });
       }
+      if (url.endsWith('/coupons')) {
+        return json({ source: 'DM', results: Object.fromEntries(request.body.codes.map(code => [code, { status: 'missing', couponRate: null }])) });
+      }
       throw new Error('unexpected URL ' + url);
     }
   };
@@ -100,6 +107,13 @@ async function fixture(options, work) {
   const environment = {
     root, elements, storage, requests, state, document,
     textarea: index => root.querySelector('#bondList-text-' + index),
+    rows: () => elements['results-body'].children,
+    resultRow: index => elements['results-body'].children[index],
+    async chooseType(type, checked = true) {
+      const input = elements['types-options'].children.map(label => label.children[0]).find(input => input.attributes['aria-label'] === type);
+      input.checked = checked; await input.emit('change');
+    },
+    async filter(id, value, event = 'change') { elements[id].value = value; await elements[id].emit(event); },
     async edit(index, text) { const area = this.textarea(index); area.value = text; await area.emit('input'); },
     async advance(duration) {
       time += duration;
@@ -174,7 +188,7 @@ test('flushSave waits for an in-flight write and every later edit with the retur
     await settle(); assert.equal(flushed, false);
     first.resolve(json({ revision: 1 })); await settle();
     assert.equal(writes, 2); assert.equal(flushed, false);
-    assert.deepEqual(env.requests.filter(request => request.body).map(request => request.body.revision), [0, 1]);
+    assert.deepEqual(env.requests.filter(request => request.body && request.url.endsWith('/state')).map(request => request.body.revision), [0, 1]);
     assert.equal(env.requests.at(-1).body.sections[0].text, '123456.SH，测试，1.7*bid');
     second.resolve(json({ revision: 2 }));
     assert.equal(await flush, true);
@@ -189,7 +203,7 @@ test('a stale write blocks flush and retries while retaining the account draft a
     await env.edit(0, '123456.SH，测试，2.0*ofr');
     assert.equal(await editor.flushSave(), false);
     assert.equal(await editor.flushSave(), false);
-    assert.equal(env.requests.filter(request => request.body).length, 1);
+    assert.equal(env.requests.filter(request => request.body && request.url.endsWith('/state')).length, 1);
     assert.equal(env.textarea(0).value, '123456.SH，测试，2.0*ofr');
     assert.equal(env.elements.retry.disabled, true);
     assert.equal(env.elements.export.disabled, false);
@@ -237,7 +251,7 @@ test('existing online backup keys restore only the signed-in account and archive
     assert.equal(env.elements['recovery-box'].hidden, false);
     assert.equal(storage.has('bond-list-cloud-draft-v1:second-user'), false);
     assert.equal(JSON.parse(storage.get('bond-list-cloud-recovery-v1:second-user'))[0].sections[0].text, '654321.SZ，账户B，净价100*bid');
-    assert.equal(env.requests.filter(request => request.body).length, 0);
+    assert.equal(env.requests.filter(request => request.body && request.url.endsWith('/state')).length, 0);
   });
 });
 
@@ -259,7 +273,7 @@ test('hidden views pause lookup, and input method composition waits until comple
 test('flush waits for first load and any restored unsaved backup before permitting exit', async () => {
   const reading = deferred(), writing = deferred();
   const storage = new Map([['bond-list-cloud-draft-v1:admin', JSON.stringify({ revision: 0, sections: [{ title: '北京/上海', text: '123456.SH，恢复报价，2.0*bid' }] })]]);
-  await fixture({ storage, fetch: request => request.body ? writing.promise : reading.promise }, async env => {
+  await fixture({ storage, fetch: request => request.url.endsWith('/state') ? (request.body ? writing.promise : reading.promise) : null }, async env => {
     const editor = initializeBondList(); const entering = editor.setActive(true);
     let flushed = false;
     const flush = editor.flushSave().then(result => { flushed = true; return result; });
@@ -420,5 +434,232 @@ test('leaving and immediately returning cannot apply a late lookup to a differen
     assert.equal(lookups, 2);
     assert.equal(env.textarea(0).value, '102600001.IB，26新券，2.2*ofr');
     await editor.flushSave();
+  });
+});
+
+test('coupon display batches unique full codes and keeps zero, missing values and sending text separate', async () => {
+  const codes = Array.from({ length: 41 }, (_, index) => String(600000 + index) + '.SH');
+  codes[40] = '256800002.SH';
+  const text = [...codes, codes[0]].map((code, index) => code + '，测试' + index + '，2.0*ofr').join('\n');
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 3, userId: 'admin' }, fetch: request => {
+    if (!request.url.endsWith('/coupons')) return null;
+    return json({ source: 'DM', results: Object.fromEntries([...request.body.codes].reverse().map(code => [code,
+      code === codes[1] ? { status: 'missing', couponRate: null }
+        : { status: 'matched', couponRate: code === codes[0] ? 0 : 2.504, rateType: '固定利率' }
+    ])) });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const preview = env.elements.preview.textContent;
+    await env.elements['coupons-refresh'].click();
+    assert.deepEqual(env.requests.filter(request => request.url.endsWith('/coupons')).map(request => request.body.codes.length), [20, 20, 1]);
+    const values = env.rows().map(row => row.querySelector('.bond-list-coupon-value').textContent);
+    assert.equal(values[0], '0.00%'); assert.equal(values[1], '未返回'); assert.equal(values[2], '2.504%'); assert.equal(values[41], '0.00%');
+    assert.equal(env.elements.preview.textContent, preview);
+    assert.equal(env.textarea(0).value, text);
+    assert.equal(env.elements.copy.disabled, false);
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.state.revision, 3);
+    assert.equal(env.requests.filter(request => request.body && request.url.endsWith('/state')).length, 0);
+  });
+});
+
+test('changing a code immediately drops its old coupon row and a late response cannot move the rate to the new bond', async () => {
+  const old = deferred(); let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，旧券，2*ofr' }], revision: 0, userId: 'admin' }, fetch: request => {
+    if (!request.url.endsWith('/coupons')) return null;
+    return ++reads === 1 ? old.promise : json({ results: { '654321.SZ': { status: 'matched', couponRate: 1.7 } } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const reading = env.elements['coupons-refresh'].click(); await settle();
+    await env.edit(0, '654321.SZ，新券，2.1*ofr');
+    assert.equal(env.resultRow(0).querySelector('.bond-list-result-code').textContent, '654321.SZ');
+    old.resolve(json({ results: { '123456.SH': { status: 'matched', couponRate: 9.5 } } })); await reading;
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '待查询');
+    await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.70%');
+    await env.edit(0, ''); assert.equal(env.rows().length, 0); assert.equal(env.elements['results-empty'].hidden, false);
+    assert.equal(await editor.flushSave(), true);
+  });
+});
+
+test('leaving cancels coupon queries and their late unauthorized response cannot revoke a newer active session', async () => {
+  const old = deferred(); let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2*ofr' }], revision: 0, userId: 'admin' }, fetch: request => {
+    if (!request.url.endsWith('/coupons')) return null;
+    return ++reads === 1 ? old.promise : json({ results: { '123456.SH': { status: 'matched', couponRate: 2.3 } } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const reading = env.elements['coupons-refresh'].click(); await settle();
+    await editor.setActive(false);
+    assert.equal(env.requests.find(request => request.url.endsWith('/coupons')).init.signal.aborted, true);
+    await env.advance(1200); assert.equal(reads, 1);
+    await editor.setActive(true); await env.elements['coupons-refresh'].click();
+    old.resolve(json({ error: '旧会话已结束' }, 401)); await reading;
+    assert.equal(editor.hasAccess(), true);
+    assert.equal(env.elements['login-link'].hidden, true);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '2.30%');
+  });
+});
+
+test('logout flush never waits for coupon metadata and only resume restarts canceled reads', async () => {
+  const pending = deferred(); let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2*ofr' }], revision: 0, userId: 'admin' }, fetch: request => {
+    if (!request.url.endsWith('/coupons')) return null;
+    return ++reads === 1 ? pending.promise : json({ results: { '123456.SH': { status: 'matched', couponRate: 0.3 } } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const reading = env.elements['coupons-refresh'].click(); await settle();
+    let flushed = false;
+    const flushing = editor.flushSave().then(result => { flushed = true; return result; });
+    await settle(); assert.equal(flushed, true); assert.equal(await flushing, true);
+    await env.advance(1200); assert.equal(reads, 1);
+    pending.resolve(json({ results: { '123456.SH': { status: 'matched', couponRate: 99 } } })); await reading;
+    editor.resume(); await env.advance(350);
+    assert.equal(reads, 2);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.30%');
+  });
+});
+
+test('clearing account access removes coupon metadata and ignores an in-flight success', async () => {
+  const pending = deferred(); let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2*ofr' }], revision: 0, userId: 'admin' }, fetch: request => {
+    if (!request.url.endsWith('/coupons')) return null;
+    return ++reads === 1 ? json({ results: { '123456.SH': { status: 'matched', couponRate: 2.5 } } }) : pending.promise;
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '2.50%');
+    const reading = env.elements['coupons-refresh'].click(); await settle();
+    editor.clearAccess();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '请登录');
+    pending.resolve(json({ results: { '123456.SH': { status: 'matched', couponRate: 8 } } })); await reading;
+    assert.equal(editor.hasAccess(), false);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '请登录');
+  });
+});
+
+test('coupon failures remain local to the display and refresh retries without changing quotes or save errors', async () => {
+  let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，净价100*ofr' }], revision: 0, userId: 'admin' }, fetch: request => {
+    if (!request.url.endsWith('/coupons')) return null;
+    return ++reads === 1 ? json({ error: 'DM 暂不可用' }, 502) : json({ results: { '123456.SH': { status: 'matched', couponRate: 2.5, rateType: '浮动利率' } } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    env.elements.notice.textContent = '保存失败，请重试';
+    await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '查询失败');
+    assert.equal(env.elements.copy.disabled, false);
+    assert.equal(env.elements.notice.textContent, '保存失败，请重试');
+    await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '2.50%');
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-type').textContent, '浮动');
+    assert.equal(env.elements.preview.textContent, 'OFR/BID\n\n北京\n123456.SH，测试，净价100*ofr');
+    assert.equal(await editor.flushSave(), true);
+  });
+});
+
+test('coupon lookup waits for input composition and resumes for newly completed full codes', async () => {
+  await fixture({}, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    await env.textarea(0).emit('compositionstart');
+    await env.edit(0, '123456.SH，测试，2*ofr'); await env.advance(400);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/coupons')).length, 0);
+    await env.textarea(0).emit('compositionend'); await env.advance(350);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/coupons')).length, 1);
+    assert.equal(await editor.flushSave(), true);
+  });
+});
+
+test('combined filters use type OR and cross-field AND, then copy the matching original quotes by branch', async () => {
+  const sections = [
+    { title: '北京', text: '123456.SH，甲券，1.9*ofr\n654321.SZ，乙券，2.1*bid\n111111.SH，丙券，净价100*ofr' },
+    { title: '杭州', text: '123456.SH，甲券，2.0*ofr\n222222.SH，丁券，OFR估值-2*' },
+  ];
+  const metadata = { '123456.SH': { couponRate: 2.1, bondType: 'MTN' }, '654321.SZ': { couponRate: 2.5, bondType: 'SCP' },
+    '111111.SH': { couponRate: 1.5, bondType: 'SCP' }, '222222.SH': { couponRate: 3.2, bondType: '公司债' } };
+  await fixture({ state: { sections, revision: 4, userId: 'admin' }, fetch: request => request.url.endsWith('/coupons')
+    ? json({ results: Object.fromEntries(request.body.codes.map(code => [code, { status: 'matched', ...metadata[code] }])) }) : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.elements['coupons-refresh'].click();
+    assert.equal(env.rows().length, 5);
+    await env.chooseType('MTN'); await env.chooseType('SCP');
+    await env.filter('coupon-op', 'gte'); await env.filter('coupon-min', '2', 'input'); await env.elements['side-ofr'].click();
+    assert.equal(env.rows().length, 2);
+    assert.match(env.elements['results-counts'].textContent, /符合 2 \/ 共 5 条报价 · 2 个分行/);
+    assert.equal(env.elements.copy.textContent, '复制筛选结果（2 条）');
+    const expected = 'OFR/BID\n\n北京\n123456.SH，甲券，1.9*ofr\n\n杭州\n123456.SH，甲券，2.0*ofr';
+    assert.equal(env.elements['result-preview'].textContent, expected);
+    let copied; env.document.execCommand = () => { copied = env.document.activeElement.value; return true; };
+    await env.elements.copy.click(); assert.equal(copied, expected);
+    assert.deepEqual(env.state.sections, sections); assert.equal(env.state.revision, 4);
+    assert.equal(editor.hasPendingChanges(), false);
+    await env.elements['filters-clear'].click();
+    assert.equal(env.rows().length, 5); assert.equal(env.elements.copy.textContent, '复制发送版');
+    assert.equal(env.elements['coupon-min'].disabled, true);
+    assert.equal(env.elements['coupon-max-wrap'].hidden, true);
+  });
+});
+
+test('metadata-dependent filters wait for the whole lookup before enabling copy', async () => {
+  const pending = deferred();
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2*ofr' }], revision: 0, userId: 'admin' },
+    fetch: request => request.url.endsWith('/coupons') ? pending.promise : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    await env.chooseType('MTN');
+    const reading = env.elements['coupons-refresh'].click(); await settle();
+    assert.equal(env.elements.copy.disabled, true); assert.equal(env.rows().length, 0);
+    pending.resolve(json({ results: { '123456.SH': { status: 'matched', couponRate: 2.5, bondType: 'MTN' } } })); await reading;
+    assert.equal(env.rows().length, 1); assert.equal(env.elements.copy.disabled, false);
+    assert.equal(editor.hasPendingChanges(), false);
+  });
+});
+
+test('range inputs enable the upper bound and invalid ranges block copy without hiding save failures', async () => {
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2*ofr' }], revision: 0, userId: 'admin' },
+    fetch: request => request.url.endsWith('/coupons') ? json({ results: { '123456.SH': { status: 'matched', couponRate: 2.5, bondType: 'MTN' } } }) : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.elements['coupons-refresh'].click();
+    env.elements.notice.textContent = '保存失败，请重试';
+    await env.filter('coupon-op', 'between');
+    assert.equal(env.elements['coupon-max-wrap'].hidden, false); assert.equal(env.elements['coupon-max'].disabled, false);
+    await env.filter('coupon-min', '3', 'input'); await env.filter('coupon-max', '2', 'input');
+    assert.equal(env.elements['filter-error'].hidden, false); assert.match(env.elements['filter-error'].textContent, /下限不能大于上限/);
+    assert.equal(env.elements.copy.disabled, true); assert.equal(env.rows().length, 0);
+    assert.equal(env.elements.notice.textContent, '保存失败，请重试');
+    await env.filter('coupon-min', '2.5', 'input'); await env.filter('coupon-max', '2.5', 'input');
+    assert.equal(env.rows().length, 1); assert.equal(env.elements['filter-error'].hidden, true); assert.equal(env.elements.copy.disabled, false);
+  });
+});
+
+test('missing-data views distinguish zero coupon, missing coupon and unknown side while preserving all by default', async () => {
+  const sections = [{ title: '北京', text: '123456.SH，零息，1.5bid\n654321.SZ，缺票面，2*ofr\n111111.SH，待核对，观望' }];
+  await fixture({ state: { sections, revision: 0, userId: 'admin' }, fetch: request => request.url.endsWith('/coupons') ? json({ results: {
+    '123456.SH': { status: 'matched', couponRate: 0, bondType: '公司债' },
+    '654321.SZ': { status: 'missing', couponRate: null, bondType: 'MTN' },
+    '111111.SH': { status: 'missing', couponRate: null, bondType: '未知' },
+  } }) : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.elements['coupons-refresh'].click();
+    assert.equal(env.rows().length, 3); assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%');
+    await env.filter('missing', 'coupon'); assert.equal(env.rows().length, 2);
+    await env.filter('missing', 'type'); assert.equal(env.rows().length, 1);
+    await env.filter('missing', 'side'); assert.equal(env.rows().length, 1);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-result-code').textContent, '111111.SH');
+    await env.elements['filters-clear'].click(); await env.filter('coupon-op', 'gte'); await env.filter('coupon-min', '0', 'input');
+    assert.equal(env.rows().length, 1);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-result-code').textContent, '123456.SH');
+  });
+});
+
+test('switching editor tabs preserves filters and draft, with keyboard tab navigation', async () => {
+  await fixture({ state: { sections: [{ title: '北京', text: '123456.SH，测试，2*ofr' }], revision: 0, userId: 'admin' } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    assert.equal(env.elements['results-panel'].hidden, false); assert.equal(env.elements['editor-panel'].hidden, true);
+    await env.elements['side-ofr'].click(); await env.elements['tab-editor'].click();
+    assert.equal(env.elements['results-panel'].hidden, true); assert.equal(env.elements['editor-panel'].hidden, false);
+    assert.equal(env.elements['tab-editor'].attributes['aria-selected'], 'true');
+    let prevented = false;
+    await env.elements['tab-editor'].emit('keydown', { key: 'ArrowLeft', preventDefault: () => { prevented = true; } });
+    assert.equal(prevented, true); assert.equal(env.elements['results-panel'].hidden, false);
+    assert.equal(env.document.activeElement, env.elements['tab-results']);
+    assert.match(env.elements.copy.textContent, /筛选结果/);
+    assert.equal(env.elements['side-ofr'].attributes['aria-pressed'], 'true');
+    assert.equal(editor.hasPendingChanges(), false); assert.equal(env.state.revision, 0);
   });
 });

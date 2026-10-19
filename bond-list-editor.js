@@ -1,4 +1,7 @@
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261020-release-524';
+
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
+const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
 
 export function initializeBondList({ onToast, onAccessChange } = {}) {
   const root = document.querySelector('.view[data-view="bond-list"]');
@@ -14,6 +17,12 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
   let access = false, accessVersion = 0, retryMode = '';
   const failedNames = new Set();
   let lookupResults = {};
+  const couponResults = new Map();
+  let couponTimer, couponAbort = null, couponPromise = null, couponGeneration = 0;
+  let couponPending = new Set();
+  const typeInputs = new Map();
+  const filters = { types: [], side: 'all', couponOp: 'any', couponMin: '', couponMax: '', missing: 'all' };
+  let selectedText = 'OFR/BID', selectedCount = 0, filterActive = false, mode = 'results';
 
   function setAccess(value) {
     if (access === value) return;
@@ -39,6 +48,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
       headers: { 'Content-Type': 'application/json', 'X-Bond-List': '1' },
       body: JSON.stringify(body)
     });
+    if (signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
     if (response.status === 401) {
       accessVersion++;
       setAccess(false);
@@ -48,6 +58,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
       throw error;
     }
     const result = await response.json();
+    if (signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
     if (!response.ok) {
       const error = new Error(result.error || '请求失败');
       error.status = response.status;
@@ -63,12 +74,126 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     const raw = line.trim();
     if (!raw) return null;
     const fields = raw.split(/[，,]/);
-    if (codePattern.test(fields[0].trim())) return { coded: true };
+    if (codePattern.test(fields[0].trim())) return { coded: true, code: fields[0].trim().toUpperCase(), name: fields[1]?.trim() || fields[0].trim() };
     return { name: fields[0].trim(), ready: fields.length > 1 && fields.slice(1).join(',').trim().length > 0 };
   }
   function pendingNames() {
     return [...new Set(sections.flatMap(section => section.text.split('\n').map(lineInfo)
       .filter(line => line && !line.coded && line.ready).map(line => line.name)))];
+  }
+  function couponCodes() {
+    return [...new Set(sections.flatMap(section => section.text.split('\n').map(lineInfo)
+      .filter(line => line?.coded).map(line => line.code)))];
+  }
+  function renderResults() {
+    const all = quoteRows(sections, couponResults);
+    const result = filterQuotes(all, filters);
+    selectedText = quoteOutput(result.rows); selectedCount = result.rows.length; filterActive = result.active;
+    const pending = all.filter(row => row.code && (!couponResults.has(row.code) || couponPending.has(row.code))).length;
+    const missingCoupon = all.filter(row => row.couponRate === null).length;
+    const missingType = all.filter(row => row.bondType === '未知').length;
+    const unknownSide = all.filter(row => row.direction === 'unknown').length;
+    const failed = all.filter(row => couponResults.get(row.code)?.status === 'error').length;
+    const needsMetadata = filters.types.length > 0 || filters.couponOp !== 'any' || ['coupon', 'type'].includes(filters.missing);
+    const waiting = needsMetadata && pending > 0 && active && access && !flushing;
+    const unresolved = result.rows.filter(row => !row.code).length;
+    const branches = new Set(result.rows.map(row => row.sectionIndex)).size;
+    $('results-counts').textContent = '符合 ' + selectedCount + ' / 共 ' + all.length + ' 条报价 · ' + branches + ' 个分行';
+    $('metadata-status').textContent = pending && access ? 'DM · ' + pending + ' 条资料读取中'
+      : ['DM', failed ? failed + ' 条查询失败' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : ''].filter(Boolean).join(' · ');
+    $('filter-error').textContent = result.error; $('filter-error').hidden = !result.error;
+    $('results-body').replaceChildren();
+    for (const quote of result.rows) {
+      const row = document.createElement('tr'); row.dataset.sectionIndex = String(quote.sectionIndex); row.dataset.lineIndex = String(quote.lineIndex);
+      const cell = label => { const element = document.createElement('td'); element.setAttribute('data-label', label); row.append(element); return element; };
+      const bond = cell('债券／代码');
+      const name = document.createElement('span'); name.className = 'bond-list-result-name'; name.textContent = quote.name; bond.append(name);
+      const code = document.createElement('span'); code.className = 'bond-list-result-code'; code.textContent = quote.code || '待补代码'; bond.append(code);
+      const type = cell('品种');
+      const description = document.createElement('span'); description.textContent = quote.bondType;
+      description.title = couponResults.get(quote.code)?.typeDescription || ''; type.append(description);
+      for (const attribute of quote.attributes) {
+        const tag = document.createElement('span'); tag.className = 'bond-list-result-attribute'; tag.textContent = attribute; type.append(tag);
+      }
+      const rate = document.createElement('span'); rate.className = 'bond-list-coupon-value';
+      const metadata = couponResults.get(quote.code);
+      if (quote.couponRate !== null) {
+        rate.textContent = couponFormatter.format(quote.couponRate) + '%';
+        rate.title = [metadata?.rateType, metadata?.fetchedAt ? 'DM 查询于 ' + new Date(metadata.fetchedAt).toLocaleString('zh-CN') : 'DM 最新票面利率'].filter(Boolean).join(' · ');
+        if (/浮动|浮息/.test(metadata?.rateType || '')) {
+          const floating = document.createElement('span'); floating.className = 'bond-list-result-attribute bond-list-coupon-type'; floating.textContent = '浮动'; type.append(floating);
+        }
+      } else {
+        rate.className += ' unavailable';
+        rate.textContent = !quote.code ? '待补代码' : metadata?.status === 'error' ? '查询失败' : metadata ? '未返回' : !access ? '请登录' : couponPending.has(quote.code) ? '查询中…' : '待查询';
+      }
+      cell('票面利率').append(rate);
+      const direction = document.createElement('span'); direction.className = 'bond-list-direction ' + quote.direction;
+      direction.textContent = { ofr: 'OFR', bid: 'BID', both: 'OFR / BID', unknown: '待确认' }[quote.direction];
+      cell('方向').append(direction); cell('原始报价').textContent = quote.quote; cell('分行').textContent = quote.branch;
+      $('results-body').append(row);
+    }
+    $('results-empty').hidden = selectedCount > 0;
+    $('results-empty').textContent = result.error ? '请调整筛选条件' : all.length ? '暂无符合条件的报价' : '暂无报价';
+    $('preview').textContent = selectedText; $('result-preview').textContent = selectedText;
+    const hint = result.error || (waiting ? '债券资料读取中，完成后可复制筛选结果'
+      : unresolved ? unresolved + ' 条待补码或补全 · 处理后可复制发送版'
+      : selectedCount ? selectedCount + ' 条报价 · ' + branches + ' 个分行 · 可直接粘贴发送' : '暂无可发送的报价');
+    $('copy-hint').textContent = hint; $('result-copy-hint').textContent = hint;
+    $('copy').textContent = filterActive ? '复制筛选结果（' + selectedCount + ' 条）' : '复制发送版';
+    $('copy').disabled = !loaded || Boolean(loading) || !selectedCount || unresolved > 0 || Boolean(result.error) || busy || waiting;
+    $('coupons-refresh').disabled = !active || !loaded || Boolean(loading) || flushing || Boolean(couponPromise) || !couponCodes().length;
+    $('coupons-refresh').textContent = couponPromise ? '资料读取中…' : '刷新债券资料';
+    if (active && loaded && !loading && mode === 'editor') fitEditors();
+  }
+  function stopCoupons(clearCache = false) {
+    clearTimeout(couponTimer);
+    couponGeneration++;
+    couponAbort?.abort(); couponAbort = null; couponPromise = null; couponPending = new Set();
+    if (clearCache) couponResults.clear();
+  }
+  function scheduleCoupons() {
+    clearTimeout(couponTimer);
+    if (active && access && loaded && !loading && !flushing && !couponPromise && !root.querySelector('[data-composing]')
+      && couponCodes().some(code => !couponResults.has(code))) {
+      couponTimer = setTimeout(() => { void fetchCoupons(); }, 350);
+    }
+  }
+  function fetchCoupons(refresh = false) {
+    if (!active || !access || !loaded || loading || flushing || couponPromise || root.querySelector('[data-composing]')) return Promise.resolve();
+    clearTimeout(couponTimer);
+    if (refresh) couponResults.clear();
+    const codes = couponCodes().filter(code => !couponResults.has(code));
+    if (!codes.length) return Promise.resolve();
+    const generation = couponGeneration, controller = new AbortController();
+    couponAbort = controller; couponPending = new Set(codes);
+    couponPromise = (async () => {
+      try {
+        for (let start = 0; start < codes.length; start += 20) {
+          const batch = codes.slice(start, start + 20);
+          const response = await api('coupons', { codes: batch }, controller.signal);
+          if (!active || controller.signal.aborted || generation !== couponGeneration) return;
+          for (const code of batch) {
+            const result = response.results?.[code];
+            couponResults.set(code, result && ['matched', 'missing'].includes(result.status)
+              ? { ...result, fetchedAt: response.fetchedAt } : { status: 'error' });
+            couponPending.delete(code);
+          }
+          renderResults();
+        }
+      } catch {
+        if (!controller.signal.aborted && generation === couponGeneration) {
+          for (const code of codes) if (!couponResults.has(code)) couponResults.set(code, { status: 'error' });
+        }
+      } finally {
+        if (generation === couponGeneration) {
+          couponAbort = null; couponPromise = null; couponPending.clear();
+          renderResults(); scheduleCoupons();
+        }
+      }
+    })();
+    renderResults();
+    return couponPromise;
   }
   function output(includeEmpty = false) {
     return 'OFR/BID' + sections.filter(section => includeEmpty || section.text.trim())
@@ -88,6 +213,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     if (!conflict) saveTimer = setTimeout(() => { void save(); }, 450);
     renderSummary();
     scheduleLookup();
+    scheduleCoupons();
   }
   function save() {
     if (savePromise) return savePromise;
@@ -145,14 +271,14 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
       textarea.setAttribute('aria-label', section.title + '报价');
       textarea.placeholder = '输入债券简称，报价…'; textarea.value = section.text; textarea.spellcheck = false;
       textarea.addEventListener('input', () => { section.text = textarea.value; fit(textarea); changed(); });
-      textarea.addEventListener('compositionstart', () => { textarea.dataset.composing = '1'; clearTimeout(lookupTimer); });
-      textarea.addEventListener('compositionend', () => { delete textarea.dataset.composing; scheduleLookup(); });
+      textarea.addEventListener('compositionstart', () => { textarea.dataset.composing = '1'; clearTimeout(lookupTimer); clearTimeout(couponTimer); });
+      textarea.addEventListener('compositionend', () => { delete textarea.dataset.composing; scheduleLookup(); scheduleCoupons(); });
       const issue = document.createElement('div'); issue.className = 'bond-list-issue'; issue.setAttribute('aria-live', 'polite');
       card.append(top, textarea, issue); $('branches').append(card); fit(textarea);
     });
   }
   function renderSummary() {
-    let total = 0, unresolved = 0, populated = 0;
+    let total = 0, populated = 0;
     sections.forEach((section, index) => {
       const lines = section.text.split('\n').map(lineInfo).filter(Boolean);
       total += lines.length; if (lines.length) populated++;
@@ -162,7 +288,6 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
       card.querySelector('.bond-list-branch-count').textContent = lines.length ? lines.length + ' 条报价' : '暂无报价';
       const issues = card.querySelector('.bond-list-issue'); issues.replaceChildren();
       for (const line of lines.filter(item => !item.coded)) {
-        unresolved++;
         const result = lookupResults[line.name];
         const row = document.createElement('div');
         row.textContent = !line.ready ? '请补充简称后的逗号和报价：' + line.name
@@ -179,13 +304,9 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
       }
     });
     $('counts').textContent = populated + ' 个分行 · ' + total + ' 条报价';
-    $('preview').textContent = output();
-    $('copy-hint').textContent = unresolved ? unresolved + ' 条待补码或补全 · 处理后可复制发送版'
-      : populated ? '已略过 ' + (sections.length - populated) + ' 个空分行 · 可直接粘贴发送'
-      : '添加报价后，这里会生成发送版。';
-    $('copy').disabled = !loaded || Boolean(loading) || !populated || unresolved > 0 || busy;
     $('fill').disabled = !loaded || Boolean(loading) || busy || !pendingNames().length;
     $('fill').textContent = busy ? 'DM 查询中…' : '补齐代码';
+    renderResults();
   }
   function scheduleLookup() {
     clearTimeout(lookupTimer);
@@ -290,6 +411,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     if (loaded && (!refresh || dirty || savePromise)) return Promise.resolve();
     if (loading) return loading;
     const version = editVersion;
+    stopCoupons(true);
     retryState();
     notify('');
     $('save-state').textContent = '正在读取清单…';
@@ -315,12 +437,65 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
         retryState('load');
       } finally {
         loading = null;
-        if (loaded) { renderSummary(); scheduleLookup(); }
+        if (loaded) { renderSummary(); scheduleLookup(); scheduleCoupons(); }
       }
     })();
     return loading;
   }
+  function setMode(nextMode) {
+    mode = nextMode;
+    for (const name of ['results', 'editor']) {
+      $('tab-' + name).setAttribute('aria-selected', String(mode === name));
+      $('tab-' + name).tabIndex = mode === name ? 0 : -1;
+      $(name + '-panel').hidden = mode !== name;
+    }
+    if (mode === 'editor' && loaded) requestAnimationFrame(fitEditors);
+  }
+  function readFilters() {
+    filters.types = BOND_TYPES.filter(type => typeInputs.get(type).checked);
+    filters.couponOp = $('coupon-op').value;
+    filters.couponMin = $('coupon-min').value; filters.couponMax = $('coupon-max').value;
+    filters.missing = $('missing').value;
+    $('types-label').textContent = filters.types.length ? filters.types.join('、') : '全部品种';
+    $('coupon-min').disabled = filters.couponOp === 'any';
+    $('coupon-max').disabled = filters.couponOp !== 'between';
+    $('coupon-max-wrap').hidden = filters.couponOp !== 'between';
+    $('coupon-min').setAttribute('aria-label', filters.couponOp === 'between' ? '票面利率下限' : '票面利率数值');
+    renderResults();
+  }
+  for (const type of BOND_TYPES) {
+    const label = document.createElement('label'); label.className = 'bond-list-toggle';
+    const input = document.createElement('input'); input.type = 'checkbox'; input.setAttribute('aria-label', type);
+    const text = document.createElement('span'); text.textContent = type;
+    input.addEventListener('change', readFilters); label.append(input, text); $('types-options').append(label); typeInputs.set(type, input);
+  }
+  for (const name of ['results', 'editor']) {
+    $('tab-' + name).addEventListener('click', () => setMode(name));
+    $('tab-' + name).addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const nextMode = event.key === 'Home' ? 'results' : event.key === 'End' ? 'editor' : mode === 'results' ? 'editor' : 'results';
+      setMode(nextMode); $('tab-' + nextMode).focus();
+    });
+  }
+  for (const id of ['coupon-op', 'missing']) $(id).addEventListener('change', readFilters);
+  for (const id of ['coupon-min', 'coupon-max']) $(id).addEventListener('input', readFilters);
+  for (const side of ['all', 'ofr', 'bid']) {
+    $('side-' + side).addEventListener('click', () => {
+      filters.side = side;
+      for (const value of ['all', 'ofr', 'bid']) $('side-' + value).setAttribute('aria-pressed', String(value === side));
+      renderResults();
+    });
+  }
+  $('filters-clear').addEventListener('click', () => {
+    for (const input of typeInputs.values()) input.checked = false;
+    filters.side = 'all'; $('coupon-op').value = 'any'; $('coupon-min').value = ''; $('coupon-max').value = ''; $('missing').value = 'all';
+    for (const value of ['all', 'ofr', 'bid']) $('side-' + value).setAttribute('aria-pressed', String(value === 'all'));
+    readFilters();
+  });
+  setMode('results');
   $('fill').addEventListener('click', () => fill(true));
+  $('coupons-refresh').addEventListener('click', () => fetchCoupons(true));
   $('auto').addEventListener('change', scheduleLookup);
   $('hide-empty').addEventListener('change', () => { if (loaded) { renderSummary(); fitEditors(); } });
   $('export').addEventListener('click', () => download(output(true), 'OFR-BID-草稿.txt'));
@@ -329,18 +504,20 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     .join('\n\n==========\n\n'), 'OFR-BID-恢复草稿.txt'));
   $('retry').addEventListener('click', () => retryMode === 'load' ? load({ refresh: true }) : save());
   $('copy').addEventListener('click', async () => {
+    if ($('copy').disabled) return;
+    const text = selectedText, count = selectedCount, filtered = filterActive;
     const area = document.createElement('textarea');
-    area.value = output(); area.setAttribute('readonly', ''); area.setAttribute('aria-label', '复制用文本');
+    area.value = text; area.setAttribute('readonly', ''); area.setAttribute('aria-label', '复制用文本');
     area.style.position = 'fixed'; area.style.top = '-10000px';
     document.body.append(area); area.select();
     let copied = false;
     try { copied = document.execCommand('copy'); } catch {}
     area.remove(); $('copy').focus();
     if (!copied) try {
-      await Promise.race([navigator.clipboard.writeText(output()), new Promise((_, reject) => setTimeout(() => reject(new Error('复制超时')), 2000))]);
+      await Promise.race([navigator.clipboard.writeText(text), new Promise((_, reject) => setTimeout(() => reject(new Error('复制超时')), 2000))]);
       copied = true;
     } catch {}
-    if (copied) { notify('发送版已复制，可直接粘贴给中介。'); onToast?.('发送版已复制'); }
+    if (copied) { const message = filtered ? '已复制 ' + count + ' 条筛选报价。' : '发送版已复制，可直接粘贴给中介。'; notify(message); onToast?.(message); }
     else notify('浏览器未允许复制，可在右侧预览中选中文字复制。', true);
   });
   window.addEventListener('beforeunload', event => {
@@ -349,17 +526,31 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
   document.addEventListener('bond-ui-change', () => {
     if (active && loaded) requestAnimationFrame(fitEditors);
   });
+  // Initial DM results can arrive before the host's database gate reveals this view.
+  // Refit when the editor becomes visible or its column width changes.
+  if (typeof ResizeObserver === 'function') {
+    let editorWidth = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.contentRect.width;
+      if (width === editorWidth) return;
+      editorWidth = width;
+      if (width > 0 && active && loaded) fitEditors();
+    });
+    observer.observe(root);
+  }
 
   return {
     async setActive(nextActive) {
       const entering = Boolean(nextActive) && !active;
       active = Boolean(nextActive);
-      if (!active) { clearTimeout(lookupTimer); lookupAbort?.abort(); return; }
+      if (!active) { clearTimeout(lookupTimer); lookupAbort?.abort(); stopCoupons(); return; }
       await load({ refresh: entering && !flushing });
-      if (loaded && active) { fitEditors(); scheduleLookup(); }
+      if (loaded && active) { fitEditors(); scheduleLookup(); scheduleCoupons(); }
     },
     async flushSave() {
       flushing = true;
+      stopCoupons();
+      renderResults();
       clearTimeout(saveTimer);
       // A pending DM response may insert codes, so finish/cancel it before the final save.
       clearTimeout(lookupTimer);
@@ -370,9 +561,9 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     },
     // Only resume after an attempted logout has stopped; no lookup may add codes
     // between the last confirmed save and the logout request.
-    resume() { flushing = false; scheduleLookup(); },
+    resume() { flushing = false; renderResults(); scheduleLookup(); scheduleCoupons(); },
     hasAccess() { return access; },
-    clearAccess() { accessVersion++; setAccess(false); },
+    clearAccess() { accessVersion++; setAccess(false); stopCoupons(true); renderResults(); },
     hasPendingChanges() { return dirty || Boolean(savePromise); }
   };
 }

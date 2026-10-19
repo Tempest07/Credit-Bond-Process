@@ -4,29 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.2.2">
-  <meta name="application-build-version" content="5.2.2">
-  <meta name="application-build" content="20261015-release-522">
-  <title>Bond Centre 5.2.2 - Tempest07</title>
+  <meta name="application-version" content="5.2.4">
+  <meta name="application-build-version" content="5.2.4">
+  <meta name="application-build" content="20261020-release-524">
+  <title>Bond Centre 5.2.4 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261015-release-522"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261015-release-522">
+  <script src="./app-shell-mode.js?v=20261020-release-524"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261020-release-524">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261015-release-522" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261015-release-522" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261015-release-522" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261015-release-522">
-  <script src="./ui-preference.js?v=20261015-release-522"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261015-release-522">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261015-release-522">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261015-release-522">
-  <link rel="stylesheet" href="./release-notes.css?v=20261015-release-522">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261016-release-522-r3">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261015-release-522">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261020-release-524" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261020-release-524" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261020-release-524" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261020-release-524">
+  <script src="./ui-preference.js?v=20261020-release-524"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261020-release-524">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261020-release-524">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261020-release-524">
+  <link rel="stylesheet" href="./release-notes.css?v=20261020-release-524">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261020-release-524">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261020-release-524">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261020-release-524">
 </head>
 <body>
   <div class="app-shell">
@@ -51,13 +52,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.2.2">v5.2.2</span>
+      <span class="header-version" aria-label="当前版本 5.2.4">v5.2.4</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.2.2 · 2026-10-15">v5.2.2</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.2.4 · 2026-10-20">v5.2.4</span></div>
           <div class="top-actions">
           <button class="button subtle" id="stateHistoryButton">版本历史</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
@@ -1012,6 +1013,7 @@
           </div>
           <div class="bond-list-actions">
             <button class="button" id="bondList-fill" type="button" disabled>补齐代码</button>
+            <button class="button" id="bondList-coupons-refresh" type="button" disabled>刷新债券资料</button>
             <button class="button" id="bondList-export" type="button" disabled>导出草稿</button>
             <button class="button primary" id="bondList-copy" type="button" disabled>复制发送版</button>
           </div>
@@ -1022,7 +1024,71 @@
           <span>发现未保存的旧草稿。</span>
           <button class="button" id="bondList-recovery-download" type="button">下载恢复草稿</button>
         </div>
-        <div class="bond-list-workspace">
+        <div class="bond-list-tabs" role="tablist" aria-label="清单模式">
+          <button id="bondList-tab-results" type="button" role="tab" aria-selected="true" aria-controls="bondList-results-panel">筛选清单</button>
+          <button id="bondList-tab-editor" type="button" role="tab" aria-selected="false" aria-controls="bondList-editor-panel" tabindex="-1">分行编辑</button>
+        </div>
+        <section class="bond-list-filters" role="group" aria-label="报价筛选">
+          <div class="bond-list-filter-field bond-list-type-field">
+            <span class="bond-list-filter-label">品种</span>
+            <details class="bond-list-type-picker">
+              <summary><span id="bondList-types-label">全部品种</span><span class="bond-list-select-arrow" aria-hidden="true">⌄</span></summary>
+              <div id="bondList-types-options" class="bond-list-type-options"></div>
+            </details>
+          </div>
+          <div class="bond-list-filter-field bond-list-coupon-field">
+            <label class="bond-list-filter-label" for="bondList-coupon-op">票面利率</label>
+            <div class="bond-list-coupon-inputs">
+              <select id="bondList-coupon-op" aria-label="票面利率条件">
+                <option value="any">不限</option>
+                <option value="gt">&gt;</option>
+                <option value="gte">≥</option>
+                <option value="lt">&lt;</option>
+                <option value="lte">≤</option>
+                <option value="between">区间</option>
+              </select>
+              <span class="bond-list-percent-input"><input id="bondList-coupon-min" type="number" min="0" step="any" aria-label="票面利率数值" disabled><span aria-hidden="true">%</span></span>
+              <span id="bondList-coupon-max-wrap" class="bond-list-coupon-upper" hidden><span aria-hidden="true">至</span><span class="bond-list-percent-input"><input id="bondList-coupon-max" type="number" min="0" step="any" aria-label="票面利率上限" disabled><span aria-hidden="true">%</span></span></span>
+            </div>
+          </div>
+          <div class="bond-list-filter-field">
+            <span class="bond-list-filter-label">方向</span>
+            <div class="bond-list-side-options" role="group" aria-label="报价方向">
+              <button id="bondList-side-all" type="button" aria-pressed="true">全部</button>
+              <button id="bondList-side-ofr" type="button" aria-pressed="false">OFR</button>
+              <button id="bondList-side-bid" type="button" aria-pressed="false">BID</button>
+            </div>
+          </div>
+          <label class="bond-list-filter-field bond-list-missing-field"><span class="bond-list-filter-label">资料状态</span>
+            <select id="bondList-missing" aria-label="资料状态">
+              <option value="all">全部资料</option>
+              <option value="coupon">票面缺失</option>
+              <option value="type">品种未知</option>
+              <option value="side">方向未识别</option>
+            </select>
+          </label>
+          <button class="button subtle bond-list-filters-clear" id="bondList-filters-clear" type="button">清空筛选</button>
+          <div id="bondList-filter-error" class="bond-list-filter-error" role="alert" hidden></div>
+        </section>
+        <section id="bondList-results-panel" class="bond-list-panel bond-list-results-panel" role="tabpanel" aria-labelledby="bondList-tab-results">
+          <div class="bond-list-panel-head bond-list-results-head">
+            <span id="bondList-results-counts">符合 0 / 共 0 条报价</span>
+            <span id="bondList-metadata-status" class="bond-list-metadata-status" role="status" aria-live="polite">DM · 等待读取债券资料</span>
+          </div>
+          <div class="bond-list-table-scroll">
+            <table class="bond-list-results-table" aria-label="筛选报价明细">
+              <thead><tr><th scope="col">债券／代码</th><th scope="col">品种</th><th scope="col">票面利率</th><th scope="col">方向</th><th scope="col">原始报价</th><th scope="col">分行</th></tr></thead>
+              <tbody id="bondList-results-body"></tbody>
+            </table>
+          </div>
+          <div id="bondList-results-empty" class="bond-list-results-empty" hidden>暂无符合条件的报价</div>
+          <details class="bond-list-result-preview">
+            <summary>发送预览</summary>
+            <pre id="bondList-result-preview" aria-label="筛选结果发送预览">OFR/BID</pre>
+            <div id="bondList-result-copy-hint" class="bond-list-preview-status" role="status" aria-live="polite">添加报价后，这里会生成发送版。</div>
+          </details>
+        </section>
+        <div id="bondList-editor-panel" class="bond-list-workspace" role="tabpanel" aria-labelledby="bondList-tab-editor" hidden>
           <section class="bond-list-panel bond-list-editor" aria-labelledby="bondList-editor-title">
             <div class="bond-list-panel-head">
               <h2 id="bondList-editor-title">分行清单</h2>
@@ -1573,6 +1639,20 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.2.4</strong><time datetime="2026-10-20">2026 / 10 / 20</time></div>
+      <section><h3>OFR/BID 筛选与票面利率</h3><ul>
+        <li>新增筛选清单，支持品种多选、票面利率比较或区间、OFR/BID 方向和资料缺失条件的组合筛选。</li>
+        <li>按完整券码读取 DM 最新票面利率及品种资料，标明永续、二级资本和 TLAC 属性；缺失或歧义资料明确提示。</li>
+        <li>筛选结果可预览和复制发送版，保留原始报价及分行归属；分行编辑、空分行淡化、补码、草稿导出和冲突保护继续保留。</li>
+      </ul></section>
+      <section><h3>项目台账目标量价</h3><ul>
+        <li>项目与资料之间新增备注栏，悬停显示铅笔，点击就地编辑；支持多行、保存、取消和失焦自动保存。</li>
+        <li>Ctrl／Command + Enter 保存，Esc 取消；刷新和重新识别后保留备注，编辑操作不会误开项目详情。</li>
+      </ul></section>
+      <section><h3>版本与数据</h3><ul>
+        <li>5.2.3 已废弃，无独立功能改动、未正式发布；本次由正式版 5.2.2 升级至 5.2.4，保留此前修复。</li>
+        <li>沿用现有生产资料库、缴款单原件和保存冲突保护；不执行数据迁移或导入本地测试数据。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.2.2</strong><time datetime="2026-10-15">2026 / 10 / 15</time></div>
       <section><h3>OFR/BID 清单内置模块</h3><ul>
         <li>清单直接在 Bond Centre 内打开，沿用全站导航和界面风格；原有链接自动进入新模块。</li>
@@ -1641,10 +1721,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261015-release-522"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261015-release-522"></script>
-  <script type="module" src="./app.js?v=20261016-release-522-r3"></script>
-  <script type="module" src="./todo-fluid.js?v=20261015-release-522"></script>
-  <script type="module" src="./release-notes.js?v=20261015-release-522"></script>
+  <script src="./ui-mode.js?v=20261020-release-524"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261020-release-524"></script>
+  <script type="module" src="./app.js?v=20261020-release-524"></script>
+  <script type="module" src="./todo-fluid.js?v=20261020-release-524"></script>
+  <script type="module" src="./release-notes.js?v=20261020-release-524"></script>
 </body>
 </html>

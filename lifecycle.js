@@ -4,7 +4,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20261015-release-522";
+} from "./core.js?v=20261020-release-524";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -76,6 +76,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     issueScale: project.issueScale,
     absInfo: normalizeAbsInfo(project.absInfo),
     notes: input.notes || "",
+    targetQuoteNote: input.targetQuoteNote ?? "",
     tranches,
     resultAdvertisement: "",
     comprehensivePricing: false,
@@ -120,6 +121,7 @@ export function normalizeProjectRecord(input = {}) {
     issueScale: numberOrNull(input.issueScale),
     absInfo: normalizeAbsInfo(input.absInfo),
     notes: String(input.notes || "").trim(),
+    targetQuoteNote: String(input.targetQuoteNote ?? "").replace(/\r\n?/g, "\n").trim(),
     tranches: Array.isArray(input.tranches) && input.tranches.length
       ? input.tranches.map(normalizeTranche)
       : [normalizeTranche({ shortName: input.shortName })],

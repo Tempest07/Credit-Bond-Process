@@ -1,5 +1,6 @@
 .bond-list-view {
   --bond-list-gap: 28px;
+  min-width: 0;
 }
 
 .main.cloud-locked.bond-list-available .view.active[data-view="bond-list"] {
@@ -44,6 +45,420 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
 
 #bondList-save-dot {
   font-size: 9px;
+}
+
+.bond-list-tabs {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 20px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+}
+
+.bond-list-tabs button,
+.bond-list-side-options button {
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.bond-list-tabs button {
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bond-list-tabs button[aria-selected="true"],
+.bond-list-side-options button[aria-pressed="true"] {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 6%);
+}
+
+.bond-list-tabs button:focus-visible,
+.bond-list-side-options button:focus-visible,
+.bond-list-type-picker summary:focus-visible,
+.bond-list-result-preview summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.bond-list-filters {
+  display: grid;
+  grid-template-columns: minmax(145px, 1fr) minmax(270px, 1.75fr) max-content minmax(135px, 1fr) max-content;
+  align-items: end;
+  gap: 18px 16px;
+  min-width: 0;
+  margin-bottom: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+}
+
+.bond-list-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+}
+
+.bond-list-filter-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.bond-list-filters select,
+.bond-list-filters input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.bond-list-filters input[type="number"]:disabled {
+  opacity: 0.45;
+}
+
+.bond-list-type-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.bond-list-type-picker > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 14px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.bond-list-type-picker > summary::-webkit-details-marker,
+.bond-list-result-preview > summary::-webkit-details-marker {
+  display: none;
+}
+
+#bondList-types-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bond-list-select-arrow {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.bond-list-type-options {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(340px, calc(100vw - 64px));
+  max-height: 320px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 10%);
+}
+
+.bond-list-type-options label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.bond-list-type-options label:hover {
+  border-radius: 7px;
+  background: var(--panel-soft);
+}
+
+.bond-list-type-options input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.bond-list-coupon-inputs,
+.bond-list-coupon-upper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bond-list-coupon-inputs > select {
+  flex: 0 0 70px;
+}
+
+.bond-list-percent-input {
+  position: relative;
+  flex: 1 1 84px;
+  min-width: 70px;
+}
+
+.bond-list-percent-input > input[type="number"] {
+  padding-right: 27px;
+  appearance: textfield;
+  font-variant-numeric: tabular-nums;
+}
+
+.bond-list-percent-input > input::-webkit-inner-spin-button,
+.bond-list-percent-input > input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.bond-list-percent-input > span {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.bond-list-coupon-upper {
+  flex: 1 1 100px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.bond-list-side-options {
+  display: flex;
+  gap: 3px;
+  min-height: 40px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.bond-list-side-options button {
+  min-width: 45px;
+  padding: 5px 9px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.bond-list-filters-clear {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.bond-list-filter-error {
+  grid-column: 1 / -1;
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.bond-list-results-panel {
+  width: 100%;
+  max-width: 100%;
+}
+
+#bondList-results-counts {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.bond-list-metadata-status {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.bond-list-table-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.bond-list-results-table {
+  width: 100%;
+  min-width: 920px;
+  margin: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-align: left;
+}
+
+.bond-list-results-table th,
+.bond-list-results-table td {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.bond-list-results-table th {
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.bond-list-results-table td {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.bond-list-results-table th:first-child {
+  width: 21%;
+}
+
+.bond-list-results-table th:nth-child(2) {
+  width: 14%;
+}
+
+.bond-list-results-table th:nth-child(3) {
+  width: 11%;
+}
+
+.bond-list-results-table th:nth-child(4) {
+  width: 9%;
+}
+
+.bond-list-results-table th:nth-child(5) {
+  width: 28%;
+}
+
+.bond-list-results-table th:last-child {
+  width: 17%;
+}
+
+.bond-list-results-table th:nth-child(3),
+.bond-list-results-table td:nth-child(3) {
+  text-align: right;
+}
+
+.bond-list-results-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.bond-list-result-name,
+.bond-list-result-code {
+  display: block;
+}
+
+.bond-list-result-name {
+  font-weight: 600;
+}
+
+.bond-list-result-code,
+.bond-list-result-attribute {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bond-list-result-code {
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bond-list-result-attribute {
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.bond-list-direction {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bond-list-direction.ofr {
+  background: var(--warning-soft, var(--panel-soft));
+  color: var(--warning);
+}
+
+.bond-list-direction.bid,
+.bond-list-direction.both {
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--accent);
+}
+
+.bond-list-results-empty {
+  padding: 64px 24px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.bond-list-result-preview {
+  border-top: 1px solid var(--line);
+}
+
+.bond-list-result-preview > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 24px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+
+.bond-list-result-preview > summary::before {
+  content: '›';
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.bond-list-result-preview[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .bond-list-workspace {
@@ -165,12 +580,26 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
   margin: 6px 6px 0 0;
 }
 
+.bond-list-coupon-value {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bond-list-coupon-value.unavailable {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .bond-list-preview-panel {
   position: sticky;
   top: 24px;
 }
 
-#bondList-preview {
+#bondList-preview,
+#bondList-result-preview {
   min-height: 230px;
   max-height: 60vh;
   margin: 0;
@@ -221,7 +650,64 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
   display: none !important;
 }
 
+@media (max-width: 1180px) {
+  .bond-list-filters {
+    grid-template-columns: minmax(150px, 1fr) minmax(270px, 1.6fr) max-content;
+  }
+  .bond-list-missing-field {
+    grid-column: 1;
+  }
+  .bond-list-filters-clear {
+    justify-self: start;
+  }
+}
+
 @media (max-width: 760px) {
+  .bond-list-tabs {
+    width: 100%;
+  }
+  .bond-list-tabs button {
+    flex: 1 1 0;
+    padding: 10px 12px;
+  }
+  .bond-list-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 14px;
+    padding: 20px;
+  }
+  .bond-list-coupon-field {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .bond-list-coupon-inputs {
+    flex-wrap: wrap;
+  }
+  .bond-list-side-options button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .bond-list-missing-field {
+    grid-column: auto;
+  }
+  .bond-list-filters-clear {
+    justify-self: end;
+  }
+  .bond-list-results-head {
+    align-items: flex-start;
+  }
+  .bond-list-metadata-status {
+    flex-basis: 100%;
+  }
+  .bond-list-results-table {
+    min-width: 860px;
+  }
+  .bond-list-results-table th,
+  .bond-list-results-table td {
+    padding: 14px 16px;
+  }
+  .bond-list-result-preview > summary {
+    padding: 18px 20px;
+  }
   .bond-list-workspace {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
@@ -246,7 +732,8 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
   .bond-list-preview-panel {
     position: static;
   }
-  #bondList-preview {
+  #bondList-preview,
+  #bondList-result-preview {
     max-height: 450px;
     padding: 20px;
   }

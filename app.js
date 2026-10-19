@@ -1,9 +1,10 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261015-release-522';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261015-release-522';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261015-release-522';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261015-release-522';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261015-release-522';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261015-release-522';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-524';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-524';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-524';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-524';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-524';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-524';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-524';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -39,7 +40,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261015-release-522";
+} from "./core.js?v=20261020-release-524";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -68,15 +69,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261015-release-522";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261015-release-522";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261015-release-522";
+} from "./lifecycle.js?v=20261020-release-524";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-524";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-524";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261015-release-522";
+} from "./history-parser.js?v=20261020-release-524";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -93,23 +94,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261015-release-522";
+} from "./protocol-transfer.js?v=20261020-release-524";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261015-release-522";
+} from "./protocol-transfer-templates.js?v=20261020-release-524";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261015-release-522";
+} from "./protocol-transfer-docx.js?v=20261020-release-524";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261015-release-522";
+} from "./reminders.js?v=20261020-release-524";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -137,11 +138,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261015-release-522";
+} from "./secondary-inventory.js?v=20261020-release-524";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261015-release-522";
+} from "./trade-record-converter.js?v=20261020-release-524";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -152,16 +153,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261015-release-522";
+} from "./trade-record-grid.js?v=20261020-release-524";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261015-release-522";
-import { initializeDatePickers } from "./date-picker.js?v=20261015-release-522";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261015-release-522";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261015-release-522";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261015-release-522";
+} from "./trade-record-ledger.js?v=20261020-release-524";
+import { initializeDatePickers } from "./date-picker.js?v=20261020-release-524";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-524";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-524";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-524";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -170,33 +171,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261015-release-522";
+} from "./project-screenshot-ocr.js?v=20261020-release-524";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261015-release-522";
+} from "./project-screenshot-layout.js?v=20261020-release-524";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261015-release-522";
+} from "./project-screenshot-image.js?v=20261020-release-524";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261015-release-522";
+} from "./payment-receipts.js?v=20261020-release-524";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261015-release-522";
+} from "./issuer-search.js?v=20261020-release-524";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261015-release-522";
-import { initializeBondList } from "./bond-list-editor.js?v=20261016-release-522-r3";
+} from "./state-history.js?v=20261020-release-524";
+import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-524";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -365,6 +366,7 @@ const projectPaymentReceiptCache = new Map();
 const projectPaymentReceiptLoads = new Map();
 const projectPaymentReceiptErrors = new Map();
 let projectAutoSaveTimer = null;
+let projectTargetNotes = null;
 let projectRecognitionMarks = {};
 let resultRecognitionMarks = {};
 let resultRecognitionProjectId = "";
@@ -453,6 +455,11 @@ if (location.hostname === "credit-bond-process.pages.dev") {
 
 async function initialize() {
   initializeAndroidAppShell();
+  projectTargetNotes = createProjectTargetNotes({
+    getProject: id => (state.projects || []).find(project => project.id === id),
+    beforeEdit: () => { if (projectAutoSaveTimer) saveProjectDraftNow(); },
+    saveNote: saveProjectTargetQuoteNote,
+  });
   bindPlaceholderSelection();
   bindNavigation();
   bindWorkspaceChrome();
@@ -2063,7 +2070,7 @@ function navigateLedgerMobilePane(pane, options = {}) {
 
   if (focusSelected && ledgerMobilePane === "list") {
     requestAnimationFrame(() => {
-      $$('[data-project-id]').find((button) => button.dataset.projectId === selectedProjectId)?.focus({ preventScroll: true });
+      $$('#projectList [data-open-ledger-project]').find((button) => button.dataset.openLedgerProject === selectedProjectId)?.focus({ preventScroll: true });
     });
   }
 }
@@ -2071,6 +2078,7 @@ function navigateLedgerMobilePane(pane, options = {}) {
 function openLedgerProject(projectId, options = {}) {
   const { kind = "", step = "", replace = false, scrollOnDesktop = false } = options;
   if (!projectId) return;
+  if (projectTargetNotes?.flush() === false) return;
   selectedProjectId = projectId;
   if (isCompactLedger()) {
     if (ledgerMobilePane === "list" && $('.view[data-view="ledger"]')?.classList.contains("active")) {
@@ -5021,6 +5029,7 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
         instrumentType: created.instrumentType,
         absInfo: created.absInfo,
         notes: existing.notes,
+        targetQuoteNote: existing.targetQuoteNote,
         resultAdvertisement: existing.resultAdvertisement,
         resultConfirmed: existing.resultConfirmed,
         bidSubmissions: existing.bidSubmissions,
@@ -10537,6 +10546,7 @@ function syncLedgerFilterControls() {
 }
 
 function renderProjectList() {
+  projectTargetNotes?.captureFocus();
   syncLedgerFilterControls();
   const query = $("#projectSearch").value.trim().toLowerCase();
   const dateFilter = $("#projectDateFilter").value;
@@ -10556,7 +10566,8 @@ function renderProjectList() {
     ? projects.map((item) => {
       const valuationSummary = formatProjectValuationSummary(item);
       return `
-        <button class="project-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
+        <div class="project-item project-ledger-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}">
+          <button type="button" class="project-item-open" data-open-ledger-project="${escapeAttribute(item.id)}" aria-label="查看项目 ${escapeAttribute(item.shortName || "未命名项目")}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
           <span class="project-item-head">
             <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
             <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
@@ -10565,6 +10576,8 @@ function renderProjectList() {
             <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>
             <span class="project-item-schedule">${escapeHtml(formatProjectSchedule(item))}</span>
           </span>
+          </button>
+          ${projectTargetNotes?.render(item) || ""}
           <span class="project-item-facts">
             <span>${escapeHtml(formatTrancheDurationSummary(item))}</span>
             <span>${escapeHtml(formatProjectScaleSummary(item))}</span>
@@ -10574,16 +10587,33 @@ function renderProjectList() {
             <span class="project-party-badge">${escapeHtml(formatProjectVenueLead(item))}</span>
           </span>
           ${renderProjectCardBidSummary(item)}
-        </button>
+        </div>
       `;
     }).join("")
     : '<div class="empty">当前筛选下暂无项目。</div>';
 
-  $$("[data-project-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      openLedgerProject(button.dataset.projectId);
+  projectList.querySelectorAll(".project-ledger-item").forEach((row) => {
+    row.addEventListener("click", () => {
+      openLedgerProject(row.dataset.projectId);
     });
   });
+  projectTargetNotes?.bind(projectList);
+}
+
+function saveProjectTargetQuoteNote(projectId, text) {
+  // An older detail-form draft must land before this independent manual note.
+  if (projectAutoSaveTimer) saveProjectDraftNow();
+  const project = (state.projects || []).find(item => item.id === projectId);
+  if (!project) throw new Error("项目已不存在");
+  if ((project.targetQuoteNote || "") === text) return;
+  const previous = state;
+  state = upsertProject(state, { ...project, targetQuoteNote: text });
+  try {
+    persistState();
+  } catch (error) {
+    state = previous;
+    throw error;
+  }
 }
 
 function renderProjectCardBidSummary(project) {
@@ -14114,6 +14144,7 @@ function formatStateSnapshotBytes(value) {
 }
 
 function initializeIdleExit() {
+  window.addEventListener("pagehide", flushProjectDraftToLocal);
   if (isLocalApiMode()) {
     $("#idleLogoutDetail").textContent = "本地开发模式不会自动退出";
     return;
@@ -14133,7 +14164,6 @@ function initializeIdleExit() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) registerIdleActivity();
   });
-  window.addEventListener("pagehide", flushProjectDraftToLocal);
   $("#idleContinueButton").addEventListener("click", () => registerIdleActivity());
   $("#idleExitNowButton").addEventListener("click", () => void performIdleSaveAndLogout());
   scheduleIdleWarning();
@@ -14182,14 +14212,12 @@ function hideIdleWarning() {
 }
 
 function flushProjectDraftToLocal() {
-  if (!projectAutoSaveTimer) return;
-  clearTimeout(projectAutoSaveTimer);
-  projectAutoSaveTimer = null;
-  saveProjectDraftNow();
+  if (projectAutoSaveTimer) saveProjectDraftNow();
+  return projectTargetNotes?.flush() !== false;
 }
 
 async function flushStateBeforeIdleExit() {
-  flushProjectDraftToLocal();
+  if (flushProjectDraftToLocal() === false) return false;
   const bondListSaved = await bondListController?.flushSave();
   if (bondListSaved === false) return false;
   const pendingSaved = await saveSecondaryPendingDraft({ silent: true });

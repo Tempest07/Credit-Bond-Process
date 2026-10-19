@@ -11,6 +11,7 @@ function harness({ pending = true, open = true } = {}) {
   const context = vm.createContext({
     isUiBeta: () => true,
     projectAutoSaveTimer: pending ? 7 : null,
+    projectTargetNotes: null,
     $: (selector) => ({ "#projectWorkspace": workspace, "#projectForm": form, "#projectId": { value: "p1" } })[selector],
     clearTimeout: (timer) => effects.push(["cancel", timer]),
     readProjectForm: () => ({ id: "p1", opinion: "latest unsaved edit" }),
