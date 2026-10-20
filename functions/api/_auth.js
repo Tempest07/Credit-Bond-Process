@@ -1,3 +1,5 @@
+import { readStoredStateRow } from "../../state-storage.js";
+
 const ADMIN_USER_ID = "admin";
 const ADMIN_USERNAME = "admin";
 const ADMIN_NICKNAME = "管理员";
@@ -57,13 +59,11 @@ export async function ensureAuthSchema(db) {
 }
 
 export async function readUserAppState(db, userId) {
-  const row = await db.prepare(`
-    SELECT data, updated_at, revision
-    FROM user_app_state
-    WHERE user_id = ?1
-  `).bind(userId).first();
+  const row = await readStoredStateRow(db, "current", [userId]);
   return {
-    data: row?.data ? JSON.parse(row.data) : { ...EMPTY_APP_STATE },
+    data: row?.data || { ...EMPTY_APP_STATE },
+    storedData: row?.rawData || null,
+    exists: Boolean(row),
     updatedAt: row?.updated_at || null,
     revision: Number(row?.revision || 0),
   };

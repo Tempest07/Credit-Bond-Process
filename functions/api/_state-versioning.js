@@ -5,10 +5,12 @@ import {
 } from "../../state-history.js";
 import { readUserAppState } from "./_auth.js";
 import { assertStateCapacity } from "./_state-capacity.js";
+import { ensureStateChunksSchema, readStoredStateRow } from "../../state-storage.js";
 
 const SNAPSHOT_RETENTION = 50;
 
 export async function ensureStateVersionSchema(db) {
+  await ensureStateChunksSchema(db);
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS app_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -212,17 +214,11 @@ export async function listStateSnapshots(db, userId, limit = 50) {
 }
 
 export async function readStateSnapshot(db, userId, snapshotId) {
-  const row = await db.prepare(`
-    SELECT
-      id, revision, base_revision, data, saved_at, status, save_reason,
-      client_id, client_label, restored_from_snapshot_id, summary_json, byte_size
-    FROM user_app_state_snapshots
-    WHERE user_id = ?1 AND id = ?2
-  `).bind(userId, cleanId(snapshotId)).first();
+  const row = await readStoredStateRow(db, "snapshot", [userId, cleanId(snapshotId)]);
   if (!row) return null;
   return {
     ...snapshotMetadata(row),
-    data: JSON.parse(row.data),
+    data: row.data,
   };
 }
 

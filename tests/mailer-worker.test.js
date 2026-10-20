@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { prepareStoredState, StateStorageError } from "../state-storage.js";
 
 import { onRequestGet as onMailProxyGet } from "../functions/api/mail/today.js";
 import { onRequestPost as onSecondaryLedgerProxyPost } from "../functions/api/mail/secondary-ledger.js";
 import mailerWorker, {
+  buildReportFromDb,
   buildSecondaryLedgerMail,
   buildTodayMail,
   selectSecondaryLedgerRows,
@@ -11,6 +13,89 @@ import mailerWorker, {
 } from "../mailer-worker.js";
 
 const today = "2026-06-11";
+
+test("mailer reads the current per-user state before the legacy state", async () => {
+  const queries = [];
+  const report = await buildReportFromDb({ DB: reportStateDb({
+    user: { data: JSON.stringify({ projects: [{ shortName: "当前项目", status: "未投标", cutoffAt: `${today}T18:00` }] }) },
+    legacy: { data: JSON.stringify({ projects: [{ shortName: "旧项目", status: "未投标", cutoffAt: `${today}T18:00` }] }) },
+  }, queries) }, { date: today });
+  assert.deepEqual(report.projects.map((project) => project.shortName), ["当前项目"]);
+  assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+});
+
+test("mailer only falls back to legacy state when the user row or table is absent", async () => {
+  for (const user of [null, new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR")]) {
+    const report = await buildReportFromDb({ DB: reportStateDb({
+      user,
+      legacy: { data: JSON.stringify({ projects: [{ shortName: "旧项目", status: "未投标", cutoffAt: `${today}T18:00` }] }) },
+    }) }, { date: today });
+    assert.deepEqual(report.projects.map((project) => project.shortName), ["旧项目"]);
+  }
+});
+
+test("mailer rejects malformed user state and database errors without using stale legacy data", async () => {
+  for (const user of [{ data: "{broken" }, new Error("D1_ERROR: database unavailable")]) {
+    const queries = [];
+    await assert.rejects(buildReportFromDb({ DB: reportStateDb({
+      user,
+      legacy: { data: JSON.stringify({ projects: [] }) },
+    }, queries) }, { date: today }));
+    assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+  }
+});
+
+test("mailer reads multi-chunk user and legacy states without losing project data", async () => {
+  const storage = await prepareStoredState(JSON.stringify({
+    issuers: [{ legalName: "保留发行人", sourceText: "原始资料".repeat(120_000) }],
+    projects: [{ id: "project-original", shortName: "当前项目", opinion: "保留流程意见", status: "未投标", cutoffAt: `${today}T18:00` }],
+  }));
+  assert.ok(storage.chunks.length > 1);
+  for (const kind of ["user", "legacy"]) {
+    const report = await buildReportFromDb({ DB: reportStateDb({
+      [kind]: { data: storage.serialized }, chunks: storage.chunks,
+    }) }, { date: today });
+    assert.equal(report.projects[0].id, "project-original");
+    assert.match(report.text, /保留流程意见/);
+  }
+});
+
+test("mailer rejects incomplete, corrupted, or unavailable chunks instead of mailing stale state", async () => {
+  const storage = await prepareStoredState(JSON.stringify({ projects: [], sourceText: "原始资料".repeat(120_000) }));
+  for (const options of [
+    { chunks: storage.chunks.slice(1) },
+    { chunks: storage.chunks.map((chunk, index) => index === 0 ? chunk.replace("原", "旧") : chunk) },
+    { chunks: storage.chunks, chunkError: new Error("D1_ERROR: chunks unavailable") },
+  ]) {
+    const queries = [];
+    await assert.rejects(buildReportFromDb({ DB: reportStateDb({
+      user: { data: storage.serialized }, legacy: { data: JSON.stringify({ projects: [] }) }, ...options,
+    }, queries) }, { date: today }), options.chunkError ? /chunks unavailable/ : StateStorageError);
+    assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+  }
+});
+
+function reportStateDb({ user = null, legacy = null, chunks = [], chunkError = null }, queries = []) {
+  return {
+    prepare(sql) {
+      queries.push(sql);
+      return {
+        bind() { return this; },
+        async first() {
+          const row = /FROM user_app_state\b/i.test(sql) ? user : legacy;
+          if (row instanceof Error) throw row;
+          return row;
+        },
+        async all() {
+          assert.match(sql, /LEFT JOIN app_state_chunks/);
+          if (chunkError) throw chunkError;
+          const row = /FROM user_app_state\b/i.test(sql) ? user : legacy;
+          return { results: chunks.map((chunk_data, chunk_index) => ({ ...row, chunk_index, chunk_data })) };
+        },
+      };
+    },
+  };
+}
 
 test("selects today's pending bid projects only", () => {
   const projects = [

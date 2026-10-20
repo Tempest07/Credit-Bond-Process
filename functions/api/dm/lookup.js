@@ -1,4 +1,5 @@
-import { readUserAppState, requireUser } from "../_auth.js";
+import { requireUser } from "../_auth.js";
+import { readStoredStateRow } from "../../../state-storage.js";
 import { lookupWindImpliedRating, windImpliedRatingEnabled } from "../_wind.js";
 import { sameBondIdentity, sameSecurityCode, sameIssuance, validateIssueGroup, normalizeLookupPayload } from "../../../bond-identity.js";
 
@@ -1632,24 +1633,17 @@ function applyWindImpliedRating(normalized, windResult, enabled) {
 async function readD1AppState(db, userId = "admin") {
   if (!db) return null;
   try {
-    const result = await readUserAppState(db, userId);
-    const hasUserData = result?.updatedAt
-      || (Array.isArray(result?.data?.issuers) && result.data.issuers.length)
-      || (Array.isArray(result?.data?.projects) && result.data.projects.length);
-    if (hasUserData) return result.data;
-  } catch {
-    try {
-      const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
-      return row?.data ? JSON.parse(row.data) : null;
-    } catch {
-      return null;
-    }
+    const row = await readStoredStateRow(db, "current", [userId]);
+    if (row) return row.data;
+  } catch (error) {
+    if (!/no such table:\s*user_app_state\b/i.test(String(error?.message || error))) throw error;
   }
   try {
-    const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
-    return row?.data ? JSON.parse(row.data) : null;
-  } catch {
-    return null;
+    const row = await readStoredStateRow(db, "legacy", []);
+    return row ? row.data : null;
+  } catch (error) {
+    if (/no such table:\s*app_state\b/i.test(String(error?.message || error))) return null;
+    throw error;
   }
 }
 
@@ -3483,6 +3477,7 @@ function bytesToHex(bytes) {
 }
 
 export const __test__ = {
+  readD1AppState,
   discoverFullNameBond,
   fullNameIdentity,
   normalizeDmLookup,

@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS user_app_state_snapshots (
 CREATE INDEX IF NOT EXISTS idx_user_app_state_snapshots_user_saved
   ON user_app_state_snapshots(user_id, saved_at DESC);
 
+CREATE TABLE IF NOT EXISTS app_state_chunks (
+  storage_id TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (storage_id, chunk_index)
+);
+
 CREATE TABLE IF NOT EXISTS app_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   data TEXT NOT NULL,

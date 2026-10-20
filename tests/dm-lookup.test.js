@@ -1,8 +1,87 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { prepareStoredState, StateStorageError } from "../state-storage.js";
 
 import { onRequestGet, __test__ } from "../functions/api/dm/lookup.js";
 import { onRequestGet as onValuationRequestGet, __test__ as valuationTest } from "../functions/api/dm/valuation.js";
+
+test("DM state lookup reads user data before stale legacy data", async () => {
+  const data = { issuers: [{ legalName: "当前发行人" }], projects: [] };
+  const queries = [];
+  const db = dmStateDb({ user: { data: JSON.stringify(data), updated_at: "2026-10-20T10:00:00Z", revision: 10 } }, queries);
+  assert.deepEqual(await __test__.readD1AppState(db, "admin"), data);
+  assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+});
+
+test("DM state lookup respects an intentionally empty user state", async () => {
+  const data = { issuers: [], projects: [] };
+  const queries = [];
+  const db = dmStateDb({
+    user: { data: JSON.stringify(data) },
+    legacy: { data: JSON.stringify({ issuers: [{ legalName: "过期发行人" }] }) },
+  }, queries);
+  assert.deepEqual(await __test__.readD1AppState(db, "admin"), data);
+  assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+});
+
+test("DM state lookup keeps legacy compatibility for a missing user row or table", async () => {
+  const data = { issuers: [{ legalName: "旧发行人" }], projects: [] };
+  for (const user of [null, new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR")]) {
+    assert.deepEqual(await __test__.readD1AppState(dmStateDb({ user, legacy: { data: JSON.stringify(data) } }), "admin"), data);
+  }
+  assert.equal(await __test__.readD1AppState(dmStateDb({ legacy: new Error("D1_ERROR: no such table: app_state: SQLITE_ERROR") }), "admin"), null);
+});
+
+test("DM state lookup does not silently use stale data after corruption or a database error", async () => {
+  for (const user of [{ data: "{broken" }, new Error("D1_ERROR: database unavailable")]) {
+    const queries = [];
+    await assert.rejects(__test__.readD1AppState(dmStateDb({ user }, queries), "admin"));
+    assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+  }
+  await assert.rejects(__test__.readD1AppState(dmStateDb({ legacy: { data: "{broken" } }), "admin"));
+  await assert.rejects(__test__.readD1AppState(dmStateDb({ legacy: new Error("D1_ERROR: database unavailable") }), "admin"), /database unavailable/);
+});
+
+test("DM state lookup reads multi-chunk user and legacy issuer histories", async () => {
+  const data = { issuers: [{ legalName: "当前发行人", subjectRating: "AAA", sourceText: "原始资料".repeat(120_000) }], projects: [] };
+  const storage = await prepareStoredState(JSON.stringify(data));
+  assert.ok(storage.chunks.length > 1);
+  for (const kind of ["user", "legacy"]) {
+    assert.deepEqual(await __test__.readD1AppState(dmStateDb({ [kind]: { data: storage.serialized }, chunks: storage.chunks }), "admin"), data);
+  }
+});
+
+test("DM state lookup rejects lost or corrupted chunks without using stale legacy ratings", async () => {
+  const storage = await prepareStoredState(JSON.stringify({ issuers: [], sourceText: "原始资料".repeat(120_000) }));
+  for (const chunks of [storage.chunks.slice(1), storage.chunks.map((chunk, index) => index === 0 ? chunk.replace("原", "旧") : chunk)]) {
+    const queries = [];
+    await assert.rejects(__test__.readD1AppState(dmStateDb({
+      user: { data: storage.serialized }, legacy: { data: JSON.stringify({ issuers: [{ legalName: "过期发行人", subjectRating: "AAA" }] }) }, chunks,
+    }, queries), "admin"), StateStorageError);
+    assert.equal(queries.some((sql) => /FROM app_state\b/i.test(sql)), false);
+  }
+});
+
+function dmStateDb({ user = null, legacy = null, chunks = [] }, queries = []) {
+  return {
+    prepare(sql) {
+      queries.push(sql);
+      return {
+        bind() { return this; },
+        async first() {
+          const row = /FROM user_app_state\b/i.test(sql) ? user : legacy;
+          if (row instanceof Error) throw row;
+          return row;
+        },
+        async all() {
+          assert.match(sql, /LEFT JOIN app_state_chunks/);
+          const row = /FROM user_app_state\b/i.test(sql) ? user : legacy;
+          return { results: chunks.map((chunk_data, chunk_index) => ({ ...row, chunk_index, chunk_data })) };
+        },
+      };
+    },
+  };
+}
 
 test("SM4 block encryption matches the official test vector", () => {
   const key = hexToBytes("0123456789abcdeffedcba9876543210");
@@ -1286,11 +1365,10 @@ test("DM lookup fills an unissued bond implied rating from a non-perpetual issue
     return new Response(JSON.stringify({ data: encrypted }), { status: 200 });
   };
 
-  const DB = {
-    prepare() {
-      throw new Error("D1 should not be queried when DM discovery finds ratings");
-    },
-  };
+  const DB = dmStateDb({ user: { data: JSON.stringify({
+    issuers: [{ legalName: "DM Rating Issuer", subjectRating: "AAA", ratingAgency: "旧评级机构", hiddenRating: "AAA" }],
+    projects: [],
+  }) } });
 
   try {
     const response = await onRequestGet({
@@ -1430,8 +1508,10 @@ test("DM lookup fills missing ratings from the issuer database", async () => {
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -1506,8 +1586,10 @@ test("DM lookup fills missing ratings from historical D1 project text", async ()
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -1658,8 +1740,10 @@ test("DM current 09/10 issue group never merges prior cloud 07/08 issues", async
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -1754,8 +1838,10 @@ test("DM current tranches remain authoritative when a cloud project contains sta
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -2295,8 +2381,10 @@ test("DM lookup preserves a documented exchange reallocation from D1", async () 
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -2360,8 +2448,10 @@ test("DM lookup uses prior short-name family only to identify the cloud issuer",
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -2468,8 +2558,10 @@ test("DM no-bond fallback returns selectable outstanding bonds from the matched 
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -2529,8 +2621,10 @@ test("DM no-result lookup never borrows ratings from an unrelated historical pro
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({
@@ -2578,8 +2672,10 @@ test("DM lookup points A/B reallocated tranches to the final issued MTN tranche"
 
   const DB = {
     prepare(sql) {
-      assert.match(sql, /SELECT data FROM app_state/);
+      if (/FROM user_app_state\b/i.test(sql)) throw new Error("D1_ERROR: no such table: user_app_state: SQLITE_ERROR");
+      assert.match(sql, /SELECT data, updated_at FROM app_state/);
       return {
+        bind() { return this; },
         async first() {
           return {
             data: JSON.stringify({

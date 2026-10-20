@@ -1,4 +1,5 @@
 import { TRADE_RECORD_COLUMNS } from "./trade-record-converter.js";
+import { readStoredStateRow } from "./state-storage.js";
 import {
   buildTradeRecordRows,
   buildTradeRecordTableText,
@@ -385,14 +386,15 @@ function formatOpinion(project) {
 
 async function loadState(db) {
   if (!db) throw new Error("D1 binding DB 尚未配置");
+  let userRow;
   try {
-    const userRow = await db.prepare("SELECT data FROM user_app_state WHERE user_id = ?1").bind("admin").first();
-    if (userRow?.data) return JSON.parse(userRow.data);
-  } catch {
-    // Legacy deployments may not have the per-user table yet.
+    userRow = await readStoredStateRow(db, "current", ["admin"]);
+  } catch (error) {
+    if (!/no such table:\s*user_app_state\b/i.test(String(error?.message || error))) throw error;
   }
-  const row = await db.prepare("SELECT data FROM app_state WHERE id = 1").first();
-  return row?.data ? JSON.parse(row.data) : { version: 2, issuers: [], projects: [], updatedAt: null };
+  if (userRow) return userRow.data;
+  const row = await readStoredStateRow(db, "legacy", []);
+  return row ? row.data : { version: 2, issuers: [], projects: [], updatedAt: null };
 }
 
 async function sendWithResend(env, report) {

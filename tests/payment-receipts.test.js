@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { prepareStoredState, StateStorageError } from "../state-storage.js";
 
 import {
   applyPaymentReceiptArchiveMutation,
@@ -244,6 +245,51 @@ test("treats a not-yet-created project state table as an empty matching populati
   };
   assert.deepEqual(await readPaymentProjects(db, "admin"), []);
 });
+
+test("receipt matching reads existing projects and preserves missing-row behavior", async () => {
+  const projects = [{ id: "existing", targetQuoteNote: "保留备注", tranches: [{ id: "tranche", winningAmountWan: 3000 }] }];
+  for (const [row, expected] of [[{ data: JSON.stringify({ projects }) }, projects], [null, []]]) {
+    const db = { prepare: () => ({ bind() { return this; }, async first() { return row; } }) };
+    assert.deepEqual(await readPaymentProjects(db, "admin"), expected);
+  }
+});
+
+test("receipt matching does not hide corrupt state or database errors as an empty population", async () => {
+  const corruptDb = { prepare: () => ({ bind() { return this; }, async first() { return { data: "{broken" }; } }) };
+  await assert.rejects(readPaymentProjects(corruptDb, "admin"));
+  const unavailableDb = { prepare: () => ({ bind() { return this; }, async first() { throw new Error("D1_ERROR: database unavailable"); } }) };
+  await assert.rejects(readPaymentProjects(unavailableDb, "admin"), /database unavailable/);
+});
+
+test("receipt matching reads projects and tranche details from a multi-chunk state", async () => {
+  const projects = [{ id: "project-original", targetQuoteNote: "保留备注", tranches: [{ id: "tranche", winningAmountWan: 3000 }] }];
+  const storage = await prepareStoredState(JSON.stringify({ projects, originalSource: "原始资料".repeat(120_000) }));
+  assert.ok(storage.chunks.length > 1);
+  assert.deepEqual(await readPaymentProjects(receiptChunkDb(storage), "admin"), projects);
+});
+
+test("receipt matching rejects incomplete or corrupted chunks rather than reporting no matches", async () => {
+  const storage = await prepareStoredState(JSON.stringify({ projects: [], originalSource: "原始资料".repeat(120_000) }));
+  await assert.rejects(readPaymentProjects(receiptChunkDb(storage, storage.chunks.slice(1)), "admin"), StateStorageError);
+  const corrupted = storage.chunks.map((chunk, index) => index === 0 ? chunk.replace("原", "旧") : chunk);
+  await assert.rejects(readPaymentProjects(receiptChunkDb(storage, corrupted), "admin"), StateStorageError);
+});
+
+function receiptChunkDb(storage, chunks = storage.chunks) {
+  return {
+    prepare(sql) {
+      assert.match(sql, /FROM user_app_state\b/i);
+      return {
+        bind(owner) { assert.equal(owner, "admin"); return this; },
+        async first() { return { data: storage.serialized }; },
+        async all() {
+          assert.match(sql, /LEFT JOIN app_state_chunks/);
+          return { results: chunks.map((chunk_data, chunk_index) => ({ data: storage.serialized, chunk_index, chunk_data })) };
+        },
+      };
+    },
+  };
+}
 
 test("recognizes investment-bank scanned notice fields expressed in ten-thousand yuan", () => {
   const result = recognizePaymentReceiptText(`

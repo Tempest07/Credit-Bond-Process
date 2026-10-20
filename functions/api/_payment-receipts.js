@@ -1,4 +1,5 @@
 import { decodeWords } from "postal-mime";
+import { readStoredStateRow } from "../../state-storage.js";
 
 const RECEIPT_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS payment_receipt_batches (
@@ -318,22 +319,13 @@ export async function findPaymentReceiptBySha(db, ownerUserId, sha256, excludeRe
 export async function readPaymentProjects(db, ownerUserId) {
   let row;
   try {
-    row = await db.prepare(`
-      SELECT data
-      FROM user_app_state
-      WHERE user_id = ?1
-    `).bind(ownerUserId).first();
+    row = await readStoredStateRow(db, "current", [ownerUserId]);
   } catch (error) {
     if (/no such table:\s*user_app_state/i.test(String(error?.message || error))) return [];
     throw error;
   }
-  if (!row?.data) return [];
-  try {
-    const data = JSON.parse(row.data);
-    return Array.isArray(data.projects) ? data.projects : [];
-  } catch {
-    return [];
-  }
+  if (!row) return [];
+  return Array.isArray(row.data.projects) ? row.data.projects : [];
 }
 
 export async function listPaymentReceiptCoverageMatches(db, ownerUserId) {
