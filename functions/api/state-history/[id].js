@@ -5,6 +5,7 @@ import {
   saveStateVersion,
 } from "../_state-versioning.js";
 import { validateState } from "../state.js";
+import { StateCapacityError, stateCapacityPayload } from "../_state-capacity.js";
 
 const MAX_ACTION_BODY_BYTES = 50_000;
 
@@ -84,6 +85,7 @@ export async function onRequestPost(context) {
       user: auth.user,
     });
   } catch (error) {
+    if (error instanceof StateCapacityError) return json(stateCapacityPayload(), 413);
     console.error(JSON.stringify({
       event: "state_revert_failed",
       userId: auth.user.id,

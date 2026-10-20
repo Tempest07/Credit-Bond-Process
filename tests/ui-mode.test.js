@@ -13,7 +13,7 @@ test("startup login placeholder stays hidden only until the gate receives a real
   assert.match(css, /\.cloud-gate\[data-initializing\]\{visibility:hidden\}/);
   const start = app.indexOf("function setCloudGate(");
   const end = app.indexOf("\nfunction ", start + 1);
-  for (const state of ["connecting", "idle", "error", "success"]) {
+  for (const [state, reason] of [["connecting"], ["idle"], ["error"], ["success"], ["error", "state_too_large"]]) {
     const nodes = new Map();
     const getNode = selector => {
       if (!nodes.has(selector)) nodes.set(selector, {
@@ -30,11 +30,38 @@ test("startup login placeholder stays hidden only until the gate receives a real
       CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     });
     vm.runInContext(app.slice(start, end), context);
-    context.setCloudGate(true, { state });
+    context.setCloudGate(true, { state, reason });
     assert.equal("initializing" in getNode("#cloudGate").dataset, false);
     assert.equal(getNode("#cloudGate").hidden, false);
-    assert.equal(getNode("#gatewayLoginLink").hidden, state === "connecting" || state === "success");
+    assert.equal(getNode("#gatewayLoginLink").hidden, state === "connecting" || state === "success" || reason === "state_too_large");
+    if (reason === "state_too_large") {
+      assert.equal(getNode("#exportDataButton").disabled, false);
+      assert.equal(getNode("#saveCloudButton").disabled, false);
+    }
   }
+});
+
+test("capacity failures preserve the unsynced local copy and identify the gate error without logging out", async () => {
+  const gates = [], persisted = [];
+  const draft = { issuers: [{ id: "existing" }], projects: [{ id: "pending", targetQuoteNote: "本机待同步备注" }] };
+  const before = JSON.stringify(draft);
+  const context = vm.createContext({
+    API_URL: "/api/state", localBaseRevision: 7, localStateDirty: false, cloudAvailable: true,
+    setSyncStatus() {}, authHeaders: () => ({}), stateSaveMeta: () => ({ source: "manual" }),
+    fetch: async () => ({ ok: false, status: 413, json: async () => ({ code: "state_too_large", error: "容量不足" }) }),
+    persistLocal() { persisted.push("local"); }, setCloudGate(locked, config) { gates.push({ locked, config }); },
+    clearAuthSession() { throw new Error("Must not log out for capacity errors"); },
+    redirectToGatewayLogin() { throw new Error("Must not redirect for capacity errors"); },
+  });
+  const start = app.indexOf("async function saveCloudStateSnapshot(");
+  const end = app.indexOf("\nfunction ", start + 1);
+  vm.runInContext(app.slice(start, end), context);
+  assert.equal(await context.saveCloudStateSnapshot(draft, { generation: 1, source: "manual" }), false);
+  assert.equal(context.localStateDirty, true);
+  assert.equal(context.localBaseRevision, 7);
+  assert.equal(JSON.stringify(draft), before);
+  assert.deepEqual(persisted, ["local"]);
+  assert.equal(gates[0].config.reason, "state_too_large");
 });
 
 test("switching from classic to beta does not open a retained project selection from the list", () => {

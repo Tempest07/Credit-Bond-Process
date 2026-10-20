@@ -4,6 +4,7 @@ import {
   summarizeStateChange,
 } from "../../state-history.js";
 import { readUserAppState } from "./_auth.js";
+import { assertStateCapacity } from "./_state-capacity.js";
 
 const SNAPSHOT_RETENTION = 50;
 
@@ -101,6 +102,12 @@ export async function saveStateVersion(db, userId, options = {}) {
   const summary = summarizeStateChange(current.data, nextData);
   const summaryJson = JSON.stringify(summary);
   const restoredFromSnapshotId = cleanId(options.restoredFromSnapshotId);
+  const byteSize = assertStateCapacity(serialized, [
+    [userId, serialized, updatedAt, revision],
+    [snapshotId, userId, revision, expectedRevision, serialized, updatedAt, "accepted",
+      meta.source, meta.clientId, meta.clientLabel, restoredFromSnapshotId, summaryJson, 0],
+    ...(options.mirrorLegacy ? [[1, serialized, updatedAt]] : []),
+  ]);
 
   const statements = [
     db.prepare(`
@@ -131,7 +138,7 @@ export async function saveStateVersion(db, userId, options = {}) {
       meta.clientLabel,
       restoredFromSnapshotId || null,
       summaryJson,
-      new TextEncoder().encode(serialized).byteLength,
+      byteSize,
     ),
   ];
   if (options.mirrorLegacy) {
@@ -224,6 +231,11 @@ async function saveConflictSnapshot(db, userId, options) {
   const serialized = JSON.stringify(options.data);
   const summary = summarizeStateChange(options.currentData, options.data);
   const id = crypto.randomUUID();
+  const summaryJson = JSON.stringify(summary);
+  const byteSize = assertStateCapacity(serialized, [[
+    id, userId, null, options.baseRevision, serialized, savedAt, "conflict",
+    options.meta.source, options.meta.clientId, options.meta.clientLabel, summaryJson, 0,
+  ]]);
   await db.prepare(`
     INSERT INTO user_app_state_snapshots (
       id, user_id, revision, base_revision, data, saved_at, status, save_reason,
@@ -239,8 +251,8 @@ async function saveConflictSnapshot(db, userId, options) {
     options.meta.source,
     options.meta.clientId,
     options.meta.clientLabel,
-    JSON.stringify(summary),
-    new TextEncoder().encode(serialized).byteLength,
+    summaryJson,
+    byteSize,
   ).run();
   await pruneSnapshots(db, userId);
   return {

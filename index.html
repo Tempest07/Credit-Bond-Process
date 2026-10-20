@@ -6,28 +6,28 @@
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="5.2.4.1">
   <meta name="application-build-version" content="5.2.4.1">
-  <meta name="application-build" content="20261020-release-5241-hotfix2">
+  <meta name="application-build" content="20261020-release-5241-hotfix3">
   <title>Bond Centre 5.2.4.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261020-release-5241-hotfix2"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261020-release-5241-hotfix2">
+  <script src="./app-shell-mode.js?v=20261020-release-5241-hotfix3"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261020-release-5241-hotfix3">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261020-release-5241-hotfix2" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261020-release-5241-hotfix2" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261020-release-5241-hotfix2" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261020-release-5241-hotfix2">
-  <script src="./ui-preference.js?v=20261020-release-5241-hotfix2"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261020-release-5241-hotfix2">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261020-release-5241-hotfix2">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261020-release-5241-hotfix2">
-  <link rel="stylesheet" href="./release-notes.css?v=20261020-release-5241-hotfix2">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261020-release-5241-hotfix2">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261020-release-5241-hotfix2">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261020-release-5241-hotfix2">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261020-release-5241-hotfix3" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261020-release-5241-hotfix3" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261020-release-5241-hotfix3" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261020-release-5241-hotfix3">
+  <script src="./ui-preference.js?v=20261020-release-5241-hotfix3"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261020-release-5241-hotfix3">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261020-release-5241-hotfix3">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261020-release-5241-hotfix3">
+  <link rel="stylesheet" href="./release-notes.css?v=20261020-release-5241-hotfix3">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261020-release-5241-hotfix3">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261020-release-5241-hotfix3">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261020-release-5241-hotfix3">
 </head>
 <body>
   <div class="app-shell">
@@ -1640,6 +1640,10 @@
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
       <div class="release-notes-version"><strong>5.2.4.1</strong><time datetime="2026-10-20">2026 / 10 / 20</time></div>
+      <section><h3>热补丁：资料库同步容量</h3><ul>
+        <li>修复资料库正常增长后触发过早容量保护而无法同步的问题；在平台限制内提高安全保存容量，新增完整快照行的容量检查。</li>
+        <li>保留原有业务字段、JSON 格式、历史版本和冲突保护；容量错误继续保留本机待同步数据、备份和重试入口。</li>
+      </ul></section>
       <section><h3>热补丁：投标标签与简称</h3><ul>
         <li>“已投标结束”标签更名为“已投标完成”，使用绿色；项目列表、详情和筛选显示统一更新。</li>
         <li>债券简称保持单行，空间不足时标签移到下一行；原有投标状态、标位历史和业务数据保持兼容。</li>
@@ -1737,10 +1741,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261020-release-5241-hotfix2"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261020-release-5241-hotfix2"></script>
-  <script type="module" src="./app.js?v=20261020-release-5241-hotfix2"></script>
-  <script type="module" src="./todo-fluid.js?v=20261020-release-5241-hotfix2"></script>
-  <script type="module" src="./release-notes.js?v=20261020-release-5241-hotfix2"></script>
+  <script src="./ui-mode.js?v=20261020-release-5241-hotfix3"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261020-release-5241-hotfix3"></script>
+  <script type="module" src="./app.js?v=20261020-release-5241-hotfix3"></script>
+  <script type="module" src="./todo-fluid.js?v=20261020-release-5241-hotfix3"></script>
+  <script type="module" src="./release-notes.js?v=20261020-release-5241-hotfix3"></script>
 </body>
 </html>

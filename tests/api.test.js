@@ -411,12 +411,62 @@ test("requires a base revision and rejects state bodies beyond the D1-safe limit
       method: "PUT",
       body: JSON.stringify({
         expectedRevision: 0,
-        data: { version: 5, issuers: [{ id: "large", legalName: "超大主体", notes: "x".repeat(1_810_000) }] },
+        data: { version: 5, issuers: [{ id: "large", legalName: "超大主体", notes: "x".repeat(1_910_000) }] },
       }),
     }),
   });
   assert.equal(tooLarge.status, 413);
   assert.equal((await tooLarge.json()).code, "state_too_large");
+  assert.equal(DB.userStates.size, 0);
+});
+
+test("saves formerly blocked UTF-8 payloads without changing JSON, snapshots or the legacy mirror", async () => {
+  const DB = createMockDb();
+  const data = { issuers: [{ id: "large", legalName: "容量边界", notes: "文".repeat(610_000) }], projects: [{ id: "p1", targetQuoteNote: "保留备注" }] };
+  const response = await onRequestPut({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state", {
+    method: "PUT", body: JSON.stringify({ expectedRevision: 0, data }),
+  }) });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.revision, 1);
+  const saved = DB.userStates.get("admin");
+  assert.ok(Buffer.byteLength(saved.data) > 1_800_000);
+  assert.equal(JSON.parse(saved.data).issuers[0].notes, data.issuers[0].notes);
+  assert.equal(JSON.parse(saved.data).projects[0].targetQuoteNote, "保留备注");
+  assert.equal(DB.snapshots.get(payload.snapshot.id).data, saved.data);
+  assert.equal(DB.legacyState.data, saved.data);
+  const loaded = await onRequestGet({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state") });
+  assert.equal((await loaded.json()).data.issuers[0].notes, data.issuers[0].notes);
+});
+
+test("rejects a full snapshot row before any CAS update, including conflict and revert paths", async () => {
+  const DB = createMockDb();
+  const put = (data, expectedRevision) => onRequestPut({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state", {
+    method: "PUT", body: JSON.stringify({ expectedRevision, data }),
+  }) });
+  await put({ issuers: [{ id: "original", legalName: "原有数据" }] }, 0);
+  const before = structuredClone(DB.userStates.get("admin"));
+  const legacy = structuredClone(DB.legacyState);
+  const count = DB.snapshots.size;
+  // This state fits alone; its oversized id is also copied into the change summary.
+  const data = { issuers: [{ id: "x".repeat(180_000), legalName: "行预算", notes: "x".repeat(1_650_000) }] };
+  for (const expectedRevision of [1, 0]) {
+    const response = await put(data, expectedRevision);
+    assert.equal(response.status, 413);
+    assert.equal((await response.json()).code, "state_too_large");
+    assert.deepEqual(DB.userStates.get("admin"), before);
+    assert.deepEqual(DB.legacyState, legacy);
+    assert.equal(DB.snapshots.size, count);
+  }
+  DB.snapshots.set("historic", { id: "historic", user_id: "admin", revision: 0,
+    data: JSON.stringify({ issuers: [{ id: "old", notes: "x".repeat(1_910_000) }] }), summary_json: "{}" });
+  const revert = await onStateSnapshotPost({ env: { DB }, params: { id: "historic" },
+    request: new Request("http://127.0.0.1:8788/api/state-history/historic", {
+      method: "POST", body: JSON.stringify({ action: "revert", expectedRevision: 1 }),
+    }) });
+  assert.equal(revert.status, 413);
+  assert.equal((await revert.json()).code, "state_too_large");
+  assert.deepEqual(DB.userStates.get("admin"), before);
 });
 
 test("reads migrated legacy state with gateway auth", async () => {

@@ -1,10 +1,10 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-5241-hotfix2';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-5241-hotfix2';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-5241-hotfix2';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-5241-hotfix2';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-5241-hotfix2';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-5241-hotfix2';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-5241-hotfix2';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-5241-hotfix3';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-5241-hotfix3';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-5241-hotfix3';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-5241-hotfix3';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-5241-hotfix3';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-5241-hotfix3';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-5241-hotfix3';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -40,7 +40,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261020-release-5241-hotfix2";
+} from "./core.js?v=20261020-release-5241-hotfix3";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -69,15 +69,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261020-release-5241-hotfix2";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-5241-hotfix2";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-5241-hotfix2";
+} from "./lifecycle.js?v=20261020-release-5241-hotfix3";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-5241-hotfix3";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-5241-hotfix3";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261020-release-5241-hotfix2";
+} from "./history-parser.js?v=20261020-release-5241-hotfix3";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -94,23 +94,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261020-release-5241-hotfix2";
+} from "./protocol-transfer.js?v=20261020-release-5241-hotfix3";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261020-release-5241-hotfix2";
+} from "./protocol-transfer-templates.js?v=20261020-release-5241-hotfix3";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261020-release-5241-hotfix2";
+} from "./protocol-transfer-docx.js?v=20261020-release-5241-hotfix3";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261020-release-5241-hotfix2";
+} from "./reminders.js?v=20261020-release-5241-hotfix3";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -138,11 +138,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261020-release-5241-hotfix2";
+} from "./secondary-inventory.js?v=20261020-release-5241-hotfix3";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261020-release-5241-hotfix2";
+} from "./trade-record-converter.js?v=20261020-release-5241-hotfix3";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -153,16 +153,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261020-release-5241-hotfix2";
+} from "./trade-record-grid.js?v=20261020-release-5241-hotfix3";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261020-release-5241-hotfix2";
-import { initializeDatePickers } from "./date-picker.js?v=20261020-release-5241-hotfix2";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-5241-hotfix2";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-5241-hotfix2";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-5241-hotfix2";
+} from "./trade-record-ledger.js?v=20261020-release-5241-hotfix3";
+import { initializeDatePickers } from "./date-picker.js?v=20261020-release-5241-hotfix3";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-5241-hotfix3";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-5241-hotfix3";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-5241-hotfix3";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -171,33 +171,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261020-release-5241-hotfix2";
+} from "./project-screenshot-ocr.js?v=20261020-release-5241-hotfix3";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261020-release-5241-hotfix2";
+} from "./project-screenshot-layout.js?v=20261020-release-5241-hotfix3";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261020-release-5241-hotfix2";
+} from "./project-screenshot-image.js?v=20261020-release-5241-hotfix3";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261020-release-5241-hotfix2";
+} from "./payment-receipts.js?v=20261020-release-5241-hotfix3";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261020-release-5241-hotfix2";
+} from "./issuer-search.js?v=20261020-release-5241-hotfix3";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261020-release-5241-hotfix2";
-import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-5241-hotfix2";
+} from "./state-history.js?v=20261020-release-5241-hotfix3";
+import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-5241-hotfix3";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -14425,7 +14425,7 @@ async function saveCloudStateSnapshot(snapshot, { generation, source }) {
         handleStateConflict(payload);
         return false;
       }
-      throw new Error(payload.error || `HTTP ${response.status}`);
+      throw Object.assign(new Error(payload.error || `HTTP ${response.status}`), { code: payload.code });
     }
     cloudRevision = Number(payload.revision || cloudRevision || 0);
     cloudUpdatedAt = payload.updatedAt || cloudUpdatedAt;
@@ -14454,6 +14454,7 @@ async function saveCloudStateSnapshot(snapshot, { generation, source }) {
     setCloudGate(true, {
       state: "error",
       title: "D1 同步失败",
+      reason: error.code,
       detail: `${error.message || "请检查网络或登录状态"}。本机数据仍保留，可导出备份或重试同步。`,
     });
     return false;
@@ -14615,7 +14616,7 @@ function setCloudGate(locked, options = {}) {
   $("#importDataInput").disabled = Boolean(locked);
   $("#importDataInput").closest(".file-button")?.classList.toggle("unavailable", Boolean(locked));
   const gatewayLoginLink = $("#gatewayLoginLink");
-  if (gatewayLoginLink) gatewayLoginLink.hidden = !locked || isLocalApiMode() || stateName === "success" || stateName === "connecting";
+  if (gatewayLoginLink) gatewayLoginLink.hidden = !locked || isLocalApiMode() || stateName === "success" || stateName === "connecting" || config.reason === "state_too_large";
   if (config.title) $("#cloudGateTitle").dataset.statusTitle = config.title;
   if (config.detail) $("#cloudGateDetail").textContent = config.detail;
   updateCloudGateCopy();

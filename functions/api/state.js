@@ -8,9 +8,7 @@ import {
   requireUser,
 } from "./_auth.js";
 import { ensureStateVersionSchema, saveStateVersion } from "./_state-versioning.js";
-
-const MAX_BODY_BYTES = 1_900_000;
-const MAX_STATE_BYTES = 1_800_000;
+import { MAX_STATE_BODY_BYTES, MAX_STATE_BYTES, StateCapacityError, stateCapacityPayload } from "./_state-capacity.js";
 
 export async function onRequestGet(context) {
   const auth = await requireUser(context);
@@ -36,13 +34,13 @@ export async function onRequestPut(context) {
   if (auth.response) return auth.response;
   if (!context.env.DB) return json({ error: "Cloudflare D1 binding DB 尚未配置" }, 503);
   const declaredLength = Number(context.request.headers.get("Content-Length") || 0);
-  if (declaredLength > MAX_BODY_BYTES) return json({ error: "提交的数据过大" }, 413);
+  if (declaredLength > MAX_STATE_BODY_BYTES) return stateTooLargeResponse();
 
   let body;
   let data;
   try {
     const text = await context.request.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return stateTooLargeResponse();
+    if (new TextEncoder().encode(text).byteLength > MAX_STATE_BODY_BYTES) return stateTooLargeResponse();
     body = JSON.parse(text);
     if (body?.expectedRevision === undefined || body?.expectedRevision === null || !Number.isInteger(Number(body.expectedRevision))) {
       return json({ error: "保存前必须先读取云端 revision", code: "revision_required" }, 428);
@@ -80,6 +78,7 @@ export async function onRequestPut(context) {
       user: auth.user,
     });
   } catch (error) {
+    if (error instanceof StateCapacityError) return stateTooLargeResponse();
     console.error(JSON.stringify({
       event: "state_save_failed",
       userId: auth.user.id,
@@ -130,9 +129,5 @@ export function validateState(data) {
 }
 
 function stateTooLargeResponse() {
-  return json({
-    error: "资料库已接近 Cloudflare D1 单行容量上限，请先导出备份并联系管理员拆分数据",
-    code: "state_too_large",
-    maxBytes: MAX_STATE_BYTES,
-  }, 413);
+  return json(stateCapacityPayload(), 413);
 }
