@@ -1,4 +1,4 @@
-import { createHoverIntent } from './todo-hover-intent.js?v=20261020-release-5241';
+import { createHoverIntent } from './todo-hover-intent.js?v=20261020-release-5241-hotfix1';
 
 export function automaticTodoCard(counts) {
   const populated = counts.flatMap((count, index) => count > 0 ? [index] : []);

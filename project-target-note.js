@@ -63,6 +63,17 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
     draft.direction = input.selectionDirection || "none";
   }
 
+  function updateInput(box, input) {
+    rememberInput(input);
+    const previousHeight = box.getBoundingClientRect?.().height;
+    resizeAnimations.get(box)?.cancel();
+    draft.error = "";
+    const status = box.querySelector(".project-target-note-status");
+    if (status) status.textContent = "";
+    resizeInput(input);
+    animateResize(box, previousHeight);
+  }
+
   function captureFocus() {
     const input = currentBox()?.querySelector(".project-target-note-input");
     if (input) {
@@ -160,14 +171,7 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
     });
     box.addEventListener("input", event => {
       if (event.target.matches(".project-target-note-input") && draft?.id === box.dataset.targetNoteId) {
-        rememberInput(event.target);
-        const previousHeight = box.getBoundingClientRect?.().height;
-        resizeAnimations.get(box)?.cancel();
-        draft.error = "";
-        const status = box.querySelector(".project-target-note-status");
-        if (status) status.textContent = "";
-        resizeInput(event.target);
-        animateResize(box, previousHeight);
+        updateInput(box, event.target);
       }
     });
     box.addEventListener("compositionstart", () => { if (draft?.id === box.dataset.targetNoteId) draft.composing = true; });
@@ -179,7 +183,16 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
       if (draft?.id !== box.dataset.targetNoteId) return;
       if (event.isComposing || draft.composing || event.keyCode === 229) return;
       if (event.key === "Escape") { event.preventDefault(); cancel(); }
-      else if (event.target.matches(".project-target-note-input") && event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commit(); }
+      else if (event.target.matches(".project-target-note-input") && event.key === "Enter") {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          const input = event.target;
+          const { selectionStart: start, selectionEnd: end } = input;
+          if (input.maxLength >= 0 && input.value.length - (end - start) + 1 > input.maxLength) return;
+          input.setRangeText("\n", start, end, "end");
+          updateInput(box, input);
+        } else commit();
+      }
     });
     box.addEventListener("focusout", event => {
       if (repainting || !container?.contains(box) || draft?.id !== box.dataset.targetNoteId) return;

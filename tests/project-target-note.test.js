@@ -46,6 +46,12 @@ class Element {
     if (old && old !== this) old.emit("focusout", { relatedTarget: this });
   }
   setSelectionRange(start, end, direction = "none") { this.selectionStart = start; this.selectionEnd = end; this.selectionDirection = direction; }
+  get maxLength() { return Number(this.attributes.maxlength ?? -1); }
+  setRangeText(text, start, end, mode) {
+    assert.equal(mode, "end");
+    this.value = this.value.slice(0, start) + text + this.value.slice(end);
+    this.setSelectionRange(start + text.length, start + text.length);
+  }
   set innerHTML(html) {
     const oldFocused = this.ownerDocument.activeElement;
     for (const child of this.children) child.parentElement = null;
@@ -183,18 +189,26 @@ test("focus within the note permits Cancel to discard the draft; leaving saves",
   assert.deepEqual(env.saves, [{ id: "one", text: "失焦保存" }]);
 });
 
-test("Enter permits multiline input, Ctrl/Meta Enter saves, and Escape cancels", () => {
+test("Enter saves, Ctrl/Meta Enter inserts a newline, and Escape cancels", () => {
   const env = fixture(); env.edit("one"); env.type("one", "第一行\n第二行");
-  assert.equal(env.input("one").emit("keydown", { key: "Enter" }).defaultPrevented, false);
+  const input = env.input("one");
+  input.setSelectionRange(3, 3);
+  assert.equal(input.emit("keydown", { key: "Enter", ctrlKey: true }).defaultPrevented, true);
+  assert.equal(input.value, "第一行\n\n第二行");
+  assert.deepEqual([input.selectionStart, input.selectionEnd], [4, 4]);
   assert.equal(env.saves.length, 0);
-  assert.equal(env.input("one").emit("keydown", { key: "Enter", ctrlKey: true }).defaultPrevented, true);
-  assert.equal(env.saves.length, 1);
+  assert.equal(input.emit("keydown", { key: "Enter" }).defaultPrevented, true);
+  assert.deepEqual(env.saves, [{ id: "one", text: "第一行\n\n第二行" }]);
   env.edit("one"); env.type("one", "取消");
   assert.equal(env.input("one").emit("keydown", { key: "Escape" }).defaultPrevented, true);
   assert.equal(env.saves.length, 1);
-  env.edit("one"); env.type("one", "Mac 提交");
+  env.edit("one"); env.type("one", "Mac 换行");
   env.input("one").emit("keydown", { key: "Enter", metaKey: true });
-  assert.equal(env.saves[1].text, "Mac 提交");
+  assert.equal(env.input("one").value, "Mac 换行\n");
+  assert.equal(env.saves.length, 1);
+  env.type("one", "Mac 换行\n第二行");
+  env.input("one").emit("keydown", { key: "Enter", shiftKey: true });
+  assert.equal(env.saves[1].text, "Mac 换行\n第二行");
   env.edit("one"); env.type("one", "按钮上也可取消");
   env.action("one", "save").focus();
   env.action("one", "save").emit("keydown", { key: "Escape" });
@@ -202,17 +216,52 @@ test("Enter permits multiline input, Ctrl/Meta Enter saves, and Escape cancels",
   assert.equal(env.saves.length, 2);
 });
 
+test("Ctrl Enter replaces the selection and preserves the draft and caret across redraw", () => {
+  const env = fixture(); env.edit("one");
+  const input = env.type("one", "第一行替换第二行");
+  input.setSelectionRange(3, 5, "backward");
+  input.scrollHeight = 70;
+  input.emit("keydown", { key: "Enter", ctrlKey: true });
+  assert.equal(input.value, "第一行\n第二行");
+  assert.equal(input.style.height, "71px");
+  env.render();
+  assert.equal(env.input("one").value, "第一行\n第二行");
+  assert.deepEqual([env.input("one").selectionStart, env.input("one").selectionEnd], [4, 4]);
+  assert.equal(env.saves.length, 0);
+  env.input("one").emit("keydown", { key: "Enter" });
+  assert.equal(env.saves[0].text, "第一行\n第二行");
+});
+
+test("shortcut newlines respect maxlength without truncating existing notes", () => {
+  const env = fixture(); env.edit("one");
+  const input = env.type("one", "长".repeat(2000));
+  assert.equal(input.emit("keydown", { key: "Enter", ctrlKey: true }).defaultPrevented, true);
+  assert.equal(input.value, "长".repeat(2000));
+  input.setSelectionRange(1000, 1001);
+  input.emit("keydown", { key: "Enter", ctrlKey: true });
+  assert.equal(input.value, "长".repeat(1000) + "\n" + "长".repeat(999));
+  assert.deepEqual([input.selectionStart, input.selectionEnd], [1001, 1001]);
+  env.type("one", "旧".repeat(2001));
+  input.emit("keydown", { key: "Enter", metaKey: true });
+  assert.equal(input.value, "旧".repeat(2001));
+  assert.equal(env.saves.length, 0);
+});
+
 test("IME composition never turns Enter or Escape into editor shortcuts", () => {
   const env = fixture(); env.edit("one"); env.type("one", "输入中");
   env.input("one").emit("compositionstart");
+  assert.equal(env.input("one").emit("keydown", { key: "Enter" }).defaultPrevented, false);
   assert.equal(env.input("one").emit("keydown", { key: "Enter", ctrlKey: true }).defaultPrevented, false);
   env.input("one").emit("keydown", { key: "Escape" });
   assert.ok(env.input("one")); assert.equal(env.saves.length, 0);
   env.input("one").emit("compositionend");
-  env.input("one").emit("keydown", { key: "Enter", ctrlKey: true, isComposing: true });
-  env.input("one").emit("keydown", { key: "Enter", ctrlKey: true, keyCode: 229 });
+  for (const modifier of [{}, { ctrlKey: true }, { metaKey: true }]) {
+    assert.equal(env.input("one").emit("keydown", { key: "Enter", ...modifier, isComposing: true }).defaultPrevented, false);
+    assert.equal(env.input("one").emit("keydown", { key: "Enter", ...modifier, keyCode: 229 }).defaultPrevented, false);
+  }
   assert.equal(env.saves.length, 0);
-  env.input("one").emit("keydown", { key: "Enter", ctrlKey: true });
+  assert.equal(env.input("one").value, "输入中");
+  env.input("one").emit("keydown", { key: "Enter" });
   assert.equal(env.saves[0].text, "输入中");
 });
 
@@ -310,7 +359,7 @@ test("explicit save restores edit-button focus while blur save keeps the externa
   assert.equal(env.document.activeElement, env.action("one", "edit"));
   assert.deepEqual(env.action("one", "edit").lastFocusOptions, { preventScroll: true });
   env.edit("one"); env.type("one", "快捷键保存");
-  env.input("one").emit("keydown", { key: "Enter", ctrlKey: true });
+  env.input("one").emit("keydown", { key: "Enter" });
   assert.equal(env.document.activeElement, env.action("one", "edit"));
   env.edit("one"); env.type("one", "自动保存");
   const external = new Element("button", env.document); external.focus();

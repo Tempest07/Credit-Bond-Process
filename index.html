@@ -6,28 +6,28 @@
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="5.2.4.1">
   <meta name="application-build-version" content="5.2.4.1">
-  <meta name="application-build" content="20261020-release-5241">
+  <meta name="application-build" content="20261020-release-5241-hotfix1">
   <title>Bond Centre 5.2.4.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261020-release-5241"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261020-release-5241">
+  <script src="./app-shell-mode.js?v=20261020-release-5241-hotfix1"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261020-release-5241-hotfix1">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261020-release-5241" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261020-release-5241" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261020-release-5241" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261020-release-5241">
-  <script src="./ui-preference.js?v=20261020-release-5241"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261020-release-5241">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261020-release-5241">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261020-release-5241">
-  <link rel="stylesheet" href="./release-notes.css?v=20261020-release-5241">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261020-release-5241">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261020-release-5241">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261020-release-5241">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261020-release-5241-hotfix1" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261020-release-5241-hotfix1" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261020-release-5241-hotfix1" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261020-release-5241-hotfix1">
+  <script src="./ui-preference.js?v=20261020-release-5241-hotfix1"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261020-release-5241-hotfix1">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261020-release-5241-hotfix1">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261020-release-5241-hotfix1">
+  <link rel="stylesheet" href="./release-notes.css?v=20261020-release-5241-hotfix1">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261020-release-5241-hotfix1">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261020-release-5241-hotfix1">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261020-release-5241-hotfix1">
 </head>
 <body>
   <div class="app-shell">
@@ -1640,6 +1640,9 @@
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
       <div class="release-notes-version"><strong>5.2.4.1</strong><time datetime="2026-10-20">2026 / 10 / 20</time></div>
+      <section><h3>热补丁：备注快捷键</h3><ul>
+        <li>Enter 直接保存备注，Ctrl／Command + Enter 在光标或选区处换行；中文输入法组词确认不会触发保存，Esc 取消和失焦自动保存继续保留。</li>
+      </ul></section>
       <section><h3>项目备注显示与编辑</h3><ul>
         <li>“目标量价”更名为“备注”，位于项目简称与项目要素之间居中；空备注不显示标题，悬停时显示文字气泡入口，触屏保留可见入口。</li>
         <li>填写后将“备注”标题与正文作为一组居中显示；悬停淡入细边框，点击整块文字即可编辑，不再显示铅笔或下划线。</li>
@@ -1730,10 +1733,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261020-release-5241"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261020-release-5241"></script>
-  <script type="module" src="./app.js?v=20261020-release-5241"></script>
-  <script type="module" src="./todo-fluid.js?v=20261020-release-5241"></script>
-  <script type="module" src="./release-notes.js?v=20261020-release-5241"></script>
+  <script src="./ui-mode.js?v=20261020-release-5241-hotfix1"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261020-release-5241-hotfix1"></script>
+  <script type="module" src="./app.js?v=20261020-release-5241-hotfix1"></script>
+  <script type="module" src="./todo-fluid.js?v=20261020-release-5241-hotfix1"></script>
+  <script type="module" src="./release-notes.js?v=20261020-release-5241-hotfix1"></script>
 </body>
 </html>
