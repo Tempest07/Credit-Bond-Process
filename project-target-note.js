@@ -4,7 +4,7 @@ const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character =>
 
 const normalizeNote = value => String(value ?? "").replace(/\r\n?/g, "\n").trim();
 const projectName = project => String(project?.shortName || "项目");
-const pencil = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6L16 3Z"/><path d="m13 6 5 5"/></svg>';
+const noteBubble = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/><path d="M7 7h10M7 11h6"/></svg>';
 
 /** Keeps list-only note drafts independent of the project detail form and its autosave. */
 export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, saveNote }) {
@@ -12,15 +12,19 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
   let container = null;
   let repainting = false;
   const boundBoxes = new WeakSet();
+  const resizeAnimations = new WeakMap();
 
   function contents(project) {
     const editing = draft?.id === String(project.id);
     const name = projectName(project);
-    const label = '<span class="project-target-note-label">目标量价</span>';
+    const label = '<span class="project-target-note-label">备注</span>';
     if (editing) {
-      return `${label}<textarea class="project-target-note-input" aria-label="${escapeHtml(name)}目标量价" maxlength="2000" rows="3" placeholder="填写目标量价…">${escapeHtml(draft.text)}</textarea><div class="project-target-note-actions"><button type="button" class="project-target-note-save">保存</button><button type="button" class="project-target-note-cancel">取消</button><span class="project-target-note-status" role="status" aria-live="polite">${escapeHtml(draft.error)}</span></div>`;
+      return `<div class="project-target-note-content">${normalizeNote(project.targetQuoteNote) ? label : ""}<textarea class="project-target-note-input" aria-label="${escapeHtml(name)}备注" maxlength="2000" rows="1" placeholder="填写备注…">${escapeHtml(draft.text)}</textarea></div><div class="project-target-note-actions"><button type="button" class="project-target-note-save">保存</button><button type="button" class="project-target-note-cancel">取消</button><span class="project-target-note-status" role="status" aria-live="polite">${escapeHtml(draft.error)}</span></div>`;
     }
-    return `${label}<span class="project-target-note-text">${escapeHtml(project.targetQuoteNote)}</span><button type="button" class="project-target-note-edit" aria-label="编辑${escapeHtml(name)}的目标量价" title="编辑目标量价">${pencil}</button>`;
+    if (!normalizeNote(project.targetQuoteNote)) {
+      return `<button type="button" class="project-target-note-edit project-target-note-add" aria-label="添加${escapeHtml(name)}的备注" title="添加备注">${noteBubble}</button>`;
+    }
+    return `<button type="button" class="project-target-note-edit project-target-note-filled" aria-label="${escapeHtml(name)}的备注：${escapeHtml(project.targetQuoteNote)}，点击编辑" title="点击编辑备注">${label}<span class="project-target-note-text">${escapeHtml(project.targetQuoteNote)}</span></button>`;
   }
 
   function render(project) {
@@ -35,6 +39,21 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
   }
 
   const currentBox = () => draft ? findBox(draft.id) : null;
+
+  function resizeInput(input) {
+    if (!input) return;
+    input.style.height = "0px";
+    input.style.height = `${Math.max(input.scrollHeight + 1, 28)}px`;
+  }
+
+  function animateResize(box, previousHeight) {
+    if (!box.animate || !previousHeight || box.ownerDocument.defaultView?.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const height = box.getBoundingClientRect().height;
+    if (Math.abs(height - previousHeight) < 1) return;
+    resizeAnimations.set(box, box.animate([
+      { height: `${previousHeight}px` }, { height: `${height}px` },
+    ], { duration: 180, easing: "cubic-bezier(.2,.8,.2,1)" }));
+  }
 
   function rememberInput(input) {
     if (!draft || !input) return;
@@ -59,6 +78,7 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
     if (!input || !draft) return;
     // HTML textarea parsing drops an initial newline; restore the exact live draft.
     if (input.value !== draft.text) input.value = draft.text;
+    resizeInput(input);
     if (draft.focus) input.focus({ preventScroll: true });
     const length = input.value.length;
     input.setSelectionRange(Math.min(draft.start, length), Math.min(draft.end, length), draft.direction);
@@ -66,6 +86,8 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
 
   function updateBox(box, project) {
     if (!box) return;
+    const previousHeight = box.getBoundingClientRect?.().height;
+    resizeAnimations.get(box)?.cancel();
     const previousRepainting = repainting;
     repainting = true;
     try {
@@ -74,6 +96,7 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
       box.classList.toggle("is-empty", !normalizeNote(editing ? draft.text : project.targetQuoteNote));
       box.innerHTML = contents(project);
       focusDraft(box);
+      animateResize(box, previousHeight);
     } finally { repainting = previousRepainting; }
   }
 
@@ -138,9 +161,13 @@ export function createProjectTargetNotes({ getProject, beforeEdit = () => {}, sa
     box.addEventListener("input", event => {
       if (event.target.matches(".project-target-note-input") && draft?.id === box.dataset.targetNoteId) {
         rememberInput(event.target);
+        const previousHeight = box.getBoundingClientRect?.().height;
+        resizeAnimations.get(box)?.cancel();
         draft.error = "";
         const status = box.querySelector(".project-target-note-status");
         if (status) status.textContent = "";
+        resizeInput(event.target);
+        animateResize(box, previousHeight);
       }
     });
     box.addEventListener("compositionstart", () => { if (draft?.id === box.dataset.targetNoteId) draft.composing = true; });

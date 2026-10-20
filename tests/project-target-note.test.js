@@ -12,6 +12,7 @@ class Element {
     this.tagName = tagName; this.ownerDocument = ownerDocument; this.children = [];
     this.parentElement = null; this.listeners = new Map(); this.attributes = {}; this.dataset = {};
     this.className = ""; this.value = ""; this.textContent = "";
+    this.style = {}; this.scrollHeight = 26;
     this.selectionStart = 0; this.selectionEnd = 0; this.selectionDirection = "none";
     this.classList = { toggle: (name, force) => {
       const names = new Set(this.className.split(/\s+/).filter(Boolean));
@@ -119,7 +120,7 @@ test("render escapes project ids, names and notes in both read and edit markup",
   assert.ok(!html.includes("<script>"));
   env.edit(project.id);
   assert.equal(env.input(project.id).value, project.targetQuoteNote);
-  assert.equal(env.input(project.id).attributes["aria-label"], project.shortName + "目标量价");
+  assert.equal(env.input(project.id).attributes["aria-label"], project.shortName + "备注");
   assert.equal(env.input(project.id).attributes.maxlength, "2000");
 });
 
@@ -132,6 +133,17 @@ test("note click, pointer and keyboard events never open the project row", () =>
   env.action("one", "save").emit("click");
   assert.deepEqual(env.rowEvents(), { rowClicks: 0, rowKeys: 0, rowPointers: 0 });
   assert.deepEqual(env.saves, [{ id: "one", text: "新的目标" }]);
+});
+
+test("empty notes only expose the bubble while populated note text itself opens editing", () => {
+  const env = fixture();
+  assert.equal(env.box("two").querySelector(".project-target-note-label"), null);
+  assert.ok(env.action("two", "edit").className.includes("project-target-note-add"));
+  assert.equal(env.box("one").querySelector(".project-target-note-label").parentElement, env.action("one", "edit"));
+  env.box("one").querySelector(".project-target-note-text").emit("click");
+  assert.equal(env.input("one").value, env.projects.get("one").targetQuoteNote);
+  assert.equal(env.input("one").attributes.rows, "1");
+  assert.equal(env.rowEvents().rowClicks, 0);
 });
 
 test("typing keeps a local draft and save trims whitespace and normalizes newlines", () => {
@@ -155,6 +167,7 @@ test("blank save clears a note while an unchanged normalized draft avoids a writ
   assert.equal(env.editor.flush(), true);
   assert.deepEqual(env.saves, [{ id: "one", text: "" }]);
   assert.ok(env.box("one").className.includes("is-empty"));
+  assert.equal(env.box("one").querySelector(".project-target-note-label"), null);
 });
 
 test("focus within the note permits Cancel to discard the draft; leaving saves", () => {
@@ -291,7 +304,7 @@ test("saveNote can redraw the list and the live note returns to read mode", () =
   assert.equal(env.saves.length, 1);
 });
 
-test("explicit save restores pencil focus while blur save keeps the external target focused", () => {
+test("explicit save restores edit-button focus while blur save keeps the external target focused", () => {
   const env = fixture(); env.edit("one"); env.type("one", "点击保存");
   env.action("one", "save").focus(); env.action("one", "save").emit("click");
   assert.equal(env.document.activeElement, env.action("one", "edit"));
