@@ -3,6 +3,8 @@ main = "mailer-worker.js"
 compatibility_date = "2026-06-11"
 workers_dev = true
 preview_urls = false
+# Preserve production mail settings managed in Cloudflare.
+keep_vars = true
 
 [triggers]
 crons = ["30 0 * * 1-5"]

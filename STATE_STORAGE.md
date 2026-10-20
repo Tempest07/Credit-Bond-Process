@@ -23,8 +23,8 @@
 
 ## 发布与回滚
 
-1. 先发布兼容读取层到 Pages、`credit-bond-mailer` 和 `credit-bond-payment-receipts`。兼容基线提交：`1f2bd41ce0e69cb0c8ac32db5cce6da451310110`，Pages deployment `44b21345-7872-4569-bb52-e000041553c1`；Mailer 版本 `9728ce2b-1906-481d-a00c-8b155a755dbd`；缴款单 Worker 版本 `d35eb1ec-4c59-495e-90d9-75c776dbcd00`。
+1. 先发布兼容读取层到 Pages、`credit-bond-mailer` 和 `credit-bond-payment-receipts`。兼容基线提交：`1f2bd41ce0e69cb0c8ac32db5cce6da451310110`，Pages deployment `44b21345-7872-4569-bb52-e000041553c1`；Mailer 使用已恢复并核对原有配置的版本 `9ddd2d5b-b3c9-464b-8ca4-2b2de4b330d0`；缴款单 Worker 版本 `d35eb1ec-4c59-495e-90d9-75c776dbcd00`。
 2. 验证这些读者就绪后，发布分块写入和格式转换；上线前后将物理数据解码，再对比原始 JSON SHA-256、业务字段、revision、时间及旧快照。
 3. 分块启用后只允许回滚到上述兼容读取版本或更新的兼容版本。不得回滚到 `b71b0cb` 或更早的纯 JSON 读者，也不得删除分块表。兼容基线仍有原 1.9 MB 写入限制，大库故障回滚时保留读取与备份能力，随后向前修复写入代码。
 
-存储转换无需改动登录、队列、邮件收件人或定时计划。不得通过测试发信或消费生产队列来验证此升级。
+存储转换无需改动登录、队列、邮件收件人或定时计划。Mailer 的 `keep_vars = true` 保留 Cloudflare 中管理的现有邮件设置；发布或回滚后核对原有绑定和运行设置。不得通过测试发信或消费生产队列来验证此升级。
