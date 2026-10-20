@@ -974,6 +974,9 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .project-list.liquid-ready .project-item.active::after { display: none; }
 .project-item-head, .project-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .project-item-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.project-ledger-item .project-item-head { min-width: 0; flex-wrap: wrap; }
+.project-ledger-item .project-item-head strong { max-width: 100%; white-space: nowrap; }
+.project-ledger-item .project-item-head .status-badge { flex-shrink: 0; }
 .project-item-meta { color: var(--muted); font-size: 10px; }
 .project-item-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 .project-item-issuer { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -998,7 +1001,7 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .status-badge { padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius: 4px; color: var(--accent); background: var(--accent-soft); font-size: 9px; font-weight: 800; line-height: 1.25; white-space: nowrap; }
 .status-badge.warning { border-color: color-mix(in srgb, var(--warning) 28%, var(--line)); color: var(--warning); background: var(--warning-soft); }
 .status-badge.muted { border-color: var(--line); color: var(--muted); background: var(--panel-soft); }
-.status-badge.bid-final, .pill.bid-final { border-color: color-mix(in srgb, var(--secondary) 35%, var(--line)); color: var(--secondary); background: var(--secondary-soft); }
+.status-badge.bid-final, .pill.bid-final { border-color: #cbded1; color: #2d6947; background: #edf6f0; }
 .project-empty { display: grid; place-items: center; min-height: 180px; padding: 28px; border: 1px dashed rgba(205,214,230,.92); border-radius: 15px; color: #7f899d; background: radial-gradient(circle at 50% 34%, rgba(91,108,255,.06), transparent 28%), linear-gradient(180deg, #fbfcfe, #f8f9fc); text-align: center; }
 .project-empty[hidden] { display: none; }
 @media (min-width: 761px) {

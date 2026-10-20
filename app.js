@@ -1,10 +1,10 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-5241-hotfix1';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-5241-hotfix1';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-5241-hotfix1';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-5241-hotfix1';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-5241-hotfix1';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-5241-hotfix1';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-5241-hotfix1';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-5241-hotfix2';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-5241-hotfix2';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-5241-hotfix2';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-5241-hotfix2';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-5241-hotfix2';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-5241-hotfix2';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-5241-hotfix2';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -40,7 +40,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261020-release-5241-hotfix1";
+} from "./core.js?v=20261020-release-5241-hotfix2";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -69,15 +69,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261020-release-5241-hotfix1";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-5241-hotfix1";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-5241-hotfix1";
+} from "./lifecycle.js?v=20261020-release-5241-hotfix2";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-5241-hotfix2";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-5241-hotfix2";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261020-release-5241-hotfix1";
+} from "./history-parser.js?v=20261020-release-5241-hotfix2";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -94,23 +94,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261020-release-5241-hotfix1";
+} from "./protocol-transfer.js?v=20261020-release-5241-hotfix2";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261020-release-5241-hotfix1";
+} from "./protocol-transfer-templates.js?v=20261020-release-5241-hotfix2";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261020-release-5241-hotfix1";
+} from "./protocol-transfer-docx.js?v=20261020-release-5241-hotfix2";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261020-release-5241-hotfix1";
+} from "./reminders.js?v=20261020-release-5241-hotfix2";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -138,11 +138,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261020-release-5241-hotfix1";
+} from "./secondary-inventory.js?v=20261020-release-5241-hotfix2";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261020-release-5241-hotfix1";
+} from "./trade-record-converter.js?v=20261020-release-5241-hotfix2";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -153,16 +153,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261020-release-5241-hotfix1";
+} from "./trade-record-grid.js?v=20261020-release-5241-hotfix2";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261020-release-5241-hotfix1";
-import { initializeDatePickers } from "./date-picker.js?v=20261020-release-5241-hotfix1";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-5241-hotfix1";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-5241-hotfix1";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-5241-hotfix1";
+} from "./trade-record-ledger.js?v=20261020-release-5241-hotfix2";
+import { initializeDatePickers } from "./date-picker.js?v=20261020-release-5241-hotfix2";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-5241-hotfix2";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-5241-hotfix2";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-5241-hotfix2";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -171,33 +171,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261020-release-5241-hotfix1";
+} from "./project-screenshot-ocr.js?v=20261020-release-5241-hotfix2";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261020-release-5241-hotfix1";
+} from "./project-screenshot-layout.js?v=20261020-release-5241-hotfix2";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261020-release-5241-hotfix1";
+} from "./project-screenshot-image.js?v=20261020-release-5241-hotfix2";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261020-release-5241-hotfix1";
+} from "./payment-receipts.js?v=20261020-release-5241-hotfix2";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261020-release-5241-hotfix1";
+} from "./issuer-search.js?v=20261020-release-5241-hotfix2";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261020-release-5241-hotfix1";
-import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-5241-hotfix1";
+} from "./state-history.js?v=20261020-release-5241-hotfix2";
+import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-5241-hotfix2";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -439,7 +439,7 @@ const LEDGER_FILTER_LABELS = {
   all: "全部项目",
   toBid: "未投标",
   bidding: "已投标",
-  bidFinal: "已投标结束",
+  bidFinal: "已投标完成",
   resulted: "已出结果",
 };
 const LEDGER_MOBILE_BREAKPOINT = "(max-width: 760px)";
@@ -10569,8 +10569,8 @@ function renderProjectList() {
         <div class="project-item project-ledger-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}">
           <button type="button" class="project-item-open" data-open-ledger-project="${escapeAttribute(item.id)}" aria-label="查看项目 ${escapeAttribute(item.shortName || "未命名项目")}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
           <span class="project-item-head">
-            <strong>${escapeHtml(item.shortName || "未命名项目")}</strong>
-            <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(item.status)}</span>
+            <strong title="${escapeAttribute(item.shortName || "未命名项目")}">${escapeHtml(item.shortName || "未命名项目")}</strong>
+            <span class="status-badge ${statusBadgeClass(item.status)}">${escapeHtml(projectStatusLabel(item.status))}</span>
           </span>
           <span class="project-item-meta project-item-primary">
             <span class="project-item-issuer">${escapeHtml(item.issuerName || item.branch || "未填写主体")}</span>
@@ -10677,7 +10677,7 @@ function fillProjectForm(input) {
   $("#projectBidPosition").value = buildBidPositionText(record);
   $("#projectResultSummary").value = buildAwardResultText(record);
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
-  $("#projectStatusPill").textContent = record.status;
+  $("#projectStatusPill").textContent = projectStatusLabel(record.status);
   $("#projectStatusPill").classList.toggle("bid-final", record.status === "已投标结束");
   $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
   updateProjectActionButtons(record);
@@ -11276,7 +11276,7 @@ function saveProjectRecordNow(record) {
   persistState();
   if (isCurrentProject) {
     $("#projectStatus").value = normalized.status;
-    $("#projectStatusPill").textContent = normalized.status;
+    $("#projectStatusPill").textContent = projectStatusLabel(normalized.status);
     $("#projectStatusPill").classList.toggle("bid-final", normalized.status === "已投标结束");
     $("#projectAutosaveStatus").textContent = "已保存到本机，正在上传";
     $("#projectBidPosition").value = buildBidPositionText(normalized);
@@ -11337,7 +11337,7 @@ function changeProjectBidFinalization(reopen) {
   saveProjectRecordNow(result.project);
   showToast(reopen
     ? "已恢复为已投标，可以继续改标；已有标位和提交记录已保留。"
-    : "最终标位已确认，项目已移至已投标结束，等待录入结果。");
+    : "最终标位已确认，项目已移至已投标完成，等待录入结果。");
 }
 
 function projectActionAvailability(projectValue) {
@@ -11819,6 +11819,10 @@ function projectOfferingBadgeClass(projectValue) {
   if (offering === "私募") return "is-private";
   if (/^(ABS|ABN)$/i.test(offering)) return "is-structured";
   return "is-unknown";
+}
+
+function projectStatusLabel(status) {
+  return status === "已投标结束" ? "已投标完成" : status;
 }
 
 function statusBadgeClass(status) {
