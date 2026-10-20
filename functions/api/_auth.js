@@ -1,4 +1,4 @@
-import { readStoredStateRow } from "../../state-storage.js";
+import { ensureStateChunksSchema, prepareStoredState, readStoredStateRow, stateChunkStatements } from "../../state-storage.js";
 
 const ADMIN_USER_ID = "admin";
 const ADMIN_USERNAME = "admin";
@@ -70,11 +70,13 @@ export async function readUserAppState(db, userId) {
 }
 
 export async function writeUserAppState(db, userId, data, updatedAt) {
-  await db.prepare(`
+  await ensureStateChunksSchema(db);
+  const storage = await prepareStoredState(JSON.stringify(data));
+  await db.batch([...stateChunkStatements(db, storage), db.prepare(`
     INSERT INTO user_app_state (user_id, data, updated_at)
     VALUES (?1, ?2, ?3)
     ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
-  `).bind(userId, JSON.stringify(data), updatedAt).run();
+  `).bind(userId, storage.serialized, updatedAt)]);
 }
 
 export function adminUser() {

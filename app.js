@@ -1,10 +1,10 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-5241-hotfix3';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-5241-hotfix3';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-5241-hotfix3';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-5241-hotfix3';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-5241-hotfix3';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-5241-hotfix3';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-5241-hotfix3';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261020-release-5241-hotfix4';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261020-release-5241-hotfix4';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261020-release-5241-hotfix4';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261020-release-5241-hotfix4';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261020-release-5241-hotfix4';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261020-release-5241-hotfix4';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261020-release-5241-hotfix4';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -40,7 +40,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261020-release-5241-hotfix3";
+} from "./core.js?v=20261020-release-5241-hotfix4";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -69,15 +69,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261020-release-5241-hotfix3";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-5241-hotfix3";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-5241-hotfix3";
+} from "./lifecycle.js?v=20261020-release-5241-hotfix4";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261020-release-5241-hotfix4";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261020-release-5241-hotfix4";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261020-release-5241-hotfix3";
+} from "./history-parser.js?v=20261020-release-5241-hotfix4";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -94,23 +94,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261020-release-5241-hotfix3";
+} from "./protocol-transfer.js?v=20261020-release-5241-hotfix4";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261020-release-5241-hotfix3";
+} from "./protocol-transfer-templates.js?v=20261020-release-5241-hotfix4";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261020-release-5241-hotfix3";
+} from "./protocol-transfer-docx.js?v=20261020-release-5241-hotfix4";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261020-release-5241-hotfix3";
+} from "./reminders.js?v=20261020-release-5241-hotfix4";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -138,11 +138,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261020-release-5241-hotfix3";
+} from "./secondary-inventory.js?v=20261020-release-5241-hotfix4";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261020-release-5241-hotfix3";
+} from "./trade-record-converter.js?v=20261020-release-5241-hotfix4";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -153,16 +153,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261020-release-5241-hotfix3";
+} from "./trade-record-grid.js?v=20261020-release-5241-hotfix4";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261020-release-5241-hotfix3";
-import { initializeDatePickers } from "./date-picker.js?v=20261020-release-5241-hotfix3";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-5241-hotfix3";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-5241-hotfix3";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-5241-hotfix3";
+} from "./trade-record-ledger.js?v=20261020-release-5241-hotfix4";
+import { initializeDatePickers } from "./date-picker.js?v=20261020-release-5241-hotfix4";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261020-release-5241-hotfix4";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261020-release-5241-hotfix4";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261020-release-5241-hotfix4";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -171,33 +171,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261020-release-5241-hotfix3";
+} from "./project-screenshot-ocr.js?v=20261020-release-5241-hotfix4";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261020-release-5241-hotfix3";
+} from "./project-screenshot-layout.js?v=20261020-release-5241-hotfix4";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261020-release-5241-hotfix3";
+} from "./project-screenshot-image.js?v=20261020-release-5241-hotfix4";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261020-release-5241-hotfix3";
+} from "./payment-receipts.js?v=20261020-release-5241-hotfix4";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261020-release-5241-hotfix3";
+} from "./issuer-search.js?v=20261020-release-5241-hotfix4";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261020-release-5241-hotfix3";
-import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-5241-hotfix3";
+} from "./state-history.js?v=20261020-release-5241-hotfix4";
+import { initializeBondList } from "./bond-list-editor.js?v=20261020-release-5241-hotfix4";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";

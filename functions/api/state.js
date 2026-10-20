@@ -7,8 +7,8 @@ import {
   readUserAppState,
   requireUser,
 } from "./_auth.js";
-import { ensureStateVersionSchema, saveStateVersion } from "./_state-versioning.js";
-import { MAX_STATE_BODY_BYTES, MAX_STATE_BYTES, StateCapacityError, stateCapacityPayload } from "./_state-capacity.js";
+import { ensureStateVersionSchema, migrateUserStateStorage, saveStateVersion } from "./_state-versioning.js";
+import { MAX_STATE_BODY_BYTES, MAX_STATE_BYTES, StateCapacityError, stateCapacityPayload, readStateBodyText } from "./_state-capacity.js";
 
 export async function onRequestGet(context) {
   const auth = await requireUser(context);
@@ -18,6 +18,7 @@ export async function onRequestGet(context) {
     await ensureAuthSchema(context.env.DB, context.env, { allowDefaultPassword: isLocalRequest(context.request) });
     await ensureStateVersionSchema(context.env.DB);
     const result = await readUserAppState(context.env.DB, auth.user.id);
+    await migrateUserStateStorage(context.env.DB, auth.user.id, { current: result, mirrorLegacy: auth.user.id === "admin" });
     return json({
       data: result.data,
       updatedAt: result.updatedAt,
@@ -39,8 +40,7 @@ export async function onRequestPut(context) {
   let body;
   let data;
   try {
-    const text = await context.request.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_STATE_BODY_BYTES) return stateTooLargeResponse();
+    const text = await readStateBodyText(context.request);
     body = JSON.parse(text);
     if (body?.expectedRevision === undefined || body?.expectedRevision === null || !Number.isInteger(Number(body.expectedRevision))) {
       return json({ error: "保存前必须先读取云端 revision", code: "revision_required" }, 428);
@@ -48,6 +48,7 @@ export async function onRequestPut(context) {
     data = validateState(body?.data);
     if (new TextEncoder().encode(JSON.stringify(data)).byteLength > MAX_STATE_BYTES) return stateTooLargeResponse();
   } catch (error) {
+    if (error instanceof StateCapacityError) return stateTooLargeResponse();
     return json({ error: error.message || "资料库格式无效" }, 400);
   }
 

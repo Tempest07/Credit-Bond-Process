@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { prepareStoredState, readStoredState } from "../state-storage.js";
+import { migrateUserStateStorage } from "../functions/api/_state-versioning.js";
 
 import { onRequestPost as onLoginPost } from "../functions/api/auth/login.js";
 import { onRequestPost as onLogoutPost } from "../functions/api/auth/logout.js";
@@ -20,7 +22,7 @@ import { onRequestGet as onPendingReceiptPagesGet } from "../functions/api/payme
 import { onRequestPost as onPendingReceiptRegroupPost } from "../functions/api/payment-receipt-files/[id]/regroup.js";
 import { onRequestPost as onPendingReceiptReprocessPost } from "../functions/api/payment-receipt-files/[id]/reprocess.js";
 import { onRequestGet as onPendingReceiptBatchEmailGet } from "../functions/api/payment-receipt-batches/[id]/email.js";
-import { onRequestGet, onRequestPut } from "../functions/api/state.js";
+import { onRequestGet, onRequestPut, validateState } from "../functions/api/state.js";
 import { onRequestGet as onStateHistoryGet } from "../functions/api/state-history.js";
 import {
   onRequestGet as onStateSnapshotGet,
@@ -394,7 +396,7 @@ test("preserves a stale writer as a conflict snapshot instead of overwriting cur
   assert.equal([...DB.snapshots.values()].some((snapshot) => snapshot.revision === 1), true);
 });
 
-test("requires a base revision and rejects state bodies beyond the D1-safe limit", async () => {
+test("requires a base revision and rejects state bodies beyond the bounded sync limit", async () => {
   const DB = createMockDb();
   const missingRevision = await onRequestPut({
     env: { DB },
@@ -411,7 +413,7 @@ test("requires a base revision and rejects state bodies beyond the D1-safe limit
       method: "PUT",
       body: JSON.stringify({
         expectedRevision: 0,
-        data: { version: 5, issuers: [{ id: "large", legalName: "超大主体", notes: "x".repeat(1_910_000) }] },
+        data: { version: 5, issuers: [{ id: "large", legalName: "超大主体", notes: "x".repeat(10_000_000) }] },
       }),
     }),
   });
@@ -420,7 +422,7 @@ test("requires a base revision and rejects state bodies beyond the D1-safe limit
   assert.equal(DB.userStates.size, 0);
 });
 
-test("saves formerly blocked UTF-8 payloads without changing JSON, snapshots or the legacy mirror", async () => {
+test("chunks formerly blocked UTF-8 payloads while preserving JSON, snapshots and the legacy mirror", async () => {
   const DB = createMockDb();
   const data = { issuers: [{ id: "large", legalName: "容量边界", notes: "文".repeat(610_000) }], projects: [{ id: "p1", targetQuoteNote: "保留备注" }] };
   const response = await onRequestPut({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state", {
@@ -430,16 +432,20 @@ test("saves formerly blocked UTF-8 payloads without changing JSON, snapshots or 
   const payload = await response.json();
   assert.equal(payload.revision, 1);
   const saved = DB.userStates.get("admin");
-  assert.ok(Buffer.byteLength(saved.data) > 1_800_000);
-  assert.equal(JSON.parse(saved.data).issuers[0].notes, data.issuers[0].notes);
-  assert.equal(JSON.parse(saved.data).projects[0].targetQuoteNote, "保留备注");
+  const manifest = JSON.parse(saved.data);
+  assert.equal(manifest.$bondCentreStateChunks, 1);
+  assert.ok(manifest.bytes > 1_800_000);
+  assert.ok(Buffer.byteLength(saved.data) < 1000);
+  const decoded = await readStoredState(DB, saved.data);
+  assert.equal(decoded.issuers[0].notes, data.issuers[0].notes);
+  assert.equal(decoded.projects[0].targetQuoteNote, "保留备注");
   assert.equal(DB.snapshots.get(payload.snapshot.id).data, saved.data);
   assert.equal(DB.legacyState.data, saved.data);
   const loaded = await onRequestGet({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state") });
   assert.equal((await loaded.json()).data.issuers[0].notes, data.issuers[0].notes);
 });
 
-test("rejects a full snapshot row before any CAS update, including conflict and revert paths", async () => {
+test("rejects oversized snapshot metadata before any CAS or chunk write, including conflicts and reverts", async () => {
   const DB = createMockDb();
   const put = (data, expectedRevision) => onRequestPut({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state", {
     method: "PUT", body: JSON.stringify({ expectedRevision, data }),
@@ -449,7 +455,7 @@ test("rejects a full snapshot row before any CAS update, including conflict and 
   const legacy = structuredClone(DB.legacyState);
   const count = DB.snapshots.size;
   // This state fits alone; its oversized id is also copied into the change summary.
-  const data = { issuers: [{ id: "x".repeat(180_000), legalName: "行预算", notes: "x".repeat(1_650_000) }] };
+  const data = { issuers: [{ id: "x".repeat(2_050_000), legalName: "行预算", notes: "x".repeat(1_650_000) }] };
   for (const expectedRevision of [1, 0]) {
     const response = await put(data, expectedRevision);
     assert.equal(response.status, 413);
@@ -457,9 +463,16 @@ test("rejects a full snapshot row before any CAS update, including conflict and 
     assert.deepEqual(DB.userStates.get("admin"), before);
     assert.deepEqual(DB.legacyState, legacy);
     assert.equal(DB.snapshots.size, count);
+    assert.equal(DB.chunks.size, 0);
   }
-  DB.snapshots.set("historic", { id: "historic", user_id: "admin", revision: 0,
-    data: JSON.stringify({ issuers: [{ id: "old", notes: "x".repeat(1_910_000) }] }), summary_json: "{}" });
+  const historicData = validateState(data);
+  const historicStorage = await prepareStoredState(JSON.stringify(historicData));
+  for (const [chunkIndex, chunk] of historicStorage.chunks.entries()) DB.chunks.set(`${historicStorage.chunkId}:${chunkIndex}`, {
+    storage_id: historicStorage.chunkId, chunk_index: chunkIndex, data: chunk,
+  });
+  DB.snapshots.set("historic", { id: "historic", user_id: "admin", revision: null, base_revision: 0, status: "conflict",
+    data: historicStorage.serialized, byte_size: historicStorage.byteSize, summary_json: "{}", saved_at: "2026-07-02T00:00:00.000Z" });
+  const chunksBeforeRevert = structuredClone(DB.chunks);
   const revert = await onStateSnapshotPost({ env: { DB }, params: { id: "historic" },
     request: new Request("http://127.0.0.1:8788/api/state-history/historic", {
       method: "POST", body: JSON.stringify({ action: "revert", expectedRevision: 1 }),
@@ -467,7 +480,184 @@ test("rejects a full snapshot row before any CAS update, including conflict and 
   assert.equal(revert.status, 413);
   assert.equal((await revert.json()).code, "state_too_large");
   assert.deepEqual(DB.userStates.get("admin"), before);
+  assert.deepEqual(DB.legacyState, legacy);
+  assert.deepEqual(DB.chunks, chunksBeforeRevert);
 });
+
+test("saves, reads, preserves conflicts and reverts states larger than a D1 row", async () => {
+  const DB = createMockDb();
+  const data = {
+    issuers: [{ id: "issuer-original", legalName: "原有发行人", notes: "原".repeat(800_000) }],
+    projects: [{ id: "project-original", shortName: "26原有MTN001", targetQuoteNote: "3000 万 / 2.0%", bidHistory: [{ id: "bid-original", amountWan: 3000 }],
+      tranches: [{ id: "tranche-original", resultStatus: "中标", winningAmountWan: 3000, paymentCompleted: true, prepaymentNumber: "W202610200003" }] }],
+  };
+  const save = await saveMockState(DB, data, 0);
+  const accepted = await save.json();
+  assert.equal(save.status, 200);
+  assert.equal(accepted.revision, 1);
+  const current = structuredClone(DB.userStates.get("admin"));
+  assert.ok(JSON.parse(current.data).bytes > 2_000_000);
+  assert.ok(DB.chunks.size > 2);
+  for (const chunk of DB.chunks.values()) assert.ok(Buffer.byteLength(chunk.data) <= 1_000_000);
+  assert.equal(DB.legacyState.data, current.data);
+  assert.equal(DB.snapshots.get(accepted.snapshot.id).data, current.data);
+  assert.ok(DB.snapshots.get(accepted.snapshot.id).byte_size > 2_000_000);
+
+  const read = await onRequestGet({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state") });
+  const loaded = await read.json();
+  assert.equal(read.status, 200);
+  assert.equal(loaded.data.issuers[0].notes, data.issuers[0].notes);
+  assert.deepEqual(loaded.data.projects, data.projects);
+
+  const staleData = structuredClone(data);
+  staleData.issuers[0].notes = "新".repeat(800_000);
+  staleData.projects[0].targetQuoteNote = "5000 万 / 1.9%";
+  const stale = await saveMockState(DB, staleData, 0, { clientId: "stale-client", clientLabel: "另一台设备" });
+  const conflict = await stale.json();
+  assert.equal(stale.status, 409);
+  assert.equal(conflict.conflictSnapshot.status, "conflict");
+  assert.deepEqual(DB.userStates.get("admin"), current);
+  assert.equal(DB.legacyState.data, current.data);
+  const conflictId = conflict.conflictSnapshot.id;
+  assert.equal(JSON.parse(DB.snapshots.get(conflictId).data).$bondCentreStateChunks, 1);
+
+  const detail = await onStateSnapshotGet({ env: { DB }, params: { id: conflictId },
+    request: new Request(`http://127.0.0.1:8788/api/state-history/${conflictId}`) });
+  const historical = await detail.json();
+  assert.equal(detail.status, 200);
+  assert.equal(historical.snapshot.clientLabel, "另一台设备");
+  assert.equal(historical.snapshot.data.issuers[0].notes, staleData.issuers[0].notes);
+  assert.deepEqual(historical.snapshot.data.projects, staleData.projects);
+
+  const revert = await onStateSnapshotPost({ env: { DB }, params: { id: conflictId },
+    request: new Request(`http://127.0.0.1:8788/api/state-history/${conflictId}`, {
+      method: "POST", body: JSON.stringify({ action: "revert", expectedRevision: 1 }),
+    }) });
+  const reverted = await revert.json();
+  assert.equal(revert.status, 200);
+  assert.equal(reverted.revision, 2);
+  assert.equal(reverted.snapshot.saveReason, "revert");
+  assert.equal(reverted.snapshot.restoredFromSnapshotId, conflictId);
+  const after = await readStoredState(DB, DB.userStates.get("admin").data);
+  assert.equal(after.issuers[0].notes, staleData.issuers[0].notes);
+  assert.deepEqual(after.projects, staleData.projects);
+  assert.equal(DB.legacyState.data, DB.userStates.get("admin").data);
+  const original = await readStoredState(DB, DB.snapshots.get(accepted.snapshot.id).data);
+  assert.equal(original.issuers[0].notes, data.issuers[0].notes);
+  assert.deepEqual(original.projects, data.projects);
+});
+
+test("continues accepting large ids when their snapshot metadata fits a D1 row", async () => {
+  const DB = createMockDb();
+  const data = { issuers: [{ id: "x".repeat(180_000), legalName: "可保存的摘要", notes: "x".repeat(1_650_000) }] };
+  const response = await saveMockState(DB, data, 0);
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.revision, 1);
+  const saved = await readStoredState(DB, DB.userStates.get("admin").data);
+  assert.deepEqual(saved.issuers, data.issuers);
+  assert.ok(Buffer.byteLength(DB.snapshots.get(result.snapshot.id).summary_json) > 180_000);
+});
+
+test("a failed chunk write rolls back current state, snapshots and legacy mirroring", async () => {
+  const DB = createMockDb({ failChunkIndex: 1 });
+  assert.equal((await saveMockState(DB, { issuers: [{ id: "original", legalName: "原有数据" }] }, 0)).status, 200);
+  const before = structuredClone(DB.userStates.get("admin"));
+  const legacyBefore = structuredClone(DB.legacyState);
+  const snapshotsBefore = structuredClone(DB.snapshots);
+  const data = { issuers: [{ id: "large", notes: "原".repeat(800_000) }] };
+  for (const expectedRevision of [1, 0]) {
+    const response = await saveMockState(DB, data, expectedRevision);
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).code, "state_save_failed");
+    assert.deepEqual(DB.userStates.get("admin"), before);
+    assert.deepEqual(DB.legacyState, legacyBefore);
+    assert.deepEqual(DB.snapshots, snapshotsBefore);
+    assert.equal(DB.chunks.size, 0);
+  }
+});
+
+test("a concurrent winner remains current while a losing chunked save becomes a conflict snapshot", async () => {
+  let injectWinner = true;
+  const winner = { issuers: [{ id: "issuer", legalName: "抢先保存", notes: "甲".repeat(800_000) }] };
+  const loser = { issuers: [{ id: "issuer", legalName: "过期来源", notes: "乙".repeat(800_000) }] };
+  const DB = createMockDb({ beforeBatch: async (db, statements) => {
+    if (!injectWinner || !statements.some((statement) => /SET data = \?1, updated_at = \?2, revision = \?3/.test(statement.sql))) return;
+    injectWinner = false;
+    assert.equal((await saveMockState(db, winner, 0)).status, 200);
+  } });
+  const response = await saveMockState(DB, loser, 0);
+  const conflict = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(conflict.revision, 1);
+  const current = await readStoredState(DB, DB.userStates.get("admin").data);
+  assert.deepEqual(current.issuers, winner.issuers);
+  assert.equal(DB.legacyState.data, DB.userStates.get("admin").data);
+  const preserved = await readStoredState(DB, DB.snapshots.get(conflict.conflictSnapshot.id).data);
+  assert.deepEqual(preserved.issuers, loser.issuers);
+  const referenced = new Set([...DB.snapshots.values(), ...DB.userStates.values(), DB.legacyState]
+    .map((row) => JSON.parse(row.data)).filter((row) => row.$bondCentreStateChunks === 1).map((row) => row.id));
+  for (const chunk of DB.chunks.values()) assert.equal(referenced.has(chunk.storage_id), true);
+  assert.equal(referenced.size, 2);
+});
+
+test("GET and unchanged PUT migrate only storage format while preserving revision, timestamps and old snapshots", async () => {
+  const updatedAt = "2026-10-19T08:12:00.000Z";
+  const data = validateState({ issuers: [{ id: "issuer", legalName: "原有发行人", notes: "旧".repeat(610_000) }],
+    projects: [{ id: "project", targetQuoteNote: "原备注", tranches: [{ id: "tranche", paymentCompleted: true }] }], updatedAt });
+  const raw = JSON.stringify(data);
+  for (const trigger of ["GET", "PUT"]) {
+    const DB = createMockDb({ legacyData: data });
+    DB.userStates.set("admin", { user_id: "admin", data: raw, updated_at: updatedAt, revision: 17 });
+    const oldSnapshot = { id: "old-history", user_id: "admin", revision: 16, data: JSON.stringify({ issuers: [{ id: "old", legalName: "更早数据" }] }),
+      saved_at: "2026-10-18T00:00:00.000Z", summary_json: "{}" };
+    DB.snapshots.set(oldSnapshot.id, structuredClone(oldSnapshot));
+    const response = trigger === "GET"
+      ? await onRequestGet({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state") })
+      : await saveMockState(DB, data, 17);
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    if (trigger === "PUT") assert.equal(payload.status, "unchanged");
+    else assert.deepEqual(payload.data, data);
+    assert.equal(payload.revision, 17);
+    assert.equal(payload.updatedAt, updatedAt);
+    const row = DB.userStates.get("admin");
+    assert.equal(JSON.parse(row.data).$bondCentreStateChunks, 1);
+    assert.equal(row.revision, 17);
+    assert.equal(row.updated_at, updatedAt);
+    assert.deepEqual(await readStoredState(DB, row.data), data);
+    assert.equal(DB.legacyState.data, row.data);
+    assert.equal(DB.legacyState.updated_at, updatedAt);
+    assert.deepEqual(DB.snapshots.get(oldSnapshot.id), oldSnapshot);
+    assert.equal(DB.snapshots.get("admin:revision:17").data, raw);
+    assert.equal(DB.snapshots.size, 2);
+  }
+});
+
+test("storage-format migration refuses stale raw data or revisions without publishing orphan chunks", async () => {
+  const data = validateState({ issuers: [{ id: "issuer", notes: "旧".repeat(610_000) }] });
+  const updatedAt = "2026-10-19T08:12:00.000Z";
+  const raw = JSON.stringify(data);
+  for (const race of ["revision", "data"]) {
+    const DB = createMockDb({ legacyData: data });
+    const concurrent = { user_id: "admin", data: race === "data" ? JSON.stringify({ ...data, projects: [{ id: "newer" }] }) : raw,
+      updated_at: updatedAt, revision: race === "revision" ? 18 : 17 };
+    DB.userStates.set("admin", structuredClone(concurrent));
+    const legacyBefore = structuredClone(DB.legacyState);
+    const migrated = await migrateUserStateStorage(DB, "admin", { mirrorLegacy: true,
+      current: { storedData: raw, data, updatedAt, revision: 17 } });
+    assert.equal(migrated, false);
+    assert.deepEqual(DB.userStates.get("admin"), concurrent);
+    assert.deepEqual(DB.legacyState, legacyBefore);
+    assert.equal(DB.chunks.size, 0);
+  }
+});
+
+function saveMockState(DB, data, expectedRevision, meta = {}) {
+  return onRequestPut({ env: { DB }, request: new Request("http://127.0.0.1:8788/api/state", {
+    method: "PUT", body: JSON.stringify({ expectedRevision, data, meta }),
+  }) });
+}
 
 test("reads migrated legacy state with gateway auth", async () => {
   const DB = createMockDb({
@@ -593,10 +783,12 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function createMockDb({ legacyData = null } = {}) {
+function createMockDb({ legacyData = null, failChunkIndex = null, beforeBatch = null } = {}) {
   const users = new Map();
   const userStates = new Map();
   const snapshots = new Map();
+  const chunks = new Map();
+  let lastChanges = 0;
   let legacyState = legacyData
     ? { data: JSON.stringify(legacyData), updated_at: "2026-07-02T00:00:00.000Z" }
     : null;
@@ -605,6 +797,7 @@ function createMockDb({ legacyData = null } = {}) {
     users,
     userStates,
     snapshots,
+    chunks,
     get legacyState() { return legacyState; },
     prepare(sql) {
       let values = [];
@@ -615,7 +808,7 @@ function createMockDb({ legacyData = null } = {}) {
           return this;
         },
         async run() {
-          if (/CREATE TABLE|CREATE INDEX|ALTER TABLE/i.test(sql)) return result(0);
+          if (/CREATE TABLE|CREATE INDEX|ALTER TABLE/i.test(sql)) return writeResult(0);
           if (/INSERT INTO users/i.test(sql)) {
             const [id, username, nickname, passwordSalt, passwordHash, now] = values;
             users.set(username, {
@@ -628,14 +821,21 @@ function createMockDb({ legacyData = null } = {}) {
               created_at: now,
               updated_at: now,
             });
-            return result(1);
+            return writeResult(1);
           }
           if (/UPDATE user_app_state/i.test(sql)) {
+            if (/SET data = \?1\s+WHERE user_id = \?2/i.test(sql)) {
+              const [data, userId, expectedRevision, expectedData] = values;
+              const current = userStates.get(userId);
+              if (!current || current.revision !== expectedRevision || current.data !== expectedData) return writeResult(0);
+              userStates.set(userId, { ...current, data });
+              return writeResult(1);
+            }
             const [data, updatedAt, revision, userId, expectedRevision] = values;
             const current = userStates.get(userId);
-            if (!current || current.revision !== expectedRevision) return result(0);
+            if (!current || current.revision !== expectedRevision) return writeResult(0);
             userStates.set(userId, { ...current, data, updated_at: updatedAt, revision });
-            return result(1);
+            return writeResult(1);
           }
           if (/INSERT INTO user_app_state\s*\(/i.test(sql)) {
             const [userId, data, updatedAt] = values;
@@ -646,7 +846,7 @@ function createMockDb({ legacyData = null } = {}) {
               updated_at: updatedAt,
               revision: current?.revision || 0,
             });
-            return result(1);
+            return writeResult(1);
           }
           if (/INSERT OR IGNORE INTO user_app_state_snapshots/i.test(sql) && /FROM user_app_state/i.test(sql)) {
             let changes = 0;
@@ -666,11 +866,11 @@ function createMockDb({ legacyData = null } = {}) {
                 client_label: "历史云端状态",
                 restored_from_snapshot_id: null,
                 summary_json: '{"total":0,"collections":{},"settings":[]}',
-                byte_size: Buffer.byteLength(row.data),
+                byte_size: JSON.parse(row.data)?.$bondCentreStateChunks === 1 ? JSON.parse(row.data).bytes : Buffer.byteLength(row.data),
               });
               changes += 1;
             }
-            return result(changes);
+            return writeResult(changes);
           }
           if (/INSERT INTO user_app_state_snapshots/i.test(sql) && /'conflict'/i.test(sql)) {
             const [id, userId, baseRevision, data, savedAt, saveReason, clientId, clientLabel, summaryJson, byteSize] = values;
@@ -689,12 +889,12 @@ function createMockDb({ legacyData = null } = {}) {
               summary_json: summaryJson,
               byte_size: byteSize,
             });
-            return result(1);
+            return writeResult(1);
           }
           if (/INSERT INTO user_app_state_snapshots/i.test(sql) && /'accepted'/i.test(sql)) {
             const [id, userId, revision, baseRevision, data, savedAt, saveReason, clientId, clientLabel, restoredFrom, summaryJson, byteSize] = values;
             const current = userStates.get(userId);
-            if (!current || current.revision !== revision || current.updated_at !== savedAt) return result(0);
+            if (lastChanges !== 1 || !current || current.revision !== revision || current.updated_at !== savedAt || current.data !== data) return writeResult(0);
             snapshots.set(id, {
               id,
               user_id: userId,
@@ -710,17 +910,51 @@ function createMockDb({ legacyData = null } = {}) {
               summary_json: summaryJson,
               byte_size: byteSize,
             });
-            return result(1);
+            return writeResult(1);
           }
-          if (/INSERT INTO app_state/i.test(sql)) {
+          if (/INSERT INTO app_state\b/i.test(sql)) {
             const [data, updatedAt, userId, revision] = values;
             const current = userStates.get(userId);
-            if (!current || current.revision !== revision || current.updated_at !== updatedAt) return result(0);
+            if (lastChanges !== 1 || !current || current.revision !== revision || current.updated_at !== updatedAt || current.data !== data) return writeResult(0);
             legacyState = { data, updated_at: updatedAt };
-            return result(1);
+            return writeResult(1);
           }
-          if (/DELETE FROM user_app_state_snapshots/i.test(sql)) return result(0);
-          return result(0);
+          if (/INSERT INTO app_state_chunks/i.test(sql)) {
+            const [storageId, chunkIndex, data, userId, revision, manifest] = values;
+            if (/WHERE changes\(\) = 1/i.test(sql)) {
+              const current = userStates.get(userId);
+              if (lastChanges !== 1 || !current || current.revision !== revision || current.data !== manifest) return writeResult(0);
+            }
+            if (chunkIndex === failChunkIndex) throw new Error("injected chunk write failure");
+            const key = `${storageId}:${chunkIndex}`;
+            if (chunks.has(key)) throw new Error("duplicate chunk key");
+            chunks.set(key, { storage_id: storageId, chunk_index: chunkIndex, data });
+            return writeResult(1);
+          }
+          if (/DELETE FROM app_state_chunks/i.test(sql)) {
+            const referenced = new Set([...userStates.values(), ...snapshots.values(), legacyState].filter(Boolean).flatMap((row) => {
+              const data = JSON.parse(row.data);
+              return data?.$bondCentreStateChunks === 1 ? [data.id] : [];
+            }));
+            let removed = 0;
+            for (const [key, chunk] of chunks) {
+              if (referenced.has(chunk.storage_id)) continue;
+              chunks.delete(key);
+              removed++;
+            }
+            return writeResult(removed);
+          }
+          if (/DELETE FROM user_app_state_snapshots/i.test(sql)) {
+            const retained = new Set(orderedSnapshots(values[0]).slice(0, values[1]).map((row) => row.id));
+            let removed = 0;
+            for (const [id, row] of snapshots) {
+              if (row.user_id !== values[0] || retained.has(id)) continue;
+              snapshots.delete(id);
+              removed++;
+            }
+            return writeResult(removed);
+          }
+          return writeResult(0);
         },
         async first() {
           if (/SELECT id FROM users WHERE username/i.test(sql)) {
@@ -743,11 +977,23 @@ function createMockDb({ legacyData = null } = {}) {
         },
         async all() {
           if (/PRAGMA table_info\(user_app_state\)/i.test(sql)) return { results: [{ name: "revision" }] };
+          if (/LEFT JOIN app_state_chunks/i.test(sql)) {
+            const row = /FROM user_app_state_snapshots\b/i.test(sql)
+              ? snapshots.get(values[1])
+              : /FROM user_app_state\b/i.test(sql) ? userStates.get(values[0]) : legacyState;
+            if (!row || (/FROM user_app_state_snapshots\b/i.test(sql) && row.user_id !== values[0])) return { results: [] };
+            const data = JSON.parse(row.data);
+            const rows = [...chunks.values()].filter((chunk) => chunk.storage_id === data.id).sort((left, right) => left.chunk_index - right.chunk_index);
+            return { results: rows.length
+              ? rows.map((chunk) => ({ ...row, chunk_index: chunk.chunk_index, chunk_data: chunk.data }))
+              : [{ ...row, chunk_index: null, chunk_data: null }] };
+          }
+          if (/FROM app_state_chunks\b/i.test(sql)) return { results: [...chunks.values()]
+            .filter((chunk) => chunk.storage_id === values[0])
+            .sort((left, right) => left.chunk_index - right.chunk_index)
+            .map((chunk) => ({ chunk_index: chunk.chunk_index, chunk_data: chunk.data })) };
           if (/FROM user_app_state_snapshots/i.test(sql)) {
-            const rows = [...snapshots.values()]
-              .filter((row) => row.user_id === values[0])
-              .sort((left, right) => right.saved_at.localeCompare(left.saved_at))
-              .slice(0, Number(values[1] || 50));
+            const rows = orderedSnapshots(values[0]).slice(0, Number(values[1] || 50));
             return { results: rows };
           }
           return { results: [] };
@@ -756,11 +1002,37 @@ function createMockDb({ legacyData = null } = {}) {
       return statement;
     },
     async batch(statements) {
+      if (beforeBatch) await beforeBatch(db, statements);
+      const originalUserStates = structuredClone(userStates);
+      const originalSnapshots = structuredClone(snapshots);
+      const originalChunks = structuredClone(chunks);
+      const originalLegacy = structuredClone(legacyState);
+      const originalChanges = lastChanges;
       const results = [];
-      for (const statement of statements) results.push(await statement.run());
-      return results;
+      try {
+        for (const statement of statements) results.push(await statement.run());
+        return results;
+      } catch (error) {
+        for (const [target, original] of [[userStates, originalUserStates], [snapshots, originalSnapshots], [chunks, originalChunks]]) {
+          target.clear();
+          for (const [key, value] of original) target.set(key, value);
+        }
+        legacyState = originalLegacy;
+        lastChanges = originalChanges;
+        throw error;
+      }
     },
   };
+  function writeResult(changes) {
+    lastChanges = changes;
+    return result(changes);
+  }
+  function orderedSnapshots(userId) {
+    return [...snapshots.values()].map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.user_id === userId)
+      .sort((left, right) => String(right.row.saved_at || "").localeCompare(String(left.row.saved_at || "")) || right.index - left.index)
+      .map(({ row }) => row);
+  }
   return db;
 }
 

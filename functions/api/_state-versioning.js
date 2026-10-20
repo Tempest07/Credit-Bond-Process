@@ -5,7 +5,7 @@ import {
 } from "../../state-history.js";
 import { readUserAppState } from "./_auth.js";
 import { assertStateCapacity } from "./_state-capacity.js";
-import { ensureStateChunksSchema, readStoredStateRow } from "../../state-storage.js";
+import { ensureStateChunksSchema, prepareStoredState, pruneStateChunks, readStoredStateRow, stateChunkStatements } from "../../state-storage.js";
 
 const SNAPSHOT_RETENTION = 50;
 
@@ -58,7 +58,10 @@ export async function ensureStateVersionSchema(db) {
       '',
       '历史云端状态',
       '{"total":0,"collections":{},"settings":[]}',
-      length(CAST(data AS BLOB))
+      CASE WHEN json_valid(data) THEN
+        CASE WHEN json_extract(data, '$."$bondCentreStateChunks"') = 1 THEN json_extract(data, '$.bytes')
+          ELSE length(CAST(data AS BLOB)) END
+        ELSE length(CAST(data AS BLOB)) END
     FROM user_app_state
   `).run();
 }
@@ -70,6 +73,9 @@ export async function saveStateVersion(db, userId, options = {}) {
   const meta = normalizeStateSaveMeta(options.meta, "autosave");
 
   if (statePayloadEquals(current.data, data)) {
+    if (expectedRevision === current.revision) {
+      await migrateUserStateStorage(db, userId, { current, mirrorLegacy: options.mirrorLegacy });
+    }
     return {
       status: "unchanged",
       data: current.data,
@@ -99,24 +105,30 @@ export async function saveStateVersion(db, userId, options = {}) {
   const updatedAt = new Date().toISOString();
   const nextData = { ...data, updatedAt };
   const serialized = JSON.stringify(nextData);
+  assertStateCapacity(serialized, []);
+  const storage = await prepareStoredState(serialized);
+  const stored = storage.serialized;
   const revision = current.revision + 1;
   const snapshotId = crypto.randomUUID();
   const summary = summarizeStateChange(current.data, nextData);
   const summaryJson = JSON.stringify(summary);
   const restoredFromSnapshotId = cleanId(options.restoredFromSnapshotId);
   const byteSize = assertStateCapacity(serialized, [
-    [userId, serialized, updatedAt, revision],
-    [snapshotId, userId, revision, expectedRevision, serialized, updatedAt, "accepted",
+    [userId, stored, updatedAt, revision],
+    [snapshotId, userId, revision, expectedRevision, stored, updatedAt, "accepted",
       meta.source, meta.clientId, meta.clientLabel, restoredFromSnapshotId, summaryJson, 0],
-    ...(options.mirrorLegacy ? [[1, serialized, updatedAt]] : []),
+    ...(options.mirrorLegacy ? [[1, stored, updatedAt]] : []),
+    ...storage.chunks.map((chunk, index) => [storage.chunkId, index, chunk]),
   ]);
+  const chunks = stateChunkStatements(db, storage, { userId, revision });
 
   const statements = [
     db.prepare(`
       UPDATE user_app_state
       SET data = ?1, updated_at = ?2, revision = ?3
       WHERE user_id = ?4 AND revision = ?5
-    `).bind(serialized, updatedAt, revision, userId, expectedRevision),
+    `).bind(stored, updatedAt, revision, userId, expectedRevision),
+    ...chunks,
     db.prepare(`
       INSERT INTO user_app_state_snapshots (
         id, user_id, revision, base_revision, data, saved_at, status, save_reason,
@@ -133,7 +145,7 @@ export async function saveStateVersion(db, userId, options = {}) {
       userId,
       revision,
       expectedRevision,
-      serialized,
+      stored,
       updatedAt,
       meta.source,
       meta.clientId,
@@ -153,14 +165,15 @@ export async function saveStateVersion(db, userId, options = {}) {
         WHERE user_id = ?3 AND revision = ?4 AND updated_at = ?2 AND data = ?1
       )
       ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
-    `).bind(serialized, updatedAt, userId, revision));
+    `).bind(stored, updatedAt, userId, revision));
   }
   const results = await db.batch(statements);
 
   const stateChanges = resultChanges(results[0]);
-  const snapshotChanges = resultChanges(results[1]);
-  const legacyChanges = options.mirrorLegacy ? resultChanges(results[2]) : 1;
-  if (stateChanges !== 1 || snapshotChanges !== 1 || legacyChanges !== 1) {
+  const snapshotChanges = resultChanges(results[chunks.length + 1]);
+  const legacyChanges = options.mirrorLegacy ? resultChanges(results[chunks.length + 2]) : 1;
+  if (stateChanges !== 1 || snapshotChanges !== 1 || legacyChanges !== 1
+    || results.slice(1, chunks.length + 1).some(result => resultChanges(result) !== 1)) {
     const latest = await readUserAppState(db, userId);
     const snapshot = options.preserveConflict === false
       ? null
@@ -225,14 +238,16 @@ export async function readStateSnapshot(db, userId, snapshotId) {
 async function saveConflictSnapshot(db, userId, options) {
   const savedAt = new Date().toISOString();
   const serialized = JSON.stringify(options.data);
+  assertStateCapacity(serialized, []);
+  const storage = await prepareStoredState(serialized);
   const summary = summarizeStateChange(options.currentData, options.data);
   const id = crypto.randomUUID();
   const summaryJson = JSON.stringify(summary);
   const byteSize = assertStateCapacity(serialized, [[
-    id, userId, null, options.baseRevision, serialized, savedAt, "conflict",
+    id, userId, null, options.baseRevision, storage.serialized, savedAt, "conflict",
     options.meta.source, options.meta.clientId, options.meta.clientLabel, summaryJson, 0,
-  ]]);
-  await db.prepare(`
+  ], ...storage.chunks.map((chunk, index) => [storage.chunkId, index, chunk])]);
+  await db.batch([...stateChunkStatements(db, storage), db.prepare(`
     INSERT INTO user_app_state_snapshots (
       id, user_id, revision, base_revision, data, saved_at, status, save_reason,
       client_id, client_label, summary_json, byte_size
@@ -242,14 +257,14 @@ async function saveConflictSnapshot(db, userId, options) {
     id,
     userId,
     Number.isInteger(options.baseRevision) ? options.baseRevision : null,
-    serialized,
+    storage.serialized,
     savedAt,
     options.meta.source,
     options.meta.clientId,
     options.meta.clientLabel,
     summaryJson,
     byteSize,
-  ).run();
+  )]);
   await pruneSnapshots(db, userId);
   return {
     id,
@@ -276,6 +291,27 @@ async function pruneSnapshots(db, userId) {
         LIMIT ?2
       )
   `).bind(userId, SNAPSHOT_RETENTION).run();
+  await pruneStateChunks(db);
+}
+
+export async function migrateUserStateStorage(db, userId, options = {}) {
+  const current = options.current || await readUserAppState(db, userId);
+  if (!current.storedData || JSON.parse(current.storedData).$bondCentreStateChunks === 1) return false;
+  const storage = await prepareStoredState(current.storedData);
+  if (!storage.chunks.length) return false;
+  const statements = [db.prepare(`UPDATE user_app_state SET data = ?1
+    WHERE user_id = ?2 AND revision = ?3 AND data = ?4`)
+    .bind(storage.serialized, userId, current.revision, current.storedData),
+  ...stateChunkStatements(db, storage, { userId, revision: current.revision })];
+  if (options.mirrorLegacy) {
+    statements.push(db.prepare(`INSERT INTO app_state (id, data, updated_at)
+      SELECT 1, ?1, ?2 WHERE changes() = 1 AND EXISTS (
+        SELECT 1 FROM user_app_state WHERE user_id = ?3 AND revision = ?4 AND data = ?1
+      ) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
+      .bind(storage.serialized, current.updatedAt, userId, current.revision));
+  }
+  const results = await db.batch(statements);
+  return resultChanges(results[0]) === 1;
 }
 
 function snapshotMetadata(row) {
