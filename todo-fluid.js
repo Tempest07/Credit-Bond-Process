@@ -1,4 +1,4 @@
-import { createHoverIntent } from './todo-hover-intent.js?v=20261020-release-5241-hotfix4';
+import { createHoverIntent } from './todo-hover-intent.js?v=20261021-release-5242';
 
 export function automaticTodoCard(counts) {
   const populated = counts.flatMap((count, index) => count > 0 ? [index] : []);
@@ -9,6 +9,9 @@ export function initFluidTodos(stage) {
   if (!stage) return;
   const cards = [...stage.querySelectorAll(':scope > .ledger-command-card')];
   const lists = cards.map(card => card.querySelector('.cutoff-todo-list,.payment-todo-list'));
+  const prepaymentPanel = document.getElementById('prepaymentEntryPanel');
+  const paymentIndex = cards.findIndex(card => card.id === 'paymentTodoPanel');
+  const prepaymentOpen = () => paymentIndex >= 0 && prepaymentPanel?.hidden === false;
   const finePointer = matchMedia('(hover:hover) and (pointer:fine)');
   const reduced = matchMedia('(prefers-reduced-motion:reduce)');
   const enabled = () => document.documentElement.dataset.ui === 'beta';
@@ -39,6 +42,8 @@ export function initFluidTodos(stage) {
 
   function layout() {
     if (!enabled() || !stage.clientWidth) return;
+    // The dialog moves focus and pointer outside the stage; keep its source card expanded.
+    if (prepaymentOpen()) active = paymentIndex;
     stage.classList.add('todo-fluid');
     const width = stage.clientWidth, mobile = compact(), gap = mobile ? 16 : 24;
     const inset = mobile ? 15 : 25, head = mobile ? 76 : 90;
@@ -108,6 +113,12 @@ export function initFluidTodos(stage) {
   const scheduleRefresh = () => { if (!pending) pending = requestAnimationFrame(refresh); };
   const observer = new MutationObserver(scheduleRefresh);
   lists.forEach(list => observer.observe(list, { childList: true }));
+  if (prepaymentPanel) {
+    new MutationObserver(() => {
+      if (prepaymentOpen()) expand(paymentIndex);
+      else restore();
+    }).observe(prepaymentPanel, { attributes: true, attributeFilter: ['hidden'] });
+  }
   document.addEventListener('pointermove', event => {
     if (!enabled() || active === null || !origin || event.pointerType !== 'mouse' || !finePointer.matches || compact()) return;
     const inside = rect => event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
@@ -118,6 +129,7 @@ export function initFluidTodos(stage) {
     if (!stage.contains(document.activeElement) && active !== automatic) restore();
   }));
   stage.addEventListener('keydown', event => {
+    if (prepaymentOpen()) return;
     if (event.key === 'Escape' && active !== null && automatic === null) {
       const button = controls[active].button;
       restore(); button.focus({ preventScroll: true }); event.stopPropagation();

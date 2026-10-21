@@ -1207,6 +1207,8 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .prepayment-number-preview span { color: #748096; font-size: 11px; font-weight: 800; }
 .prepayment-number-preview strong { color: #17243d; font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; letter-spacing: .025em; overflow-wrap: anywhere; }
 .prepayment-entry-actions { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px; }
+.prepayment-entry-actions:has(.prepayment-clear-button:not([hidden])) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.prepayment-clear-button[hidden] { display: none; }
 .prepayment-entry-actions .button { min-height: 44px; }
 .project-footer-actions { justify-content: flex-start; }
 .result-summary { min-height: 100px; padding: 12px; resize: vertical; background: var(--panel-soft); font-size: 11px; line-height: 1.8; }
