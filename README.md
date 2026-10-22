@@ -2,6 +2,12 @@
 
 信用债投资流程意见生成器。粘贴固定格式的项目简表后，页面会解析债券信息、匹配主体最新授信、应用投资比例与终批规则，并生成可编辑的流程意见。
 
+## v5.3 · QB 备用数据源与估值提示（2026-10-22）
+
+全站现有 DM 数据请求增加 QB 自动备用：DM 失败、返回空数据或部分字段缺失时，按相同债券、日期和口径补充基础资料、发行、评级、估值及网站现用中债到期收益率曲线，保留 DM 已有有效值、Wind 优先级和人工规则，并标明实际来源、数据日期和采集时间。无同口径 QB 接口的实时行情及隐含违约率继续明确缺失，不用日度成交或统计数据替代。
+
+OFR/BID 新增参考估值、票面与估值相差不超过 5bp 的提示，以及报价收益率高于对应估值的偏离提示；银行间取中债，交易所取中证，明确净价报价独立与同口径估值净价比较。缴款待办自动获取债券代码，以灰色小标签显示，DM 取不到时使用 QB。沿用现有 D1 分块存储、历史快照和 revision 保护，不导入测试数据或批量改写业务记录。页面及 `buildVersion` 为 `5.3`，npm SemVer 为 `5.3.0`。详见 [5.3 更新日志](./CHANGELOG-5.3.md)。
+
 ## v5.2.4.2 · 预缴款弹窗与编号清除（2026-10-21）
 
 预缴款弹窗打开期间，缴款待办保持铺满双模块区域，关闭后恢复原展开逻辑。已有编号时可通过“清除编号”按钮清空所选分期的预缴款信息，保留缴款状态、其他分期及备注。沿用现有分块存储与历史版本，不改数据库结构，不导入或批量改写生产数据。页面及 `buildVersion` 为 `5.2.4.2`，npm SemVer 保持 `5.2.4`。详见 [5.2.4.2 更新日志](./CHANGELOG-5.2.4.2.md)。
@@ -170,11 +176,14 @@ OFR/BID 清单改为 Bond Centre 内置模块；缴款单采用左侧清单、�
 7. 为债券数据查询配置服务端 Secrets：
    - `INNO_APP_KEY` / `INNO_APP_SECRET`：DM 债券档案、发行、主体评级与评级机构
    - `WIND_API_KEY`：Wind 中债隐含评级；仅由 Pages Function 读取，不下发到浏览器
+   - `QB_ACCESS_KEY`：QB / 森浦备用数据源；仅由服务端通过 `X-Access-Key` 请求头使用，不下发到浏览器
 8. 重新部署 Pages。
+
+QB 生产配置在 Pages 项目的 Settings / Variables and Secrets 中选择 Production，新增名为 `QB_ACCESS_KEY` 的加密 Secret；保留已有 DM、Wind 和 Gateway 配置。也可使用 `wrangler pages secret put QB_ACCESS_KEY --project-name credit-bond-process` 的安全输入提示，或从发布目录外的私有文件执行 `wrangler pages secret bulk <私有文件> --project-name credit-bond-process`，文件仅包含该键。密钥不得写入源码、前端、URL、命令参数或日志；本机环境变量不会自动同步到云端。配置后重新部署，自动备用才会在生产生效。
 
 缴款单系统还需要 R2、Queue、Email Routing 和独立 Email Worker，详见 [PAYMENT_RECEIPTS_DEPLOYMENT.md](./PAYMENT_RECEIPTS_DEPLOYMENT.md)。
 
-Pages Function 会在首次通过 gateway 访问资料库时自动创建所需表、为现有状态补充 revision 和初始快照，并把旧 `app_state` 数据迁移到 `admin` 管理员账号名下；也可以手动执行 `schema.sql`。单份状态在写入前限制为 1,800,000 bytes，以避开 D1 单行容量边界；达到限制时应先导出备份并拆分数据模型。
+Pages Function 沿用既有用户身份、revision 冲突保护及历史快照。资料库自 5.2.4.1 起采用兼容旧 JSON 的 D1 分块存储，详细格式及恢复步骤见 [STATE_STORAGE.md](./STATE_STORAGE.md)；发布 5.3 不执行数据迁移或导入本地测试资料。
 
 ## Gateway
 
@@ -201,10 +210,10 @@ https://tempest07.com/bond-centre/
 
 ## 隐含评级数据源
 
-- 配置 `WIND_API_KEY` 后，中债隐含评级以 Wind 返回值为准，DM 不再作为隐含评级回退来源。
-- Wind 无结果时，可使用明确标注的云端主体库历史隐含评级；不得用主体评级替代。
+- 优先保留已有有效 DM 隐含评级；DM 缺失时查询 QB 同口径中债隐含评级。仍缺失且配置了 `WIND_API_KEY` 时，沿用现有 Wind 查询。
+- 外部来源无结果时，可使用明确标注的云端主体库历史隐含评级；不得用主体评级替代。
 - 项目记录保存 `hiddenRatingSource` 和 `hiddenRatingAsOf`，用于区分 Wind、云端主体库和人工录入。
-- 尚未配置 `WIND_API_KEY` 的环境继续沿用旧 DM 行为，便于先合并代码、后配置 Secret；完成 Secret 配置后即自动启用 Wind 替代。
+- QB、Wind 仅在配置相应服务端 Secret 后启用；人工录入和已保存记录不因新增备用源批量改写。
 
 ## 二级交易录入
 

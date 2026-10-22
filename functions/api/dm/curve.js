@@ -11,6 +11,7 @@ import {
   validateDmConfig,
 } from "./lookup.js";
 import { requireUser } from "../_auth.js";
+import { withDataSources } from '../qb/fallback.js';
 
 const YIELD_CURVE_PATH = "/dm-quant-func-service/api/v1/bond/yield-curve/data";
 const CHINABOND_CURVE_SOURCE = "18";
@@ -72,7 +73,7 @@ export async function onRequestGet(context) {
     const snapshot = latestCurveSnapshot(rawBatches.flatMap(rowsFromDm), curve, requestedAsOf);
     const retrievedAt = new Date().toISOString();
     if (!snapshot) {
-      return json({
+      return json(withDataSources({
         ok: false,
         reason: "noCurveData",
         hint: "DM 暂未返回最近可用的国开债曲线。",
@@ -81,11 +82,11 @@ export async function onRequestGet(context) {
         curveName: curve.name,
         requestedAsOf,
         retrievedAt,
-      });
+      }, dm));
     }
 
     const ageDays = isoDateDistance(snapshot.actualValuationDate, requestedAsOf);
-    return json({
+    return json(withDataSources({
       ok: true,
       source: "DM",
       curveId: curve.id,
@@ -100,7 +101,7 @@ export async function onRequestGet(context) {
       derivedTerms: snapshot.derivedTerms,
       partial: snapshot.missingTerms.length > 0,
       stale: Number.isFinite(ageDays) && ageDays > 4,
-    });
+    }, dm));
   } catch (error) {
     console.error(JSON.stringify({
       message: "DM policy-bank curve request failed",

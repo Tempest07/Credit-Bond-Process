@@ -1,6 +1,7 @@
 import { requireUser, json } from '../_auth.js';
 import { makeDmClient, validateDmConfig, rowsFromDm } from '../dm/lookup.js';
 import { checkWriteRequest, readBody, nameCandidates, matchRows } from './_shared.js';
+import { withDataSources } from '../qb/fallback.js';
 
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
@@ -24,7 +25,7 @@ export async function onRequestPost(context) {
       const raw = await client.post('/dm-quant-func-service/api/v1/bond/basic-info/info', {secShortNameList:query.slice(start,start+5)}, {signal});
       rows.push(...rowsFromDm(raw));
     }
-    return json({results:matchRows(names,rows)});
+    return json(withDataSources({results:matchRows(names,rows)}, client));
   } catch {
     return json({error:'DM 查询暂时失败或超时，请稍后重试。报价原文已保留。'}, 502);
   }

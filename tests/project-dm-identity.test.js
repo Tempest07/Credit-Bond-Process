@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { replaceProjectWithDmLookup } from "../core.js";
+import { replaceProjectWithDmLookup, durationParts, durationToDays } from "../core.js";
 import { normalizeLookupPayload } from "../bond-identity.js";
 
 const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
 function harness() {
   const context = vm.createContext({
     normalizeLookupPayload,
+    durationParts, durationToDays,
     normalizeDmTenor: value => value || "",
     parseDmInquiryRange: () => ({ low: null, high: null }),
     sumFinite: () => null,
@@ -83,4 +84,19 @@ test("ABS plan and class grouping retains its existing identity rules", () => {
   assert.deepEqual(context.checkedDmLookupPayload({ query: { fullName: "测试专项计划" }, issueGroup: group }).issueGroup, group);
   const normalizedGroup = { tranches: group.tranches };
   assert.deepEqual(context.checkedDmLookupPayload({ normalized: { isAbs: true, issueGroup: normalizedGroup } }).issueGroup, normalizedGroup);
+});
+
+test('QB fills preserve per-field source when constructing a new project', () => {
+  const context = harness();
+  const patch = context.projectPatchFromDmLookup({ normalized: {
+    shortName: '26测试MTN001', securityId: '102600001.IB', durationText: '3年', issueScaleYi: 5,
+    impliedRating: 'AA+', fieldSource: { shortName: 'QB', durationText: 'QB', issueScaleYi: 'QB' },
+    ratingSource: { impliedRating: 'qb-implied-rating' },
+  } });
+  assert.equal(patch.shortName, '26测试MTN001');
+  assert.equal(patch.sourceMap.shortName, 'qb');
+  assert.equal(patch.sourceMap.durationText, 'qb');
+  assert.equal(patch.sourceMap.issueScale, 'qb');
+  assert.equal(patch.sourceMap.hiddenRating, 'qb');
+  assert.equal(patch.hiddenRatingSource, 'qb-implied-rating');
 });

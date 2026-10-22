@@ -191,6 +191,26 @@ test("changing negotiation date invalidates the DM valuation but keeps security 
   assert.equal(rows[0].record["估值收益率"], "");
 });
 
+test('QB field provenance survives drafts and clears when its code or valuation date changes', () => {
+  const result = { id: 'secondary:one', securityId: '102682206.IB', shortName: '测试债', bondType: '中期票据', valuationYield: 1.955,
+    requestedDate: '2026-07-23', valuationDate: '2026-07-23', valuationField: 'cbYtm', status: 'complete', provider: 'DM+QB',
+    providerInfo: { apiNames: ['cdcBondValuation'], date: '2026-07-23', fetchedAt: '2026-07-24T01:00:00Z' },
+    fieldSources: { shortName: 'DM', bondType: 'DM', valuationYield: 'QB' } };
+  const rows = cloneTradeRecordDraftRows(createTradeRecordDraftRows(mergeTradeRecordDmResults(draftRows(), [result])));
+  assert.equal(rows[0].fieldSources['债券简称'], 'dm');
+  assert.equal(rows[0].fieldSources['估值收益率'], 'qb');
+  assert.equal(rows[0].dmLookup.provider, 'DM+QB');
+  assert.equal(rows[0].dmLookup.providerInfo.apiNames[0], 'cdcBondValuation');
+  const changedDate = updateTradeRecordDraftCell(rows, { key: 'secondary:one', column: '谈判日', value: '2026-07-27' });
+  assert.equal(changedDate[0].record['估值收益率'], '');
+  assert.equal(changedDate[0].record['债券简称'], '测试债');
+  const manual = updateTradeRecordDraftCell(rows, { key: 'secondary:one', column: '债券简称', value: '手工简称' });
+  const changedCode = updateTradeRecordDraftCell(manual, { key: 'secondary:one', column: '债券代码', value: '102699999.IB' });
+  assert.equal(changedCode[0].record['债券简称'], '手工简称');
+  assert.equal(changedCode[0].record['债券类型'], '');
+  assert.equal(changedCode[0].record['估值收益率'], '');
+});
+
 test("validates spreadsheet dates, numbers, direction and settlement speed", () => {
   assert.equal(isTradeRecordCellValueValid("谈判日", "2026-02-29"), false);
   assert.equal(isTradeRecordCellValueValid("交易日", "2026-07-27"), true);

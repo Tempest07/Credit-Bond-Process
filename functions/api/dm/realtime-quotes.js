@@ -1,4 +1,5 @@
 import { requireUser } from "../_auth.js";
+import { withDataSources } from '../qb/fallback.js';
 import {
   json,
   makeDmClient,
@@ -77,7 +78,7 @@ export async function onRequestPost(context) {
     const quotesById = new Map(quoteRows.map((row) => [securityKey(row), row]).filter(([key]) => key));
     const fetchedAt = new Date().toISOString();
 
-    return json({
+    return json(withDataSources({
       ok: true,
       source: "DM",
       sourcePath: REALTIME_QUOTE_PATH,
@@ -92,7 +93,7 @@ export async function onRequestPost(context) {
         unresolved: resolution.unresolved.length,
         brokerBreakdownAvailable: false,
       },
-    });
+    }, dm));
   } catch (error) {
     const timedOut = error?.name === "AbortError";
     return json({

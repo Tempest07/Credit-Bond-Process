@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261021-release-5242";
+const VERSION = "20261022release53";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -35,14 +35,14 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../bond-list-editor.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261021-release-5242/);
-  assert.match(html, /bond-list-editor\.css\?v=20261021-release-5242/);
-  assert.match(app, /bond-list-editor\.js\?v=20261021-release-5242/);
-  assert.match(html, /payment-receipt-reader\.css\?v=20261021-release-5242/);
-  assert.match(app, /payment-receipt-preview\.js\?v=20261021-release-5242/);
-  assert.match(app, /payment-receipt-reader\.js\?v=20261021-release-5242/);
-  assert.match(html, /project-target-note\.css\?v=20261021-release-5242/);
-  assert.match(app, /project-target-note\.js\?v=20261021-release-5242/);
+  assert.match(html, /app\.js\?v=20261022release53/);
+  assert.match(html, /bond-list-editor\.css\?v=20261022release53/);
+  assert.match(app, /bond-list-editor\.js\?v=20261022release53/);
+  assert.match(html, /payment-receipt-reader\.css\?v=20261022release53/);
+  assert.match(app, /payment-receipt-preview\.js\?v=20261022release53/);
+  assert.match(app, /payment-receipt-reader\.js\?v=20261022release53/);
+  assert.match(html, /project-target-note\.css\?v=20261022release53/);
+  assert.match(app, /project-target-note\.js\?v=20261022release53/);
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));
@@ -145,7 +145,7 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(realtime, /continue|继续轮询/);
   assert.doesNotMatch(realtime, /读取 DM|DM估值|<span>DM<\/span>|非债券或 DM 未匹配/);
   assert.match(realtime, /每 \$\{this\.intervalMs \/ 1_000\} 秒自动刷新/);
-  assert.match(realtime, /title="数据来源：DM"><span>聚合<\/span>/);
+  assert.match(realtime, /title="数据来源：\$\{escapeAttribute\(dataProviderLabel\(row\)\)\}"><span>聚合<\/span>/);
   assert.match(realtime, /\{ id: "identity", label: "债券", width: 240,/);
   assert.match(endpoint, /bond\/market-data\/realtime-quote/);
   assert.match(endpoint, /brokerBreakdownAvailable: false/);

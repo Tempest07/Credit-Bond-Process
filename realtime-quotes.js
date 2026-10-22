@@ -1,3 +1,5 @@
+import { dataProviderLabel } from './market-data-source.js?v=20261022release53';
+
 const DEFAULT_ENDPOINT = "./api/dm/realtime-quotes";
 const DEFAULT_VALUATION_ENDPOINT = "./api/dm/realtime-valuations";
 const STORAGE_KEY = "credit-bond-process-realtime-watchlist-v2";
@@ -909,7 +911,7 @@ function renderQuoteCell(columnId, row, controller) {
   if (columnId === "chinaSecurities") return `<td data-column="chinaSecurities" class="quote-valuation-cell china-securities-valuation">${renderValuation(row.valuation?.chinaSecurities)}</td>`;
   if (columnId === "source") {
     const sourceLabel = row.placeholderStatus === "pending" ? "待查询" : row.placeholderStatus === "unresolved" ? "基础资料" : "经纪商聚合";
-    return `<td data-column="source" class="quote-source-cell" title="数据来源：DM"><span>聚合</span><small>${sourceLabel}</small></td>`;
+    return `<td data-column="source" class="quote-source-cell" title="数据来源：${escapeAttribute(dataProviderLabel(row))}"><span>聚合</span><small>${sourceLabel}</small></td>`;
   }
   if (columnId === "bidVolume") return `<td data-column="bidVolume" class="quote-volume-cell bid-volume">${formatQuoteNumber(row.bid?.volumeWan, 0)}</td>`;
   if (columnId === "bid") return renderPriceCell(row, "bid", controller.changeFor(row, "bid"));
@@ -944,7 +946,8 @@ function renderValuation(value) {
   if (!value || !Number.isFinite(value.yield)) return "<strong>--</strong><span>暂无估值</span>";
   const date = String(value.date || "").slice(5) || "--";
   const netPrice = Number.isFinite(value.netPrice) ? ` · 净价 ${formatQuoteNumber(value.netPrice, 3)}` : "";
-  return `<strong>${formatQuoteNumber(value.yield, 4)}<em>%</em></strong><span>${escapeHtml(value.basis || "估值")} · ${escapeHtml(date)}${escapeHtml(netPrice)}</span>`;
+  const provider = dataProviderLabel(value);
+  return `<strong>${formatQuoteNumber(value.yield, 4)}<em>%</em></strong><span title="${escapeAttribute(`${provider} · ${value.date || ''}`)}">${provider === 'DM' ? '' : escapeHtml(provider) + ' / '}${escapeHtml(value.basis || "估值")} · ${escapeHtml(date)}${escapeHtml(netPrice)}</span>`;
 }
 
 function renderTargets(watchItem, row) {

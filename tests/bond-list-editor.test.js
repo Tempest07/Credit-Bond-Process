@@ -100,6 +100,9 @@ async function fixture(options, work) {
       if (url.endsWith('/coupons')) {
         return json({ source: 'DM', results: Object.fromEntries(request.body.codes.map(code => [code, { status: 'missing', couponRate: null }])) });
       }
+      if (url.endsWith('/valuations')) {
+        return json({ source: 'DM', results: Object.fromEntries(request.body.codes.map(code => [code, { status: 'missing', institution: code.endsWith('.IB') ? '中债' : '中证', yield: null, netPrice: null }])) });
+      }
       throw new Error('unexpected URL ' + url);
     }
   };
@@ -644,6 +647,104 @@ test('missing-data views distinguish zero coupon, missing coupon and unknown sid
     await env.elements['filters-clear'].click(); await env.filter('coupon-op', 'gte'); await env.filter('coupon-min', '0', 'input');
     assert.equal(env.rows().length, 1);
     assert.equal(env.resultRow(0).querySelector('.bond-list-result-code').textContent, '123456.SH');
+  });
+});
+
+test('valuation hints show institution, coupon proximity and the requested warning direction without editing quotes', async () => {
+  const text = '102600001.IB，26测试MTN001，1.50*ofr\n102600001.IB，26测试MTN001，1.60*ofr\n123456.SH，26测试01，净价100*ofr';
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 8, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return json({ source: 'DM', fetchedAt: '2026-10-22T01:00:00Z', results: {
+      '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' },
+      '123456.SH': { status: 'matched', couponRate: 2, bondType: '公司债' },
+    } });
+    if (request.url.endsWith('/valuations')) return json({ source: 'DM', fetchedAt: '2026-10-22T01:00:00Z', results: {
+      '102600001.IB': { status: 'matched', institution: '中债', yield: 1.51, netPrice: 100.1, basis: '到期', date: '2026-10-21' },
+      '123456.SH': { status: 'matched', institution: '中证', yield: 2.02, netPrice: 100.25, basis: '行权', date: '2026-10-21' },
+    } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    assert.equal(env.rows().length, 3);
+    assert.match(env.resultRow(0).children[2].querySelector('.bond-list-comparison-badge').title, /3bp/);
+    assert.equal(env.resultRow(0).querySelector('.warning'), null);
+    assert.match(env.resultRow(0).children[3].querySelector('.bond-list-valuation-meta').textContent, /中债.*到期.*10-21/);
+    assert.equal(env.resultRow(1).querySelector('.warning').textContent, '高于估值 +9bp');
+    assert.match(env.resultRow(2).querySelector('.warning').textContent, /净价低于估值 -0\.25/);
+    assert.match(env.resultRow(2).children[3].querySelector('.bond-list-valuation-meta').textContent, /中证.*行权/);
+    assert.equal(env.state.sections[0].text, text); assert.equal(env.state.revision, 8);
+    assert.equal(env.elements['result-preview'].textContent, 'OFR/BID\n\n北京\n' + text);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/state') && request.body).length, 0);
+  });
+});
+
+test('a failed valuation cannot turn into zero, erase coupon data or prevent copying valid filtered quotes', async () => {
+  await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 1, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return json({ source: 'DM', results: { '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' } } });
+    if (request.url.endsWith('/valuations')) return json({ error: '暂时失败' }, 502);
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    assert.equal(env.resultRow(0).children[2].children[0].textContent, '1.54%');
+    assert.equal(env.resultRow(0).children[3].children[0].textContent, '查询失败');
+    assert.equal(env.resultRow(0).querySelector('.warning'), null);
+    await env.filter('coupon-op', 'gte'); await env.filter('coupon-min', '1.5', 'input');
+    assert.equal(env.rows().length, 1); assert.equal(env.elements.copy.disabled, false);
+    assert.equal(env.state.revision, 1);
+  });
+});
+
+test('valuation access rejection is visible without asserting the service is unsubscribed; coupon and copy remain available', async () => {
+  await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 1, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return json({ source: 'DM', results: { '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' } } });
+    if (request.url.endsWith('/valuations')) return json({ code: 'dm_valuation_access_denied', error: 'DM 当前估值请求被拒绝。' }, 503);
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    assert.equal(env.resultRow(0).children[2].children[0].textContent, '1.54%');
+    assert.equal(env.resultRow(0).children[3].children[0].textContent, '权限待核对');
+    assert.match(env.elements['metadata-status'].textContent, /估值接口权限待核对/);
+    assert.match(env.resultRow(0).children[3].children[0].title, /GW-000-4006/);
+    assert.equal(env.resultRow(0).querySelector('.warning'), null);
+    assert.equal(env.elements.copy.disabled, false);
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.state.revision, 1);
+  });
+});
+
+test('QB valuation fallback shows the actual provider and institution without modifying the quote', async () => {
+  const text = '102600001.IB，测试，1.60*ofr';
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 7, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return json({ source: 'DM', results: { '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' } } });
+    if (request.url.endsWith('/valuations')) return json({ source: 'QB', fetchedAt: '2026-10-22T01:00:00Z', results: {
+      '102600001.IB': { status: 'matched', provider: 'QB', institution: '中债', yield: 1.51, netPrice: 100.1, basis: '到期', date: '2026-10-21' },
+    } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    assert.match(env.elements['metadata-status'].textContent, /^DM\+QB/);
+    const source = env.resultRow(0).children[3].querySelector('.bond-list-valuation-meta');
+    assert.match(source.textContent, /^QB \/ 中债/);
+    assert.match(source.title, /QB 查询于/);
+    assert.equal(env.resultRow(0).querySelector('.warning').textContent, '高于估值 +9bp');
+    assert.equal(env.elements['result-preview'].textContent, 'OFR/BID\n\n北京\n' + text);
+    assert.equal(env.state.revision, 7);
+    assert.equal(editor.hasPendingChanges(), false);
+  });
+});
+
+test('a failed refresh preserves earlier verified data with its provider and actual valuation date', async () => {
+  let fail = false;
+  await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 4, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return fail ? json({ error: '两源暂不可用' }, 502) : json({ source: 'DM', results: { '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' } } });
+    if (request.url.endsWith('/valuations')) return fail ? json({ source: 'QB', results: { '102600001.IB': { status: 'missing' } } }) : json({ source: 'QB', fetchedAt: '2026-10-22T01:00:00Z', results: {
+      '102600001.IB': { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-21' },
+    } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    fail = true; await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    const source = env.resultRow(0).children[3].querySelector('.bond-list-valuation-meta');
+    assert.match(source.textContent, /^QB \/ 中债.*10-21/);
+    assert.match(source.title, /保留上次资料/);
+    assert.match(env.elements['metadata-status'].textContent, /保留上次资料/);
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.state.revision, 4);
   });
 });
 

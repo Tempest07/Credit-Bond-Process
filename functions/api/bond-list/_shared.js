@@ -1,4 +1,5 @@
 import { isLocalRequest, json } from '../_auth.js';
+import { rowProvenance } from '../qb/provenance.js';
 
 export const DEFAULT_BRANCHES = ['北京/上海', '陕西（西安）', '山东（青岛）', '湖北（武汉）', '广东（广州）', '甘肃（兰州）', '江苏（苏州）', '山西（太原）', '福建（泉州）', '福建（南平）', '河北（石家庄）', '内蒙古（呼和浩特）', '河南（郑州）', '云南（昆明）', '浙江（宁波）', '宁夏（银川）', '浙江（杭州）', '江苏（南京）', '广西（南宁）', '安徽（合肥）', '辽宁（大连）', '福建（龙岩）', '其他/TLAC'];
 
@@ -69,7 +70,7 @@ export function matchRows(names, rows) {
     for (const row of matched) {
       const code = rowCode(row);
       if (!code) { invalid = true; continue; }
-      bonds.set(code, {code, name: rowName(row), market: String(row.secondaryMarket ?? row.secondary_market ?? '')});
+      bonds.set(code, {code, name: rowName(row), market: String(row.secondaryMarket ?? row.secondary_market ?? ''), ...rowProvenance(row, ['securityId', 'security_id', 'secShortName', 'sec_short_name'])});
     }
     const matches = [...bonds.values()];
     results[name] = {status: invalid ? 'error' : matches.length === 1 ? 'matched' : matches.length ? 'ambiguous' : 'missing', matches};

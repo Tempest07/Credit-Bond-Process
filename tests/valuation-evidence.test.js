@@ -4,6 +4,7 @@ import { validateValuationOutput, buildCalculationEvidence } from '../valuation-
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { valuationSample } from '../tools/valuation-sample.mjs';
+import { dataProviderLabel } from '../market-data-source.js';
 
 function example() {
   const evidence = valuationSample();
@@ -58,8 +59,8 @@ test('unadjusted tenor reference requires limitations and is explicitly labelled
   x.result.limitations=['缺少期限调整依据，仅展示原始期限参考'];
   assert.equal(validateValuationOutput(x.output,x.evidence).ok,true);
   x.evidence.warnings=['缺少有效隐含评级'];
-  const context=vm.createContext({document:{addEventListener(){}},fixture:{evidence:x.evidence,result:{promptVersion:'valuation-evidence-1'},id:'test'},r:x.result});
+  const context=vm.createContext({document:{addEventListener(){}},dataProviderLabel,fixture:{evidence:x.evidence,result:{promptVersion:'valuation-evidence-1'},id:'test'},r:x.result});
   const source=readFileSync(new URL('../valuation-assistant.js',import.meta.url),'utf8');
-  const html=vm.runInContext(source.replaceAll('export function ', 'function ')+';run=fixture;resultCard(r)',context);
+  const html=vm.runInContext(source.replace(/^import .*;\r?\n/gm, '').replaceAll('export function ', 'function ')+';run=fixture;resultCard(r)',context);
   assert.match(html,/未调整期限参考/);assert.match(html,/缺少有效隐含评级/);assert.match(html,/期限 0.00 bp/);
 });

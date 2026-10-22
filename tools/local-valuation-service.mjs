@@ -8,7 +8,7 @@ import { valuationSample } from './valuation-sample.mjs';
 const PREFIX = '/bond-centre/api/valuation/';
 export function createValuationService({ env = process.env, resolveEvidence, store = new ValuationStore(fileURLToPath(new URL('../.local-data/valuation-learning.json', import.meta.url))) } = {}) {
   let busy = false;
-  const dmConfigured = () => Boolean(resolveEvidence || (env.INNO_APP_KEY && (env.INNO_APP_SECRET || env.INNO_SM4_KEY)));
+  const dmConfigured = () => Boolean(resolveEvidence || env.QB_ACCESS_KEY || (env.INNO_APP_KEY && (env.INNO_APP_SECRET || env.INNO_SM4_KEY)));
   const ready = store.mutate(d => { for (const run of d.runs) if (run.status === 'running') Object.assign(run, { status: 'failed', error: '服务重启，分析已中断' }); });
   return async function handle(path, method, body, signal) {
     if (!path.startsWith(PREFIX)) return null;
@@ -52,7 +52,7 @@ export function createValuationService({ env = process.env, resolveEvidence, sto
       if (resolveEvidence) evidence = await resolveEvidence(body);
       else if (body.sample === true) evidence = valuationSample();
       else {
-        if (!dmConfigured()) throw Object.assign(new Error('本机未配置 DM 凭据，无法读取真实估值；可使用单独的演示案例。'), { status: 503 });
+        if (!dmConfigured()) throw Object.assign(new Error('本机未配置 DM 或 QB 凭据，无法读取真实估值；可使用单独的演示案例。'), { status: 503 });
         const input = {};
         for (const k of ['issuerName','societyCode','shortName','fullName','durationText','offeringType','venue','hiddenRating']) {
           const value = body.target?.[k] || '';
@@ -60,9 +60,9 @@ export function createValuationService({ env = process.env, resolveEvidence, sto
           input[k] = value.trim();
         }
         const client = makeDmClient(env, new Request('http://127.0.0.1/'));
-        const dm = { post: (p, b) => client.post(p, b, { signal: timeoutSignal }) };
+        const dm = { post: (p, b) => client.post(p, b, { signal: timeoutSignal }), sourceInfo: () => client.sourceInfo?.() };
         try { evidence = await collectModelValuationEvidence(dm, input); }
-        catch { throw Object.assign(new Error(timeoutSignal.aborted ? '读取估值材料超时' : 'DM 取数失败，请核对本机凭据、接口权限及债券资料'), { status: 502 }); }
+        catch { throw Object.assign(new Error(timeoutSignal.aborted ? '读取估值材料超时' : 'DM/QB 取数失败，请核对本机凭据、接口权限及债券资料'), { status: 502 }); }
       }
       const learning = await store.learning(evidence);
       const run = await store.addRun(evidence, learning, model);

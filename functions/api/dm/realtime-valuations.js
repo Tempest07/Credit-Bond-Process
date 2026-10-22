@@ -1,4 +1,6 @@
 import { requireUser } from "../_auth.js";
+import { withDataSources } from '../qb/fallback.js';
+import { rowProvenance } from '../qb/provenance.js';
 import {
   apiHeaders,
   json,
@@ -82,7 +84,7 @@ export async function onRequestPost(context) {
       requestedDate,
     }));
 
-    return json({
+    return json(withDataSources({
       ok: true,
       source: "DM",
       sourcePath: MARKET_DATA_DATE_PATH,
@@ -96,7 +98,7 @@ export async function onRequestPost(context) {
         marketRows: marketRows.length,
         marketDataBatches: Math.ceil(securityIds.length / MARKET_DATA_BATCH_SIZE),
       },
-    });
+    }, dm));
   } catch (error) {
     const timedOut = error?.name === "AbortError";
     console.error(JSON.stringify({
@@ -183,6 +185,7 @@ function pickInstitutionValuation(rows, securityId, requestedDate, prefix, prefe
       const netPrice = numberFromRow(row, useExercise ? descriptors.npte : descriptors.nptm);
       return {
         securityId: securityKey(row),
+        ...rowProvenance(row, [...(useExercise ? descriptors.yte : descriptors.ytm), ...(useExercise ? descriptors.npte : descriptors.nptm)]),
         date,
         yield: yieldValue,
         netPrice,

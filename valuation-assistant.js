@@ -1,3 +1,5 @@
+import { dataProviderLabel } from './market-data-source.js?v=20261022release53';
+
 const API = './api/valuation/';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rate = value => typeof value === 'number' ? `${value.toFixed(4).replace(/0+$/,'').replace(/\.$/,'')}%` : '—';
@@ -33,7 +35,7 @@ function table(evidence, result) {
   const excluded = new Map((result.excluded || []).map(c => [c.securityId,c.reason]));
   return `<div class="va-table"><table><thead><tr><th>可比券</th><th>期限</th><th>估值</th><th>调整</th><th>权重</th></tr></thead><tbody>${evidence.candidates.map(c => {
     const s = selected.get(c.securityId);
-    return `<tr><td>${escape(c.shortName)}<span>${escape(c.source)} · ${escape(c.yieldBasis)} · ${escape(c.valuationDate)}</span></td><td>${Number(c.years).toFixed(2)}Y</td><td>${rate(c.rate)}</td><td>${s ? `期限 ${s.tenorAdjustmentBp.toFixed(2)} bp<br>市场 ${s.marketAdjustmentBp.toFixed(2)} bp` : '未采用'}</td><td>${s ? `${(s.weight*100).toFixed(1)}%` : '—'}</td></tr>${s || excluded.has(c.securityId) ? `<tr class="va-reason"><td colspan="5">${escape(s?.rationale || excluded.get(c.securityId))}${s ? ` · 折算 ${rate(s.adjustedYield)}` : ''}</td></tr>` : ''}`;
+    return `<tr><td>${escape(c.shortName)}<span>${dataProviderLabel(c) === 'DM' ? '' : escape(dataProviderLabel(c)) + ' / '}${escape(c.source)} · ${escape(c.yieldBasis)} · ${escape(c.valuationDate)}</span></td><td>${Number(c.years).toFixed(2)}Y</td><td>${rate(c.rate)}</td><td>${s ? `期限 ${s.tenorAdjustmentBp.toFixed(2)} bp<br>市场 ${s.marketAdjustmentBp.toFixed(2)} bp` : '未采用'}</td><td>${s ? `${(s.weight*100).toFixed(1)}%` : '—'}</td></tr>${s || excluded.has(c.securityId) ? `<tr class="va-reason"><td colspan="5">${escape(s?.rationale || excluded.get(c.securityId))}${s ? ` · 折算 ${rate(s.adjustedYield)}` : ''}</td></tr>` : ''}`;
   }).join('')}</tbody></table></div>`;
 }
 function resultCard(r) {

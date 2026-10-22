@@ -10,6 +10,8 @@ import {
   validateDmConfig,
 } from "./lookup.js";
 import { requireUser } from "../_auth.js";
+import { withDataSources } from '../qb/fallback.js';
+import { fieldProvider } from '../qb/provenance.js';
 
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const MARKET_DATA_DATE_PATH = "/dm-quant-func-service/api/v1/bond/market-data/date";
@@ -63,7 +65,7 @@ export async function onRequestPost(context) {
     const results = requestRows.map((row) =>
       buildResult(row, basicById.get(row.securityId), marketRows)
     );
-    return json({
+    return json(withDataSources({
       ok: true,
       source: "DM",
       formulaMapping: {
@@ -73,7 +75,7 @@ export async function onRequestPost(context) {
       },
       rows: results,
       queriedAt: new Date().toISOString(),
-    });
+    }, dm));
   } catch (error) {
     console.error(JSON.stringify({
       message: "DM trade-record lookup failed",
@@ -141,6 +143,18 @@ function buildResult(requestRow, basicRow, marketRows) {
   if (!shortName) missing.push("债券简称");
   if (!bondType) missing.push("债券类型");
   if (!Number.isFinite(valuation?.yield)) missing.push("估值收益率");
+  const fieldSources = {
+    shortName: fieldProvider(basicRow, ['secShortName', 'sec_short_name']),
+    bondType: fieldProvider(basicRow, ['bondTypeDesc', 'bond_type_desc']),
+    valuationYield: fieldProvider(valuation?.row, [valuation?.field, valuation?.field === 'cbYte' ? 'cb_yte' : 'cb_ytm']),
+  };
+  const providers = new Set([...(shortName ? [fieldSources.shortName] : []), ...(bondType ? [fieldSources.bondType] : []), ...(valuation ? [fieldSources.valuationYield] : [])]);
+  const qb = providers.has('QB') || providers.has('DM+QB');
+  const provenance = qb ? {
+    provider: providers.has('DM') || providers.has('DM+QB') ? 'DM+QB' : 'QB',
+    providerInfo: valuation?.row?._qb || basicRow?._qb,
+    fieldSources,
+  } : {};
   return {
     id: requestRow.id,
     securityId: requestRow.securityId,
@@ -153,6 +167,7 @@ function buildResult(requestRow, basicRow, marketRows) {
     status: missing.length === 0 ? "complete" : missing.length < 3 ? "partial" : "missing",
     missing,
     queriedAt: new Date().toISOString(),
+    ...provenance,
   };
 }
 

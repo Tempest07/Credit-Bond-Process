@@ -1,4 +1,4 @@
-import { createQueuePanelMorph } from "./issuance-queue-morph.js?v=20261021-release-5242";
+import { createQueuePanelMorph } from "./issuance-queue-morph.js?v=20261022release53";
 
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const finished = status => status === "ready" || status === "review";

@@ -1,10 +1,12 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261021-release-5242';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261021-release-5242';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261021-release-5242';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261021-release-5242';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261021-release-5242';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261021-release-5242';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261021-release-5242';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261022release53';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261022release53';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261022release53';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261022release53';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261022release53';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261022release53';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261022release53';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261022release53';
+import { dataProviderLabel, isMarketDataSource } from './market-data-source.js?v=20261022release53';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -40,7 +42,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261021-release-5242";
+} from "./core.js?v=20261022release53";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -69,15 +71,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261021-release-5242";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261021-release-5242";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261021-release-5242";
+} from "./lifecycle.js?v=20261022release53";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261022release53";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261022release53";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261021-release-5242";
+} from "./history-parser.js?v=20261022release53";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -94,23 +96,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261021-release-5242";
+} from "./protocol-transfer.js?v=20261022release53";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261021-release-5242";
+} from "./protocol-transfer-templates.js?v=20261022release53";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261021-release-5242";
+} from "./protocol-transfer-docx.js?v=20261022release53";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261021-release-5242";
+} from "./reminders.js?v=20261022release53";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -138,11 +140,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261021-release-5242";
+} from "./secondary-inventory.js?v=20261022release53";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261021-release-5242";
+} from "./trade-record-converter.js?v=20261022release53";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -153,16 +155,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261021-release-5242";
+} from "./trade-record-grid.js?v=20261022release53";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261021-release-5242";
-import { initializeDatePickers } from "./date-picker.js?v=20261021-release-5242";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261021-release-5242";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261021-release-5242";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261021-release-5242";
+} from "./trade-record-ledger.js?v=20261022release53";
+import { initializeDatePickers } from "./date-picker.js?v=20261022release53";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261022release53";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261022release53";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261022release53";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -171,33 +173,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261021-release-5242";
+} from "./project-screenshot-ocr.js?v=20261022release53";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261021-release-5242";
+} from "./project-screenshot-layout.js?v=20261022release53";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261021-release-5242";
+} from "./project-screenshot-image.js?v=20261022release53";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261021-release-5242";
+} from "./payment-receipts.js?v=20261022release53";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261021-release-5242";
+} from "./issuer-search.js?v=20261022release53";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261021-release-5242";
-import { initializeBondList } from "./bond-list-editor.js?v=20261021-release-5242";
+} from "./state-history.js?v=20261022release53";
+import { initializeBondList } from "./bond-list-editor.js?v=20261022release53";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -374,6 +376,18 @@ let activeIssuanceQueueTaskId = "";
 let issuanceQueuePanel = null;
 const issuanceRecognitionQueue = createSequentialIssuanceQueue(requestQueuedIssuanceRecognition, handleIssuanceQueueChange);
 let activePrepaymentTarget = null;
+const paymentTodoCodes = createPaymentTodoCodes({
+  async lookup(names) {
+    const response = await fetch('./api/payment-todo/codes', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-Bond-List': '1', ...authHeaders() },
+      body: JSON.stringify({ names }), signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error('DM code lookup failed');
+    return response.json();
+  },
+  onChange: () => renderPaymentTodo(),
+});
 let protocolTransferRecognitionMarks = {};
 let protocolTransferRecognitionId = "";
 let customProtocolTransferTemplates = [];
@@ -5537,11 +5551,12 @@ function projectPatchFromDmLookup(payload) {
         };
       }),
     };
-    sourceMap["guarantee.method"] = dmGuaranteeInfo.method ? "dm" : "";
+    sourceMap["guarantee.method"] = dmGuaranteeInfo.method ? normalizedProjectFieldSource(normalized, 'guaranteeInfo') : "";
     patch.guaranteeInfo.guarantors.forEach((guarantor, index) => {
-      sourceMap[`guarantee.guarantors.${index}.name`] = "dm";
-      if (guarantor.subjectRating) sourceMap[`guarantee.guarantors.${index}.subjectRating`] = guarantor.ratingSource === "dm-company-rating" ? "dm" : "cloud";
-      if (guarantor.ratingAgency) sourceMap[`guarantee.guarantors.${index}.ratingAgency`] = guarantor.ratingSource === "dm-company-rating" ? "dm" : "cloud";
+      sourceMap[`guarantee.guarantors.${index}.name`] = /^qb/i.test(guarantor.source || '') ? 'qb' : normalizedProjectFieldSource(normalized, 'guaranteeInfo');
+      const ratingSource = /^qb/i.test(guarantor.ratingSource || '') ? 'qb' : guarantor.ratingSource === "dm-company-rating" ? "dm" : "cloud";
+      if (guarantor.subjectRating) sourceMap[`guarantee.guarantors.${index}.subjectRating`] = ratingSource;
+      if (guarantor.ratingAgency) sourceMap[`guarantee.guarantors.${index}.ratingAgency`] = ratingSource;
     });
     warnings.push(...(Array.isArray(normalized.guaranteeInfo?.warnings) ? normalized.guaranteeInfo.warnings : []));
   }
@@ -5577,6 +5592,10 @@ function projectPatchFromDmLookup(payload) {
     warnings.push("同次发行组中存在待确认回拨期限，保存前请确认最终入项品种。");
   }
 
+  for (const [projectField, normalizedField] of Object.entries({ shortName: 'shortName', fullName: 'fullName', societyCode: 'societyCode', durationText: 'durationText', issueScale: 'issueScaleYi', subscribeDate: 'subscribeDate', venue: 'venue', offeringType: 'offeringType', leadUnderwriter: 'leadUnderwriter', sponsorStatus: 'sponsorStatus' })) {
+    if (sourceMap[projectField] !== 'dm') continue;
+    sourceMap[projectField] = normalizedProjectFieldSource(normalized, normalizedField);
+  }
   patch.sourceMap = sourceMap;
   patch.warnings = warnings;
   return patch;
@@ -5668,11 +5687,15 @@ function projectSourceFromDmIssueGroup(issueGroup) {
     issueGroup?.source,
     ...(Array.isArray(issueGroup?.tranches) ? issueGroup.tranches.map((tranche) => tranche.source) : []),
   ];
-  return sources.some((source) => source === "cloud-db" || source === "mixed") ? "cloud" : "dm";
+  if (sources.some((source) => source === "cloud-db" || source === "mixed")) return "cloud";
+  const provider = String(issueGroup?.provider || issueGroup?.source || '').toLowerCase();
+  return provider === 'qb' ? 'qb' : provider === 'dm+qb' ? 'dm+qb' : 'dm';
 }
 
 function normalizedProjectFieldSource(normalized, key) {
   const source = normalized?.fieldSource?.[key] || normalized?.ratingSource?.[key] || "";
+  if (/^qb(?:-|$)/i.test(source)) return 'qb';
+  if (String(source).toUpperCase() === 'DM+QB') return 'dm+qb';
   if (source === "wind-analytics") return "wind";
   return ["issuer-db", "local-issuer-db", "cloud-db", "cloud-project-index"].includes(source) ? "cloud" : "dm";
 }
@@ -5787,6 +5810,7 @@ function buildProjectDmRecognitionMarks(patch) {
 function sourcedRecognitionMark(label, source) {
   if (source === "cloud") return recognitionMark("success", `${label}已由云端数据库预填`, "cloud");
   if (source === "wind") return recognitionMark("success", `${label}已由 Wind 预填`, "wind");
+  if (source === 'qb' || source === 'dm+qb') return recognitionMark('success', `${label}已由 ${source.toUpperCase()} 预填`, source);
   if (source === "derived") return recognitionMark("success", `${label}已由系统推导`, "derived");
   return recognitionMark("success", `${label}已由 DM 预填`, "dm");
 }
@@ -5801,7 +5825,7 @@ function buildIssuerCloudRecognitionMarks(projectValue, issuer, existingMarks = 
     { field: "hiddenRating", label: "隐含评级", value: issuer.hiddenRating },
   ];
   for (const item of fields) {
-    if (["dm", "wind"].includes(existingMarks[item.field]?.source)) continue;
+    if (["dm", "qb", "dm+qb", "wind"].includes(existingMarks[item.field]?.source)) continue;
     if (!valueHasContent(item.value) || !valueHasContent(projectValue[item.field])) continue;
     if (normalizeSourceComparable(projectValue[item.field]) !== normalizeSourceComparable(item.value)) continue;
     marks[item.field] = recognitionMark("success", `${item.label}已由云端数据库预填`, "cloud");
@@ -5944,7 +5968,7 @@ function renderProjectDmAssist(payload) {
   ].filter(Boolean);
   output.innerHTML = `
     <div class="project-dm-assist-head">
-      <strong>DM 已带入${abs ? " ABS/ABN" : ""}新增项目</strong>
+      <strong>${escapeHtml(dmPayloadSourceLabel(payload))} 已带入${abs ? " ABS/ABN" : ""}新增项目</strong>
       <span>${escapeHtml(facts.join(" · ") || "已读取结构化字段，请复核后保存。")}</span>
     </div>
     ${renderProjectDmIssueGroup(issueGroup)}
@@ -6042,6 +6066,7 @@ function dmPayloadSourceLabel(payload) {
   const fields = Object.values(payload?.normalized?.ratingSource || {});
   const fieldSources = Object.values(payload?.normalized?.fieldSource || {});
   const hasWind = fields.includes("wind-analytics");
+  const provider = dataProviderLabel(payload);
   const hasCloud = [...fields, ...fieldSources].some((source) => [
     "issuer-db",
     "local-issuer-db",
@@ -6049,12 +6074,12 @@ function dmPayloadSourceLabel(payload) {
     "cloud-project-index",
   ].includes(source));
   if (payload?.noDmBondResult && hasCloud) return "云端主体库";
-  if (hasWind && hasCloud) return "DM+Wind+云端数据库";
-  if (hasWind) return "DM+Wind";
-  if (hasCloud) return "DM+云端数据库";
+  if (hasWind && hasCloud) return provider + '+Wind+云端数据库';
+  if (hasWind) return provider + '+Wind';
+  if (hasCloud) return provider + '+云端数据库';
   if (payload?.issueGroup?.source === "cloud-db") return "云端数据库";
-  if (payload?.issueGroup?.source === "mixed") return "DM+云端数据库";
-  return "DM";
+  if (payload?.issueGroup?.source === "mixed") return provider + '+云端数据库';
+  return provider;
 }
 
 function parseDmInquiryRange(value = "") {
@@ -7330,7 +7355,7 @@ function renderDmValuationAssist(payload) {
   const dateText = payload.actualValuationDate && payload.valuationDate && payload.actualValuationDate !== payload.valuationDate
     ? `${actualValuationDate}（最近可用）`
     : actualValuationDate;
-  const summary = `${suggestions.length} 个期限 · ${payload.pricedCandidateCount || 0}/${payload.candidateCount || 0} 条 DM 可比券 · ${dateText}`;
+  const summary = `${suggestions.length} 个期限 · ${payload.pricedCandidateCount || 0}/${payload.candidateCount || 0} 条 ${dataProviderLabel(payload)} 可比券 · ${dateText}`;
   output.hidden = false;
   output.innerHTML = `
     <div class="valuation-assist-head">
@@ -7384,7 +7409,7 @@ function renderValuationBetaCard(item, offeringType) {
     <details><summary>可比券（${comparables.length}）</summary><div class="vb-table"><table><thead><tr><th>可比券 / 来源</th><th>期限</th><th>估值</th><th>调整</th></tr></thead><tbody>${comparables.map(bond => {
       const bp = round((bond.adjustment || 0) * 100, 1);
       const notes = [bond.yieldBasis, bond.valuationDate, bond.stale ? `滞后${formatNumber(bond.ageDays)}天` : "", bond.reliability ? `推荐度${bond.reliability}` : "", Number.isFinite(numberOrNull(bond.curveResidualBp)) ? `曲线偏离${formatNumber(bond.curveResidualBp)}bp` : "", Number(bond.sourceSpreadBp) >= 1 ? `多源差${formatNumber(bond.sourceSpreadBp)}bp` : ""].filter(Boolean).join(" · ");
-      return `<tr><td>${escapeHtml(bond.shortName || "可比券")}<span>${escapeHtml(bond.source || "来源待确认")} · ${escapeHtml(notes)}</span></td><td>${escapeHtml(bond.durationText || "—")}</td><td>${escapeHtml(formatValuationRate(bond.rate))}</td><td>${bp > 0 ? "+" : ""}${formatNumber(bp)}bp</td></tr>`;
+      return `<tr><td>${escapeHtml(bond.shortName || "可比券")}<span>${dataProviderLabel(bond) === 'DM' ? '' : escapeHtml(dataProviderLabel(bond)) + ' / '}${escapeHtml(bond.source || "来源待确认")} · ${escapeHtml(notes)}</span></td><td>${escapeHtml(bond.durationText || "—")}</td><td>${escapeHtml(formatValuationRate(bond.rate))}</td><td>${bp > 0 ? "+" : ""}${formatNumber(bp)}bp</td></tr>`;
     }).join("") || '<tr><td colspan="4">暂无可比券</td></tr>'}</tbody></table></div></details>
     <details><summary>定价依据与调整</summary><div class="vb-method">${escapeHtml(item.method || "暂无定价依据")}${item.clusterNote ? `<p>${escapeHtml(item.clusterNote)}</p>` : ""}<p>建议值仅供参考，估值和综合定价仍由手工填写。</p></div></details>
   </article>`;
@@ -7397,7 +7422,7 @@ function renderValuationComparable(item) {
     : `${adjustmentBp > 0 ? "+" : ""}${formatNumber(adjustmentBp)}bp`;
   const facts = [
     item.durationText,
-    `${formatValuationRate(item.rate)} ${item.source}`,
+    `${formatValuationRate(item.rate)} ${dataProviderLabel(item) === 'DM' ? '' : dataProviderLabel(item) + ' / '}${item.source}`,
     item.yieldBasis || "",
     item.valuationDate || "",
     Number.isFinite(numberOrNull(item.curveResidualBp)) ? `曲线偏离${item.curveResidualBp > 0 ? "+" : ""}${formatNumber(item.curveResidualBp)}bp` : "",
@@ -7841,6 +7866,7 @@ function renderPolicyCurve(payload) {
     `;
   }).join("");
   const labels = [
+    dataProviderLabel(payload),
     payload.actualValuationDate ? `估值日 ${formatPolicyCurveDate(payload.actualValuationDate)}` : "",
     payload.retrievedAt ? `查询 ${formatPolicyCurveQueryTime(payload.retrievedAt)}` : "",
     payload.derivedTerms?.length ? "含线性插值" : "",
@@ -9120,8 +9146,8 @@ function secondaryPendingVisibleColumns() {
 
 function renderSecondaryPendingCell(row, column, rowIndex, missingKeys) {
   const source = row.fieldSources[column] || "";
-  const sourceLabel = source === "dm" ? "DM" : source === "manual" && TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "人工" : "";
-  const title = source === "dm"
+  const sourceLabel = isMarketDataSource(source) ? dataProviderLabel(source) : source === "manual" && TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "人工" : "";
+  const title = isMarketDataSource(source)
     ? secondaryLedgerDmCellTitle(row, column)
     : source === "manual" ? "人工编辑" : "";
   const field = SECONDARY_PENDING_COLUMN_FIELDS[column];
@@ -9173,7 +9199,7 @@ function renderSecondaryTrades() {
               ${TRADE_RECORD_COLUMNS.map((column) => `
                 <th class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-column" : ""}${SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column) ? " secondary-pending-optional" : ""}" scope="col">
                   ${escapeHtml(column)}
-                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM</span>' : ""}
+                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM/QB</span>' : ""}
                 </th>
               `).join("")}
               <th class="secondary-pending-action-heading">操作</th>
@@ -9524,8 +9550,8 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
       const partial = results.length - complete;
       const failed = failedIds.length;
       showToast(failed
-        ? `DM 已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
-        : `DM 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+        ? `${dataProviderLabel(results)} 已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
+        : `${dataProviderLabel(results)} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
     secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, [...requestedIds]);
@@ -9673,7 +9699,7 @@ function renderSecondaryLedger() {
               ${TRADE_RECORD_COLUMNS.map((column) => `
                 <th scope="col" class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-column" : ""}">
                   ${escapeHtml(column)}
-                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM</span>' : ""}
+                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM/QB</span>' : ""}
                 </th>
               `).join("")}
             </tr>
@@ -9704,8 +9730,8 @@ function renderSecondaryLedgerSheetRow(row, rowIndex) {
       </th>
       ${TRADE_RECORD_COLUMNS.map((column, columnIndex) => {
         const source = row.fieldSources[column] || "";
-        const sourceLabel = source === "dm" ? "DM" : source === "manual" && TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "人工" : "";
-        const title = source === "dm"
+        const sourceLabel = isMarketDataSource(source) ? dataProviderLabel(source) : source === "manual" && TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "人工" : "";
+        const title = isMarketDataSource(source)
           ? secondaryLedgerDmCellTitle(row, column)
           : source === "manual" ? "人工编辑" : "";
         return `
@@ -9910,11 +9936,12 @@ function secondaryLedgerInputMode(column) {
 }
 
 function secondaryLedgerDmRowStatus(row) {
+  const provider = dataProviderLabel(row.dmLookup);
   if (row.dmLookup?.status === "complete") {
-    return { label: "DM", className: "complete", title: `DM 已补全；估值日 ${row.dmLookup.valuationDate || "未返回"}` };
+    return { label: provider, className: "complete", title: `${provider} 已补全；估值日 ${row.dmLookup.valuationDate || "未返回"}` };
   }
   if (row.dmLookup?.status === "partial") {
-    return { label: "DM", className: "partial", title: `DM 部分返回：${(row.dmLookup.missing || []).join("、")}` };
+    return { label: provider, className: "partial", title: `${provider} 部分返回：${(row.dmLookup.missing || []).join("、")}` };
   }
   if (row.dmLookup?.status === "missing") {
     return { label: "—", className: "missing", title: "DM 未返回对应字段" };
@@ -9926,11 +9953,12 @@ function secondaryLedgerDmRowStatus(row) {
 }
 
 function secondaryLedgerDmCellTitle(row, column) {
+  const provider = dataProviderLabel(row.fieldSources?.[column] || row.dmLookup);
   if (column === "估值收益率") {
     const basis = row.dmLookup?.valuationField === "cbYte" ? "中债行权收益率" : "中债到期收益率";
-    return `DM ${basis} · ${row.dmLookup?.valuationDate || row.dmLookup?.requestedDate || "日期未返回"}`;
+    return `${provider} ${basis} · ${row.dmLookup?.valuationDate || row.dmLookup?.requestedDate || "日期未返回"}`;
   }
-  return `DM ${column}`;
+  return `${provider} ${column}`;
 }
 
 function secondaryLedgerDateValue() {
@@ -9965,8 +9993,8 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
       const complete = results.filter((row) => row.status === "complete").length;
       const partial = results.length - complete;
       showToast(failedIds.length
-        ? `DM 已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
-        : `DM 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+        ? `${dataProviderLabel(results)} 已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
+        : `${dataProviderLabel(results)} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
     secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, requestRows.map((row) => row.id));
@@ -10412,6 +10440,7 @@ function renderPaymentTodo() {
         : [],
     ),
   ).sort((left, right) => left.tranche.paymentDate.localeCompare(right.tranche.paymentDate));
+  paymentTodoCodes.ensure(todos.map(({ project: projectValue, tranche }) => tranche.shortName || projectValue.shortName));
   $("#paymentTodoPanel").classList.toggle("empty-state", !todos.length);
   $("#paymentTodoList").innerHTML = todos.length
     ? todos.map(({ project: projectValue, tranche }) => {
@@ -10420,11 +10449,16 @@ function renderPaymentTodo() {
         const addBondNote = tranche.paymentDate === today && isAbsOrAbnProject(projectValue, tranche) ? " · 需加券" : "";
         const paymentKey = `${projectValue.id}:${tranche.id}`;
         const prepaymentNumber = tranche.prepaymentNumber || "";
+        const dmCode = paymentTodoCodes.get(tranche.shortName || projectValue.shortName);
+        const securityCode = dmCode?.status === "matched" ? dmCode.code : "";
+        const codeLabel = securityCode || (dmCode?.status === "missing" ? "DM 暂无代码" : dmCode?.status === "ambiguous" ? "代码待核对" : dmCode?.status === "error" ? "DM 查询失败" : "DM 查询中…");
+        const codeProvider = dataProviderLabel(dmCode);
+        const codeTitle = securityCode ? `${codeProvider} · 债券代码 · ${dmCode.fetchedAt}` : dmCode?.status === "ambiguous" ? "数据源返回多个代码，未自动选择" : codeLabel;
         return `
           <article class="payment-todo-item ${timing} ${prepaymentNumber ? "has-prepayment" : ""}">
             <div class="payment-todo-content">
               <button class="payment-todo-main" type="button" data-open-payment-project="${escapeAttribute(projectValue.id)}">
-                <strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong>
+                <span class="payment-todo-title"><strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong><code class="payment-todo-security-code ${securityCode ? "" : "is-unresolved"}" aria-label="${escapeAttribute(securityCode ? `${codeProvider} 债券代码 ${securityCode}` : codeLabel)}" title="${escapeAttribute(codeTitle)}">${escapeHtml(codeLabel)}</code></span>
                 <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}${escapeHtml(addBondNote)}</span>
               </button>
               ${prepaymentNumber ? `<span class="payment-todo-number">预缴款 · ${escapeHtml(prepaymentNumber)}</span>` : ""}
@@ -12473,7 +12507,7 @@ async function runDmLookup() {
     await renderDmLookupResult({ ...payload, httpStatus: response.status, elapsedMs }, isCurrent);
     if (!isCurrent()) return;
     const hasSuggestions = Array.isArray(payload.suggestions) && payload.suggestions.length > 0;
-    showToast(payload.ok ? "DM 查询成功。" : payload.noResult ? (hasSuggestions ? "DM 无结果，可查看相近候选。" : "DM 无结果。") : "DM 查询失败，请看诊断信息。");
+    showToast(payload.ok ? `${dmPayloadSourceLabel(payload)} 查询成功。` : payload.noResult ? (hasSuggestions ? "数据源无结果，可查看相近候选。" : "数据源无结果。") : "数据源查询失败，请看诊断信息。");
   } catch (error) {
     if (!isCurrent() || error?.name === "AbortError") return;
     const elapsedMs = Math.round(performance.now() - startedAt);
@@ -12533,6 +12567,7 @@ async function renderDmLookupResult(payload, isCurrent = () => true) {
   const ok = Boolean(enrichedPayload?.ok);
   const statusParts = [
     ok ? "查询成功" : enrichedPayload?.noResult ? "无结果" : "查询失败",
+    ...(ok && dataProviderLabel(enrichedPayload) !== 'DM' ? [dataProviderLabel(enrichedPayload)] : []),
     enrichedPayload?.httpStatus ? `HTTP ${enrichedPayload.httpStatus}` : "",
     Number.isFinite(enrichedPayload?.elapsedMs) ? `${enrichedPayload.elapsedMs}ms` : "",
   ].filter(Boolean);
@@ -12769,8 +12804,11 @@ const DM_RATING_SOURCE_FIELDS = new Set([
 ]);
 
 function dmNormalizedSourceBadge(normalized, key, isMissing) {
-  if (isMissing || !DM_RATING_SOURCE_FIELDS.has(key)) return null;
-  const source = normalized?.ratingSource?.[key] || "";
+  if (isMissing) return null;
+  const source = normalized?.fieldSource?.[key] || normalized?.ratingSource?.[key] || "";
+  if (/^qb(?:-|$)/i.test(source)) return { label: 'QB', className: 'dm' };
+  if (String(source).toUpperCase() === 'DM+QB') return { label: 'DM+QB', className: 'dm' };
+  if (!DM_RATING_SOURCE_FIELDS.has(key)) return null;
   if (source === "wind-analytics") {
     return { label: "Wind", className: "wind" };
   }
@@ -12920,7 +12958,7 @@ function renderDmIssueGroup(issueGroup) {
     return;
   }
   panel.hidden = false;
-  const sourceLabel = dmIssueGroupSourceLabel(issueGroup.source);
+  const sourceLabel = dmIssueGroupSourceLabel(issueGroup.provider || issueGroup.source);
   const abs = /^(ABS|ABN)$/i.test(String(issueGroup.instrumentType || ""));
   const confirmedReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && (tranche.reallocationTargetShortName || tranche.reallocationTargetSecurityId)).length;
   const uncertainReallocatedCount = tranches.filter((tranche) => tranche.status === "reallocated" && !tranche.reallocationTargetShortName && !tranche.reallocationTargetSecurityId).length;
@@ -12994,6 +13032,8 @@ function dmIssueTrancheStatusMeta(trancheOrStatus) {
 }
 
 function dmIssueGroupSourceLabel(source) {
+  if (String(source).toLowerCase() === 'qb') return 'QB';
+  if (String(source).toLowerCase() === 'dm+qb') return 'DM+QB';
   if (source === "cloud-db") return "云端数据库";
   if (source === "dm") return "DM";
   if (source === "mixed") return "DM+云端数据库";

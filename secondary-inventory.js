@@ -2,7 +2,8 @@ import {
   normalizeTradeRecord,
   parseTradeRecordLine,
 } from "./trade-record-converter.js";
-import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261021-release-5242";
+import { marketDataProvenance } from './market-data-source.js';
+import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261022release53";
 
 const ACCOUNT_ALIASES = new Map([
   ["SDR", "SDR"],
@@ -287,7 +288,7 @@ function normalizeTradeRecordSources(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([, source]) => ["manual", "dm", "parsed"].includes(source))
+      .filter(([, source]) => ["manual", "dm", "qb", "dm+qb", "parsed"].includes(source))
       .map(([column, source]) => [String(column), source]),
   );
 }
@@ -301,6 +302,7 @@ function normalizeTradeRecordDm(value) {
     valuationField: String(value.valuationField || ""),
     missing: Array.isArray(value.missing) ? value.missing.map(String) : [],
     queriedAt: String(value.queriedAt || ""),
+    ...marketDataProvenance(value),
   };
 }
 

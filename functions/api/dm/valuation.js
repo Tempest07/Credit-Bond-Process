@@ -12,6 +12,8 @@ import {
   validateDmConfig,
 } from "./lookup.js";
 import { requireUser } from "../_auth.js";
+import { withDataSources } from '../qb/fallback.js';
+import { rowProvenance } from '../qb/provenance.js';
 
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
@@ -99,9 +101,9 @@ export async function collectModelValuationEvidence(dm, input, { now = new Date(
     if (!curve.nodes.length) { curve = null; curveWarning = '所选估值日无可用曲线节点'; }
     } catch { curveWarning = '评级曲线未取得，本次材料不含曲线'; }
   }
-  return { source: 'DM market-data/date', sample: false, collectedAt: now.toISOString(), requestedDate, valuationDate: actualDate,
+  return withDataSources({ source: 'DM market-data/date', sample: false, collectedAt: now.toISOString(), requestedDate, valuationDate: actualDate,
     target, targets, candidates, excluded, curve, warnings: [curveWarning, eligible.length > universe.length ? `候选${eligible.length}只，按期限接近度查询前${universe.length}只` : '', actualDate && actualDate !== requestedDate ? '最新可用估值日早于请求日' : ''].filter(Boolean),
-    counts: { outstanding: outstanding.rows.length, eligible: eligible.length, queried: universe.length, priced: candidates.length } };
+    counts: { outstanding: outstanding.rows.length, eligible: eligible.length, queried: universe.length, priced: candidates.length } }, dm);
 }
 
 export async function onRequestGet(context) {
@@ -139,7 +141,7 @@ export async function onRequestGet(context) {
     const dm = makeDmClient(context.env, context.request);
     const outstanding = await lookupOutstandingBonds(dm, { issuerName, societyCode });
     if (!outstanding.rows.length) {
-      return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noOutstandingBonds", hint: "DM 未返回该主体的存续债清单。" }));
+      return json(withDataSources(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noOutstandingBonds", hint: "数据源未返回该主体的存续债清单。" }), dm));
     }
 
     const enrichedRows = await enrichOutstandingWithBasicInfo(dm, outstanding.rows);
@@ -159,7 +161,7 @@ export async function onRequestGet(context) {
       .filter((candidate) => profilesAreComparable(targetProfile, candidate.profile));
 
     if (!candidates.length) {
-      return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noSimilarBond", hint: "DM 有存续债，但未筛出同发行方式、同类属性的可比券。" }));
+      return json(withDataSources(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noSimilarBond", hint: "有存续债，但未筛出同发行方式、同类属性的可比券。" }), dm));
     }
 
     const valuationUniverse = candidatesForMarketData(candidates, targetDurations);
@@ -207,10 +209,10 @@ export async function onRequestGet(context) {
     }
 
     if (!trancheSuggestions.length) {
-      return json(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noValuation", hint: "DM 有可比存续债，但近7日未返回同口径的中债/中证/上清所收益率。" }));
+      return json(withDataSources(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noValuation", hint: "有可比存续债，但近7日未返回同口径的中债/中证/上清所收益率。" }), dm));
     }
 
-    return json({
+    return json(withDataSources({
       ok: true,
       source: "DM market-data/date",
       query: { issuerName, societyCode, durationText, offeringType, shortName, impliedRating, valuationDate },
@@ -232,7 +234,7 @@ export async function onRequestGet(context) {
         curveCalibratedSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveResidualCalibration").length,
         curveOnlyFallbackSuggestions: trancheSuggestions.filter((item) => item.clusterMode === "curveOnlyFallback").length,
       },
-    });
+    }, dm));
   } catch (error) {
     return json({
       ok: false,
@@ -436,6 +438,7 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
         years: round(candidate.years, 2),
         rate: candidate.valuation.rate,
         source: candidate.valuation.source,
+        ...(candidate.valuation.provider ? { provider: candidate.valuation.provider, providerInfo: candidate.valuation.providerInfo } : {}),
         sourceField: candidate.valuation.sourceField,
         dataSource: candidate.valuation.dataSource,
         sourceCount: candidate.valuation.sourceCount,
@@ -499,7 +502,7 @@ function buildTrancheSuggestion(target, index, candidates, targetProfile, prefer
     profileLabel: comparableProfileLabel(targetProfile),
     valuationDate: comparableItems[0]?.valuationDate || "",
     preferredYield: preferExercise ? "行权收益率" : "到期收益率",
-    method: `DM 存续债实际估值日数据；${clusterNote}；${durationModel.description}，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
+    method: `存续债实际估值日数据；${clusterNote}；${durationModel.description}，并纳入普通交易所约1bp、交易所科创债约4bp的口径调整`,
     comparableItems,
   };
 }
@@ -620,7 +623,7 @@ async function maybeApplyCurveCalibration(dm, { suggestion, impliedRating, valua
     ),
     clusterMode: "curveResidualCalibration",
     clusterNote: `目标附近无足够券，采用隐含评级中债中短票曲线 + 主体曲线偏离校准${residualOutlierResult.excludedCount ? `；剔除${residualOutlierResult.excludedCount}个曲线残差异常值` : ""}`,
-    method: `DM 存续债实际估值日数据；按${impliedRating}隐含评级中债中短票标准节点线性插值，并加主体曲线偏离${formatSignedBp(averageResidualBp)}校准；不使用主体评级`,
+    method: `存续债实际估值日数据；按${impliedRating}隐含评级中债中短票标准节点线性插值，并加主体曲线偏离${formatSignedBp(averageResidualBp)}校准；不使用主体评级`,
     comparableItems: residualItems,
     curveCalibration: {
       curveName,
@@ -955,7 +958,7 @@ function enforceSingleAnchorReliability(suggestion) {
     confidence: "不足",
     referenceOnly: true,
     clusterNote,
-    method: `DM 存续债实际估值日数据；${clusterNote}；该券仅供人工参考`,
+    method: `存续债实际估值日数据；${clusterNote}；该券仅供人工参考`,
   };
 }
 
@@ -1023,6 +1026,7 @@ function pickDmValuationRate(rows, preferExercise, valuationDate = "", requested
         if (reliabilityWeight <= 0) continue;
         observations.push({
           ...descriptor,
+          ...rowProvenance(row, descriptor.keys),
           rate,
           reliability,
           reliabilityWeight,
@@ -1042,6 +1046,7 @@ function pickDmValuationRate(rows, preferExercise, valuationDate = "", requested
     return {
       rate: best.rate,
       source: best.source,
+      ...(best.provider ? { provider: best.provider, providerInfo: best.providerInfo } : {}),
       sourceField: best.sourceField,
       dataSource: best.dataSource,
       sourceCount: uniqueObservations.length,

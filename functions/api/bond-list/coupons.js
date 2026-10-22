@@ -1,6 +1,8 @@
 import { requireUser, json } from '../_auth.js';
 import { makeDmClient, validateDmConfig, rowsFromDm } from '../dm/lookup.js';
 import { checkWriteRequest, readBody } from './_shared.js';
+import { withDataSources } from '../qb/fallback.js';
+import { rowProvenance, fieldProvider } from '../qb/provenance.js';
 
 const BASIC_INFO_PATH = '/dm-quant-func-service/api/v1/bond/basic-info/info';
 const COUPON_FIELDS = ['securityId', 'secShortName', 'newCoupRate', 'rateTypeParDesc', 'bondTypeDesc', 'specialItem', 'paymentOrder'];
@@ -30,12 +32,12 @@ export async function onRequestPost(context) {
       securityIdList: codes,
       fieldNames: COUPON_FIELDS,
     }, { signal: AbortSignal.timeout(12000) });
-    return json({
+    return json(withDataSources({
       source: 'DM',
       sourcePath: BASIC_INFO_PATH,
       fetchedAt: new Date().toISOString(),
       results: matchCouponRows(codes, rowsFromDm(raw)),
-    });
+    }, client));
   } catch {
     return json({ error: 'DM 债券资料查询暂时失败或超时，请稍后重试。' }, 502);
   }
@@ -148,6 +150,13 @@ export function matchCouponRows(codes, rows) {
       continue;
     }
     const value = values[0];
+    const provenance = rowProvenance(matches[0]);
+    if (provenance.provider) {
+      Object.assign(value, provenance, { fieldSources: {
+        couponRate: fieldProvider(matches[0], ['newCoupRate', 'new_coup_rate']),
+        bondType: fieldProvider(matches[0], ['bondTypeDesc', 'bond_type_desc']),
+      } });
+    }
     results[code] = value.couponRate === null
       ? { ...empty, ...value, reason: 'coupon_unavailable' }
       : { status: 'matched', ...value };

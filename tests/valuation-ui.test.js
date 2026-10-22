@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { formatNumber } from '../core.js';
+import { dataProviderLabel } from '../market-data-source.js';
 
 const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const source = app.slice(app.indexOf('function renderValuationSuggestionCard('), app.indexOf('function renderWarnings('));
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function render(item, offering = '公募', mode = 'beta') {
-  const context = { document: { documentElement: { dataset: { ui: mode } } }, formatNumber, escapeHtml, escapeAttribute: escapeHtml, round: (n, d) => Math.round(n * 10 ** d) / 10 ** d };
+  const context = { document: { documentElement: { dataset: { ui: mode } } }, formatNumber, dataProviderLabel, escapeHtml, escapeAttribute: escapeHtml, round: (n, d) => Math.round(n * 10 ** d) / 10 ** d };
   vm.createContext(context);
   vm.runInContext(app.slice(app.indexOf("function numberOrNull("), app.indexOf("function round(")) + source, context);
   return context.renderValuationSuggestionCard(item, offering);

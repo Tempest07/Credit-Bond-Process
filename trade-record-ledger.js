@@ -2,6 +2,7 @@ import {
   TRADE_RECORD_COLUMNS,
   normalizeTradeRecord,
 } from "./trade-record-converter.js";
+import { marketDataProvenance } from './market-data-source.js';
 
 export function secondaryTradeRecordForOutput(trade = {}) {
   const record = normalizeTradeRecord(trade.tradeRecord || {});
@@ -236,6 +237,7 @@ function normalizeDmLookup(value) {
     valuationField: String(value.valuationField || ""),
     missing: Array.isArray(value.missing) ? value.missing.map(String) : [],
     queriedAt: String(value.queriedAt || ""),
+    ...marketDataProvenance(value),
   };
 }
 

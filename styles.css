@@ -219,7 +219,9 @@ label[data-recognition-source="cloud"]::after {
   font-weight: 900;
   line-height: 1.25;
 }
-label[data-recognition-source="wind"]::after {
+label[data-recognition-source="wind"]::after,
+label[data-recognition-source="qb"]::after,
+label[data-recognition-source="dm+qb"]::after {
   content: "Wind";
   justify-self: start;
   margin-top: -2px;
@@ -232,6 +234,8 @@ label[data-recognition-source="wind"]::after {
   font-weight: 900;
   line-height: 1.25;
 }
+label[data-recognition-source="qb"]::after { content: "QB"; }
+label[data-recognition-source="dm+qb"]::after { content: "DM+QB"; }
 label[data-recognition-source="derived"]::after {
   content: "系统推导";
   justify-self: start;
@@ -945,6 +949,10 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .payment-todo-main { display: grid; gap: 2px; min-width: 0; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; }
 .payment-todo-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 1.45; }
 .payment-todo-main span, .payment-todo-empty { color: #7f899d; font-size: 9px; }
+.payment-todo-content .payment-todo-main .payment-todo-title { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; min-width: 0; padding: 0; border: 0; color: inherit; background: transparent; font-size: inherit; line-height: inherit; }
+.payment-todo-title strong { min-width: 0; max-width: 100%; }
+.payment-todo-title .payment-todo-security-code { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 6px; border: 1px solid rgba(31,41,55,.10); border-radius: 5px; color: #6b7280; background: rgba(255,255,255,.66); font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; font-weight: 500; line-height: 1.35; letter-spacing: .01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.payment-todo-title .payment-todo-security-code.is-unresolved { color: #92979f; border-color: transparent; background: transparent; font-family: inherit; }
 .cutoff-todo-item .payment-todo-main { overflow: hidden; }
 .cutoff-todo-item .payment-todo-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .payment-todo-number { justify-self: start; padding: 4px 7px; border: 1px solid rgba(14,165,183,.22); border-radius: 7px; color: #087f8d; background: rgba(233,251,253,.88); font-size: 11px; font-weight: 850; letter-spacing: .015em; }
@@ -1334,7 +1342,7 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .secondary-ledger-cell.invalid { color: #a61b34; background: #fff3f5; box-shadow: inset 0 0 0 2px rgba(198,63,85,.62); }
 .secondary-ledger-cell.invalid:focus { outline-color: var(--danger); box-shadow: 0 0 0 1px #fff, 0 0 0 4px rgba(198,63,85,.14); }
 .secondary-ledger-table td.dm-cell { background: #f6fbfb; }
-.secondary-ledger-table td.dm-cell[data-source="dm"] { background: #effafa; }
+.secondary-ledger-table td.dm-cell:is([data-source="dm"], [data-source="qb"], [data-source="dm+qb"]) { background: #effafa; }
 .secondary-ledger-table td.dm-cell[data-source="manual"] { background: #fffaf0; }
 .secondary-ledger-table td:has(.secondary-ledger-cell-source) .secondary-ledger-cell { padding-right: 35px; }
 .secondary-ledger-cell-source { position: absolute; z-index: 1; top: 4px; right: 4px; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 14px; padding: 0 3px; border: 1px solid #8bd6d8; border-radius: 3px; color: #087a81; background: rgba(239,250,250,.96); pointer-events: none; font-size: 7px; font-weight: 900; line-height: 1; }
@@ -1422,7 +1430,7 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .secondary-pending-cell:focus { position: relative; z-index: 2; overflow: visible; outline: 2px solid #3f9e95; outline-offset: -2px; background: #fff; box-shadow: 0 0 0 1px #fff, 0 0 0 4px rgba(63,158,149,.14); text-overflow: clip; }
 .secondary-pending-cell.invalid { color: #8a5c00; background: #fff8ec; box-shadow: inset 0 0 0 1px rgba(224,145,26,.42); }
 .secondary-pending-table td.dm-cell { background: #f6fbfb; }
-.secondary-pending-table td.dm-cell[data-source="dm"] { background: #effafa; }
+.secondary-pending-table td.dm-cell:is([data-source="dm"], [data-source="qb"], [data-source="dm+qb"]) { background: #effafa; }
 .secondary-pending-table td.dm-cell[data-source="manual"] { background: #fffaf0; }
 .secondary-pending-table td:has(.secondary-ledger-cell-source) .secondary-pending-cell { padding-right: 35px; }
 .secondary-pending-table:not(.show-all-columns) .secondary-pending-optional { display: none; }

@@ -42,7 +42,7 @@ export async function onRequest(context) {
       const missing = validateDmConfig(env);
       if (missing) return missing;
       const client = makeDmClient(env, request);
-      body = { evidence: await (context.collectEvidence || collectModelValuationEvidence)({ post: (p,b) => client.post(p,b,{ signal }) }, body.target) };
+      body = { evidence: await (context.collectEvidence || collectModelValuationEvidence)({ post: (p,b) => client.post(p,b,{ signal }), sourceInfo: () => client.sourceInfo?.() }, body.target) };
     }
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${config.token}` };
     if (config.accessClientId) {

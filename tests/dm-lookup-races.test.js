@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { normalizeLookupPayload } from "../bond-identity.js";
+import { dataProviderLabel } from '../market-data-source.js';
 
 const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
 function loadFunctions(context, names) {
@@ -26,7 +27,7 @@ function harness() {
   const applied = [];
   const rendered = [];
   const context = vm.createContext({
-    $, AbortController, URLSearchParams, performance, normalizeLookupPayload,
+    $, AbortController, URLSearchParams, performance, normalizeLookupPayload, dataProviderLabel,
     projectDmRequest: null, dmLookupRequest: null, project: {},
     fetch: (url, options) => new Promise(resolve => requests.push({ url, options, resolve })),
     authHeaders: () => ({}), briefTemplatePlaceholders: () => [],

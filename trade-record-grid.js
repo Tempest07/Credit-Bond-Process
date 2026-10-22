@@ -2,6 +2,7 @@ import {
   TRADE_RECORD_COLUMNS,
   normalizeTradeRecord,
 } from "./trade-record-converter.js";
+import { dataProviderLabel, isMarketDataSource, marketDataProvenance } from './market-data-source.js';
 
 export const TRADE_RECORD_DM_COLUMNS = ["债券简称", "债券类型", "估值收益率"];
 const TRADE_RECORD_DATE_COLUMNS = new Set(["谈判日", "交易日"]);
@@ -56,14 +57,14 @@ export function updateTradeRecordDraftCell(rows = [], {
     let dmLookup = row.dmLookup;
     if (column === "债券代码") {
       for (const dmColumn of TRADE_RECORD_DM_COLUMNS) {
-        if (fieldSources[dmColumn] !== "dm") continue;
+        if (!isMarketDataSource(fieldSources[dmColumn])) continue;
         record[dmColumn] = "";
         delete fieldSources[dmColumn];
         if (!changedColumns.includes(dmColumn)) changedColumns.push(dmColumn);
       }
       dmLookup = normalizeDmLookup();
     } else if (column === "谈判日") {
-      if (fieldSources["估值收益率"] === "dm") {
+      if (isMarketDataSource(fieldSources["估值收益率"])) {
         record["估值收益率"] = "";
         delete fieldSources["估值收益率"];
         if (!changedColumns.includes("估值收益率")) changedColumns.push("估值收益率");
@@ -130,16 +131,17 @@ export function mergeTradeRecordDmResults(rows = [], results = []) {
     let dirty = row.dirty;
     const changedColumns = [...(row.changedColumns || [])];
     const fields = [
-      ["债券简称", result.shortName],
-      ["债券类型", result.bondType],
-      ["估值收益率", numberText(result.valuationYield)],
+      ["债券简称", result.shortName, 'shortName'],
+      ["债券类型", result.bondType, 'bondType'],
+      ["估值收益率", numberText(result.valuationYield), 'valuationYield'],
     ];
-    for (const [column, rawValue] of fields) {
+    for (const [column, rawValue, apiField] of fields) {
       const value = cleanCellValue(rawValue);
       if (!value || fieldSources[column] === "manual") continue;
-      if (record[column] !== value || fieldSources[column] !== "dm") {
+      const source = dataProviderLabel(result.fieldSources?.[apiField] || result, 'DM').toLowerCase();
+      if (record[column] !== value || fieldSources[column] !== source) {
         record[column] = value;
-        fieldSources[column] = "dm";
+        fieldSources[column] = source;
         if (!changedColumns.includes(column)) changedColumns.push(column);
         dirty = true;
       }
@@ -151,6 +153,7 @@ export function mergeTradeRecordDmResults(rows = [], results = []) {
       valuationField: result.valuationField,
       missing: result.missing,
       queriedAt: result.queriedAt,
+      ...marketDataProvenance(result),
     });
     if (JSON.stringify(dmLookup) !== JSON.stringify(row.dmLookup)) dirty = true;
     return {
@@ -229,7 +232,7 @@ function normalizeFieldSources(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(
     TRADE_RECORD_COLUMNS
-      .filter((column) => ["manual", "dm", "parsed"].includes(value[column]))
+      .filter((column) => ["manual", "dm", "qb", "dm+qb", "parsed"].includes(value[column]))
       .map((column) => [column, value[column]]),
   );
 }
@@ -247,6 +250,7 @@ function normalizeDmLookup(value) {
       ? input.missing.map(cleanCellValue).filter(Boolean)
       : [],
     queriedAt: cleanCellValue(input.queriedAt),
+    ...marketDataProvenance(input),
   };
 }
 
