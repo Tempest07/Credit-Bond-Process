@@ -136,3 +136,93 @@ test('pause cancels scheduling and requests; only manual refresh runs until resu
   assert.equal(scheduled, 1);
   assert.ok(cleared > 0);
 });
+
+function sourceResetController(overrides = {}) {
+  const c = Object.create(__test__.RealtimeQuoteController.prototype);
+  Object.assign(c, {
+    active: true, paused: false, dmSuspended: false, watchlist: [{ query: '102600001.IB', alerts: [] }], pendingImports: [{ query: '26待导入' }],
+    rows: [{ securityId: '102600001.IB', source: 'DM' }], unresolved: [], valuations: new Map([['102600001.IB', { source: 'DM' }]]),
+    loading: false, valuationLoading: false, requestSequence: 0, valuationSequence: 0,
+    fetchController: null, valuationController: null, refreshTimer: 1, changeTimer: 2,
+    lastFetchedAt: '', valuationFetchedAt: '', valuationRetryAt: 0, error: '', valuationError: '', intervalMs: 20000,
+    liveChanges: new Map(), unseenChanges: new Map(), alertStates: new Map(), alertEvents: [{ id: 'existing-alert' }],
+    render() {}, renderStatus() {}, renderTable() {}, renderValuationStatus() {},
+    captureQuoteChanges() {}, evaluateAlerts() {}, onToast() {}, save() {},
+    ...overrides,
+  });
+  return c;
+}
+
+const settleSource = () => new Promise(resolve => setImmediate(resolve));
+
+test('source reset aborts old quotes and a late response cannot overwrite or suspend the new source', async t => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { clearTimeout() {}, setTimeout: () => 1 };
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  const pending = [];
+  t.mock.method(globalThis, 'fetch', (_url, init) => new Promise(resolve => pending.push({ init, resolve })));
+  const c = sourceResetController({ maybeRefreshValuations() {} });
+  const old = c.refresh();
+  assert.equal(pending.length, 1);
+  c.resetDataSource();
+  assert.equal(pending[0].init.signal.aborted, true);
+  assert.equal(pending.length, 2);
+  assert.equal(c.rows.length, 0);
+  pending[1].resolve(new Response(JSON.stringify({ ok: true, rows: [{ securityId: '102600001.IB', source: 'QB' }], unresolved: [] })));
+  await settleSource();
+  assert.equal(c.rows[0].source, 'QB');
+  pending[0].resolve(new Response(JSON.stringify({ code: 'DM_REALTIME_SUSPENDED', error: 'old response' }), { status: 403 }));
+  await old;
+  assert.equal(c.rows[0].source, 'QB');
+  assert.equal(c.dmSuspended, false);
+  assert.equal(c.paused, false);
+});
+
+test('source reset prevents a late valuation from writing data or clearing the new request state', async t => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { clearTimeout() {}, setTimeout: () => 1 };
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  const pending = [];
+  t.mock.method(globalThis, 'fetch', (_url, init) => new Promise(resolve => pending.push({ init, resolve })));
+  const c = sourceResetController({ paused: true });
+  const old = c.maybeRefreshValuations([{ securityId: '102600001.IB' }], { force: true });
+  c.resetDataSource();
+  assert.equal(pending[0].init.signal.aborted, true);
+  assert.equal(c.valuations.size, 0);
+  const next = c.maybeRefreshValuations([{ securityId: '102600001.IB' }], { force: true });
+  const nextController = c.valuationController;
+  pending[0].resolve(new Response(JSON.stringify({ ok: true, rows: [{ securityId: '102600001.IB', provider: 'DM' }] })));
+  await old;
+  assert.equal(c.valuations.size, 0);
+  assert.equal(c.valuationLoading, true);
+  assert.equal(c.valuationController, nextController);
+  pending[1].resolve(new Response(JSON.stringify({ ok: true, rows: [{ securityId: '102600001.IB', provider: 'QB' }], fetchedAt: '2026-10-23T01:00:00Z' })));
+  await next;
+  assert.equal(c.valuations.get('102600001.IB').provider, 'QB');
+  assert.equal(c.valuationLoading, false);
+  assert.equal(c.paused, true);
+});
+
+test('source reset preserves pause, suspension, watchlist and background polling policy', async t => {
+  const previousWindow = globalThis.window;
+  let scheduled = 0, calls = 0;
+  globalThis.window = { clearTimeout() {}, setTimeout: () => ++scheduled };
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw new Error('must not fetch'); });
+  for (const flags of [{ paused: true }, { paused: true, dmSuspended: true, error: '访问已暂停' }, { active: false }]) {
+    const c = sourceResetController(flags);
+    const watchlist = c.watchlist, imports = c.pendingImports, events = c.alertEvents;
+    c.resetDataSource();
+    assert.equal(c.watchlist, watchlist);
+    assert.equal(c.pendingImports, imports);
+    assert.equal(c.alertEvents, events);
+    assert.equal(c.paused, flags.paused ?? false);
+    assert.equal(c.dmSuspended, flags.dmSuspended ?? false);
+    assert.equal(c.rows.length, 0);
+    assert.equal(c.valuations.size, 0);
+    assert.equal(c.valuationRetryAt, 0);
+    if (flags.dmSuspended) assert.equal(c.error, '访问已暂停');
+  }
+  assert.equal(calls, 0);
+  assert.equal(scheduled, 1);
+});

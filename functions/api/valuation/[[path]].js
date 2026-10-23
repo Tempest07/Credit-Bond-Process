@@ -39,7 +39,7 @@ export async function onRequest(context) {
     const timeout = AbortSignal.timeout(90000);
     const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout;
     if (action === 'analyze') {
-      const missing = validateDmConfig(env);
+      const missing = validateDmConfig(env, request);
       if (missing) return missing;
       const client = makeDmClient(env, request);
       body = { evidence: await (context.collectEvidence || collectModelValuationEvidence)({ post: (p,b) => client.post(p,b,{ signal }), sourceInfo: () => client.sourceInfo?.() }, body.target) };
@@ -62,7 +62,7 @@ export async function onRequest(context) {
       const run = result.run;
       if (run?.result?.model !== 'gpt-oss:20b' || run.result.promptVersion !== VALUATION_PROMPT_VERSION || JSON.stringify(run.evidence) !== JSON.stringify(body.evidence) || !validateValuationOutput(run.result.output, body.evidence).ok) throw new Error('Invalid result');
     }
-    if (action === 'status') result.dmConfigured = !validateDmConfig(env);
+    if (action === 'status') result.dmConfigured = !validateDmConfig(env, request);
     return json(result);
   } catch (error) {
     return json({ error: ['TimeoutError','AbortError'].includes(error?.name) ? '实验估值超时，请稍后查看记录或重试。' : '实验估值暂时不可用，请稍后重试。' }, 503);

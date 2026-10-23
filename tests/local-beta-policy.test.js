@@ -223,7 +223,7 @@ test("secondary automatic enrichment is blocked but manual buttons reach the exi
   for (const name of ["enrichSecondaryPendingFromDm", "enrichSecondaryLedgerFromDm"]) {
     let calls = 0;
     const context = vm.createContext({
-      LOCAL_BETA: localPolicy, secondaryLedgerDateValue: () => "2026-09-15",
+      LOCAL_BETA: localPolicy, dataSourceGeneration: 0, secondaryLedgerDateValue: () => "2026-09-15",
       ensureSecondaryPendingDraft: () => [], ensureSecondaryLedgerDraft: () => [],
       tradeRecordDmRequestRows: () => [{ id: "one" }],
       tradeRecordDmDependencyKey: () => "same", secondaryPendingDmRequestKey: () => "same",
@@ -267,7 +267,7 @@ test("local startup curve load is suppressed; explicit refresh still reaches the
 
 test("trade-record batches carry the local manual header, while automatic calls make no request", async () => {
   const calls = [];
-  const context = vm.createContext({ LOCAL_BETA: localPolicy, localBetaManualHeaders,
+  const context = vm.createContext({ LOCAL_BETA: localPolicy, localBetaManualHeaders, dataSourceGeneration: 0,
     DM_TRADE_RECORDS_URL: "./api/dm/trade-records", authHeaders: () => ({}), parseJson: JSON.parse,
     fetch: async (url, options) => { calls.push({ url, options }); return Response.json({ ok: true, rows: [] }); },
   });

@@ -4,6 +4,7 @@ import { lookupWindImpliedRating, windImpliedRatingEnabled } from "../_wind.js";
 import { sameBondIdentity, sameSecurityCode, sameIssuance, validateIssueGroup, normalizeLookupPayload } from "../../../bond-identity.js";
 import { createFallbackClient, withDataSources } from "../qb/fallback.js";
 import { fieldProvider, rowProvenance } from '../qb/provenance.js';
+import { resolveDataSourceMode } from '../_data-source.js';
 
 const DM_BASE_URL = "https://gapi-ext.innodealing.com";
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
@@ -67,7 +68,7 @@ export async function onRequestGet(context) {
   if (!shortName && !securityId && !fullName) {
     return json({ error: "请提供 shortName、securityId 或 fullName" }, 400);
   }
-  const missingConfig = validateDmConfig(context.env);
+  const missingConfig = validateDmConfig(context.env, context.request);
   if (missingConfig) return missingConfig;
 
   try {
@@ -118,7 +119,7 @@ export async function onRequestGet(context) {
       ...normalized,
       guaranteeInfo: guaranteeDiscovery.guaranteeInfo,
     };
-    const windEnabled = windImpliedRatingEnabled(context.env);
+    const windEnabled = resolveDataSourceMode(context.env, context.request) === 'auto' && windImpliedRatingEnabled(context.env);
     const dmRatingDiscovery = dmMatched
       ? await lookupDmRatingDiscovery(dm, { normalized: guaranteeEnrichedNormalized, basic, primary, company }, {
           includeImplied: true,
@@ -226,7 +227,9 @@ export async function onRequestGet(context) {
       ok: false,
       error: error.message || "DM 查询失败",
       diagnostic: error.diagnostic || null,
-      hint: "请检查 INNO_APP_KEY/INNO_APP_SECRET、DM 套餐权限、Cloudflare 到 DM 的网络访问以及简称是否能匹配。",
+      hint: resolveDataSourceMode(context.env, context.request) === 'qb'
+        ? '请检查 QB 服务配置、接口权限或稍后重试，并核对债券名称或代码。'
+        : "请检查 INNO_APP_KEY/INNO_APP_SECRET、DM 套餐权限、Cloudflare 到 DM 的网络访问以及简称是否能匹配。",
     }, 502);
   }
 }
@@ -3310,8 +3313,10 @@ export function makeDmClient(env, request) {
   return createFallbackClient(env, request, rawClient);
 }
 
-export function validateDmConfig(env) {
-  if (env.QB_ACCESS_KEY) return null;
+export function validateDmConfig(env, request) {
+  const mode = resolveDataSourceMode(env, request);
+  if (mode === 'qb') return env.QB_ACCESS_KEY ? null : json({ error: '当前选择 QB，服务端 QB_ACCESS_KEY 尚未配置。' }, 503);
+  if (mode === 'auto' && env.QB_ACCESS_KEY) return null;
   if (!env.INNO_APP_KEY) return json({ error: "Cloudflare Secret INNO_APP_KEY 尚未配置" }, 503);
   if (!env.INNO_APP_SECRET && !env.INNO_SM4_KEY) return json({ error: "Cloudflare Secret INNO_APP_SECRET 尚未配置" }, 503);
   return null;

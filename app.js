@@ -1,12 +1,13 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261022release53';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261022release53';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261022release53';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261022release53';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261022release53';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261022release53';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261022release53';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261022release53';
-import { dataProviderLabel, isMarketDataSource } from './market-data-source.js?v=20261022release53';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261023release531';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261023release531';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261023release531';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261023release531';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261023release531';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261023release531';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261023release531';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261023release531';
+import { dataProviderLabel, isMarketDataSource } from './market-data-source.js?v=20261023release531';
+import { initDataSourceControl } from './data-source-control.js?v=20261023release531';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -42,7 +43,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261022release53";
+} from "./core.js?v=20261023release531";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -71,15 +72,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261022release53";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261022release53";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261022release53";
+} from "./lifecycle.js?v=20261023release531";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261023release531";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261023release531";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261022release53";
+} from "./history-parser.js?v=20261023release531";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -96,23 +97,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261022release53";
+} from "./protocol-transfer.js?v=20261023release531";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261022release53";
+} from "./protocol-transfer-templates.js?v=20261023release531";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261022release53";
+} from "./protocol-transfer-docx.js?v=20261023release531";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261022release53";
+} from "./reminders.js?v=20261023release531";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -140,11 +141,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261022release53";
+} from "./secondary-inventory.js?v=20261023release531";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261022release53";
+} from "./trade-record-converter.js?v=20261023release531";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -155,16 +156,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261022release53";
+} from "./trade-record-grid.js?v=20261023release531";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261022release53";
-import { initializeDatePickers } from "./date-picker.js?v=20261022release53";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261022release53";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261022release53";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261022release53";
+} from "./trade-record-ledger.js?v=20261023release531";
+import { initializeDatePickers } from "./date-picker.js?v=20261023release531";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261023release531";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261023release531";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261023release531";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -173,33 +174,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261022release53";
+} from "./project-screenshot-ocr.js?v=20261023release531";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261022release53";
+} from "./project-screenshot-layout.js?v=20261023release531";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261022release53";
+} from "./project-screenshot-image.js?v=20261023release531";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261022release53";
+} from "./payment-receipts.js?v=20261023release531";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261022release53";
+} from "./issuer-search.js?v=20261023release531";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261022release53";
-import { initializeBondList } from "./bond-list-editor.js?v=20261022release53";
+} from "./state-history.js?v=20261023release531";
+import { initializeBondList } from "./bond-list-editor.js?v=20261023release531";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -377,11 +378,11 @@ let issuanceQueuePanel = null;
 const issuanceRecognitionQueue = createSequentialIssuanceQueue(requestQueuedIssuanceRecognition, handleIssuanceQueueChange);
 let activePrepaymentTarget = null;
 const paymentTodoCodes = createPaymentTodoCodes({
-  async lookup(names) {
+  async lookup(names, { signal } = {}) {
     const response = await fetch('./api/payment-todo/codes', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Bond-List': '1', ...authHeaders() },
-      body: JSON.stringify({ names }), signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({ names }), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     });
     if (!response.ok) throw new Error('DM code lookup failed');
     return response.json();
@@ -401,6 +402,7 @@ let valuationAssistTimer = null;
 let valuationAssistController = null;
 let valuationAssistRequestKey = "";
 let policyCurveController = null;
+let dataSourceGeneration = 0;
 let projectScreenshotRows = [];
 let projectScreenshotBusy = false;
 let projectScreenshotDragDepth = 0;
@@ -477,6 +479,8 @@ async function initialize() {
   bindPlaceholderSelection();
   bindNavigation();
   bindWorkspaceChrome();
+  initDataSourceControl();
+  window.addEventListener('bond-data-source-change', handleDataSourceChange);
   realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast });
   configureLocalBetaQuotes(realtimeQuoteController);
   bondListController = initializeBondList({ onToast: showToast, onAccessChange: syncBondListCloudGate });
@@ -5394,6 +5398,32 @@ function cancelProjectDmLookup() {
   $("#projectDmStatus").className = "pill muted";
 }
 
+function handleDataSourceChange() {
+  dataSourceGeneration++;
+  cancelProjectDmLookup();
+  cancelDmLookup();
+  clearTimeout(valuationAssistTimer);
+  valuationAssistController?.abort();
+  valuationAssistController = null;
+  valuationAssistRequestKey = '';
+  renderedValuationPayload = null;
+  resetModelValuationAssist();
+  const valuation = $('#valuationAssist');
+  if (valuation) { valuation.hidden = true; valuation.innerHTML = ''; }
+  policyCurveController?.abort();
+  policyCurveController = null;
+  secondaryPendingDmLoading = false;
+  secondaryLedgerDmLoading = false;
+  secondaryPendingDmAttemptKey = '';
+  secondaryLedgerDmAttemptKey = '';
+  paymentTodoCodes.resetDataSource();
+  bondListController?.resetDataSource();
+  realtimeQuoteController?.resetDataSource();
+  updateSecondaryPendingControls();
+  updateSecondaryLedgerControls();
+  if ($('.view[data-view="reminders"]')?.classList.contains('active')) void loadPolicyCurve({ refresh: true });
+}
+
 function setProjectDmLookupBusy(isBusy) {
   const button = $("#projectDmLookupButton");
   if (!button) return;
@@ -7269,6 +7299,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
   }
 
   const key = JSON.stringify({
+    dataSourceGeneration,
     issuerName,
     societyCode: projectValue.societyCode || "",
     durationText: projectValue.durationText || "",
@@ -7814,7 +7845,7 @@ async function loadPolicyCurve({ refresh = false } = {}) {
   if (policyCurveController) policyCurveController.abort();
   const controller = new AbortController();
   policyCurveController = controller;
-  renderPolicyCurveMessage("loading", refresh ? "正在刷新 DM 曲线" : "正在读取 DM 曲线");
+  renderPolicyCurveMessage("loading", refresh ? "正在刷新曲线" : "正在读取曲线");
   retry.disabled = true;
 
   try {
@@ -7826,6 +7857,7 @@ async function loadPolicyCurve({ refresh = false } = {}) {
     });
     const text = await response.text();
     const payload = parseJson(text);
+    if (controller.signal.aborted || policyCurveController !== controller) return;
     if (!response.ok) {
       renderPolicyCurveMessage("error", payload?.hint || "曲线读取失败");
       return;
@@ -7836,7 +7868,7 @@ async function loadPolicyCurve({ refresh = false } = {}) {
     }
     renderPolicyCurve(payload);
   } catch (error) {
-    if (error.name !== "AbortError") renderPolicyCurveMessage("error", "曲线读取失败");
+    if (!controller.signal.aborted && policyCurveController === controller && error.name !== "AbortError") renderPolicyCurveMessage("error", "曲线读取失败");
   } finally {
     if (policyCurveController === controller) {
       policyCurveController = null;
@@ -7886,7 +7918,7 @@ function renderPolicyCurveMessage(stateName, message) {
   points.innerHTML = stateName === "loading"
     ? POLICY_CURVE_TERMS.map(() => '<span class="policy-curve-placeholder"></span>').join("")
     : `<span class="policy-curve-message">${escapeHtml(message)}</span>`;
-  updatedAt.textContent = stateName === "loading" ? message : "DM · 中债国开债收益率曲线";
+  updatedAt.textContent = stateName === "loading" ? message : "中债国开债收益率曲线";
 }
 
 function formatPolicyCurveDate(value = "") {
@@ -9493,11 +9525,13 @@ async function saveSecondaryPendingDraft({ silent = false } = {}) {
 }
 
 async function requestTradeRecordDmRows(requestRows = [], { manual = false } = {}) {
+  const sourceGeneration = dataSourceGeneration;
   if (LOCAL_BETA && !manual) return { rows: [], failedIds: [], errors: [] };
   const rows = [];
   const failedIds = [];
   const errors = [];
   for (let index = 0; index < requestRows.length; index += 80) {
+    if (sourceGeneration !== dataSourceGeneration) throw new DOMException('数据源已切换', 'AbortError');
     const batch = requestRows.slice(index, index + 80);
     try {
       const response = await fetch(DM_TRADE_RECORDS_URL, {
@@ -9507,6 +9541,7 @@ async function requestTradeRecordDmRows(requestRows = [], { manual = false } = {
         body: JSON.stringify({ rows: batch }),
       });
       const text = await response.text();
+      if (sourceGeneration !== dataSourceGeneration) throw new DOMException('数据源已切换', 'AbortError');
       const payload = parseJson(text);
       if (!response.ok || !payload?.ok) {
         const error = new Error(payload?.hint || payload?.reason || `HTTP ${response.status}`);
@@ -9520,7 +9555,7 @@ async function requestTradeRecordDmRows(requestRows = [], { manual = false } = {
       }
       rows.push(...(payload.rows || []));
     } catch (error) {
-      if (error?.dmAuthFailure) throw error;
+      if (error?.dmAuthFailure || error?.name === 'AbortError') throw error;
       failedIds.push(...batch.map((row) => row.id));
       errors.push(error?.message || "DM 查询失败");
     }
@@ -9529,6 +9564,7 @@ async function requestTradeRecordDmRows(requestRows = [], { manual = false } = {
 }
 
 async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false } = {}) {
+  const sourceGeneration = dataSourceGeneration;
   if (LOCAL_BETA && (automatic || !refresh)) return;
   const rows = ensureSecondaryPendingDraft();
   const requestRows = tradeRecordDmRequestRows(rows, { refresh });
@@ -9542,6 +9578,7 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
   updateSecondaryPendingControls();
   try {
     const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows, { manual: !automatic && refresh });
+    if (sourceGeneration !== dataSourceGeneration) return;
     secondaryPendingDraftRows = mergeTradeRecordDmResults(secondaryPendingDraftRows, results);
     secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, failedIds);
     renderSecondaryTrades();
@@ -9554,10 +9591,12 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
         : `${dataProviderLabel(results)} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
+    if (sourceGeneration !== dataSourceGeneration || error.name === 'AbortError') return;
     secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, [...requestedIds]);
     renderSecondaryTrades();
     if (!automatic) showToast(error.message || "DM 待成交字段读取失败。");
   } finally {
+    if (sourceGeneration !== dataSourceGeneration) return;
     secondaryPendingDmLoading = false;
     const currentDependencies = tradeRecordDmRequestRows(secondaryPendingDraftRows, { refresh: true })
       .filter((row) => requestedIds.has(row.id));
@@ -9968,6 +10007,7 @@ function secondaryLedgerDateValue() {
 }
 
 async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false } = {}) {
+  const sourceGeneration = dataSourceGeneration;
   if (LOCAL_BETA && (automatic || !refresh)) return;
   const date = secondaryLedgerDateValue();
   const rows = ensureSecondaryLedgerDraft(date);
@@ -9980,6 +10020,7 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
   updateSecondaryLedgerControls();
   try {
     const { rows: results, failedIds, errors } = await requestTradeRecordDmRows(requestRows, { manual: !automatic && refresh });
+    if (sourceGeneration !== dataSourceGeneration) return;
     const before = cloneTradeRecordDraftRows(secondaryLedgerDraftRows);
     secondaryLedgerDraftRows = mergeTradeRecordDmResults(secondaryLedgerDraftRows, results);
     secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, failedIds);
@@ -9997,10 +10038,12 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
         : `${dataProviderLabel(results)} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
+    if (sourceGeneration !== dataSourceGeneration || error.name === 'AbortError') return;
     secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, requestRows.map((row) => row.id));
     renderSecondaryLedger();
     if (!automatic) showToast(error.message || "DM 成交台账字段读取失败。");
   } finally {
+    if (sourceGeneration !== dataSourceGeneration) return;
     secondaryLedgerDmLoading = false;
     updateSecondaryLedgerControls();
   }

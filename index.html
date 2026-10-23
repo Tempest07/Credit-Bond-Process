@@ -4,30 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.3">
-  <meta name="application-build-version" content="5.3">
-  <meta name="application-build" content="20261022release53">
-  <title>Bond Centre 5.3 - Tempest07</title>
+  <meta name="application-version" content="5.3.1">
+  <meta name="application-build-version" content="5.3.1">
+  <meta name="application-build" content="20261023release531">
+  <title>Bond Centre 5.3.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261022release53"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261022release53">
+  <script src="./app-shell-mode.js?v=20261023release531"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261023release531">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261022release53" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261022release53" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261022release53" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261022release53">
-  <script src="./ui-preference.js?v=20261022release53"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261022release53">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261022release53">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261022release53">
-  <link rel="stylesheet" href="./release-notes.css?v=20261022release53">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261022release53">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261022release53">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261022release53">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261023release531" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261023release531" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261023release531" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261023release531">
+  <script src="./ui-preference.js?v=20261023release531"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261023release531">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261023release531">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261023release531">
+  <link rel="stylesheet" href="./release-notes.css?v=20261023release531">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261023release531">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261023release531">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261023release531">
 </head>
 <body>
   <div class="app-shell">
@@ -52,13 +52,22 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.3">v5.3</span>
+      <span class="header-version" aria-label="当前版本 5.3.1">v5.3.1</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3 · 2026-10-22">v5.3</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.1 · 2026-10-23">v5.3.1</span></div>
+          <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
+            <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在确认数据源…</span></div>
+            <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel" aria-describedby="dataSourceDescription">
+              <button type="button" data-source-mode="auto" aria-pressed="false">自动</button>
+              <button type="button" data-source-mode="dm" aria-pressed="false">DM</button>
+              <button type="button" data-source-mode="qb" aria-pressed="true">QB</button>
+            </div>
+            <p id="dataSourceDescription" data-source-description>仅使用 QB；切换后从下次请求生效。</p>
+          </section>
           <div class="top-actions">
           <button class="button subtle" id="stateHistoryButton">版本历史</button>
           <button class="button subtle" id="exportDataButton">导出资料库</button>
@@ -408,7 +417,7 @@
             </div>
             <aside class="policy-curve-card" id="policyCurveCard" data-curve-state="loading" aria-labelledby="policyCurveTitle" aria-live="polite" aria-busy="true">
               <div class="policy-curve-head">
-                <div><strong id="policyCurveTitle">国开债曲线</strong><span>DM</span></div>
+                <div><strong id="policyCurveTitle">国开债曲线</strong><span id="policyCurveProvider">估值</span></div>
                 <button class="policy-curve-retry" id="policyCurveRetry" type="button" aria-label="刷新国开债曲线">↻</button>
               </div>
               <div class="policy-curve-points" id="policyCurvePoints">
@@ -416,7 +425,7 @@
                 <span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span>
                 <span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span><span class="policy-curve-placeholder"></span>
               </div>
-              <p id="policyCurveUpdatedAt">正在读取 DM 曲线</p>
+              <p id="policyCurveUpdatedAt">正在读取曲线</p>
             </aside>
           </div>
         </section>
@@ -1640,6 +1649,16 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.3.1</strong><time datetime="2026-10-23">2026 / 10 / 23</time></div>
+      <section><h3>数据源切换</h3><ul>
+        <li>DM 暂时不可用期间，已配置 QB 的环境默认直连 QB，减少等待 DM 失败的时间。</li>
+        <li>工作区下拉新增“自动／DM／QB”：自动优先 DM、失败或缺数时使用 QB；DM 和 QB 分别只请求所选来源，不暗中切回其他来源。</li>
+        <li>选择仅保存在当前浏览器 Cookie，不写入业务资料库；切换从后续请求生效，丢弃旧来源的在途结果并清理取数缓存。</li>
+        <li>保留正在编辑的草稿、人工数据、分行报价、实时券池和暂停状态。QB 无同口径接口的实时报价、隐含违约率继续明确缺失。</li>
+      </ul></section>
+      <section><h3>原有数据保护</h3><ul>
+        <li>沿用现有数据库结构、D1 分块存储、历史快照和 revision 冲突保护；不导入测试数据，不清空或批量改写业务记录，保留 5.3 全部功能与修复。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.3</strong><time datetime="2026-10-22">2026 / 10 / 22</time></div>
       <section><h3>QB 自动备用数据源</h3><ul>
         <li>DM 请求失败、返回空数据或部分字段缺失时，自动使用同口径 QB 数据补缺，保留 DM 已有有效值，显示实际来源和数据日期。</li>
@@ -1772,10 +1791,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261022release53"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261022release53"></script>
-  <script type="module" src="./app.js?v=20261022release53"></script>
-  <script type="module" src="./todo-fluid.js?v=20261022release53"></script>
-  <script type="module" src="./release-notes.js?v=20261022release53"></script>
+  <script src="./ui-mode.js?v=20261023release531"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261023release531"></script>
+  <script type="module" src="./app.js?v=20261023release531"></script>
+  <script type="module" src="./todo-fluid.js?v=20261023release531"></script>
+  <script type="module" src="./release-notes.js?v=20261023release531"></script>
 </body>
 </html>

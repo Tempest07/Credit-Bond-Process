@@ -1,6 +1,6 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261022release53';
-import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261022release53';
-import { dataProviderLabel } from './market-data-source.js?v=20261022release53';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release531';
+import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261023release531';
+import { dataProviderLabel } from './market-data-source.js?v=20261023release531';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
@@ -8,7 +8,7 @@ const spreadFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 
 
 export function initializeBondList({ onToast, onAccessChange } = {}) {
   const root = document.querySelector('.view[data-view="bond-list"]');
-  if (!root) return { setActive: async () => {}, flushSave: async () => true, hasPendingChanges: () => false, hasAccess: () => false, clearAccess: () => {}, resume: () => {} };
+  if (!root) return { setActive: async () => {}, flushSave: async () => true, hasPendingChanges: () => false, hasAccess: () => false, clearAccess: () => {}, resume: () => {}, resetDataSource: () => {} };
   const $ = id => root.querySelector('#bondList-' + id);
   const apiRoot = new URL('./api/bond-list/', location.href).pathname;
   const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
@@ -16,6 +16,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
   let sections = [], revision = 0, editVersion = 0;
   let active = false, loaded = false, loading = null, dirty = false, conflict = false, flushing = false;
   let saveTimer, lookupTimer, savePromise = null, lookupPromise = null, lookupAbort = null;
+  let lookupGeneration = 0;
   let backupKey, recoveryKey, archived = [], busy = false;
   let access = false, accessVersion = 0, retryMode = '';
   const failedNames = new Set();
@@ -430,19 +431,20 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     const names = pendingNames().filter(name => manual || !failedNames.has(name));
     if (!names.length) return Promise.resolve();
     const snapshots = sections.map(section => section.text), version = editVersion;
-    const controller = new AbortController();
+    const controller = new AbortController(), generation = lookupGeneration;
     lookupAbort = controller;
+    const current = () => generation === lookupGeneration && lookupAbort === controller && !controller.signal.aborted;
     busy = true; renderSummary();
     lookupPromise = (async () => {
       try {
         const all = {}, providers = new Set();
         for (let start = 0; start < names.length; start += 20) {
-          if (!active || controller.signal.aborted) return;
+          if (!active || !current()) return;
           const response = await api('lookup', { names: names.slice(start, start + 20) }, controller.signal);
           providers.add(dataProviderLabel(response));
           Object.assign(all, response.results);
         }
-        if (!active || controller.signal.aborted || root.querySelector('[data-composing]')) return;
+        if (!active || !current() || root.querySelector('[data-composing]')) return;
         lookupResults = { ...lookupResults, ...all };
         for (const [name, result] of Object.entries(all)) {
           if (result.status !== 'matched') failedNames.add(name); else failedNames.delete(name);
@@ -452,10 +454,12 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
         if (unresolved) notify('已补齐 ' + count + ' 条报价；还有 ' + unresolved + ' 个简称需要核对，详见分行下方提示。', true);
         else if (count) notify('已通过 ' + (providers.has('DM+QB') || providers.size > 1 ? 'DM+QB' : [...providers][0] || 'DM') + ' 补齐 ' + count + ' 条报价，价格与分行保持原样。');
       } catch (error) {
-        if (!controller.signal.aborted) { names.forEach(name => failedNames.add(name)); notify(error.message, true); }
+        if (current()) { names.forEach(name => failedNames.add(name)); notify(error.message, true); }
       } finally {
-        busy = false; lookupAbort = null; lookupPromise = null; renderSummary();
-        if (active && (editVersion !== version || controller.signal.aborted)) scheduleLookup();
+        if (generation === lookupGeneration && lookupAbort === controller) {
+          busy = false; lookupAbort = null; lookupPromise = null; renderSummary();
+          if (active && (editVersion !== version || controller.signal.aborted)) scheduleLookup();
+        }
       }
     })();
     return lookupPromise;
@@ -622,6 +626,14 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
   }
 
   return {
+    resetDataSource() {
+      clearTimeout(lookupTimer);
+      lookupGeneration++;
+      lookupAbort?.abort(); lookupAbort = null; lookupPromise = null; busy = false;
+      failedNames.clear(); lookupResults = {};
+      stopCoupons(true);
+      renderSummary(); scheduleLookup(); scheduleCoupons();
+    },
     async setActive(nextActive) {
       const entering = Boolean(nextActive) && !active;
       active = Boolean(nextActive);

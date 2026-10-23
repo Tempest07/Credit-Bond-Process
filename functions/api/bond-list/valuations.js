@@ -31,7 +31,7 @@ export async function onRequestPost(context) {
   } catch {
     return json({ error: '每次最多查询 20 个含市场后缀的有效债券代码。' }, 400);
   }
-  const configError = validateDmConfig(context.env);
+  const configError = validateDmConfig(context.env, context.request);
   if (configError) return configError;
   const requestedDate = chinaToday();
   const startDate = offsetDate(requestedDate, -LOOKBACK_DAYS);
@@ -56,7 +56,7 @@ export async function onRequestPost(context) {
     if (/\bGW-000-4006\b/.test(String(error?.message || ''))) {
       return json({ code: 'dm_valuation_access_denied', error: 'DM 当前估值请求被拒绝（GW-000-4006），请核对该应用的接口授权或调用配置。' }, 503);
     }
-    return json({ error: 'DM 估值查询暂时失败或超时，请稍后重试。' }, 502);
+    return json({ error: '估值查询暂时失败或超时，请稍后重试。' }, 502);
   }
 }
 

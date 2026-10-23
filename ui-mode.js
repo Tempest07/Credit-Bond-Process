@@ -9,7 +9,7 @@
   const build = $('meta[name="application-build-version"]').content;
   const legacyBrand = `<span class="brand-mark">T7</span><span class="brand-copy"><strong>Tempest07</strong><small class="brand-product">Bond Centre <span class="brand-version" title="内部构建 ${build}">v${build}</span></small></span>`;
   const nodes = {
-    actions: $(".top-actions"), screenshot: $("#projectScreenshotTool"), sync: $(".sidebar-card"),
+    actions: $(".top-actions"), source: $("#dataSourceControl"), screenshot: $("#projectScreenshotTool"), sync: $(".sidebar-card"),
     search: $("#projectSearch"), mail: $("#mailPanel"), output: $("#mailOutputPanel"),
     todos: $('.view[data-view="ledger"]>.ledger-todo-zone'),
     title: $(".project-ledger-title"), head: $(".project-ledger-toolbar>.panel-head"),
@@ -46,7 +46,7 @@
     sidebar.classList.toggle("site-header", enabled);
     brand.innerHTML = enabled ? betaBrand : legacyBrand;
     if (!enabled) {
-      sidebar.append(nodes.screenshot, nodes.sync);
+      sidebar.append(nodes.source, nodes.screenshot, nodes.sync);
       topbar.insertBefore(nodes.actions, $("#androidMoreButton"));
       nodes.filters.prepend(nodes.search);
       $(".ledger-command-heading").append(nodes.mail);

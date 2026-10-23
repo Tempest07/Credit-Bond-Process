@@ -2,6 +2,7 @@ import { createQbClient } from './client.js';
 import { basicFallback } from './basic.js';
 import { marketFallback } from './market.js';
 import { ratingsCurvesFallback } from './ratings-curves.js';
+import { resolveDataSourceMode } from '../_data-source.js';
 
 const present = value => value !== null && value !== undefined && !(typeof value === 'string' && (!value.trim() || /^(?:--?|—|N\/?A|NULL|NONE|NAN)$/i.test(value.trim()))) && !(typeof value === 'number' && !Number.isFinite(value));
 const canonical = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, '').toUpperCase();
@@ -27,7 +28,8 @@ export function rows(value) {
 // A client and its identity cache belong to one incoming request, never a user-
 // independent Worker global. QB is attempted only after the DM result is known.
 export function createFallbackClient(env, request, dm, { qbClient, dmTimeoutMs = 4500 } = {}) {
-  if (!env.QB_ACCESS_KEY && !qbClient) return dm;
+  const mode = resolveDataSourceMode(env, request);
+  if (mode === 'dm' || mode !== 'qb' && !env.QB_ACCESS_KEY && !qbClient) return dm;
   const qb = qbClient || createQbClient(env, { signal: request?.signal });
   const used = new Set(), events = [], unavailable = new Map();
   function remember(input, result = []) {
@@ -42,13 +44,15 @@ export function createFallbackClient(env, request, dm, { qbClient, dmTimeoutMs =
     }
   }
   return {
-    sourceInfo() { return { primary: 'DM', fallback: 'QB', used: [...used], fallbackUsed: used.has('QB'), events: events.slice() }; },
+    sourceInfo() { return { mode, primary: mode === 'qb' ? 'QB' : 'DM', fallback: mode === 'auto' ? 'QB' : null,
+      used: [...used], fallbackUsed: mode === 'auto' && used.has('QB'), events: events.slice() }; },
     async post(path, input = {}, options = {}) {
       const signal = options.signal || request?.signal;
       signal?.throwIfAborted();
       remember(input);
       let original, dmRows = [], dmError;
-      if (unavailable.has(path)) dmError = unavailable.get(path);
+      if (mode === 'qb') { /* Explicit QB mode never calls DM. */ }
+      else if (unavailable.has(path)) dmError = unavailable.get(path);
       else try {
         const timeout = AbortSignal.timeout(dmTimeoutMs);
         const dmSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -73,17 +77,22 @@ export function createFallbackClient(env, request, dm, { qbClient, dmTimeoutMs =
       try { qbRows = await dispatch(path, adaptedInput, client); }
       catch {
         signal?.throwIfAborted();
+        if (mode === 'qb') throw new Error('QB 查询暂时失败，请稍后重试。');
         if (dmError) throw new Error('DM 与 QB 均未取得可用数据，请稍后重试。');
         return original;
       }
       signal?.throwIfAborted();
       if (!qbRows?.length) {
+        if (mode === 'qb') {
+          if (qbRows === null) throw new Error('QB 暂无该功能的同口径数据。');
+          return [];
+        }
         if (dmError) throw new Error('DM 未取得数据，QB 暂无同口径数据。');
         return original;
       }
       const merged = mergeRows(path, dmRows, qbRows);
       const qbFields = merged.filter(row => row._qb && fieldsOf(row).some(field => row._fieldSources?.[field] === 'QB'));
-      if (!qbFields.length) { if (dmError) throw new Error('DM 未取得数据，QB 返回的数据身份或口径不明确。'); return original; }
+      if (!qbFields.length) { if (mode === 'qb') return []; if (dmError) throw new Error('DM 未取得数据，QB 返回的数据身份或口径不明确。'); return original; }
       used.add('QB');
       for (const row of qbFields) events.push({ path, apiNames: row._qb.apiNames || [], date: row._qb.date || '',
         fields: fieldsOf(row).filter(field => row._fieldSources?.[field] === 'QB') });
@@ -195,8 +204,8 @@ export function mergeRows(path, dmRows, qbRows) {
 
 export function withDataSources(payload, client) {
   const info = client?.sourceInfo?.();
-  if (!info?.fallbackUsed) return payload;
-  const source = info.used.includes('DM') ? 'DM+QB' : 'QB';
+  if (!info?.fallbackUsed && info?.mode !== 'qb') return payload;
+  const source = info.mode === 'qb' ? 'QB' : info.used.includes('DM') ? 'DM+QB' : 'QB';
   const apis = [...new Set((info.events || []).flatMap(event => event.apiNames || []))];
   return { ...payload, source, dataSources: info,
     ...('sourcePath' in payload ? { sourcePath: source === 'QB' ? apis.join(', ') : payload.sourcePath,

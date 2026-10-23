@@ -44,7 +44,7 @@ const CURVES = {
 export async function onRequestGet(context) {
   const auth = await requireUser(context);
   if (auth.response) return auth.response;
-  const missingConfig = validateDmConfig(context.env);
+  const missingConfig = validateDmConfig(context.env, context.request);
   if (missingConfig) return missingConfig;
 
   const url = new URL(context.request.url);

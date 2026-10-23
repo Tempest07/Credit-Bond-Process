@@ -764,3 +764,82 @@ test('switching editor tabs preserves filters and draft, with keyboard tab navig
     assert.equal(editor.hasPendingChanges(), false); assert.equal(env.state.revision, 0);
   });
 });
+
+test('source reset clears metadata, rejects old responses and preserves draft, filter and save revision', async () => {
+  const oldCoupons = deferred(), oldValuations = deferred();
+  let provider = 'DM', hold = false;
+  const text = '102600001.IB，测试，1.60*ofr';
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 9, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return hold && provider === 'DM' ? oldCoupons.promise : json({ source: provider, results: {
+      '102600001.IB': { status: 'matched', couponRate: provider === 'QB' ? 2.03 : 1.54, bondType: 'MTN' },
+    } });
+    if (request.url.endsWith('/valuations')) return hold && provider === 'DM' ? oldValuations.promise : json({ source: provider, fetchedAt: '2026-10-23T01:00:00Z', results: {
+      '102600001.IB': { status: 'matched', institution: '中债', yield: provider === 'QB' ? 2.01 : 1.51, basis: '到期', date: '2026-10-22' },
+    } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    await env.chooseType('MTN');
+    await env.edit(0, '102600001.IB，测试，1.70*ofr');
+    hold = true;
+    const oldRefresh = env.elements['coupons-refresh'].click(); await settle();
+    const oldRequests = env.requests.slice(-2);
+    provider = 'QB'; editor.resetDataSource();
+    assert.ok(oldRequests.every(request => request.init.signal.aborted));
+    assert.equal(env.textarea(0).value, '102600001.IB，测试，1.70*ofr');
+    assert.equal(editor.hasPendingChanges(), true);
+    assert.equal(env.rows().length, 0);
+    await env.advance(350);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '2.03%');
+    assert.match(env.elements['metadata-status'].textContent, /^QB/);
+    oldCoupons.resolve(json({ source: 'DM', results: { '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' } } }));
+    oldValuations.resolve(json({ source: 'DM', results: { '102600001.IB': { status: 'matched', yield: 1.51 } } }));
+    await oldRefresh;
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '2.03%');
+    assert.equal(env.resultRow(0).children[3].querySelector('.bond-list-valuation-value').textContent, '2.01%');
+    assert.equal(env.state.revision, 9);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/state')).length, 1);
+    assert.equal(editor.hasPendingChanges(), true);
+  });
+});
+
+test('an old source lookup cannot insert codes or clear the new lookup busy state', async () => {
+  const old = deferred(), next = deferred(); let calls = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: '26测试，1.60*ofr' }], revision: 5, userId: 'admin' },
+    fetch: request => request.url.endsWith('/lookup') ? (++calls === 1 ? old.promise : next.promise) : null }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true);
+    const first = env.elements.fill.click(); await settle();
+    editor.resetDataSource();
+    const second = env.elements.fill.click(); await settle();
+    old.resolve(json({ source: 'DM', results: { '26测试': { status: 'matched', matches: [{ code: '102600001.IB' }] } } }));
+    await first;
+    assert.equal(env.textarea(0).value, '26测试，1.60*ofr');
+    assert.equal(env.elements.fill.disabled, true);
+    next.resolve(json({ source: 'QB', results: { '26测试': { status: 'matched', matches: [{ code: '102600002.IB' }] } } }));
+    await second;
+    assert.equal(env.textarea(0).value, '102600002.IB，26测试，1.60*ofr');
+    assert.equal(env.elements.fill.textContent, '补齐代码');
+    assert.equal(env.state.revision, 5);
+  });
+});
+
+test('source reset clears failed name suppression while keeping an existing save conflict intact', async () => {
+  let lookups = 0;
+  await fixture({ auto: true, state: { sections: [{ title: '北京', text: '26测试，1.60*ofr' }], revision: 3, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/lookup')) { lookups++; return json({ results: { '26测试': { status: 'missing', matches: [] } } }); }
+    if (request.url.endsWith('/state') && request.body) return json({ error: '保存冲突，请导出' }, 409);
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(1200);
+    assert.equal(lookups, 1);
+    editor.resetDataSource(); await env.advance(1200);
+    assert.equal(lookups, 2);
+    await env.edit(0, '26测试，1.70*ofr');
+    assert.equal(await editor.flushSave(), false);
+    editor.resetDataSource();
+    assert.equal(env.textarea(0).value, '26测试，1.70*ofr');
+    assert.equal(env.elements.retry.disabled, true);
+    assert.equal(editor.hasPendingChanges(), true);
+    assert.equal(await editor.flushSave(), false);
+    assert.equal(env.state.revision, 3);
+  });
+});

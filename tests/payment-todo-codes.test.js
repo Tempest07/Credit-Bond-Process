@@ -77,3 +77,42 @@ test('missing and ambiguous results stay explicit; network failures retry after 
     assert.equal(lookup.get('26测试MTN001').code,'');
   }
 });
+
+test('source reset starts a fresh lookup and ignores late success or failure from the old source', async () => {
+  for (const failOld of [false, true]) {
+    const pending = [];
+    let codes;
+    codes = createPaymentTodoCodes({
+      lookup: (names, { signal }) => new Promise((resolve, reject) => pending.push({ names, signal, resolve, reject })),
+      onChange() { codes.ensure(['26测试MTN001']); },
+    });
+    codes.ensure(['26测试MTN001']); await tick();
+    assert.equal(pending.length, 1);
+    codes.resetDataSource(); await tick();
+    assert.equal(pending[0].signal.aborted, true);
+    assert.equal(pending.length, 2);
+    if (failOld) pending[0].reject(new Error('old source failed'));
+    else pending[0].resolve(payload(pending[0].names));
+    await tick();
+    assert.equal(codes.get('26测试MTN001').status, 'loading');
+    const current = payload(pending[1].names); current.source = 'QB';
+    pending[1].resolve(current); await tick();
+    assert.equal(codes.get('26测试MTN001').status, 'matched');
+    assert.equal(codes.get('26测试MTN001').source, 'QB');
+    assert.equal(pending.length, 2);
+  }
+});
+
+test('source reset invalidates verified cache immediately rather than waiting fifteen minutes', async () => {
+  let source = 'DM', calls = 0;
+  const codes = createPaymentTodoCodes({ lookup: async names => {
+    calls++; return { ...payload(names), source };
+  }, onChange() {} });
+  codes.ensure(['26测试MTN001']); await tick();
+  assert.equal(codes.get('26测试MTN001').source, 'DM');
+  source = 'QB'; codes.resetDataSource();
+  assert.equal(codes.get('26测试MTN001'), undefined);
+  codes.ensure(['26测试MTN001']); await tick();
+  assert.equal(calls, 2);
+  assert.equal(codes.get('26测试MTN001').source, 'QB');
+});

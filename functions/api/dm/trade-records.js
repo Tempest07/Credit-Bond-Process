@@ -42,7 +42,7 @@ const MARKET_DATA_FIELDS = [
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
   if (auth.response) return auth.response;
-  const missingConfig = validateDmConfig(context.env);
+  const missingConfig = validateDmConfig(context.env, context.request);
   if (missingConfig) return missingConfig;
 
   let input;
@@ -84,7 +84,7 @@ export async function onRequestPost(context) {
     return json({
       ok: false,
       reason: "dmError",
-      hint: "DM 成交台账字段读取失败，请稍后重试。",
+      hint: "成交台账字段读取失败，请稍后重试。",
     }, 502);
   }
 }

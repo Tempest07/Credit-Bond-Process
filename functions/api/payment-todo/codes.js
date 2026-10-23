@@ -20,7 +20,7 @@ export async function onRequestPost(context) {
   } catch {
     return json({ error: '每次最多查询 20 个有效债券简称。' }, 400);
   }
-  const configError = validateDmConfig(context.env);
+  const configError = validateDmConfig(context.env, context.request);
   if (configError) return configError;
 
   try {
@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
     }
     return json(withDataSources({ source: 'DM', fetchedAt: new Date().toISOString(), results: matchPaymentTodoCodeRows(names, rows) }, client));
   } catch {
-    return json({ error: 'DM 债券代码查询暂时失败或超时，请稍后重试。' }, 502);
+    return json({ error: '债券代码查询暂时失败或超时，请稍后重试。' }, 502);
   }
 }
 

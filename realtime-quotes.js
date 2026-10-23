@@ -1,4 +1,4 @@
-import { dataProviderLabel } from './market-data-source.js?v=20261022release53';
+import { dataProviderLabel } from './market-data-source.js?v=20261023release531';
 
 const DEFAULT_ENDPOINT = "./api/dm/realtime-quotes";
 const DEFAULT_VALUATION_ENDPOINT = "./api/dm/realtime-valuations";
@@ -103,6 +103,7 @@ class RealtimeQuoteController {
     this.fetchController = null;
     this.valuationController = null;
     this.requestSequence = 0;
+    this.valuationSequence = 0;
     this.sortState = { columnId: "", direction: "" };
     this.draggedColumnId = "";
     this.columnResize = null;
@@ -249,6 +250,34 @@ class RealtimeQuoteController {
     this.fetchController?.abort();
     this.valuationController?.abort();
     this.root.classList.remove("is-resizing-columns");
+  }
+
+  resetDataSource() {
+    this.requestSequence++;
+    this.valuationSequence++;
+    this.fetchController?.abort();
+    this.valuationController?.abort();
+    this.fetchController = null;
+    this.valuationController = null;
+    window.clearTimeout(this.refreshTimer);
+    window.clearTimeout(this.changeTimer);
+    this.refreshTimer = null;
+    this.changeTimer = null;
+    this.loading = false;
+    this.valuationLoading = false;
+    this.rows = [];
+    this.unresolved = [];
+    this.valuations.clear();
+    this.lastFetchedAt = "";
+    this.valuationFetchedAt = "";
+    this.valuationRetryAt = 0;
+    if (!this.dmSuspended) this.error = "";
+    this.valuationError = "";
+    this.liveChanges.clear();
+    this.unseenChanges.clear();
+    this.alertStates.clear();
+    this.render();
+    this.syncPolling({ immediate: this.active });
   }
 
   openImportDialog() {
@@ -415,6 +444,7 @@ class RealtimeQuoteController {
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
+      if (controller.signal.aborted || sequence !== this.requestSequence) return;
       if (payload.code === "DM_REALTIME_SUSPENDED") this.suspendDmAccess(payload.error);
       if (!response.ok || payload.ok !== true) throw new Error(payload.error || `HTTP ${response.status}`);
       if (controller.signal.aborted || sequence !== this.requestSequence) return;
@@ -459,6 +489,7 @@ class RealtimeQuoteController {
     if (!force && Date.now() < this.valuationRetryAt) return;
     this.valuationController?.abort();
     const controller = new AbortController();
+    const sequence = ++this.valuationSequence;
     this.valuationController = controller;
     this.valuationLoading = true;
     this.valuationError = "";
@@ -473,6 +504,7 @@ class RealtimeQuoteController {
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
+      if (controller.signal.aborted || sequence !== this.valuationSequence || this.valuationController !== controller) return;
       if (payload.code === "DM_REALTIME_SUSPENDED") this.suspendDmAccess(payload.error);
       if (!response.ok || payload.ok !== true) throw new Error(payload.error || `HTTP ${response.status}`);
       for (const item of Array.isArray(payload.rows) ? payload.rows : []) {
@@ -484,13 +516,15 @@ class RealtimeQuoteController {
       this.rows = this.rows.map((row) => this.attachValuation(row));
       this.renderTable();
     } catch (error) {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError" || controller.signal.aborted || sequence !== this.valuationSequence) return;
       this.valuationError = error.message || "估值更新失败";
       this.valuationRetryAt = Date.now() + VALUATION_RETRY_MS;
     } finally {
-      this.valuationLoading = false;
-      this.valuationController = null;
-      this.renderValuationStatus();
+      if (sequence === this.valuationSequence && this.valuationController === controller) {
+        this.valuationLoading = false;
+        this.valuationController = null;
+        this.renderValuationStatus();
+      }
     }
   }
 

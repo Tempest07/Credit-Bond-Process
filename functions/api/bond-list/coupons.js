@@ -23,7 +23,7 @@ export async function onRequestPost(context) {
   } catch {
     return json({ error: '每次最多查询 20 个含市场后缀的有效债券代码。' }, 400);
   }
-  const configError = validateDmConfig(context.env);
+  const configError = validateDmConfig(context.env, context.request);
   if (configError) return configError;
 
   try {
@@ -39,7 +39,7 @@ export async function onRequestPost(context) {
       results: matchCouponRows(codes, rowsFromDm(raw)),
     }, client));
   } catch {
-    return json({ error: 'DM 债券资料查询暂时失败或超时，请稍后重试。' }, 502);
+    return json({ error: '债券资料查询暂时失败或超时，请稍后重试。' }, 502);
   }
 }
 

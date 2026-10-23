@@ -4,11 +4,15 @@ import { makeDmClient } from '../functions/api/dm/lookup.js';
 import { analyzeValuation, proposeExperience, installedValuationModels, DEFAULT_VALUATION_MODEL } from './local-valuation-model.mjs';
 import { ValuationStore } from './valuation-store.mjs';
 import { valuationSample } from './valuation-sample.mjs';
+import { dataSourceStatus } from '../functions/api/_data-source.js';
 
 const PREFIX = '/bond-centre/api/valuation/';
 export function createValuationService({ env = process.env, resolveEvidence, store = new ValuationStore(fileURLToPath(new URL('../.local-data/valuation-learning.json', import.meta.url))) } = {}) {
   let busy = false;
-  const dmConfigured = () => Boolean(resolveEvidence || env.QB_ACCESS_KEY || (env.INNO_APP_KEY && (env.INNO_APP_SECRET || env.INNO_SM4_KEY)));
+  const dmConfigured = () => {
+    const {mode,configured} = dataSourceStatus(env);
+    return Boolean(resolveEvidence || (mode === 'auto' ? configured.dm || configured.qb : configured[mode]));
+  };
   const ready = store.mutate(d => { for (const run of d.runs) if (run.status === 'running') Object.assign(run, { status: 'failed', error: '服务重启，分析已中断' }); });
   return async function handle(path, method, body, signal) {
     if (!path.startsWith(PREFIX)) return null;

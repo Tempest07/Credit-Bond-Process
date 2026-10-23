@@ -8,7 +8,7 @@ export async function onRequestPost(context) {
   if (auth.response) return auth.response;
   const rejected = checkWriteRequest(context.request);
   if (rejected) return rejected;
-  const configError = validateDmConfig(context.env);
+  const configError = validateDmConfig(context.env, context.request);
   if (configError) return configError;
   let names;
   try {
@@ -27,6 +27,6 @@ export async function onRequestPost(context) {
     }
     return json(withDataSources({results:matchRows(names,rows)}, client));
   } catch {
-    return json({error:'DM 查询暂时失败或超时，请稍后重试。报价原文已保留。'}, 502);
+    return json({error:'债券查询暂时失败或超时，请稍后重试。报价原文已保留。'}, 502);
   }
 }

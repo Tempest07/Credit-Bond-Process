@@ -50,7 +50,7 @@ const VALUATION_FIELDS = [
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
   if (auth.response) return auth.response;
-  const missingConfig = validateDmConfig(context.env);
+  const missingConfig = validateDmConfig(context.env, context.request);
   if (missingConfig) return missingConfig;
 
   let input;
@@ -108,7 +108,7 @@ export async function onRequestPost(context) {
     }));
     return json({
       ok: false,
-      error: timedOut ? "DM 中债/中证估值查询超时。" : "DM 中债/中证估值查询失败。",
+      error: timedOut ? "中债/中证估值查询超时。" : "中债/中证估值查询失败。",
       hint: timedOut ? "估值批量查询已在 20 秒后中止，请稍后刷新。" : "请检查 DM 估值接口权限或稍后重试。",
     }, timedOut ? 504 : 502);
   } finally {
