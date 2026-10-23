@@ -1,13 +1,13 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261023release533';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261023release533';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261023release533';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261023release533';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261023release533';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261023release533';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261023release533';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261023release533';
-import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261023release533';
-import { initDataSourceControl } from './data-source-control.js?v=20261023release533';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261023release534';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261023release534';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261023release534';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261023release534';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261023release534';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261023release534';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261023release534';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261023release534';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261023release534';
+import { initDataSourceControl } from './data-source-control.js?v=20261023release534';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -43,7 +43,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261023release533";
+} from "./core.js?v=20261023release534";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -61,6 +61,7 @@ import {
   deriveProjectStatus,
   finalizeProjectBid,
   hasUnsubmittedBidChanges,
+  isExternalInterbankProject,
   normalizeProjectRecord,
   projectCardBidSummary,
   projectMatchesDateFilter,
@@ -72,15 +73,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261023release533";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261023release533";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261023release533";
+} from "./lifecycle.js?v=20261023release534";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261023release534";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261023release534";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261023release533";
+} from "./history-parser.js?v=20261023release534";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -97,23 +98,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261023release533";
+} from "./protocol-transfer.js?v=20261023release534";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261023release533";
+} from "./protocol-transfer-templates.js?v=20261023release534";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261023release533";
+} from "./protocol-transfer-docx.js?v=20261023release534";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261023release533";
+} from "./reminders.js?v=20261023release534";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -141,11 +142,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261023release533";
+} from "./secondary-inventory.js?v=20261023release534";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261023release533";
+} from "./trade-record-converter.js?v=20261023release534";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -156,16 +157,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261023release533";
+} from "./trade-record-grid.js?v=20261023release534";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261023release533";
-import { initializeDatePickers } from "./date-picker.js?v=20261023release533";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261023release533";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261023release533";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261023release533";
+} from "./trade-record-ledger.js?v=20261023release534";
+import { initializeDatePickers } from "./date-picker.js?v=20261023release534";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261023release534";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261023release534";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261023release534";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -174,33 +175,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261023release533";
+} from "./project-screenshot-ocr.js?v=20261023release534";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261023release533";
+} from "./project-screenshot-layout.js?v=20261023release534";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261023release533";
+} from "./project-screenshot-image.js?v=20261023release534";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261023release533";
+} from "./payment-receipts.js?v=20261023release534";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261023release533";
+} from "./issuer-search.js?v=20261023release534";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261023release533";
-import { initializeBondList } from "./bond-list-editor.js?v=20261023release533";
+} from "./state-history.js?v=20261023release534";
+import { initializeBondList } from "./bond-list-editor.js?v=20261023release534";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -379,11 +380,11 @@ const issuanceRecognitionQueue = createSequentialIssuanceQueue(requestQueuedIssu
 let activePrepaymentTarget = null;
 const paymentTodoCodes = createPaymentTodoCodes({
   getDataSourceMode: () => dataSourceControl?.getMode(),
-  async lookup(names, { signal } = {}) {
+  async lookup(names, { signal, force = false } = {}) {
     const response = await fetch('./api/payment-todo/codes', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Bond-List': '1', ...authHeaders() },
-      body: JSON.stringify({ names }), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+      body: JSON.stringify({ names, ...(force ? { force: true } : {}) }), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     });
     if (!response.ok) throw new Error('债券代码查询失败');
     return response.json();
@@ -484,6 +485,8 @@ async function initialize() {
   dataSourceControl = initDataSourceControl();
   void dataSourceControl.ready.then(refreshMarketDataLabels);
   window.addEventListener('bond-data-source-change', handleDataSourceChange);
+  window.addEventListener('focus', recheckPaymentTodoCodesOnReturn);
+  document.addEventListener('visibilitychange', recheckPaymentTodoCodesOnReturn);
   realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast, getDataSourceMode: dataSourceControl.getMode });
   configureLocalBetaQuotes(realtimeQuoteController);
   bondListController = initializeBondList({ onToast: showToast, onAccessChange: syncBondListCloudGate, getDataSourceMode: dataSourceControl.getMode });
@@ -2161,6 +2164,7 @@ function handleUiModeChange(event) {
 
 function bindWorkspaceChrome() {
   const tools = $("#workspaceTools");
+  $("#refreshPaymentTodoCodesButton")?.addEventListener("click", refreshPaymentTodoCodes);
   document.addEventListener("bond-ui-change", handleUiModeChange);
   $("#closeProjectWorkspaceButton")?.addEventListener("click", closeLedgerProjectDetail);
   $("#projectWorkspace")?.addEventListener("transitionend", (event) => {
@@ -2169,6 +2173,8 @@ function bindWorkspaceChrome() {
   // Run before the clicked control opens another project or changes the view.
   document.addEventListener("click", handleProjectWorkspaceOutsideClick, true);
   document.addEventListener("click", (event) => {
+    // Queue controls are independent of the open tools menu as well as details.
+    if (event.target.closest?.("#issuanceQueuePanel, #issuanceQueueToggle")) return;
     if (tools?.open && !tools.contains(event.target)) tools.open = false;
   });
   document.addEventListener("keydown", (event) => {
@@ -2194,8 +2200,8 @@ function handleProjectWorkspaceOutsideClick(event) {
   if (!isUiBeta()) return;
   const workspace = $("#projectWorkspace");
   if (workspace?.dataset.open !== "true" || workspace.contains(event.target)) return;
-  // Date pickers and other project dialogs can be mounted outside the workspace.
-  if (event.target.closest?.('[role="dialog"], .date-picker-backdrop, #uiBetaControl')) return;
+  // Detached dialogs and the independent recognition queue do not dismiss details.
+  if (event.target.closest?.('[role="dialog"], .date-picker-backdrop, #uiBetaControl, #issuanceQueuePanel, #issuanceQueueToggle')) return;
   closeLedgerProjectDetail({ restoreFocus: false });
 }
 
@@ -5059,6 +5065,7 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
         absInfo: created.absInfo,
         notes: existing.notes,
         targetQuoteNote: existing.targetQuoteNote,
+        syndicateJoined: existing.syndicateJoined,
         resultAdvertisement: existing.resultAdvertisement,
         resultConfirmed: existing.resultConfirmed,
         bidSubmissions: existing.bidSubmissions,
@@ -10561,15 +10568,44 @@ function delayProjectCutoffFromTodo(projectId, minutes) {
   showToast(`${next.shortName} 已延期${minutes}分钟。`);
 }
 
-function renderPaymentTodo() {
+function getPaymentTodos() {
   const today = localDate(new Date());
-  const todos = (state.projects || []).flatMap((projectValue) =>
+  return (state.projects || []).flatMap((projectValue) =>
     (projectValue.tranches || []).flatMap((tranche) =>
       projectValue.resultConfirmed && trancheNeedsPayment(tranche, today)
         ? [{ project: projectValue, tranche }]
         : [],
     ),
   ).sort((left, right) => left.tranche.paymentDate.localeCompare(right.tranche.paymentDate));
+}
+
+async function refreshPaymentTodoCodes() {
+  const button = $("#refreshPaymentTodoCodesButton");
+  if (!button || button.disabled) return;
+  const names = getPaymentTodos().map(({ project: projectValue, tranche }) => tranche.shortName || projectValue.shortName);
+  if (!names.length) { showToast("目前没有需要刷新代码的缴款待办。"); return; }
+  button.disabled = true;
+  button.textContent = "正在刷新债券代码…";
+  try {
+    const result = await paymentTodoCodes.refresh(names);
+    if (result.cancelled) return;
+    showToast(result.failed ? `已核对 ${result.total} 个债券代码，${result.failed} 项暂未更新，原代码仍保留。` : `已刷新 ${result.total} 个缴款债券代码。`);
+  } catch {
+    showToast("债券代码刷新暂未完成，原代码仍保留，请稍后重试。");
+  } finally {
+    button.disabled = false;
+    button.textContent = "刷新缴款债券代码";
+  }
+}
+
+function recheckPaymentTodoCodesOnReturn() {
+  if (!cloudAvailable || document.hidden) return;
+  paymentTodoCodes.ensure(getPaymentTodos().map(({ project: projectValue, tranche }) => tranche.shortName || projectValue.shortName));
+}
+
+function renderPaymentTodo() {
+  const today = localDate(new Date());
+  const todos = getPaymentTodos();
   paymentTodoCodes.ensure(todos.map(({ project: projectValue, tranche }) => tranche.shortName || projectValue.shortName));
   $("#paymentTodoPanel").classList.toggle("empty-state", !todos.length);
   $("#paymentTodoList").innerHTML = todos.length
@@ -10581,15 +10617,13 @@ function renderPaymentTodo() {
         const prepaymentNumber = tranche.prepaymentNumber || "";
         const dmCode = paymentTodoCodes.get(tranche.shortName || projectValue.shortName);
         const securityCode = dmCode?.status === "matched" ? dmCode.code : "";
-        const requestedSource = dmCode?.requestMode ? dataSourceModeLabel(dmCode.requestMode) : currentDataSourceLabel();
-        const codeLabel = securityCode || (dmCode?.status === "missing" ? `${requestedSource} 暂无代码` : dmCode?.status === "ambiguous" ? "代码待核对" : dmCode?.status === "error" ? `${requestedSource} 查询失败` : `${requestedSource} 查询中…`);
-        const codeProvider = dataProviderLabel(dmCode);
-        const codeTitle = securityCode ? `${codeProvider} · 债券代码 · ${dmCode.fetchedAt}` : dmCode?.status === "ambiguous" ? "数据源返回多个代码，未自动选择" : codeLabel;
+        const codeLabel = securityCode || (dmCode?.status === "missing" ? "暂无代码" : dmCode?.status === "ambiguous" ? "代码待核对" : dmCode?.status === "error" ? "查询失败" : "查询中…");
+        const codeTitle = securityCode ? `债券代码 ${securityCode}` : dmCode?.status === "ambiguous" ? "债券简称对应多个代码，请核对" : codeLabel;
         return `
           <article class="payment-todo-item ${timing} ${prepaymentNumber ? "has-prepayment" : ""}">
             <div class="payment-todo-content">
               <button class="payment-todo-main" type="button" data-open-payment-project="${escapeAttribute(projectValue.id)}">
-                <span class="payment-todo-title"><strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong><code class="payment-todo-security-code ${securityCode ? "" : "is-unresolved"}" aria-label="${escapeAttribute(securityCode ? `${codeProvider} 债券代码 ${securityCode}` : codeLabel)}" title="${escapeAttribute(codeTitle)}">${escapeHtml(codeLabel)}</code></span>
+                <span class="payment-todo-title"><strong>${escapeHtml(tranche.shortName || projectValue.shortName)}</strong><code class="payment-todo-security-code ${securityCode ? "" : "is-unresolved"}" aria-label="${escapeAttribute(securityCode ? `债券代码 ${securityCode}` : codeLabel)}" title="${escapeAttribute(codeTitle)}">${escapeHtml(codeLabel)}</code></span>
                 <span>${escapeHtml(projectValue.issuerName || projectValue.branch || "主体待补")} · ${escapeHtml(timingLabel)}${escapeHtml(addBondNote)}</span>
               </button>
               ${prepaymentNumber ? `<span class="payment-todo-number">预缴款 · ${escapeHtml(prepaymentNumber)}</span>` : ""}
@@ -10736,11 +10770,13 @@ function renderProjectList() {
     .sort(compareProjects);
 
   const projectList = $("#projectList");
+  projectList.dataset.syndicateSelection = String(projects.some(item => item.id === selectedProjectId
+    && isExternalInterbankProject(item) && item.syndicateJoined === true));
   projectList.innerHTML = projects.length
     ? projects.map((item) => {
       const valuationSummary = formatProjectValuationSummary(item);
       return `
-        <div class="project-item project-ledger-item ${item.id === selectedProjectId ? "active" : ""}" data-project-id="${escapeAttribute(item.id)}">
+        <div class="project-item project-ledger-item ${item.id === selectedProjectId ? "active" : ""}${isExternalInterbankProject(item) && item.syndicateJoined === true ? " is-syndicate-joined" : ""}" data-project-id="${escapeAttribute(item.id)}">
           <button type="button" class="project-item-open" data-open-ledger-project="${escapeAttribute(item.id)}" aria-label="查看项目 ${escapeAttribute(item.shortName || "未命名项目")}" ${item.id === selectedProjectId ? 'aria-current="true"' : ""}>
           <span class="project-item-head">
             <strong title="${escapeAttribute(item.shortName || "未命名项目")}">${escapeHtml(item.shortName || "未命名项目")}</strong>
@@ -10758,7 +10794,7 @@ function renderProjectList() {
             <span>${escapeHtml(formatInquirySummary(item.tranches))}</span>
             ${valuationSummary ? `<span class="project-valuation-badge">${escapeHtml(valuationSummary)}</span>` : ""}
             <span class="project-offering-badge ${projectOfferingBadgeClass(item)}">${escapeHtml(formatProjectOfferingSummary(item) || "发行方式待补")}</span>
-            <span class="project-party-badge">${escapeHtml(formatProjectVenueLead(item))}</span>
+            <span class="project-party-badge">${escapeHtml(formatProjectVenueLead(item))}${renderProjectSyndicateControl(item)}</span>
           </span>
           ${renderProjectCardBidSummary(item)}
         </div>
@@ -10771,7 +10807,62 @@ function renderProjectList() {
       openLedgerProject(row.dataset.projectId);
     });
   });
+  projectList.querySelectorAll("[data-project-syndicate-id]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      const id = button.dataset.projectSyndicateId;
+      const project = (state.projects || []).find(item => item.id === id);
+      const joined = project?.syndicateJoined !== true;
+      try {
+        if (!saveProjectSyndicateJoined(id, joined)) return;
+        // Update this control in place; changing a mark must not move the row
+        // while the user is working through projects with the same cutoff time.
+        const current = (state.projects || []).find(item => item.id === id);
+        const control = [...projectList.querySelectorAll("[data-project-syndicate-id]")]
+          .find(item => item.dataset.projectSyndicateId === id);
+        if (control) {
+          const template = document.createElement("div");
+          template.innerHTML = renderProjectSyndicateControl(current);
+          const next = template.firstElementChild;
+          control.innerHTML = next.innerHTML;
+          for (const attribute of ["aria-pressed", "aria-label", "title"]) control.setAttribute(attribute, next.getAttribute(attribute));
+          control.closest(".project-ledger-item").classList.toggle("is-syndicate-joined", joined);
+          control.focus({ preventScroll: true });
+        }
+        const selected = (state.projects || []).find(item => item.id === selectedProjectId);
+        projectList.dataset.syndicateSelection = String(isExternalInterbankProject(selected) && selected.syndicateJoined === true);
+        showToast(joined ? "已标记参团。" : "已取消参团标记。");
+      } catch (error) {
+        showToast(error.message || "参团标记保存失败，请重试。");
+      }
+    });
+  });
   projectTargetNotes?.bind(projectList);
+}
+
+function renderProjectSyndicateControl(project) {
+  if (!isExternalInterbankProject(project)) return "";
+  const joined = project.syndicateJoined === true;
+  const label = joined ? "已参团" : "参团";
+  return `<button type="button" class="project-syndicate-toggle" data-project-syndicate-id="${escapeAttribute(project.id)}" aria-pressed="${joined}" aria-label="${escapeAttribute(project.shortName || "项目")}：${joined ? "已参团，点击取消标记" : "标记已参团"}" title="${joined ? "取消参团标记" : "标记已参团"}">${joined ? '<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 2.5 2.5L11 4"/></svg>' : ""}${label}</button>`;
+}
+
+function saveProjectSyndicateJoined(projectId, joined) {
+  if (flushProjectDraftToLocal() === false) return false;
+  const project = (state.projects || []).find(item => item.id === projectId);
+  if (!project) throw new Error("项目已不存在");
+  if (!isExternalInterbankProject(project)) throw new Error("仅行外银行间项目可标记参团。");
+  const next = joined === true;
+  if ((project.syndicateJoined === true) === next) return true;
+  const previous = state;
+  state = upsertProject(state, { ...project, syndicateJoined: next });
+  try {
+    persistState();
+  } catch (error) {
+    state = previous;
+    throw error;
+  }
+  return true;
 }
 
 function saveProjectTargetQuoteNote(projectId, text) {

@@ -1,6 +1,6 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release533';
-import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261023release533';
-import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release533';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release534';
+import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261023release534';
+import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release534';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
@@ -148,6 +148,13 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       const valuation = valuationResults.get(quote.code);
       const comparison = compareQuoteToValuation(quote, valuation);
       row.classList.toggle('bond-list-quote-warning', Boolean(comparison.warning));
+      const emphasis = quoteWarningEmphasis(comparison.warning);
+      if (emphasis) {
+        row.dataset.valuationTone = emphasis.tone;
+        row.style.setProperty('--quote-color-progress', `${emphasis.strength * 100}%`);
+        row.style.setProperty('--quote-row-weight', `${4 + emphasis.strength * 14}%`);
+        row.style.setProperty('--quote-badge-weight', `${10 + emphasis.strength * 25}%`);
+      }
       const cell = label => { const element = document.createElement('td'); element.setAttribute('data-label', label); row.append(element); return element; };
       const bond = cell('债券／代码');
       const name = document.createElement('span'); name.className = 'bond-list-result-name'; name.textContent = quote.name; bond.append(name);
@@ -205,12 +212,13 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       if (comparison.warning) {
         const warning = document.createElement('span'); warning.className = 'bond-list-comparison-badge warning';
         const gap = comparison.warning.gap;
+        const below = comparison.warning.kind === 'yield' && gap < 0;
         warning.textContent = comparison.warning.kind === 'netPrice'
-          ? '净价低于估值 ' + couponFormatter.format(gap)
-          : '高于估值 +' + spreadFormatter.format(gap * 100) + 'bp';
+          ? '净价低于估值 ' + couponFormatter.format(gap) + '元'
+          : (below ? '低于估值 ' : '高于估值 +') + spreadFormatter.format(gap * 100) + 'bp';
         warning.title = comparison.warning.kind === 'netPrice'
           ? `报价净价低于${valuation.institution}${valuation.basis}估值净价 ${valuation.netPrice}（${valuation.date}）`
-          : `报价收益率高于${valuation.institution}${valuation.basis}估值收益率 ${valuation.yield}%（${valuation.date}）`;
+          : `报价收益率${below ? '低于' : '高于'}${valuation.institution}${valuation.basis}估值收益率 ${valuation.yield}%（${valuation.date}）${below ? `；低于 ${LOW_QUOTE_WARNING_BP}bp 起提示` : ''}`;
         quoteCell.append(warning);
       }
       cell('分行').textContent = quote.branch;

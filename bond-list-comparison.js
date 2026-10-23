@@ -8,6 +8,8 @@ const numberFirst = new RegExp('^(净价\\s*|收益率\\s*)?(' + NUMBER + ')\\s*
 const directionFirst = new RegExp('^' + DIRECTION + '\\s*\\*?\\s*(净价\\s*|收益率\\s*)?('
   + NUMBER + ')\\s*(%)?(?:' + TRAILING_QUANTITY + ')?$', 'i');
 
+export const LOW_QUOTE_WARNING_BP = 10;
+
 function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -60,11 +62,33 @@ export function compareQuoteToValuation(quoteRow, valuation, closeBp = 5) {
   if (!parsedQuote) return result;
   if (parsedQuote.kind === 'yield' && isFiniteNumber(referenceYield)) {
     const gap = difference(parsedQuote.value, referenceYield);
-    if (gap > 0) result.warning = { kind: 'yield', gap };
+    if (gap > 0 || gap * 100 <= -LOW_QUOTE_WARNING_BP
+      + tolerance(parsedQuote.value * 100, referenceYield * 100, LOW_QUOTE_WARNING_BP)) {
+      result.warning = { kind: 'yield', gap };
+    }
   } else if (parsedQuote.kind === 'netPrice'
     && isFiniteNumber(valuation.netPrice) && valuation.netPrice > 0) {
     const gap = difference(parsedQuote.value, valuation.netPrice);
     if (gap < 0) result.warning = { kind: 'netPrice', gap };
   }
   return result;
+}
+
+// Presentation only: bp for yields, a separate yuan scale for net prices.
+// The smooth bounded curve keeps larger deviations darker without discrete bands.
+export function quoteWarningEmphasis(warning) {
+  if (!warning || !isFiniteNumber(warning.gap)) return null;
+  let tone = 'above', distance;
+  if (warning.kind === 'yield') {
+    const bp = warning.gap * 100;
+    if (bp > 0) distance = bp;
+    else if (bp <= -LOW_QUOTE_WARNING_BP + tolerance(bp, LOW_QUOTE_WARNING_BP)) {
+      tone = 'below';
+      distance = Math.max(0, -bp - LOW_QUOTE_WARNING_BP);
+    } else return null;
+    distance /= 12;
+  } else if (warning.kind === 'netPrice' && warning.gap < 0) {
+    distance = -warning.gap / 0.5;
+  } else return null;
+  return { tone, strength: Math.min(1, Math.max(0, -Math.expm1(-distance))) };
 }

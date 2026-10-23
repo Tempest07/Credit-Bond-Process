@@ -4,7 +4,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20261023release533";
+} from "./core.js?v=20261023release534";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -77,6 +77,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     absInfo: normalizeAbsInfo(project.absInfo),
     notes: input.notes || "",
     targetQuoteNote: input.targetQuoteNote ?? "",
+    syndicateJoined: input.syndicateJoined,
     tranches,
     resultAdvertisement: "",
     comprehensivePricing: false,
@@ -141,6 +142,8 @@ export function normalizeProjectRecord(input = {}) {
     createdAt: input.createdAt || new Date().toISOString(),
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
+  // Keep this optional so loading legacy projects does not invent participation.
+  if (typeof input.syndicateJoined === "boolean") normalized.syndicateJoined = input.syndicateJoined;
   if (normalized.instrumentType) {
     normalized.shortName = compactSelectedAbsShortNames(normalized.absInfo.tranches, normalized.shortName);
   }
@@ -164,6 +167,10 @@ export function normalizeProjectRecord(input = {}) {
     if (normalized.status !== "已投标结束") normalized.finalBidSubmissionId = "";
   }
   return fillMissingDefaultPaymentDates(normalized);
+}
+
+export function isExternalInterbankProject(project) {
+  return project?.venue === "银行间" && project?.sponsorStatus === "非我行主承";
 }
 
 export function upsertProject(state, input) {

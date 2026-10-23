@@ -18,7 +18,8 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 
 class Element {
   constructor(tag, owner) {
-    this.tagName = tag; this.owner = owner; this.children = []; this.dataset = {}; this.style = {};
+    this.tagName = tag; this.owner = owner; this.children = []; this.dataset = {};
+    this.style = { setProperty(name, value) { this[name] = value; } };
     this.listeners = {}; this.attributes = {}; this.className = ''; this.id = ''; this.textContent = '';
     this.value = ''; this.checked = false; this.disabled = false; this.hidden = false;
     this.selectionStart = 0; this.selectionEnd = 0; this.scrollHeight = 60;
@@ -672,6 +673,40 @@ test('valuation hints show institution, coupon proximity and the requested warni
     assert.match(env.resultRow(2).children[3].querySelector('.bond-list-valuation-meta').textContent, /中证.*行权/);
     assert.equal(env.state.sections[0].text, text); assert.equal(env.state.revision, 8);
     assert.equal(env.elements['result-preview'].textContent, 'OFR/BID\n\n北京\n' + text);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/state') && request.body).length, 0);
+  });
+});
+
+test('gradient rows respect the lower 10 bp boundary, count both directions and preserve saved quote text', async () => {
+  const gaps = [0.07, 1, 10, 30, -9.99, -10, -20];
+  const text = gaps.map(bp => `102600001.IB，26测试MTN001，${(1.6 + bp / 100).toFixed(4)}*ofr`).join('\n');
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 17, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons')) return json({ source: 'QB', results: {
+      '102600001.IB': { status: 'matched', couponRate: 1.6, bondType: 'MTN' },
+    } });
+    if (request.url.endsWith('/valuations')) return json({ source: 'QB', results: {
+      '102600001.IB': { status: 'matched', institution: '中债', yield: 1.6, netPrice: 100, basis: '到期', date: '2026-10-22' },
+    } });
+  } }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    const progress = index => parseFloat(env.resultRow(index).style['--quote-color-progress']);
+    for (let index = 0; index < 4; index++) {
+      assert.equal(env.resultRow(index).dataset.valuationTone, 'above');
+      if (index) assert.ok(progress(index) > progress(index - 1));
+    }
+    assert.equal(env.resultRow(4).querySelector('.warning'), null);
+    assert.equal(env.resultRow(4).className.includes('bond-list-quote-warning'), false);
+    assert.equal(env.resultRow(4).style['--quote-row-weight'], undefined);
+    assert.equal(env.resultRow(5).querySelector('.warning').textContent, '低于估值 -10bp');
+    assert.match(env.resultRow(5).querySelector('.warning').title, /低于 10bp 起提示/);
+    assert.equal(env.resultRow(5).dataset.valuationTone, 'below');
+    assert.equal(env.resultRow(6).dataset.valuationTone, 'below');
+    assert.ok(progress(6) > progress(5));
+    assert.match(env.elements['results-counts'].textContent, /6 条报价提示/);
+    assert.match(env.elements['results-counts'].textContent, /7 条票面接近估值/);
+    assert.equal(env.elements['result-preview'].textContent, 'OFR/BID\n\n北京\n' + text);
+    assert.equal(env.state.sections[0].text, text);
+    assert.equal(env.state.revision, 17);
     assert.equal(env.requests.filter(request => request.url.endsWith('/state') && request.body).length, 0);
   });
 });

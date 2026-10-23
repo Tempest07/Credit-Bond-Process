@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareQuoteToValuation } from '../bond-list-comparison.js';
+import { compareQuoteToValuation, quoteWarningEmphasis } from '../bond-list-comparison.js';
 
 const valuation = Object.freeze({ status: 'matched', yield: 1.60, netPrice: 100.25, date: '2026-10-21', basis: '中债' });
 const compare = (quote, values = valuation, couponRate = 1.60) => compareQuoteToValuation({ quote, couponRate }, values);
@@ -25,7 +25,7 @@ test('zero coupon and yield are actual numbers rather than missing data', () => 
   assert.deepEqual(result.warning, { kind: 'yield', gap: 0.01 });
 });
 
-test('only quote yield above valuation warns, for either explicit quote direction', () => {
+test('quote yield above valuation warns for either explicit quote direction', () => {
   for (const quote of ['1.70*ofr', '1.7bid', '收益率1.7% ofr', 'ofr 1.7', 'BID 收益率 1.7％', '1.7*OFFER']) {
     const result = compare(quote);
     assert.equal(result.warning?.kind, 'yield');
@@ -33,9 +33,38 @@ test('only quote yield above valuation warns, for either explicit quote directio
     assert.equal(result.parsedQuote.kind, 'yield');
     assert.equal(result.parsedQuote.value, 1.7);
   }
-  for (const quote of ['1.50*ofr', '1.60*ofr', '1.5bid', '1.6bid']) {
+  for (const quote of ['1.501*ofr', '1.60*ofr', '1.599bid', '1.6bid']) {
     assert.equal(compare(quote).warning, null);
   }
+});
+
+test('lower quote yields begin warning at exactly 10 bp, including floating point boundaries', () => {
+  for (const quote of ['1.50*ofr', '1.5bid', 'offer 1.50', '收益率1.5%bid']) {
+    const result = compare(quote);
+    assert.equal(result.warning?.kind, 'yield', quote);
+    closeTo(result.warning.gap * 100, -10);
+  }
+  for (const quote of ['1.500001ofr', '1.5999bid', '1.6ofr']) assert.equal(compare(quote).warning, null, quote);
+  closeTo(compare('1.4ofr').warning.gap * 100, -20);
+  assert.equal(compare('1.5bid', valuation, 1.61).couponNear, true);
+});
+
+test('warning emphasis deepens continuously in each direction and stays bounded', () => {
+  const strength = gap => quoteWarningEmphasis({ kind: 'yield', gap: gap / 100 });
+  for (const gaps of [[0.01, 1, 5, 10, 20, 40], [-10, -10.01, -15, -20, -30, -50]]) {
+    const emphasis = gaps.map(strength);
+    assert.ok(emphasis.every(item => item.tone === (gaps[0] > 0 ? 'above' : 'below')));
+    assert.ok(emphasis.every(item => item.strength >= 0 && item.strength <= 1));
+    assert.ok(emphasis.every((item, i) => i === 0 || item.strength > emphasis[i - 1].strength));
+  }
+  assert.equal(strength(-10).strength, 0);
+  for (const gap of [0, -0.01, -9.99, NaN, Infinity]) assert.equal(strength(gap), null);
+  assert.equal(quoteWarningEmphasis(null), null);
+  assert.equal(quoteWarningEmphasis({ kind: 'yield', gap: '0.1' }), null);
+  assert.equal(quoteWarningEmphasis({ kind: 'netPrice', gap: 0.1 }), null);
+  const price = gap => quoteWarningEmphasis({ kind: 'netPrice', gap });
+  assert.equal(price(-0.25).tone, 'above');
+  assert.ok(price(-0.5).strength > price(-0.25).strength);
 });
 
 test('explicit net price never becomes a yield and reverses the comparison direction', () => {

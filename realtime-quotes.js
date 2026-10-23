@@ -1,4 +1,4 @@
-import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release533';
+import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release534';
 
 const DEFAULT_ENDPOINT = "./api/dm/realtime-quotes";
 const DEFAULT_VALUATION_ENDPOINT = "./api/dm/realtime-valuations";

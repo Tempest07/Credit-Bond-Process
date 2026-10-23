@@ -6,26 +6,30 @@ import vm from "node:vm";
 const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
 function harness({ pending = true, open = true } = {}) {
   const effects = [];
-  const workspace = { dataset: { open: String(open) }, contains: (target) => target.inside };
+  const workspace = { dataset: { open: String(open) }, contains: (target) => target.inside, addEventListener() {} };
   const form = { hidden: false };
+  const tools = { open: true, contains: target => target.insideTools };
+  const listeners = [];
   const context = vm.createContext({
     isUiBeta: () => true,
+    handleUiModeChange() {},
+    document: { addEventListener: (type, handler, capture) => listeners.push({ type, handler, capture }) },
     projectAutoSaveTimer: pending ? 7 : null,
     projectTargetNotes: null,
-    $: (selector) => ({ "#projectWorkspace": workspace, "#projectForm": form, "#projectId": { value: "p1" } })[selector],
+    $: (selector) => ({ "#workspaceTools": tools, "#projectWorkspace": workspace, "#projectForm": form, "#projectId": { value: "p1" } })[selector],
     clearTimeout: (timer) => effects.push(["cancel", timer]),
     readProjectForm: () => ({ id: "p1", opinion: "latest unsaved edit" }),
     saveProjectRecordNow: (draft) => effects.push(["save", draft.opinion]),
     setProjectWorkspaceOpen: (value) => { effects.push(["open", value]); workspace.dataset.open = String(value); },
     navigateLedgerMobilePane: (pane, options) => effects.push(["navigate", pane, options.focusSelected]),
   });
-  for (const name of ["closeLedgerProjectDetail", "handleProjectWorkspaceOutsideClick", "flushProjectDraftToLocal", "saveProjectDraftNow"]) {
+  for (const name of ["bindWorkspaceChrome", "closeLedgerProjectDetail", "handleProjectWorkspaceOutsideClick", "flushProjectDraftToLocal", "saveProjectDraftNow"]) {
     const start = app.indexOf(`function ${name}(`);
     const end = app.indexOf("\nfunction ", start + 1);
     assert.ok(start >= 0 && end > start);
     vm.runInContext(app.slice(start, end), context);
   }
-  return { context, effects, workspace };
+  return { context, effects, workspace, tools, listeners };
 }
 
 test("outside click flushes the pending edit before closing and does not steal focus", () => {
@@ -61,6 +65,43 @@ test("the UI switch does not dismiss or refill an open project with pending inpu
   } });
   assert.deepEqual(effects, []);
   assert.equal(workspace.dataset.open, "true");
+});
+
+test("recognition queue controls and panel contents leave pending project edits open", () => {
+  for (const ancestor of ["#issuanceQueuePanel", "#issuanceQueueToggle"]) {
+    const { context, effects, workspace } = harness();
+    context.handleProjectWorkspaceOutsideClick({ target: {
+      closest: selector => selector.split(",").map(value => value.trim()).includes(ancestor) ? {} : null,
+    } });
+    assert.deepEqual(effects, [], `${ancestor} must not flush or close the project`);
+    assert.equal(workspace.dataset.open, "true");
+    assert.equal(context.projectAutoSaveTimer, 7);
+  }
+});
+
+test("recognition queue interactions preserve both open workspace surfaces", () => {
+  for (const ancestor of ["#issuanceQueuePanel", "#issuanceQueueToggle"]) {
+    const { context, effects, workspace, tools, listeners } = harness();
+    context.bindWorkspaceChrome();
+    const event = { target: {
+      closest: selector => selector.split(",").map(value => value.trim()).includes(ancestor) ? {} : null,
+    } };
+    for (const listener of listeners.filter(item => item.type === "click")) listener.handler(event);
+    assert.equal(tools.open, true, `${ancestor} must not collapse workspace tools`);
+    assert.equal(workspace.dataset.open, "true");
+    assert.deepEqual(effects, []);
+  }
+});
+
+test("workspace tools retain their normal inside and outside click behavior", () => {
+  const { context, effects, tools, listeners } = harness({ open: false });
+  context.bindWorkspaceChrome();
+  const click = target => listeners.filter(item => item.type === "click").forEach(item => item.handler({ target }));
+  click({ insideTools: true, closest: () => null });
+  assert.equal(tools.open, true);
+  click({ closest: () => null });
+  assert.equal(tools.open, false);
+  assert.deepEqual(effects, []);
 });
 
 test("explicit close also flushes drafts; unchanged projects do not get redundant saves", () => {

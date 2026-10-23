@@ -127,3 +127,20 @@ test("submitting recognition opens the queue instead of a toast, and review rout
   vm.runInContext(extract("openIssuanceQueueTask", "function updateProjectResultQueueState") + '\nopenIssuanceQueueTask("task-b");', context);
   assert.deepEqual(calls.slice(-2), [["project", "project-b"], ["review", true, "task-b"]]);
 });
+
+test("Escape minimizes only the focused queue and does not reach the project dismiss handler", () => {
+  const ui = fixture();
+  ui.controller.open();
+  const effects = [];
+  const keydown = key => ui.panel.handlers.keydown({ key,
+    preventDefault: () => effects.push("prevent"),
+    stopPropagation: () => effects.push("stop"),
+  });
+  keydown("Enter");
+  assert.equal(ui.panel.hidden, false);
+  assert.deepEqual(effects, []);
+  keydown("Escape");
+  assert.equal(ui.panel.hidden, true);
+  assert.equal(ui.toggle.focused, true);
+  assert.deepEqual(effects, ["prevent", "stop"]);
+});

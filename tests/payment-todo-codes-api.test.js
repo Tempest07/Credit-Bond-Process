@@ -26,7 +26,8 @@ test('payment code API retains the login, origin and module-header gates', async
 test('payment code API bounds the names and streamed body before querying DM', async () => {
   for (const body of [null, {}, { names: [] }, { names: '测试' }, { names: Array(21).fill('测试') },
     ...[null, 123, '', ' ', 'x'.repeat(121)].map(name => ({ names: [name] })),
-    { names: ['测试'], extra: 'x'.repeat(20000) }]) {
+    { names: ['测试'], extra: 'x'.repeat(20000) },
+    ...[null, 'true', 1, {}, []].map(force => ({ names: ['测试'], force }))]) {
     assert.equal((await onRequestPost({ request: request(body), env })).status, 400);
   }
   const malformed = new Request('http://127.0.0.1:8814/api/payment-todo/codes', {
@@ -81,11 +82,10 @@ test('only a single valid complete code is accepted and duplicate rows are harml
   assert.throws(() => matchPaymentTodoCodeRows([name], [{ message: 'invalid upstream shape' }]));
 });
 
-test('API queries basic-info in shared-deadline batches and never accesses business D1', async () => {
+test('API without a DB fixture queries basic-info in shared-deadline batches', async () => {
   const original = globalThis.fetch;
   const calls = [];
   const names = Array.from({ length: 7 }, (_, index) => '26测试MTN00' + (index + 1));
-  const DB = new Proxy({}, { get() { throw new Error('business database must not be read or written'); } });
   globalThis.fetch = async (url, init) => {
     assert.match(url, /\/bond\/basic-info\/info$/);
     assert.equal(init.headers['X-Dm-App-Key'], 'test');
@@ -95,7 +95,7 @@ test('API queries basic-info in shared-deadline batches and never accesses busin
     return dmResponse(body.secShortNameList.map(name => ({ secShortName: name, securityId: '10260000' + (names.indexOf(name) + 1) + '.IB' })));
   };
   try {
-    const response = await onRequestPost({ request: request({ names: [...names, names[0]] }), env: { ...env, DB } });
+    const response = await onRequestPost({ request: request({ names: [...names, names[0]] }), env });
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
     const payload = await response.json();

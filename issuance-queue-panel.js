@@ -1,4 +1,4 @@
-import { createQueuePanelMorph } from "./issuance-queue-morph.js?v=20261023release533";
+import { createQueuePanelMorph } from "./issuance-queue-morph.js?v=20261023release534";
 
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const finished = status => status === "ready" || status === "review";
@@ -70,7 +70,13 @@ export function createIssuanceQueuePanel({ panel, list, toggle, minimize, summar
   toggle.addEventListener("click", motion.toggle);
   minimize.addEventListener("click", () => { setOpen(false); toggle.focus({ preventScroll: true }); });
   panel.addEventListener("keydown", event => {
-    if (event.key === "Escape") { setOpen(false); toggle.focus({ preventScroll: true }); }
+    if (event.key === "Escape") {
+      // The queue owns this Escape; do not also dismiss the project underneath.
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      toggle.focus({ preventScroll: true });
+    }
   });
   list.addEventListener("click", event => {
     const target = event.target.closest("[data-review-issuance-task]");

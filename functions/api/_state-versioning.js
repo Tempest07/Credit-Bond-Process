@@ -7,7 +7,7 @@ import { readUserAppState } from "./_auth.js";
 import { assertStateCapacity } from "./_state-capacity.js";
 import { ensureStateChunksSchema, prepareStoredState, pruneStateChunks, readStoredStateRow, stateChunkStatements } from "../../state-storage.js";
 
-const SNAPSHOT_RETENTION = 50;
+const SNAPSHOT_RETENTION = 10;
 
 export async function ensureStateVersionSchema(db) {
   await ensureStateChunksSchema(db);
@@ -62,7 +62,11 @@ export async function ensureStateVersionSchema(db) {
         CASE WHEN json_extract(data, '$."$bondCentreStateChunks"') = 1 THEN json_extract(data, '$.bytes')
           ELSE length(CAST(data AS BLOB)) END
         ELSE length(CAST(data AS BLOB)) END
-    FROM user_app_state
+    FROM user_app_state AS current_state
+    WHERE NOT EXISTS (
+      SELECT 1 FROM user_app_state_snapshots AS snapshots
+      WHERE snapshots.user_id = current_state.user_id
+    )
   `).run();
 }
 
@@ -191,7 +195,7 @@ export async function saveStateVersion(db, userId, options = {}) {
     };
   }
 
-  await pruneSnapshots(db, userId);
+  await pruneStateSnapshots(db, userId);
   return {
     status: "accepted",
     data: nextData,
@@ -212,8 +216,8 @@ export async function saveStateVersion(db, userId, options = {}) {
   };
 }
 
-export async function listStateSnapshots(db, userId, limit = 50) {
-  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, SNAPSHOT_RETENTION));
+export async function listStateSnapshots(db, userId, limit = SNAPSHOT_RETENTION) {
+  const safeLimit = Math.max(1, Math.min(Math.floor(Number(limit)) || SNAPSHOT_RETENTION, SNAPSHOT_RETENTION));
   const result = await db.prepare(`
     SELECT
       id, revision, base_revision, saved_at, status, save_reason,
@@ -265,7 +269,7 @@ async function saveConflictSnapshot(db, userId, options) {
     summaryJson,
     byteSize,
   )]);
-  await pruneSnapshots(db, userId);
+  await pruneStateSnapshots(db, userId);
   return {
     id,
     revision: null,
@@ -280,7 +284,7 @@ async function saveConflictSnapshot(db, userId, options) {
   };
 }
 
-async function pruneSnapshots(db, userId) {
+export async function pruneStateSnapshots(db, userId) {
   await db.prepare(`
     DELETE FROM user_app_state_snapshots
     WHERE user_id = ?1

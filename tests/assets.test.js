@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261023release533";
+const VERSION = "20261023release534";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -35,15 +35,15 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../bond-list-editor.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261023release533/);
-  assert.match(html, /bond-list-editor\.css\?v=20261023release533/);
-  assert.match(app, /bond-list-editor\.js\?v=20261023release533/);
-  assert.match(html, /payment-receipt-reader\.css\?v=20261023release533/);
-  assert.match(app, /payment-receipt-preview\.js\?v=20261023release533/);
-  assert.match(app, /payment-receipt-reader\.js\?v=20261023release533/);
-  assert.match(html, /project-target-note\.css\?v=20261023release533/);
-  assert.match(app, /project-target-note\.js\?v=20261023release533/);
-  assert.match(app, /data-source-control\.js\?v=20261023release533/);
+  assert.match(html, /app\.js\?v=20261023release534/);
+  assert.match(html, /bond-list-editor\.css\?v=20261023release534/);
+  assert.match(app, /bond-list-editor\.js\?v=20261023release534/);
+  assert.match(html, /payment-receipt-reader\.css\?v=20261023release534/);
+  assert.match(app, /payment-receipt-preview\.js\?v=20261023release534/);
+  assert.match(app, /payment-receipt-reader\.js\?v=20261023release534/);
+  assert.match(html, /project-target-note\.css\?v=20261023release534/);
+  assert.match(app, /project-target-note\.js\?v=20261023release534/);
+  assert.match(app, /data-source-control\.js\?v=20261023release534/);
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));
@@ -422,7 +422,7 @@ test("wraps complete venue and lead-underwriter details on project cards", async
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(app, /class="project-party-badge">\$\{escapeHtml\(formatProjectVenueLead\(item\)\)\}<\/span>/);
+  assert.match(app, /class="project-party-badge">\$\{escapeHtml\(formatProjectVenueLead\(item\)\)\}\$\{renderProjectSyndicateControl\(item\)\}<\/span>/);
   assert.match(app, /function formatProjectVenueLead\(projectValue\)/);
   assert.doesNotMatch(app, /formatProjectLeadSummary|等\$\{names\.length\}家/);
   assert.doesNotMatch(app, /project-venue-badge|project-lead-badge/);

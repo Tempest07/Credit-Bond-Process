@@ -103,7 +103,7 @@ test('source reset starts a fresh lookup and ignores late success or failure fro
   }
 });
 
-test('source reset invalidates verified cache immediately rather than waiting fifteen minutes', async () => {
+test('source reset invalidates the current mode without waiting for the next daily check', async () => {
   let source = 'DM', calls = 0;
   const codes = createPaymentTodoCodes({ lookup: async names => {
     calls++; return { ...payload(names), source };
@@ -143,4 +143,115 @@ test('unmatched lookups use request mode while verified codes keep their actual 
     assert.equal(result.source, status === 'matched' ? 'DM' : '');
     assert.equal(result.status, status);
   }
+});
+
+test('verified codes remain fixed all day and recheck at Beijing midnight, independent of provider data time', async () => {
+  let time = Date.parse('2026-10-23T00:00:00+08:00'), calls = 0;
+  const codes = createPaymentTodoCodes({now:()=>time, onChange(){}, lookup:async names=>{ calls++; return payload(names); }});
+  codes.ensure(['26测试MTN001']); await tick();
+  time = Date.parse('2026-10-23T23:59:59+08:00');
+  codes.ensure(['26测试MTN001']); await tick();
+  assert.equal(calls, 1);
+  time = Date.parse('2026-10-24T00:00:00+08:00');
+  codes.ensure(['26测试MTN001']); await tick();
+  assert.equal(calls, 2);
+  assert.equal(codes.get('26测试MTN001').fetchedAt, '2026-10-21T03:00:00Z');
+});
+
+test('a failed daily recheck keeps the verified code visible and retries after the original minute', async () => {
+  let time = Date.parse('2026-10-23T23:59:00+08:00'), calls = 0, rejectLookup;
+  const codes = createPaymentTodoCodes({now:()=>time, onChange(){}, lookup:names=>{
+    calls++;
+    return calls === 1 ? Promise.resolve(payload(names)) : new Promise((_resolve,reject)=>{ rejectLookup=reject; });
+  }});
+  codes.ensure(['26测试MTN001']); await tick();
+  const original = codes.get('26测试MTN001').code;
+  time = Date.parse('2026-10-24T00:00:00+08:00');
+  codes.ensure(['26测试MTN001']); await tick();
+  assert.equal(codes.get('26测试MTN001').code, original);
+  assert.equal(codes.get('26测试MTN001').status, 'matched');
+  rejectLookup(Error('network failed')); await tick();
+  assert.equal(codes.get('26测试MTN001').refreshStatus, 'error');
+  assert.equal(codes.get('26测试MTN001').code, original);
+  time += 59_999; codes.ensure(['26测试MTN001']); await tick(); assert.equal(calls, 2);
+  time++; codes.ensure(['26测试MTN001']); await tick(); assert.equal(calls, 3);
+  rejectLookup(Error('network failed')); await tick();
+});
+
+test('cloud fallback codes and a concurrent cloud lease respect the server retry window', async () => {
+  for (const hasCode of [true, false]) {
+    let time = Date.parse('2026-10-23T12:00:00+08:00'), calls = 0;
+    const codes = createPaymentTodoCodes({now:()=>time,onChange(){},lookup:async names=>{
+      calls++; const response=payload(names);
+      response.results[names[0]]={...(hasCode ? response.results[names[0]] : {status:'loading',matches:[]}),
+        checkedAt:'2026-10-22T03:00:00Z', refreshStatus:hasCode?'error':'loading',
+        nextCheckAt:new Date(time+35_000).toISOString(), cached:true};
+      return response;
+    }});
+    codes.ensure(['26测试MTN001']); await tick();
+    assert.equal(codes.get('26测试MTN001').status, hasCode?'matched':'loading');
+    time+=34_999; codes.ensure(['26测试MTN001']); await tick(); assert.equal(calls,1);
+    time++; codes.ensure(['26测试MTN001']); await tick(); assert.equal(calls,2);
+  }
+});
+
+test('manual refresh bypasses the daily cache, keeps codes visible and accepts a corrected verified code', async () => {
+  let calls=0, finish;
+  const codes=createPaymentTodoCodes({onChange(){},lookup:(names,options)=>{
+    calls++;
+    if(calls===1){assert.equal(options.force,false);return Promise.resolve(payload(names));}
+    assert.equal(options.force,true);
+    return new Promise(resolve=>{finish=()=>{
+      const response=payload(names); response.results[names[0]].matches[0].code='102600999.IB'; resolve(response);
+    };});
+  }});
+  codes.ensure(['26测试MTN001']);await tick();
+  const refreshing=codes.refresh(['26测试MTN001','26测试MTN001']);await tick();
+  assert.equal(codes.get('26测试MTN001').code,'102600000.IB');
+  assert.equal(codes.get('26测试MTN001').status,'matched');
+  const duplicate=codes.refresh(['26测试MTN001']); await tick();assert.equal(calls,2);
+  finish();
+  assert.deepEqual(await refreshing,{total:1,failed:0});
+  assert.deepEqual(await duplicate,{total:1,failed:0});
+  assert.equal(codes.get('26测试MTN001').code,'102600999.IB');
+});
+
+test('a source switch cancels manual-refresh completion without showing a stale success', async () => {
+  let finish;
+  const codes=createPaymentTodoCodes({onChange(){},lookup:names=>new Promise(resolve=>{finish=()=>resolve(payload(names));})});
+  const pending=codes.refresh(['26测试MTN001']);await tick();
+  codes.resetDataSource();
+  assert.deepEqual(await pending,{cancelled:true});
+  finish();await tick();
+  assert.equal(codes.get('26测试MTN001'),undefined);
+});
+
+test('a cloud success marker cannot validate a mismatched corrected code', async()=>{
+  let calls=0;
+  const codes=createPaymentTodoCodes({onChange(){},lookup:async names=>{
+    const response=payload(names);calls++;
+    if(calls>1){response.results[names[0]].matches[0].name='26其他MTN001';response.results[names[0]].refreshStatus='matched';}
+    return response;
+  }});
+  codes.ensure(['26测试MTN001']);await tick();
+  assert.deepEqual(await codes.refresh(['26测试MTN001']),{total:1,failed:1});
+  assert.equal(codes.get('26测试MTN001').code,'102600000.IB');
+  assert.equal(codes.get('26测试MTN001').refreshStatus,'error');
+});
+
+test('manual refresh during an ordinary in-flight lookup follows the cloud hit with one forced check', async()=>{
+  const pending=[];
+  const codes=createPaymentTodoCodes({onChange(){},lookup:(names,options)=>new Promise(resolve=>pending.push({names,force:options.force,resolve}))});
+  codes.ensure(['26测试MTN001']);await tick();
+  const first=codes.refresh(['26测试MTN001']);
+  const duplicate=codes.refresh(['26测试MTN001']);
+  pending[0].resolve(payload(pending[0].names));await tick();
+  assert.deepEqual(pending.map(request=>request.force),[false,true]);
+  const joinForced=codes.refresh(['26测试MTN001']);await tick();
+  assert.equal(pending.length,2);
+  const corrected=payload(pending[1].names);
+  corrected.results['26测试MTN001'].matches[0].code='102600999.IB';
+  pending[1].resolve(corrected);
+  for(const completion of [first,duplicate,joinForced])assert.deepEqual(await completion,{total:1,failed:0});
+  assert.equal(codes.get('26测试MTN001').code,'102600999.IB');
 });

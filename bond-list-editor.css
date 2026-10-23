@@ -384,8 +384,24 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
 .bond-list-valuation-meta { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .bond-list-comparison-badge { display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 6px; border-radius: 5px; font-size: 11px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
 .bond-list-comparison-badge.near { color: #456a80; background: #edf4f8; }
-.bond-list-comparison-badge.warning { display: table; max-width: 100%; color: #9a6116; background: #fff0db; white-space: normal; }
-.bond-list-results-table tbody tr.bond-list-quote-warning td { background: color-mix(in srgb, var(--warning) 4%, var(--panel)); }
+.bond-list-quote-warning {
+  --quote-accent: color-mix(in srgb, #b86b13, #a62127 var(--quote-color-progress, 0%));
+  --quote-text: color-mix(in srgb, #925d10, #8f1623 var(--quote-color-progress, 0%));
+}
+.bond-list-quote-warning[data-valuation-tone="below"] {
+  --quote-accent: color-mix(in srgb, #4c9b96, #1b786f var(--quote-color-progress, 0%));
+  --quote-text: color-mix(in srgb, #316d74, #155851 var(--quote-color-progress, 0%));
+}
+.bond-list-comparison-badge.warning {
+  display: table;
+  max-width: 100%;
+  color: var(--quote-text, #925d10);
+  background: color-mix(in srgb, var(--quote-accent, #b86b13) var(--quote-badge-weight, 10%), var(--panel));
+  white-space: normal;
+}
+.bond-list-results-table tbody tr.bond-list-quote-warning td {
+  background: color-mix(in srgb, var(--quote-accent) var(--quote-row-weight, 4%), var(--panel));
+}
 
 .bond-list-results-table tbody tr:last-child td {
   border-bottom: 0;

@@ -3,7 +3,7 @@ import {
   parseTradeRecordLine,
 } from "./trade-record-converter.js";
 import { marketDataProvenance } from './market-data-source.js';
-import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261023release533";
+import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261023release534";
 
 const ACCOUNT_ALIASES = new Map([
   ["SDR", "SDR"],
