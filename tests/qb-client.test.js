@@ -50,8 +50,50 @@ test('QB client never treats business errors, null rows or scalar arrays as succ
 test('QB client reports sanitized HTTP failure and performs no blind retries on rate limiting',async t=>{
   let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;return new Response(key,{status:429});});
   const qb=createQbClient(env);
-  await assert.rejects(qb.query('bondDimInfo',params),error=>/HTTP 429/.test(error.message)&&!error.message.includes(key));
+  await assert.rejects(qb.query('bondDimInfo',params),error=>error.status===429&&error.code==='qb_rate_limited'&&!error.message.includes(key));
   assert.equal(calls,1);
+});
+
+test('QB HTTP 200 business rate-limit envelopes retain structured 429 without exposing the upstream message',async t=>{
+  for(const code of [429,'429']){
+    t.mock.method(globalThis,'fetch',async()=>response({code,message:key,data:null}));
+    await assert.rejects(createQbClient(env).query('bondDimInfo',params),error=>error.status===429&&error.code==='qb_rate_limited'&&!error.message.includes(key)&&!('retryAfter' in error));
+    t.mock.restoreAll();
+  }
+});
+
+test('QB rate limiting accepts only safe integer delay-seconds from Retry-After',async t=>{
+  for(const [value,expected] of [['15',15],['0',0],['-1',undefined],['1.5',undefined],['tomorrow',undefined],['Wed, 21 Oct 2026 07:28:00 GMT',undefined],['9007199254740992',undefined]]){
+    for(const httpStatus of [200,429]){
+      t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({code:429,data:null}),{status:httpStatus,headers:{'Retry-After':value}}));
+      await assert.rejects(createQbClient(env).query('bondDimInfo',params),error=>error.status===429&&error.retryAfter===expected);
+      t.mock.restoreAll();
+    }
+  }
+});
+
+test('QB first HTTP or business 429 blocks queued and later reads for that incoming request',async t=>{
+  for(const httpStatus of [200,429]){
+    const pending=[];let calls=0;
+    t.mock.method(globalThis,'fetch',()=>{calls++;return new Promise(resolve=>pending.push(resolve));});
+    const qb=createQbClient(env);
+    const requests=Array.from({length:9},(_,i)=>qb.query('bondDimInfo',{ss_sec_code:`${100000+i}.SH`}));
+    const results=Promise.allSettled(requests);
+    assert.equal(calls,4);
+    pending[0](new Response(JSON.stringify({code:429,message:key,data:null}),{status:httpStatus,headers:{'Retry-After':'12'}}));
+    await assert.rejects(requests[0],error=>error.status===429&&error.retryAfter===12);
+    await assert.rejects(qb.query('bondDimInfo',{ss_sec_code:'999999.SH'}),error=>error.status===429&&error.code==='qb_rate_limited');
+    pending.slice(1).forEach(resolve=>resolve(response([])));
+    const settled=await results;
+    assert.equal(calls,4,'five queued requests and the later request never reach fetch');
+    assert.equal(settled.filter(result=>result.status==='rejected').length,6);
+    assert.throws(()=>qb.throwIfBlocked(),error=>error.status===429);
+    t.mock.restoreAll();
+    t.mock.method(globalThis,'fetch',async()=>{calls++;return response([]);});
+    await createQbClient(env).query('bondDimInfo',params);
+    assert.equal(calls,5,'the block is scoped to the incoming request, not global state');
+    t.mock.restoreAll();
+  }
 });
 
 test('QB client enforces Content-Length and streamed byte limits',async t=>{

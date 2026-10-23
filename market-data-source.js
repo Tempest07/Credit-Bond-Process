@@ -3,7 +3,7 @@ const PROVIDERS = new Set(['DM', 'QB', 'DM+QB']);
 export function dataProviderLabel(value, fallback = 'DM') {
   if (Array.isArray(value)) {
     const sources = new Set(value.map(item => dataProviderLabel(item, fallback)).filter(Boolean));
-    return sources.has('DM+QB') || sources.has('DM') && sources.has('QB') ? 'DM+QB' : sources.has('QB') ? 'QB' : fallback;
+    return sources.has('DM+QB') || sources.has('DM') && sources.has('QB') ? 'DM+QB' : sources.has('QB') ? 'QB' : sources.has('DM') ? 'DM' : fallback;
   }
   const source = typeof value === 'string' ? value : value?.provider || value?.source;
   const label = String(source || '').toUpperCase();

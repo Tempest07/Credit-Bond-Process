@@ -2,6 +2,7 @@ import { requireUser, json } from '../_auth.js';
 import { makeDmClient, validateDmConfig, rowsFromDm } from '../dm/lookup.js';
 import { checkWriteRequest, readBody } from './_shared.js';
 import { withDataSources } from '../qb/fallback.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 import { rowProvenance, fieldProvider } from '../qb/provenance.js';
 
 const BASIC_INFO_PATH = '/dm-quant-func-service/api/v1/bond/basic-info/info';
@@ -38,7 +39,9 @@ export async function onRequestPost(context) {
       fetchedAt: new Date().toISOString(),
       results: matchCouponRows(codes, rowsFromDm(raw)),
     }, client));
-  } catch {
+  } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     return json({ error: '债券资料查询暂时失败或超时，请稍后重试。' }, 502);
   }
 }

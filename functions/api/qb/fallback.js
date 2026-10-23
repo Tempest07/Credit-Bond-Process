@@ -1,4 +1,4 @@
-import { createQbClient } from './client.js';
+import { createQbClient, isQbStopError } from './client.js';
 import { basicFallback } from './basic.js';
 import { marketFallback } from './market.js';
 import { ratingsCurvesFallback } from './ratings-curves.js';
@@ -74,9 +74,13 @@ export function createFallbackClient(env, request, dm, { qbClient, dmTimeoutMs =
       // cache deduplicates identical, concurrent reads across consumers.
       const client = Object.assign(Object.create(qb), { query: (api, params) => qb.query(api, params, { signal }) });
       let qbRows;
-      try { qbRows = await dispatch(path, adaptedInput, client); }
-      catch {
+      try {
+        qbRows = await dispatch(path, adaptedInput, client);
+        qb.throwIfBlocked?.();
+      }
+      catch (error) {
         signal?.throwIfAborted();
+        if (isQbStopError(error)) throw error;
         if (mode === 'qb') throw new Error('QB 查询暂时失败，请稍后重试。');
         if (dmError) throw new Error('DM 与 QB 均未取得可用数据，请稍后重试。');
         return original;

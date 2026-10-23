@@ -88,10 +88,72 @@ test('QB CSI explicit basis pairs cannot borrow generic yield / clean price or c
   assert.deepEqual(await marketFallback(MARKET,request({securityIdList:['246018.SH'],fieldNames:['csYtm']}),missing),[]);
 });
 
-test('QB failed secondary institution does not erase valid primary data or fabricate zero yields',async()=>{
-  const qb=client(api=>{if(api==='csiBondValuation')throw new Error('unavailable');return [cdc({val_yield:0,val_clean_price:null})];},[[code,{qbOptionTypeCode:'NON'}]]);
-  const [row]=await marketFallback(MARKET,request({fieldNames:[]}),qb);
+test('QB failed secondary institution stops its history while preserving valid primary data with explicit diagnostics',async()=>{
+  const failure=new Error('unavailable');
+  const qb=client(api=>{if(api==='csiBondValuation')throw failure;return [cdc({val_yield:0,val_clean_price:null})];},[[code,{qbOptionTypeCode:'NON'}]]);
+  const [row]=await marketFallback(MARKET,request({startDate:'2026-10-15',fieldNames:[]}),qb);
   assert.equal(row.cbYtm,0);assert.equal(row.cbNptm,null);assert.equal(row.csYtm,undefined);
+  assert.deepEqual(row._qb.failedInstitutions,[{institution:'CSI',apiName:'csiBondValuation',date:today,
+    errorCode:'qb_upstream_failed',securityIdList:[code]}]);
+  assert.equal(qb.calls.filter(call=>call.api==='csiBondValuation').length,1);
+  assert.equal(JSON.stringify(row).includes('unavailable'),false);
+});
+
+test('QB primary institution failure is explicit and never replaced by a secondary institution yield',async()=>{
+  const failure=new Error('CDC HTTP 500');
+  const qb=client((api,params)=>{
+    if(api==='cdcBondValuation')throw failure;
+    return params.valuate_date_start==='2026-10-21'?[csi({shh_code:undefined,interbank_code:'012682405',valuate_date:'2026-10-21'})]:[];
+  },[[code,{qbOptionTypeCode:'NON'}]]);
+  const [row]=await marketFallback(MARKET,request({startDate:'2026-10-15',fieldNames:[]}),qb);
+  assert.equal(row.cbYtm,undefined);assert.equal(row.csYtm,1.9);assert.equal(row.valuationDate,'2026-10-21');
+  assert.equal(row._qb.date,'2026-10-21','data retains its own date rather than the failure date');
+  assert.deepEqual(row._qb.failedInstitutions,[{institution:'CDC',apiName:'cdcBondValuation',date:today,
+    errorCode:'qb_upstream_failed',securityIdList:[code]}]);
+  assert.equal(qb.calls.filter(call=>call.api==='cdcBondValuation').length,1);
+  assert.deepEqual(qb.calls.filter(call=>call.api==='csiBondValuation').map(call=>call.params.valuate_date_start),[today,'2026-10-21']);
+});
+
+test('QB partial-batch diagnostics identify unpriced failed codes without fabricating observation rows',async()=>{
+  const other='012682406.IB',failure=new Error('CDC HTTP 500');
+  const qb=client((api,params)=>{
+    if(api==='cdcBondValuation')throw failure;
+    return [csi({shh_code:undefined,interbank_code:'012682405'})];
+  },[[code,{qbOptionTypeCode:'NON'}],[other,{qbOptionTypeCode:'NON'}]]);
+  const rows=await marketFallback(MARKET,request({securityIdList:[code,other],startDate:'2026-10-21',fieldNames:[]}),qb);
+  assert.equal(rows.length,1);assert.equal(rows[0].securityId,code);
+  assert.deepEqual(rows[0]._qb.failedInstitutions[0].securityIdList,[code,other]);
+  assert.equal(rows.some(row=>row.securityId===other),false);
+});
+
+test('QB missing data plus any failed requested institution rejects instead of becoming real missing data',async()=>{
+  const failure=new Error('CDC HTTP 500');
+  for(const fieldNames of [['cbYtm'],[]]){
+    const qb=client(api=>{if(api==='cdcBondValuation')throw failure;return [];},[[code,{qbOptionTypeCode:'NON'}]]);
+    await assert.rejects(marketFallback(MARKET,request({startDate:'2026-10-21',fieldNames}),qb),error=>error===failure);
+    assert.equal(qb.calls.filter(call=>call.api==='cdcBondValuation').length,1);
+  }
+  const both=client(()=>{throw failure;},[[code,{qbOptionTypeCode:'NON'}]]);
+  await assert.rejects(marketFallback(MARKET,request({fieldNames:[]}),both),error=>error===failure);
+});
+
+test('QB rate limit, abort and timeout stop valuation history immediately rather than becoming missing data',async()=>{
+  for(const failure of [Object.assign(new Error('rate limit'),{status:429,code:'qb_rate_limited'}),
+    new DOMException('cancelled','AbortError'),new DOMException('deadline','TimeoutError')]){
+    const qb=client(()=>{throw failure;},[[code,{qbOptionTypeCode:'NON'}]]);
+    await assert.rejects(marketFallback(MARKET,request({startDate:'2026-10-15'}),qb),error=>error===failure);
+    assert.equal(qb.calls.length,1);assert.equal(qb.calls[0].params.date,today);
+    const classification=client(()=>{throw failure;});
+    await assert.rejects(marketFallback(MARKET,request({startDate:'2026-10-15'}),classification),error=>error===failure);
+    assert.equal(classification.calls.length,1);assert.equal(classification.calls[0].api,'bondDimInfo');
+  }
+});
+
+test('QB real empty valuation results still look back to the first usable date',async()=>{
+  const qb=client((api,params)=>params.date===today?[]:[cdc({valuate_date:'2026-10-21'})],[[code,{qbOptionTypeCode:'NON'}]]);
+  const rows=await marketFallback(MARKET,request({startDate:'2026-10-15'}),qb);
+  assert.equal(rows.length,1);assert.equal(rows[0].valuationDate,'2026-10-21');
+  assert.deepEqual(qb.calls.map(call=>call.params.date),[today,'2026-10-21']);
 });
 
 test('QB valuation never substitutes coupon or issuance yield and refuses future / unbounded requests',async()=>{

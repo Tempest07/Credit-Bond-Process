@@ -62,6 +62,21 @@ test('exact full codes and consistent aliases are required on returned DM rows',
   assert.equal(result[sh].status, 'missing');
 });
 
+test('a failed mandated QB institution remains an error while other valid institutions and bonds survive', () => {
+  const failed = [{ institution: 'CDC', apiName: 'cdcBondValuation', date: asOf, errorCode: 'qb_upstream_failed', securityIdList: [ib] }];
+  const rows = [{ securityId: ib, issueDate: asOf, csYtm: 1.7, _qb: { failedInstitutions: failed } },
+    { securityId: sh, issueDate: asOf, csYtm: 1.8, _qb: { failedInstitutions: failed } }];
+  const result = match([ib, sh], rows);
+  assert.equal(result[ib].status, 'error');
+  assert.equal(result[ib].reason, 'upstream_failed');
+  assert.equal(result[ib].yield, null);
+  assert.equal(result[sh].status, 'matched');
+  assert.equal(result[sh].yield, 1.8);
+  assert.equal(match([ib], [{ securityId: sh, issueDate: asOf, csYtm: 1.8, _qb: { failedInstitutions: failed } }])[ib].status, 'error');
+  assert.equal(match([ib], [{ securityId: ib, issueDate: asOf, cbYtm: 1.5, _qb: { failedInstitutions: failed } }])[ib].status, 'matched');
+  assert.equal(match([ib], [{ securityId: sh, issueDate: asOf, csYtm: 1.8 }])[ib].status, 'missing');
+});
+
 test('latest valid date wins; future, invalid and more than seven-day-old values are excluded', () => {
   const result = match([ib], [
     { securityId: ib, issueDate: '2026-10-21', cbYtm: 1.5 },

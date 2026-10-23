@@ -843,3 +843,148 @@ test('source reset clears failed name suppression while keeping an existing save
     assert.equal(env.state.revision, 3);
   });
 });
+
+test('empty, loading and failed metadata identify the requested mode without inventing a DM result provider', async () => {
+  for (const [selectedMode, label] of [['qb', 'QB'], ['dm', 'DM'], ['auto', '自动（DM→QB）']]) {
+    const response = deferred();
+    await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
+      if (request.url.endsWith('/coupons') || request.url.endsWith('/valuations')) return response.promise;
+    } }, async env => {
+      const editor = initializeBondList({ getDataSourceMode: () => selectedMode });
+      await editor.setActive(true);
+      assert.ok(env.elements['metadata-status'].textContent.startsWith(label));
+      await env.advance(350);
+      assert.match(env.elements['metadata-status'].textContent, /资料读取中/);
+      assert.ok(env.elements['metadata-status'].textContent.startsWith(label));
+      response.resolve(json({ error: '上游暂不可用' }, 502)); await settle(); await settle();
+      assert.ok(env.elements['metadata-status'].textContent.startsWith(label));
+      assert.match(env.elements['metadata-status'].textContent, /1 条查询失败/);
+      assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '查询失败');
+      assert.equal(env.state.revision, 6);
+    });
+  }
+});
+
+test('switching mode updates empty and failed metadata labels and ignores missing-result default source', async () => {
+  let selectedMode = 'dm', fail = true;
+  await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/coupons') || request.url.endsWith('/valuations')) return fail
+      ? json({ error: '暂不可用' }, 502)
+      : json({ source: 'DM', results: { '102600001.IB': { status: 'missing' } } });
+  } }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => selectedMode });
+    await editor.setActive(true); await env.advance(350);
+    assert.match(env.elements['metadata-status'].textContent, /^DM · 1 条查询失败/);
+    selectedMode = 'qb'; editor.resetDataSource();
+    assert.match(env.elements['metadata-status'].textContent, /^QB · 1 条资料读取中/);
+    await env.advance(350);
+    assert.match(env.elements['metadata-status'].textContent, /^QB · 1 条查询失败/);
+    fail = false; await env.elements['coupons-refresh'].click();
+    assert.match(env.elements['metadata-status'].textContent, /^QB ·/);
+    assert.doesNotMatch(env.elements['metadata-status'].textContent, /^DM/);
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.state.revision, 6);
+  });
+});
+
+test('a QB refresh failure keeps successful DM data labelled DM with its original date', async () => {
+  let selectedMode = 'dm', fail = false;
+  await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
+    if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
+    if (fail) return json({ error: 'QB 暂不可用' }, 502);
+    return json({ source: 'DM', fetchedAt: '2026-10-22T01:00:00Z', results: { '102600001.IB': request.url.endsWith('/coupons')
+      ? { status: 'matched', couponRate: 1.54, bondType: 'MTN' }
+      : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-21' } } });
+  } }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => selectedMode });
+    await editor.setActive(true); await env.advance(350);
+    selectedMode = 'qb'; fail = true; await env.elements['coupons-refresh'].click();
+    assert.match(env.elements['metadata-status'].textContent, /^DM · 1 条刷新未完成，保留上次资料/);
+    const valuation = env.resultRow(0).querySelector('.bond-list-valuation-meta');
+    assert.match(valuation.textContent, /^中债.*10-21/);
+    assert.match(valuation.title, /2026-10-21 · DM 查询于/);
+    assert.match(valuation.title, /保留上次资料/);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.state.revision, 6);
+  });
+});
+
+test('QB throttling stops the remaining metadata batches and leaves skipped quotes incomplete until manual retry', async () => {
+  const codes = Array.from({ length: 49 }, (_, index) => `${102600001 + index}.IB`);
+  const text = codes.map(code => `${code}，测试，1.60*ofr`).join('\n');
+  let limited = true;
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 6, userId: 'admin' }, fetch(request) {
+    if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
+    if (limited && request.url.endsWith('/coupons')) return json({ error: 'upstream failure', code: 'qb_rate_limited', retryAfter: 30 }, 429);
+    return json({ source: 'QB', fetchedAt: '2026-10-23T01:00:00Z', results: Object.fromEntries(request.body.codes.map(code => [code,
+      request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN' }
+        : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-22' }])) });
+  } }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
+    await editor.setActive(true); await env.advance(350);
+    const requests = () => env.requests.filter(request => request.url.endsWith('/coupons') || request.url.endsWith('/valuations'));
+    assert.equal(requests().length, 2);
+    assert.ok(requests().every(request => request.body.codes.length === 20));
+    assert.match(env.elements.notice.textContent, /^QB 接口限流，请稍后重试。建议至少等待 30 秒后手动刷新。$/);
+    assert.equal(env.elements.notice.hidden, false);
+    assert.match(env.elements['metadata-status'].textContent, /^QB · 20 条查询失败 · 29 条未完成/);
+    assert.doesNotMatch(env.elements['metadata-status'].textContent, /票面缺失|估值缺失/);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '查询失败');
+    assert.equal(env.resultRow(20).querySelector('.bond-list-coupon-value').textContent, '未完成');
+    assert.equal(env.resultRow(48).querySelector('.bond-list-valuation-value').textContent, '未完成');
+    assert.equal(env.elements.copy.disabled, false);
+    assert.equal(env.elements['coupons-refresh'].disabled, false);
+    await env.advance(60000); assert.equal(requests().length, 2);
+    limited = false; await env.elements['coupons-refresh'].click();
+    assert.equal(requests().length, 8);
+    assert.equal(env.elements.notice.hidden, true);
+    assert.equal(env.resultRow(48).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    assert.equal(env.resultRow(48).querySelector('.bond-list-valuation-value').textContent, '1.51%');
+    assert.equal(env.state.sections[0].text, text); assert.equal(env.state.revision, 6);
+    assert.equal(editor.hasPendingChanges(), false);
+    assert.equal(env.requests.filter(request => request.url.endsWith('/state') && request.body).length, 0);
+  });
+});
+
+test('a rate-limited refresh preserves all previous providers, values and valuation dates while stopping later batches', async () => {
+  const codes = Array.from({ length: 49 }, (_, index) => `${102600001 + index}.IB`);
+  let limited = false;
+  await fixture({ state: { sections: [{ title: '北京', text: codes.map(code => `${code}，测试，1.60*ofr`).join('\n') }], revision: 6, userId: 'admin' }, fetch(request) {
+    if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
+    if (limited) return json({ error: 'upstream failure', code: 'qb_rate_limited', retryAfter: -1 }, 429);
+    return json({ source: 'DM', fetchedAt: '2026-10-22T01:00:00Z', results: Object.fromEntries(request.body.codes.map(code => [code,
+      request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN' }
+        : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-21' }])) });
+  } }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
+    await editor.setActive(true); await env.advance(350); await settle(); await settle();
+    const before = env.requests.filter(request => request.body?.codes).length;
+    assert.equal(before, 6);
+    limited = true; await env.elements['coupons-refresh'].click();
+    assert.equal(env.requests.filter(request => request.body?.codes).length, before + 2);
+    assert.equal(env.elements.notice.textContent, 'QB 接口限流，请稍后重试。');
+    assert.match(env.elements['metadata-status'].textContent, /^DM · 49 条刷新未完成，保留上次资料/);
+    for (const index of [0, 20, 48]) {
+      assert.equal(env.resultRow(index).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+      const valuation = env.resultRow(index).querySelector('.bond-list-valuation-meta');
+      assert.match(valuation.title, /2026-10-21 · DM 查询于/);
+      assert.match(valuation.title, /保留上次资料/);
+    }
+    assert.equal(editor.hasPendingChanges(), false); assert.equal(env.state.revision, 6);
+  });
+});
+
+test('rate-limited code lookup stops its later batches and gives a safe explicit QB notice', async () => {
+  const text = Array.from({ length: 49 }, (_, index) => `26测试${index}，1.60*ofr`).join('\n');
+  await fixture({ state: { sections: [{ title: '北京', text }], revision: 6, userId: 'admin' }, fetch(request) {
+    if (request.url.endsWith('/lookup')) return json({ error: 'unsafe upstream message', code: 'qb_rate_limited', retryAfter: 'Infinity' }, 429);
+  } }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
+    await editor.setActive(true); await env.elements.fill.click();
+    assert.equal(env.requests.filter(request => request.url.endsWith('/lookup')).length, 1);
+    assert.equal(env.elements.notice.textContent, 'QB 接口限流，请稍后重试。');
+    assert.equal(env.textarea(0).value, text);
+    assert.equal(editor.hasPendingChanges(), false); assert.equal(env.state.revision, 6);
+  });
+});

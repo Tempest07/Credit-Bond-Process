@@ -1,3 +1,5 @@
+import { isQbStopError } from './client.js';
+
 const MARKET = '/dm-quant-func-service/api/v1/bond/market-data/date';
 const COMPANY = '/dm-quant-func-service/api/v1/company/basic-info/info';
 const PRIMARY = '/dm-quant-func-service/api/v1/bond/primary/data';
@@ -61,7 +63,7 @@ async function valuations(input, client) {
   if(wantsCb)await fillOptionClassification(codes,client);
   // Each institution and date is an independent observation. Joining an older
   // CSI record onto a newer CDC record would mislabel one institution's date.
-  const collected=new Map(), cbDone=new Set(), csDone=new Set();
+  const collected=new Map(), cbDone=new Set(), csDone=new Set(), failures=new Map();
   const observation=(code,day)=>{
     const key=code+'@'+day;
     if(!collected.has(key))collected.set(key,{securityId:code,issueDate:day,valuationDate:day});
@@ -69,9 +71,10 @@ async function valuations(input, client) {
   };
   for(let offset=0;offset<8;offset++) {
     const day=shift(end,-offset);if(day<start)break;
-    const tasks=[];
+    const tasks=[], institutions=[];
+    const addTask=(institution,task)=>{institutions.push(institution);tasks.push(task);};
     const cbCodes=codes.filter(code=>!cbDone.has(code));
-    if(wantsCb&&cbCodes.length)tasks.push((async()=>{
+    if(wantsCb&&!failures.has('CDC')&&cbCodes.length)addTask('CDC',(async()=>{
       const rows=await client.query('cdcBondValuation',{bond_code_par:cbCodes.join(','),date:day});
       const grouped=new Map();
       for(const row of rows){const code=fullCode(row.sec_code);if(!cbCodes.includes(code)||date(row.valuate_date)!==day)continue;
@@ -100,9 +103,9 @@ async function valuations(input, client) {
         cbDone.add(code);
       }
     })());
-    if(wantsCs)for(const venue of ['IB','SH','SZ']){
+    if(wantsCs&&!failures.has('CSI'))for(const venue of ['IB','SH','SZ']){
       const group=codes.filter(code=>code.endsWith('.'+venue)&&!csDone.has(code));if(!group.length)continue;
-      tasks.push((async()=>{
+      addTask('CSI',(async()=>{
         const field={IB:'interbank_code',SH:'shh_code',SZ:'shz_code'}[venue];
         const rows=await client.query('csiBondValuation',{valuate_date_start:day,valuate_date_end:day,[field]:group.map(code=>code.split('.')[0]).join(','),val_type:'1',page:1,pageSize:Math.min(100,group.length*3)});
         for(const code of group){
@@ -124,10 +127,26 @@ async function valuations(input, client) {
         }
       })());
     }
-    await Promise.allSettled(tasks);
-    if((!wantsCb||codes.every(code=>cbDone.has(code)))&&(!wantsCs||codes.filter(code=>!code.endsWith('.BJ')).every(code=>csDone.has(code))))break;
+    const settled = await Promise.allSettled(tasks);
+    const stopped=settled.find(result=>result.status==='rejected'&&result.reason?.status===429)
+      ||settled.find(result=>result.status==='rejected'&&isQbStopError(result.reason));
+    if(stopped)throw stopped.reason;
+    for(let index=0;index<settled.length;index++){
+      if(settled[index].status!=='rejected'||failures.has(institutions[index]))continue;
+      failures.set(institutions[index],{error:settled[index].reason,date:day});
+    }
+    if((!wantsCb||failures.has('CDC')||codes.every(code=>cbDone.has(code)))
+      &&(!wantsCs||failures.has('CSI')||codes.filter(code=>!code.endsWith('.BJ')).every(code=>csDone.has(code))))break;
   }
-  return [...collected.values()];
+  if(!collected.size&&failures.size)throw failures.values().next().value.error;
+  const failedInstitutions=[...failures].map(([institution,failure])=>({
+    institution,apiName:institution==='CDC'?'cdcBondValuation':'csiBondValuation',date:failure.date,
+    errorCode:'qb_upstream_failed',securityIdList:codes.filter(code=>!(institution==='CDC'?cbDone:csDone).has(code)
+      &&(institution!=='CSI'||!code.endsWith('.BJ'))),
+  })).filter(failure=>failure.securityIdList.length);
+  const output=[...collected.values()];
+  if(failedInstitutions.length)for(const row of output)row._qb={...row._qb,failedInstitutions};
+  return output;
 }
 
 function pickCdc(rows){
@@ -142,7 +161,10 @@ function mergeMeta(a,b){return {...b,apiNames:[...new Set([...(a?.apiNames||[]),
 async function fillOptionClassification(codes,client){
   const missing=codes.filter(code=>!client.scope.basicByCode.get(code)?.qbOptionTypeCode);
   if(!missing.length)return;
-  const rows=await client.query('bondDimInfo',{ss_sec_code:missing.join(','),page:1,pageSize:20}).catch(()=>[]);
+  const rows=await client.query('bondDimInfo',{ss_sec_code:missing.join(','),page:1,pageSize:20}).catch(error=>{
+    if(isQbStopError(error))throw error;
+    return [];
+  });
   const grouped=new Map();
   for(const raw of rows){
     const code=fullCode(raw.ss_sec_code);if(!missing.includes(code))continue;

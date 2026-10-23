@@ -5,6 +5,7 @@ import { sameBondIdentity, sameSecurityCode, sameIssuance, validateIssueGroup, n
 import { createFallbackClient, withDataSources } from "../qb/fallback.js";
 import { fieldProvider, rowProvenance } from '../qb/provenance.js';
 import { resolveDataSourceMode } from '../_data-source.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 
 const DM_BASE_URL = "https://gapi-ext.innodealing.com";
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
@@ -223,6 +224,8 @@ export async function onRequestGet(context) {
       },
     }), dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     return json({
       ok: false,
       error: error.message || "DM 查询失败",

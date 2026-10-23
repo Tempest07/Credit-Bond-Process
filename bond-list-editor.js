@@ -1,12 +1,12 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release531';
-import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261023release531';
-import { dataProviderLabel } from './market-data-source.js?v=20261023release531';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release532';
+import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261023release532';
+import { dataProviderLabel } from './market-data-source.js?v=20261023release532';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
 const spreadFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2, useGrouping: false });
 
-export function initializeBondList({ onToast, onAccessChange } = {}) {
+export function initializeBondList({ onToast, onAccessChange, getDataSourceMode = () => 'auto' } = {}) {
   const root = document.querySelector('.view[data-view="bond-list"]');
   if (!root) return { setActive: async () => {}, flushSave: async () => true, hasPendingChanges: () => false, hasAccess: () => false, clearAccess: () => {}, resume: () => {}, resetDataSource: () => {} };
   const $ = id => root.querySelector('#bondList-' + id);
@@ -26,9 +26,20 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
   let couponTimer, couponAbort = null, couponPromise = null, couponGeneration = 0;
   let couponPending = new Set();
   let valuationPending = new Set();
+  let metadataLimitNotice = '';
   const typeInputs = new Map();
   const filters = { types: [], side: 'all', couponOp: 'any', couponMin: '', couponMax: '', missing: 'all' };
   let selectedText = 'OFR/BID', selectedCount = 0, filterActive = false, mode = 'results';
+
+  const requestMode = () => {
+    const value = getDataSourceMode();
+    return ['dm', 'qb'].includes(value) ? value : 'auto';
+  };
+  const requestLabel = value => ({ dm: 'DM', qb: 'QB', auto: '自动（DM→QB）' }[value] || '自动（DM→QB）');
+  const rateLimitMessage = (error, selectedMode) => {
+    const provider = error.code === 'qb_rate_limited' ? 'QB' : requestLabel(selectedMode);
+    return provider + ' 接口限流，请稍后重试。' + (error.retryAfter ? '建议至少等待 ' + error.retryAfter + ' 秒后手动刷新。' : '');
+  };
 
   function setAccess(value) {
     if (access === value) return;
@@ -40,6 +51,10 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     $('notice').textContent = message;
     $('notice').hidden = !message;
     $('notice').classList.toggle('error', error);
+  }
+  function clearMetadataLimitNotice() {
+    if (metadataLimitNotice && $('notice').textContent === metadataLimitNotice) notify('');
+    metadataLimitNotice = '';
   }
   function retryState(mode = '') {
     retryMode = mode;
@@ -69,6 +84,8 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
       const error = new Error(result.error || '请求失败');
       error.status = response.status;
       error.code = result.code;
+      const seconds = Number(result.retryAfter ?? response.headers.get('Retry-After'));
+      if (Number.isFinite(seconds) && seconds > 0 && seconds <= 86400) error.retryAfter = Math.ceil(seconds);
       throw error;
     }
     if (requestAccessVersion === accessVersion) {
@@ -97,12 +114,15 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     const result = filterQuotes(all, filters);
     selectedText = quoteOutput(result.rows); selectedCount = result.rows.length; filterActive = result.active;
     const pending = all.filter(row => row.code && (!couponResults.has(row.code) || couponPending.has(row.code))).length;
-    const missingCoupon = all.filter(row => row.couponRate === null).length;
-    const missingType = all.filter(row => row.bondType === '未知').length;
+    const missingCoupon = all.filter(row => couponResults.get(row.code)?.status === 'missing').length;
+    const missingType = all.filter(row => couponResults.get(row.code)?.status === 'matched' && row.bondType === '未知').length;
     const unknownSide = all.filter(row => row.direction === 'unknown').length;
-    const failed = all.filter(row => couponResults.get(row.code)?.status === 'error').length;
+    const failed = all.filter(row => [couponResults.get(row.code), valuationResults.get(row.code)]
+      .some(value => value?.status === 'error' && value.reason !== 'rate_limit_skipped')).length;
+    const incomplete = all.filter(row => [couponResults.get(row.code), valuationResults.get(row.code)]
+      .some(value => value?.reason === 'rate_limit_skipped')).length;
     const valuationWaiting = all.filter(row => row.code && (!valuationResults.has(row.code) || valuationPending.has(row.code))).length;
-    const valuationMissing = all.filter(row => valuationResults.get(row.code)?.status !== 'matched').length;
+    const valuationMissing = all.filter(row => valuationResults.get(row.code)?.status === 'missing').length;
     const valuationAccessDenied = all.some(row => valuationResults.get(row.code)?.reason === 'dm_valuation_access_denied');
     const retained = all.filter(row => couponResults.get(row.code)?.refreshFailed || valuationResults.get(row.code)?.refreshFailed).length;
     const needsMetadata = filters.types.length > 0 || filters.couponOp !== 'any' || ['coupon', 'type'].includes(filters.missing);
@@ -112,12 +132,15 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     const comparisons = result.rows.map(quote => compareQuoteToValuation(quote, valuationResults.get(quote.code)));
     const warnings = comparisons.filter(comparison => comparison.warning).length;
     const close = comparisons.filter(comparison => comparison.couponNear).length;
-    const providers = new Set(all.flatMap(row => [couponResults.get(row.code), valuationResults.get(row.code)]).filter(Boolean).map(value => dataProviderLabel(value)));
-    const sourceLabel = providers.has('DM+QB') || providers.has('DM') && providers.has('QB') ? 'DM+QB' : providers.has('QB') ? 'QB' : 'DM';
+    const metadata = all.flatMap(row => [couponResults.get(row.code), valuationResults.get(row.code)]).filter(Boolean);
+    const actualSource = dataProviderLabel(metadata.filter(value => value.status === 'matched'), '');
+    const attemptedModes = [...new Set(metadata.map(value => value.requestMode).filter(Boolean))];
+    const attemptedLabel = requestLabel(attemptedModes.length === 1 ? attemptedModes[0] : requestMode());
+    const sourceLabel = actualSource || attemptedLabel;
     $('results-counts').textContent = '符合 ' + selectedCount + ' / 共 ' + all.length + ' 条报价 · ' + branches + ' 个分行'
       + (warnings ? ' · ' + warnings + ' 条报价提示' : '') + (close ? ' · ' + close + ' 条票面接近估值' : '');
     $('metadata-status').textContent = pending && access ? sourceLabel + ' · ' + pending + ' 条资料读取中'
-      : [sourceLabel, retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
+      : [sourceLabel, retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', incomplete ? incomplete + ' 条未完成' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
     $('filter-error').textContent = result.error; $('filter-error').hidden = !result.error;
     $('results-body').replaceChildren();
     for (const quote of result.rows) {
@@ -146,7 +169,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
         }
       } else {
         rate.className += ' unavailable';
-        rate.textContent = !quote.code ? '待补代码' : metadata?.status === 'error' ? '查询失败' : metadata ? '未返回' : !access ? '请登录' : couponPending.has(quote.code) ? '查询中…' : '待查询';
+        rate.textContent = !quote.code ? '待补代码' : metadata?.reason === 'rate_limit_skipped' ? '未完成' : metadata?.status === 'error' ? '查询失败' : metadata ? '未返回' : !access ? '请登录' : couponPending.has(quote.code) ? '查询中…' : '待查询';
       }
       const couponCell = cell('票面利率'); couponCell.append(rate);
       if (comparison.couponNear) {
@@ -171,7 +194,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
         }
       } else {
         valuationRate.className += ' unavailable';
-        valuationRate.textContent = !quote.code ? '待补代码' : !access ? '请登录' : valuation?.reason === 'dm_valuation_access_denied' ? '权限待核对' : valuation?.status === 'error' ? '查询失败' : valuation ? '未返回' : valuationPending.has(quote.code) ? '查询中…' : '待查询';
+        valuationRate.textContent = !quote.code ? '待补代码' : !access ? '请登录' : valuation?.reason === 'dm_valuation_access_denied' ? '权限待核对' : valuation?.reason === 'rate_limit_skipped' ? '未完成' : valuation?.status === 'error' ? '查询失败' : valuation ? '未返回' : valuationPending.has(quote.code) ? '查询中…' : '待查询';
         if (valuation?.reason === 'dm_valuation_access_denied') valuationRate.title = 'DM 当前个券估值请求被拒绝（GW-000-4006）；需核对该应用的接口授权或调用配置，不能据此判断估值服务未开通。';
         valuationCell.append(valuationRate);
       }
@@ -224,7 +247,9 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     clearTimeout(couponTimer);
     const codes = couponCodes().filter(code => refresh || !couponResults.has(code) || !valuationResults.has(code));
     if (!codes.length) return Promise.resolve();
-    const generation = couponGeneration, controller = new AbortController();
+    if (refresh) clearMetadataLimitNotice();
+    const generation = couponGeneration, controller = new AbortController(), selectedMode = requestMode();
+    let rateLimitError = null;
     couponAbort = controller; couponPending = new Set(codes.filter(code => refresh || !couponResults.has(code))); valuationPending = new Set(codes.filter(code => refresh || !valuationResults.has(code)));
     couponPromise = (async () => {
       try {
@@ -235,10 +260,19 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
             fetchMetadata('valuations', batch.filter(code => refresh || !valuationResults.has(code)), valuationResults, valuationPending),
           ]);
           if (!active || controller.signal.aborted || generation !== couponGeneration) return;
+          if (rateLimitError) {
+            for (const code of codes.slice(start + 20)) {
+              if (couponPending.has(code)) failMetadata(couponResults, code, 'rate_limit_skipped');
+              if (valuationPending.has(code)) failMetadata(valuationResults, code, 'rate_limit_skipped');
+            }
+            metadataLimitNotice = rateLimitMessage(rateLimitError, selectedMode);
+            notify(metadataLimitNotice, true);
+            return;
+          }
         }
       } catch {
         if (!controller.signal.aborted && generation === couponGeneration) {
-          for (const code of codes) if (!couponResults.has(code)) couponResults.set(code, { status: 'error' });
+          for (const code of codes) if (!couponResults.has(code)) couponResults.set(code, { status: 'error', requestMode: selectedMode });
         }
       } finally {
         if (generation === couponGeneration) {
@@ -259,22 +293,26 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
           const result = response.results?.[code];
           const previous = cache.get(code);
           if (previous?.status === 'matched' && result?.status !== 'matched') {
-            cache.set(code, { ...previous, refreshFailed: true }); continue;
+            cache.set(code, { ...previous, refreshFailed: true, requestMode: selectedMode }); continue;
           }
           cache.set(code, result && ['matched', 'missing'].includes(result.status)
-            ? { ...result, provider: result.provider || response.source || 'DM', fetchedAt: response.fetchedAt } : { status: 'error' });
+            ? { ...result, provider: result.provider || response.source, fetchedAt: response.fetchedAt, requestMode: selectedMode }
+            : { status: 'error', requestMode: selectedMode });
         }
       } catch (error) {
         if (controller.signal.aborted || generation !== couponGeneration) return;
+        if (error.status === 429) rateLimitError ||= error;
         const reason = path === 'valuations' && error.code === 'dm_valuation_access_denied' ? error.code : undefined;
-        for (const code of batch) {
-          const previous = cache.get(code);
-          cache.set(code, previous?.status === 'matched' ? { ...previous, refreshFailed: true } : { status: 'error', ...(reason ? { reason } : {}) });
-        }
+        for (const code of batch) failMetadata(cache, code, reason);
       }
       if (controller.signal.aborted || generation !== couponGeneration) return;
       batch.forEach(code => pending.delete(code));
       renderResults();
+    }
+    function failMetadata(cache, code, reason) {
+      const previous = cache.get(code);
+      cache.set(code, previous?.status === 'matched' ? { ...previous, refreshFailed: true, requestMode: selectedMode }
+        : { status: 'error', requestMode: selectedMode, ...(reason ? { reason } : {}) });
     }
   }
   function output(includeEmpty = false) {
@@ -374,7 +412,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
         const row = document.createElement('div');
         row.textContent = !line.ready ? '请补充简称后的逗号和报价：' + line.name
           : result?.status === 'missing' ? 'DM 未找到：' + line.name
-          : result?.status === 'error' ? 'DM 返回信息不完整：' + line.name
+          : result?.status === 'error' ? '返回信息不完整：' + line.name
           : result?.status === 'ambiguous' ? '请选择代码：' + line.name + ' ' : '待补码：' + line.name;
         if (result?.status === 'ambiguous') for (const match of result.matches) {
           const button = document.createElement('button'); button.type = 'button'; button.className = 'button subtle';
@@ -387,7 +425,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     });
     $('counts').textContent = populated + ' 个分行 · ' + total + ' 条报价';
     $('fill').disabled = !loaded || Boolean(loading) || busy || !pendingNames().length;
-    $('fill').textContent = busy ? 'DM 查询中…' : '补齐代码';
+    $('fill').textContent = busy ? requestLabel(requestMode()) + ' 查询中…' : '补齐代码';
     renderResults();
   }
   function scheduleLookup() {
@@ -431,7 +469,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
     const names = pendingNames().filter(name => manual || !failedNames.has(name));
     if (!names.length) return Promise.resolve();
     const snapshots = sections.map(section => section.text), version = editVersion;
-    const controller = new AbortController(), generation = lookupGeneration;
+    const controller = new AbortController(), generation = lookupGeneration, selectedMode = requestMode();
     lookupAbort = controller;
     const current = () => generation === lookupGeneration && lookupAbort === controller && !controller.signal.aborted;
     busy = true; renderSummary();
@@ -454,7 +492,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
         if (unresolved) notify('已补齐 ' + count + ' 条报价；还有 ' + unresolved + ' 个简称需要核对，详见分行下方提示。', true);
         else if (count) notify('已通过 ' + (providers.has('DM+QB') || providers.size > 1 ? 'DM+QB' : [...providers][0] || 'DM') + ' 补齐 ' + count + ' 条报价，价格与分行保持原样。');
       } catch (error) {
-        if (current()) { names.forEach(name => failedNames.add(name)); notify(error.message, true); }
+        if (current()) { names.forEach(name => failedNames.add(name)); notify(error.status === 429 ? rateLimitMessage(error, selectedMode) : error.message, true); }
       } finally {
         if (generation === lookupGeneration && lookupAbort === controller) {
           busy = false; lookupAbort = null; lookupPromise = null; renderSummary();
@@ -627,6 +665,7 @@ export function initializeBondList({ onToast, onAccessChange } = {}) {
 
   return {
     resetDataSource() {
+      clearMetadataLimitNotice();
       clearTimeout(lookupTimer);
       lookupGeneration++;
       lookupAbort?.abort(); lookupAbort = null; lookupPromise = null; busy = false;

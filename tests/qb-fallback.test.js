@@ -155,6 +155,29 @@ test('unsupported endpoint preserves a good DM response and reports safe missing
   await assert.rejects(failing.post(root + 'bond/realtime/quotes', {}), error => !error.message.includes('sensitive'));
 });
 
+test('QB fallback preserves structured rate limits and original abort / timeout errors',async()=>{
+  for(const failure of [Object.assign(new Error('QB 请求过于频繁'),{status:429,code:'qb_rate_limited',retryAfter:12}),
+    new DOMException('cancelled','AbortError'),new DOMException('deadline','TimeoutError')]){
+    for(const mode of ['auto','qb']){
+      const req=new Request('https://local.test/api',{headers:{'X-Bond-Data-Source':mode}});
+      const c=createFallbackClient({},req,{post:async()=>{throw new Error('DM unavailable');}},
+        {qbClient:qb(()=>{throw failure;})});
+      await assert.rejects(c.post(basic,{securityIdList:[code],fieldNames:['newCoupRate']}),error=>error===failure);
+    }
+  }
+});
+
+test('QB rate limit during optional basic enrichment cannot turn into successful or missing data',async t=>{
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async url=>{
+    calls++;
+    return Response.json(String(url).includes('bondDimInfo')?dimension('bondDimInfo'):{code:429,message:'rate limit exceeded',data:null});
+  });
+  const c=makeDmClient({QB_ACCESS_KEY:'test-server-secret'},request());
+  await assert.rejects(c.post(basic,{securityIdList:[code],fieldNames:['newCoupRate','bondTypeDesc']}),error=>error.status===429&&error.code==='qb_rate_limited');
+  assert.equal(calls,2);
+});
+
 test('QB-only runtime routes missing DM credentials without encrypting invalid secrets', async t => {
   t.mock.method(globalThis, 'fetch', async url => new Response(JSON.stringify(String(url).includes('bondDimInfo') ? dimension('bondDimInfo') : [])));
   const c = makeDmClient({ QB_ACCESS_KEY: 'test-server-secret' }, request());

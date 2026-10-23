@@ -23,6 +23,9 @@ test('field provenance distinguishes QB supplements from retained DM fields with
   assert.deepEqual(rowProvenance(row, ['secShortName']), {});
   assert.equal(rowProvenance(row, ['cbYtm']).providerInfo.date, date);
   assert.equal(dataProviderLabel({ dataSources: { used: ['DM', 'QB'] } }), 'DM+QB');
+  assert.equal(dataProviderLabel([{ provider: 'DM' }], ''), 'DM');
+  assert.equal(dataProviderLabel([{ provider: 'QB' }, { provider: 'DM' }], ''), 'DM+QB');
+  assert.equal(dataProviderLabel([{ status: 'error' }], ''), '');
   assert.equal(dataProviderLabel('manual', ''), '');
   assert.deepEqual(marketDataProvenance({ provider: 'QB', providerInfo: info }).providerInfo.apiNames, ['cdcBondValuation']);
 });

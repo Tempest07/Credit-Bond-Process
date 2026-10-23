@@ -2,6 +2,7 @@ import { requireUser, json } from '../_auth.js';
 import { makeDmClient, validateDmConfig, rowsFromDm } from '../dm/lookup.js';
 import { checkWriteRequest, readBody, nameCandidates, matchRows } from './_shared.js';
 import { withDataSources } from '../qb/fallback.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
@@ -26,7 +27,9 @@ export async function onRequestPost(context) {
       rows.push(...rowsFromDm(raw));
     }
     return json(withDataSources({results:matchRows(names,rows)}, client));
-  } catch {
+  } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     return json({error:'债券查询暂时失败或超时，请稍后重试。报价原文已保留。'}, 502);
   }
 }

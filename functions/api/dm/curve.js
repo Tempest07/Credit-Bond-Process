@@ -12,6 +12,7 @@ import {
 } from "./lookup.js";
 import { requireUser } from "../_auth.js";
 import { withDataSources } from '../qb/fallback.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 
 const YIELD_CURVE_PATH = "/dm-quant-func-service/api/v1/bond/yield-curve/data";
 const CHINABOND_CURVE_SOURCE = "18";
@@ -103,6 +104,8 @@ export async function onRequestGet(context) {
       stale: Number.isFinite(ageDays) && ageDays > 4,
     }, dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     console.error(JSON.stringify({
       message: "DM policy-bank curve request failed",
       curveId,

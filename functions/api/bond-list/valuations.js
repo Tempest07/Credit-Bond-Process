@@ -3,6 +3,7 @@ import { makeDmClient, validateDmConfig, rowsFromDm, pickFirstDateString } from 
 import { checkWriteRequest, readBody } from './_shared.js';
 import { normalizeCouponCode } from './coupons.js';
 import { withDataSources } from '../qb/fallback.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 import { rowProvenance } from '../qb/provenance.js';
 
 const BASIC_INFO_PATH = '/dm-quant-func-service/api/v1/bond/basic-info/info';
@@ -53,6 +54,8 @@ export async function onRequestPost(context) {
       results: matchValuationRows(codes, checkedRows(basic), market.flatMap(checkedRows), requestedDate),
     }, dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     if (/\bGW-000-4006\b/.test(String(error?.message || ''))) {
       return json({ code: 'dm_valuation_access_denied', error: 'DM 当前估值请求被拒绝（GW-000-4006），请核对该应用的接口授权或调用配置。' }, 503);
     }
@@ -131,7 +134,14 @@ export function matchValuationRows(codes, basicRows, marketRows, requestedDate) 
     }).filter(item => item.date && item.date >= earliestDate && item.date <= requestedDate && item.yield !== null)
       .sort((a, b) => b.date.localeCompare(a.date) || reliabilityRank(b.reliability) - reliabilityRank(a.reliability) || a.sourceRank - b.sourceRank);
     const chosen = candidates[0];
-    if (!chosen) { results[code] = empty; continue; }
+    if (!chosen) {
+      const failed = marketRows.some(row => Array.isArray(row?._qb?.failedInstitutions)
+        && row._qb.failedInstitutions.some(item => item?.institution === (interbank ? 'CDC' : 'CSI')
+          && Array.isArray(item.securityIdList) && item.securityIdList.includes(code)
+          && isIsoDate(item.date) && item.date >= earliestDate && item.date <= requestedDate));
+      results[code] = failed ? { ...empty, status: 'error', reason: 'upstream_failed', provider: 'QB' } : empty;
+      continue;
+    }
     const tied = candidates.filter(item => item.date === chosen.date && reliabilityRank(item.reliability) === reliabilityRank(chosen.reliability) && item.sourceRank === chosen.sourceRank);
     if (tied.some(item => item.yield !== chosen.yield || item.basis !== chosen.basis || item.netPrice !== chosen.netPrice)) {
       results[code] = { ...empty, reason: 'ambiguous' }; continue;
