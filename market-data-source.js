@@ -1,5 +1,24 @@
 const PROVIDERS = new Set(['DM', 'QB', 'DM+QB']);
 
+/** The selected route for a future request, separate from a result's provenance. */
+export function dataSourceModeLabel(mode) {
+  switch (mode) {
+    case 'dm': return 'DM';
+    case 'qb': return 'QB';
+    case 'auto': return '自动（DM→QB）';
+    default: return '数据源';
+  }
+}
+
+/** Only explicit static copy participates; live status and saved sources stay intact. */
+export function renderDataSourceLabels(document, mode) {
+  const source = dataSourceModeLabel(mode);
+  for (const node of document?.querySelectorAll?.('[data-source-template]') || []) {
+    const template = node.dataset?.sourceTemplate;
+    if (typeof template === 'string') node.textContent = template.replaceAll('{source}', source);
+  }
+}
+
 export function dataProviderLabel(value, fallback = 'DM') {
   if (Array.isArray(value)) {
     const sources = new Set(value.map(item => dataProviderLabel(item, fallback)).filter(Boolean));

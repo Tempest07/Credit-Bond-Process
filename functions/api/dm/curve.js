@@ -77,7 +77,7 @@ export async function onRequestGet(context) {
       return json(withDataSources({
         ok: false,
         reason: "noCurveData",
-        hint: "DM 暂未返回最近可用的国开债曲线。",
+        hint: "数据源暂未返回最近可用的国开债曲线。",
         source: "DM",
         curveId: curve.id,
         curveName: curve.name,
@@ -107,7 +107,7 @@ export async function onRequestGet(context) {
     const limited = qbRateLimitResponse(error);
     if (limited) return limited;
     console.error(JSON.stringify({
-      message: "DM policy-bank curve request failed",
+      message: "Policy-bank curve request failed",
       curveId,
       error: String(error?.message || error).slice(0, 240),
     }));

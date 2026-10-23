@@ -1,9 +1,9 @@
-import { dataProviderLabel } from './market-data-source.js?v=20261023release532';
+import { dataProviderLabel } from './market-data-source.js?v=20261023release533';
 
 const CODE = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/;
 const nameKey = value => String(value || '').normalize('NFKC').replace(/\s+/g, '').toUpperCase();
 
-export function createPaymentTodoCodes({ lookup, onChange, now = Date.now }) {
+export function createPaymentTodoCodes({ lookup, onChange, now = Date.now, getDataSourceMode = () => 'auto' }) {
   const cache = new Map(), queued = new Set();
   let running = null, scheduled = false, generation = 0;
 
@@ -13,7 +13,7 @@ export function createPaymentTodoCodes({ lookup, onChange, now = Date.now }) {
       if (!key || name.length > 120) continue;
       const existing = cache.get(key);
       if (existing && (existing.status === 'loading' || existing.expiresAt > now())) continue;
-      cache.set(key, { status: 'loading', name, code: '', expiresAt: Infinity });
+      cache.set(key, { status: 'loading', name, code: '', requestMode: getDataSourceMode(), expiresAt: Infinity });
       queued.add(key);
     }
     if (queued.size && !running && !scheduled) {
@@ -36,6 +36,7 @@ export function createPaymentTodoCodes({ lookup, onChange, now = Date.now }) {
         const keys = [...queued].slice(0, 20);
         keys.forEach(key => queued.delete(key));
         const names = keys.map(key => cache.get(key).name);
+        const requestMode = getDataSourceMode();
         try {
           const payload = await lookup(names, { signal: request.controller.signal });
           if (!current()) return;
@@ -46,7 +47,7 @@ export function createPaymentTodoCodes({ lookup, onChange, now = Date.now }) {
             const verified = Boolean(provider) && match && nameKey(match.name) === key && CODE.test(match.code);
             const status = verified ? 'matched' : ['missing', 'ambiguous'].includes(result?.status) ? result.status : 'error';
             cache.set(key, {
-              status, name, code: verified ? match.code : '', source: provider,
+              status, name, code: verified ? match.code : '', source: verified ? provider : '', requestMode,
               ...(match?.providerInfo ? { providerInfo: match.providerInfo } : {}),
               fetchedAt: payload?.fetchedAt || new Date(now()).toISOString(),
               expiresAt: now() + (verified ? 15 * 60_000 : 60_000),
@@ -54,7 +55,7 @@ export function createPaymentTodoCodes({ lookup, onChange, now = Date.now }) {
           }
         } catch {
           if (!current()) return;
-          keys.forEach((key, index) => cache.set(key, { status: 'error', name: names[index], code: '', expiresAt: now() + 60_000 }));
+          keys.forEach((key, index) => cache.set(key, { status: 'error', name: names[index], code: '', requestMode, expiresAt: now() + 60_000 }));
         }
         onChange();
       }

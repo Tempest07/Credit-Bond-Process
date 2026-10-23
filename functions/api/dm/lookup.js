@@ -78,7 +78,7 @@ export async function onRequestGet(context) {
       const discovery = await discoverFullNameBond(dm, fullName);
       if (!discovery.securityId) {
         return json(withDataSources({ ok: false, noResult: true, requiresSelection: true,
-          error: discovery.suggestions.length ? "请核对并选择债券候选" : discovery.diagnostic.errors?.length ? "DM 候选查询未完成，请稍后重试" : "未找到该全称对应的债券，请核对主体、年份和期次",
+          error: discovery.suggestions.length ? "请核对并选择债券候选" : discovery.diagnostic.errors?.length ? "债券候选查询未完成，请稍后重试" : "未找到该全称对应的债券，请核对主体、年份和期次",
           suggestions: discovery.suggestions, diagnostic: { dmMatched: false, fullNameDiscovery: discovery.diagnostic } }, dm));
       }
       securityId = discovery.securityId;
@@ -202,6 +202,7 @@ export async function onRequestGet(context) {
           enrichedNormalized,
           Boolean(context.env.DB),
           windEnabled,
+          dm.sourceInfo?.()?.mode || resolveDataSourceMode(context.env, context.request),
         ),
         guarantee: guaranteeDiagnostic(guaranteeDiscovery),
         issueGroup: issueGroupDiagnostic(issueGroup),
@@ -228,11 +229,13 @@ export async function onRequestGet(context) {
     if (limited) return limited;
     return json({
       ok: false,
-      error: error.message || "DM 查询失败",
+      error: error.message || "债券资料查询失败",
       diagnostic: error.diagnostic || null,
       hint: resolveDataSourceMode(context.env, context.request) === 'qb'
         ? '请检查 QB 服务配置、接口权限或稍后重试，并核对债券名称或代码。'
-        : "请检查 INNO_APP_KEY/INNO_APP_SECRET、DM 套餐权限、Cloudflare 到 DM 的网络访问以及简称是否能匹配。",
+        : resolveDataSourceMode(context.env, context.request) === 'dm'
+          ? "请检查 DM 服务配置、接口权限或稍后重试，并核对债券名称或代码。"
+          : "请检查数据源服务配置、接口权限或稍后重试，并核对债券名称或代码。",
     }, 502);
   }
 }
@@ -378,7 +381,7 @@ function dmNoResultPayload({ shortName, securityId, fullName, basic, primary, ne
     error: "未查询到匹配债券",
     hint: suggestions.length
       ? "请确认债券简称、债券代码或查询日期窗口；下方已列出相近候选，可点击继续查询。"
-      : "请确认债券简称、债券代码或查询日期窗口；DM 接口已返回，但没有匹配到该债券。",
+      : "请确认债券简称、债券代码或查询日期窗口；数据源已返回，但没有匹配到该债券。",
     query: { shortName, securityId, fullName, startDate: primary.window.startDate, endDate: primary.window.endDate },
     normalized: null,
     issueGroup: null,
@@ -392,7 +395,7 @@ function dmNoResultPayload({ shortName, securityId, fullName, basic, primary, ne
         suggestionCount: suggestions.length,
         suggestionSources: nearMatches?.diagnostic?.sources || [],
         suggestionLookupError: nearMatches?.diagnostic?.error || "",
-        reason: "DM basic-info returned no row and primary-data had no row matching the requested short name or security id.",
+        reason: "No basic-info row or primary-data row matched the requested short name or security id.",
       },
     },
     fieldCandidates: [],
@@ -423,7 +426,7 @@ async function lookupDmNearMatchSuggestions(dm, {
       rows.push(...outstandingRows.map((row) => ({ ...row, __dmSuggestionIssuerScoped: true })));
       sources.push({ name: "outstandingBondsByIssuer", rowCount: outstandingRows.length });
     } catch (lookupError) {
-      error = lookupError?.message || "DM related-bond lookup failed";
+      error = lookupError?.message || "相关债券查询失败";
       sources.push({ name: "outstandingBondsByIssuer", rowCount: 0, error });
     }
   }
@@ -1147,7 +1150,7 @@ async function lookupDmRatingDiscovery(dm, { normalized, basic, primary, company
       errors.push({
         source: sourceName,
         payloadKeys: Object.keys(payload),
-        error: error.message || "DM rating discovery failed",
+        error: error.message || "评级资料查询失败",
       });
     }
   }
@@ -1527,11 +1530,15 @@ function dmBondRatingRowMatches(row, normalized) {
 
 function dmDedicatedRatingError(error) {
   const message = String(error?.message || "");
+  if (error?.code === 'qb_rate_limited' || Number(error?.status) === 429 && /^QB\b/i.test(message)) return "QB 接口限流（429）";
+  const qbHttp = message.match(/QB HTTP\s+(\d+)/i);
+  if (qbHttp) return `QB HTTP ${qbHttp[1]}`;
+  if (/^QB\b/i.test(message) || String(error?.code || '').startsWith('qb_')) return "QB 评级接口请求失败";
   const http = message.match(/DM HTTP\s+(\d+)/i);
   if (http) return `DM HTTP ${http[1]}`;
   const api = message.match(/DM API\s+([^:\s]+)/i);
   if (api) return `DM API ${api[1]}`;
-  return "DM rating API request failed";
+  return "评级接口请求失败";
 }
 
 function externalDmRating(row, { requireInstitution = false } = {}) {
@@ -2242,7 +2249,7 @@ function normalizeDmGuaranteeInfo({ primaryRows = [], basicRows = [] } = {}) {
     ]).join("；"),
     source: primaryNames.length ? "dm-primary" : basicNames.length ? "dm-basic" : "",
     conflict: Boolean(conflicts),
-    warnings: conflicts ? ["DM 一级发行数据与债券基本信息的担保人口径不一致，请复核。"] : [],
+    warnings: conflicts ? ["一级发行数据与债券基本信息的担保人口径不一致，请复核。"] : [],
   };
 }
 
@@ -2670,7 +2677,7 @@ function entryHasIssuedFields(entry) {
 }
 
 function issueTrancheStatusReason(status, targetShortName = "") {
-  if (status === "cancelled") return "DM 已明确标记为取消发行，不作为当前有效品种";
+  if (status === "cancelled") return "数据源已明确标记为取消发行，不作为当前有效品种";
   if (status === "issued") return "已取得发行结果字段";
   if (status === "reallocated" && targetShortName) return `本期债券已全部回拨至${targetShortName}`;
   if (status === "reallocated") return "同组其他期限已有发行结果，本期限未见发行结果，可能全额回拨或未发行";
@@ -2819,7 +2826,7 @@ function issuerIdentityDiagnostic(issuerIdentity) {
   };
 }
 
-function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallback, enriched, hasDb, windEnabled) {
+function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallback, enriched, hasDb, windEnabled, mode = 'auto') {
   const fields = ["subjectRating", "ratingAgency", "impliedRating"];
   const fromQb = (value, field) => /QB/i.test(value?.ratingSource?.[field] || value?.fieldSource?.[field] || '');
   const filledFromDm = fields.filter((field) => Boolean(original?.[field]) && !fromQb(original, field));
@@ -2864,7 +2871,11 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
     matchedIssuer: issuerFallback?.legalName || "",
     matchedBy: issuerFallback?.matchedBy || "",
     matchedTarget: issuerFallback?.matchedTarget || "",
-    note: filledFromQb.length
+    note: filledFromQb.length && mode === 'qb'
+      ? enriched?.ratingSource?.impliedRating === 'qb-issuer-peer'
+        ? `目标债券尚未发行且自身无隐含评级，已通过 QB 取得同主体非永续债${dmDiscovery?.peerImpliedRating?.peerShortName ? `“${dmDiscovery.peerImpliedRating.peerShortName}”` : ""}的隐含评级；各字段来源和数据日期已保留。`
+        : `已通过 QB 取得${filledFromQb.map(field => ({ subjectRating: '主体评级', ratingAgency: '评级机构', impliedRating: '隐含评级' })[field]).join('、')}；各字段来源和数据日期已保留。`
+      : filledFromQb.length
       ? enriched?.ratingSource?.impliedRating === 'qb-issuer-peer'
         ? `目标债券尚未发行且自身无隐含评级，已通过 QB 取得同主体非永续债${dmDiscovery?.peerImpliedRating?.peerShortName ? `“${dmDiscovery.peerImpliedRating.peerShortName}”` : ""}的隐含评级；已有 DM 数据保持优先。`
         : `DM 未返回的${filledFromQb.map(field => ({ subjectRating: '主体评级', ratingAgency: '评级机构', impliedRating: '隐含评级' })[field]).join('、')}已由 QB 补齐；已有 DM 数据保持优先，各字段来源和数据日期已保留。`
@@ -2879,8 +2890,8 @@ function ratingDiagnostic(original, dmDiscovery, windImpliedRating, issuerFallba
       : filledFromDmDiscovery.length
       ? "Rating fields were not present in the initially selected DM row, but were found by scanning additional DM results before D1 fallback."
       : filledFromIssuerDb.length
-      ? "DM did not return every rating field; missing values were filled from the issuer database."
-      : "DM rating discovery did not find rating fields; no issuer-database fallback was available for the remaining fields.",
+      ? "数据源未返回全部评级字段，缺失字段已从主体库补齐。"
+      : "数据源未查得评级字段，剩余字段也没有可用的主体库备用资料。",
   };
 }
 

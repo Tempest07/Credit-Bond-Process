@@ -988,3 +988,35 @@ test('rate-limited code lookup stops its later batches and gives a safe explicit
     assert.equal(editor.hasPendingChanges(), false); assert.equal(env.state.revision, 6);
   });
 });
+
+test('unmatched branch names identify their requested source after switching rather than a fixed DM label', async () => {
+  let mode = 'dm';
+  await fixture({ state: { sections: [{ title: '北京', text: '26测试，1.60*ofr' }], revision: 6, userId: 'admin' } }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => mode });
+    await editor.setActive(true); await env.elements.fill.click();
+    const issue = () => env.root.querySelector('.bond-list-issue').children[0].textContent;
+    assert.equal(issue(), 'DM 未找到：26测试');
+    mode = 'qb'; editor.resetDataSource();
+    await env.elements.fill.click();
+    assert.equal(issue(), 'QB 未找到：26测试');
+    mode = 'auto'; editor.resetDataSource();
+    await env.elements.fill.click();
+    assert.equal(issue(), '自动（DM→QB） 未找到：26测试');
+    assert.equal(env.state.revision, 6);
+    assert.equal(editor.hasPendingChanges(), false);
+  });
+});
+
+test('code completion reports actual provider when present and requested route when legacy results omit it', async () => {
+  for (const [provider, expected] of [['DM', 'DM'], ['QB', 'QB'], ['', 'QB']]) {
+    await fixture({ match: true, state: { sections: [{ title: '北京', text: '26测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
+      if (!request.url.endsWith('/lookup')) return;
+      return json({ source: provider, results: { '26测试': { status: 'matched', matches: [{ code: '102600001.IB', name: '26测试', market: '银行间' }] } } });
+    } }, async env => {
+      const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
+      await editor.setActive(true); await env.elements.fill.click();
+      assert.match(env.elements.notice.textContent, new RegExp('^已通过 ' + expected + ' 补齐 1 条报价'));
+      assert.equal(env.textarea(0).value, '102600001.IB，26测试，1.60*ofr');
+    });
+  }
+});

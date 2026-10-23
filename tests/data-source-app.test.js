@@ -14,7 +14,7 @@ test('a source switch invalidates queries and caches without saving or replacing
   const context=vm.createContext({dataSourceGeneration:0,state,clearTimeout(){},valuationAssistTimer:null,
     valuationAssistController:{abort(){calls.push('abort');}},policyCurveController:{abort(){calls.push('abort');}},
     valuationAssistRequestKey:'old',renderedValuationPayload:{old:true},
-    secondaryPendingDmLoading:true,secondaryLedgerDmLoading:true,
+    secondaryPendingDmLoading:true,secondaryLedgerDmLoading:true,projectScreenshotRows:[],refreshMarketDataLabels(){},
     paymentTodoCodes:cache(),bondListController:cache(),realtimeQuoteController:cache(),
     cancelProjectDmLookup:()=>calls.push('cancel'),cancelDmLookup:()=>calls.push('cancel'),resetModelValuationAssist:()=>calls.push('model'),
     updateSecondaryPendingControls(){},updateSecondaryLedgerControls(){},$:()=>null,

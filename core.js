@@ -1172,7 +1172,7 @@ export function generateOpinion(project, issuer) {
   }
   const guaranteeInfo = normalizeGuaranteeInfo(project.guaranteeInfo);
   if (guaranteeInfo.guarantors.length && !guaranteeInfo.method) {
-    warnings.push("已识别担保人，但担保方式无法从 DM 直接确认，请根据发行文件补充。");
+    warnings.push("已识别担保人，但返回资料无法直接确认担保方式，请根据发行文件补充。");
   }
   for (const guarantor of guaranteeInfo.guarantors) {
     if (!guarantor.subjectRating || !guarantor.ratingAgency) {

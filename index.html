@@ -4,30 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.3.2">
-  <meta name="application-build-version" content="5.3.2">
-  <meta name="application-build" content="20261023release532">
-  <title>Bond Centre 5.3.2 - Tempest07</title>
+  <meta name="application-version" content="5.3.3">
+  <meta name="application-build-version" content="5.3.3">
+  <meta name="application-build" content="20261023release533">
+  <title>Bond Centre 5.3.3 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261023release532"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261023release532">
+  <script src="./app-shell-mode.js?v=20261023release533"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261023release533">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261023release532" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261023release532" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261023release532" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261023release532">
-  <script src="./ui-preference.js?v=20261023release532"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261023release532">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261023release532">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261023release532">
-  <link rel="stylesheet" href="./release-notes.css?v=20261023release532">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261023release532">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261023release532">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261023release532">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261023release533" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261023release533" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261023release533" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261023release533">
+  <script src="./ui-preference.js?v=20261023release533"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261023release533">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261023release533">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261023release533">
+  <link rel="stylesheet" href="./release-notes.css?v=20261023release533">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261023release533">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261023release533">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261023release533">
 </head>
 <body>
   <div class="app-shell">
@@ -46,19 +46,19 @@
           <summary class="nav-more-trigger">更多 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="nav-more-panel">
         <button class="nav-item" data-view-target="database">主体与授信库</button>
-        <button class="nav-item" data-view-target="dm-test">DM 测试</button>
+        <button class="nav-item" data-view-target="dm-test">数据查询</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
           </div>
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.3.2">v5.3.2</span>
+      <span class="header-version" aria-label="当前版本 5.3.3">v5.3.3</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.2 · 2026-10-23">v5.3.2</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.3 · 2026-10-23">v5.3.3</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在确认数据源…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel" aria-describedby="dataSourceDescription">
@@ -79,7 +79,7 @@
           <span>SHOT</span>
           <strong>项目表截图</strong>
         </div>
-        <p>识别项目表目标分行，按债券全称查 DM 简称。</p>
+        <p data-source-template="识别项目表目标分行，通过 {source} 按债券全称查简称。">识别项目表目标分行，按当前数据源查债券简称。</p>
         <div class="project-screenshot-dropzone" id="projectScreenshotDropzone" role="button" tabindex="0" aria-label="拖入或粘贴项目表截图">
           <strong>拖入截图</strong>
           <span>微信图片拖到这里</span>
@@ -152,7 +152,7 @@
           <div class="cloud-gate-copy">
             <span class="step" id="cloudGateStep">LOGIN</span>
             <h2 id="cloudGateTitle">欢迎回来</h2>
-            <p id="cloudGateDetail">请登录管理员账号，进入后即可访问项目中心、主体库、DM 测试和邮件等云端数据。</p>
+            <p id="cloudGateDetail">请登录管理员账号，进入后即可访问项目中心、主体库、数据查询和邮件等云端数据。</p>
             <div class="cloud-pulse-lines" aria-hidden="true">
               <span></span><span></span><span></span>
             </div>
@@ -167,11 +167,11 @@
           <section class="panel input-panel">
             <div class="panel-head">
               <div class="generator-step-heading"><span class="step">01</span><h2>输入债券代码/简称建项</h2></div>
-              <span class="pill muted" id="projectDmStatus">未读取 DM</span>
+              <span class="pill muted" id="projectDmStatus">尚未读取债券资料</span>
             </div>
             <form class="project-dm-entry-form" id="projectDmEntryForm" autocomplete="off">
               <label>债券简称或代码<input id="projectDmSeedInput" placeholder="例如：26金川MTN001 或 102681001.IB" autocomplete="off"></label>
-              <button class="button primary" id="projectDmLookupButton" type="submit">读取 DM</button>
+              <button class="button primary" id="projectDmLookupButton" type="submit">读取债券资料</button>
             </form>
             <div class="project-dm-toolbar">
               <button class="button subtle" id="projectDmClearButton" type="button">清空当前</button>
@@ -280,7 +280,7 @@
             <div class="abs-field-panel" id="absFieldPanel" hidden>
               <div class="tranche-inquiry-head">
                 <strong>ABS / ABN 结构化要素</strong>
-                <span>DM 能带入的会自动填入，空白项用于人工补充并存档。</span>
+                <span>可查询到的资料会自动填入，空白项用于人工补充并存档。</span>
               </div>
               <div class="field-grid">
                 <label class="span-2">专项计划 / 产品名称<input data-abs-field="planName"></label>
@@ -677,7 +677,7 @@
                 <div class="secondary-pending-toolbar">
                   <span>可从 Excel 整块粘贴；Enter 上下移动，Tab 左右移动。</span>
                   <div>
-                    <button class="button subtle" id="secondaryPendingDmButton" type="button">重新读取 DM</button>
+                    <button class="button subtle" id="secondaryPendingDmButton" type="button">重新读取债券资料</button>
                     <button class="button subtle" id="secondaryPendingUndoButton" type="button" disabled>撤销</button>
                     <button class="button subtle" id="secondaryPendingCopyButton" type="button">复制到 Excel</button>
                     <button class="button subtle" id="secondaryPendingColumnsButton" type="button">展开附加列</button>
@@ -687,7 +687,7 @@
                 </div>
                 <div class="secondary-pending-sheet-meta">
                   <span class="secondary-ledger-save-status saved" id="secondaryPendingSaveStatus">已保存</span>
-                  <span id="secondaryPendingDmStatus">DM 待读取</span>
+                  <span id="secondaryPendingDmStatus">债券资料待读取</span>
                 </div>
                 <div class="secondary-list" id="secondaryTradeList"></div>
               </section>
@@ -703,7 +703,7 @@
               <div class="secondary-ledger-toolbar">
                 <label>台账日期<input id="secondaryLedgerDate" type="date"></label>
                 <button class="button subtle" id="secondaryLedgerTodayButton" type="button">今日</button>
-                <button class="button subtle" id="secondaryLedgerDmButton" type="button">读取 DM</button>
+                <button class="button subtle" id="secondaryLedgerDmButton" type="button">读取债券资料</button>
                 <button class="button subtle" id="secondaryLedgerUndoButton" type="button" disabled>撤销</button>
                 <button class="button secondary-ledger-save-button" id="secondaryLedgerSaveButton" type="button" disabled>保存修改</button>
                 <button class="button subtle" id="secondaryLedgerPreviewButton" type="button">预览邮件</button>
@@ -712,7 +712,7 @@
               </div>
               <div class="secondary-ledger-sheet-meta">
                 <span class="secondary-ledger-save-status saved" id="secondaryLedgerSaveStatus">已保存</span>
-                <span id="secondaryLedgerDmStatus">DM 待读取</span>
+                <span id="secondaryLedgerDmStatus">债券资料待读取</span>
               </div>
               <div class="secondary-ledger-list" id="secondaryLedgerList"></div>
               <div class="mail-output-card secondary-ledger-output-card" id="secondaryLedgerOutputPanel" hidden>
@@ -1082,7 +1082,7 @@
         <section id="bondList-results-panel" class="bond-list-panel bond-list-results-panel" role="tabpanel" aria-labelledby="bondList-tab-results">
           <div class="bond-list-panel-head bond-list-results-head">
             <span id="bondList-results-counts">符合 0 / 共 0 条报价</span>
-            <span id="bondList-metadata-status" class="bond-list-metadata-status" role="status" aria-live="polite">DM · 等待读取债券资料</span>
+            <span id="bondList-metadata-status" class="bond-list-metadata-status" role="status" aria-live="polite">等待读取债券资料</span>
           </div>
           <div class="bond-list-table-scroll">
             <table class="bond-list-results-table" aria-label="筛选报价明细">
@@ -1186,7 +1186,7 @@
           </div>
 
           <footer class="realtime-footnote">
-            <span>来源：DM · /bond/market-data/realtime-quote</span>
+            <span>经纪商行情接口：DM（已暂停）</span>
             <span>口径：当日经纪商聚合最优报价</span>
             <span id="realtimeQuoteValuationStatus">估值：待首次行情解析</span>
             <span>当前接口不提供逐中介名称</span>
@@ -1198,16 +1198,16 @@
       <section class="view" data-view="dm-test">
         <section class="panel dm-test-panel">
           <div class="panel-head">
-            <div><span class="step">DM</span><h2>DM 查询测试</h2></div>
-            <span class="pill">读取 INNO_APP_KEY / INNO_APP_SECRET</span>
+            <div><span class="step">DATA</span><h2>数据查询测试</h2></div>
+            <span class="pill" data-source-template="请求来源：{source}">按当前选择的数据源请求</span>
           </div>
-          <p class="dm-test-note">输入债券简称或代码，直接调用云端 DM 查询接口。结果会显示结构化字段、候选字段、诊断信息和完整 JSON，方便继续调接口。</p>
+          <p class="dm-test-note" data-source-template="输入债券简称或代码，通过 {source} 查询。结果会显示结构化字段、候选字段、诊断信息和完整 JSON，方便继续调接口。">输入债券简称或代码，按当前数据源查询。结果会显示结构化字段、候选字段、诊断信息和完整 JSON，方便继续调接口。</p>
           <form class="dm-test-form" id="dmLookupForm">
             <label>债券简称或代码<input id="dmLookupInput" placeholder="例如：26张家城投SCP002 或 012681567.IB" autocomplete="off"></label>
             <label>起始日期（可选）<input id="dmLookupStartDate" type="date"></label>
             <label>结束日期（可选）<input id="dmLookupEndDate" type="date"></label>
             <div class="dm-test-actions">
-              <button class="button primary" type="submit" id="dmLookupButton">查询 DM</button>
+              <button class="button primary" type="submit" id="dmLookupButton">查询资料</button>
               <button class="button subtle" type="button" id="dmLookupClearButton">清空</button>
               <button class="button subtle" type="button" id="dmLookupCopyButton" disabled>复制 JSON</button>
             </div>
@@ -1399,7 +1399,7 @@
           <article class="rule-card"><span>交易所债券</span><h2>发行方式与期次需确认</h2><p>简称尾号不等于发行期次。简表需注明公开/非公开及“第几期”，也可在结构化字段中手工确认。</p></article>
           <article class="rule-card"><span>双品种互拨</span><h2>一条意见分别列示</h2><p>自动合并 A/B 或相邻交易所简称，规模按合计、期限按双向互拨表述，询价和比例按两个期限分别列示。</p></article>
           <article class="rule-card"><span>投标利率</span><h2>默认取市场估值</h2><p>自动生成时优先使用项目简表中的市场估值；未识别估值时保留【待填写】。</p></article>
-          <article class="rule-card"><span>截标时间</span><h2>按录入时点智能建议</h2><p>默认截标时点前新增采用当天，时点后采用下一工作日；银行间默认18:00，交易所默认19:00，简表或 DM 有明确簿记日期时优先采用原日期。</p></article>
+          <article class="rule-card"><span>截标时间</span><h2>按录入时点智能建议</h2><p>默认截标时点前新增采用当天，时点后采用下一工作日；银行间默认18:00，交易所默认19:00，简表或债券资料有明确簿记日期时优先采用原日期。</p></article>
           <article class="rule-card"><span>民企与延期</span><h2>民企时间需要确认</h2><p>民企银行间项目默认标记为截标时间待确认；快捷延期会保存原时间与调整记录。</p></article>
         </div>
         <section class="panel word-note">
@@ -1421,7 +1421,7 @@
           <nav class="android-more-links" aria-label="更多业务页面">
             <button class="nav-item android-more-link" type="button" data-view-target="database" data-view-label="主体与授信库">主体与授信库</button>
             <button class="nav-item android-more-link" type="button" data-view-target="realtime-quotes" data-view-label="实时行情">实时行情</button>
-            <button class="nav-item android-more-link" type="button" data-view-target="dm-test" data-view-label="DM 测试">DM 测试</button>
+            <button class="nav-item android-more-link" type="button" data-view-target="dm-test" data-view-label="数据查询">数据查询</button>
             <button class="nav-item android-more-link" type="button" data-view-target="rules" data-view-label="规则说明">规则说明</button>
           </nav>
           <div class="android-screenshot-mount" id="androidScreenshotMount"></div>
@@ -1649,6 +1649,16 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.3.3</strong><time datetime="2026-10-23">2026 / 10 / 23</time></div>
+      <section><h3>全站数据来源标签修复</h3><ul>
+        <li>新增项目、项目表截图、缴款待办、二级交易、资料查询、估值助手及结果提示的入口、加载中、失败与待查标签统一跟随“自动／DM／QB”三挡。</li>
+        <li>请求模式与已取得数据的真实来源分开显示；成功值保留实际来源和数据日期，不因切换挡位改写。</li>
+        <li>切换时清理旧失败、待查和加载提示，取消旧请求并阻止晚到结果回填；保留真实供应商错误、DM 专属经纪商暂停说明及历史日志。</li>
+      </ul></section>
+      <section><h3>热修复范围与数据保护</h3><ul>
+        <li>不改变主源优先级、供应商权限、密钥、配额、超时或 API 业务契约，不代表供应商服务已经恢复。</li>
+        <li>沿用数据库结构、D1 分块存储、历史快照和 revision 保护，不迁移、不导入测试数据，不清空或批量改写业务记录。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.3.2</strong><time datetime="2026-10-23">2026 / 10 / 23</time></div>
       <section><h3>数据来源与限流提示修复</h3><ul>
         <li>修复 OFR/BID 选择 QB 后，读取中、请求失败或全部缺失时仍显示 DM 标签的问题；这些状态按当前请求模式标识，已成功取得的值保留真实来源和数据日期。</li>
@@ -1802,10 +1812,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261023release532"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261023release532"></script>
-  <script type="module" src="./app.js?v=20261023release532"></script>
-  <script type="module" src="./todo-fluid.js?v=20261023release532"></script>
-  <script type="module" src="./release-notes.js?v=20261023release532"></script>
+  <script src="./ui-mode.js?v=20261023release533"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261023release533"></script>
+  <script type="module" src="./app.js?v=20261023release533"></script>
+  <script type="module" src="./todo-fluid.js?v=20261023release533"></script>
+  <script type="module" src="./release-notes.js?v=20261023release533"></script>
 </body>
 </html>

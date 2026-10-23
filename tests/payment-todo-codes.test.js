@@ -116,3 +116,31 @@ test('source reset invalidates verified cache immediately rather than waiting fi
   assert.equal(calls, 2);
   assert.equal(codes.get('26测试MTN001').source, 'QB');
 });
+
+test('loading and failed code lookups retain the requested mode without inventing a data provider', async () => {
+  let mode = 'qb', rejectLookup;
+  const codes = createPaymentTodoCodes({ getDataSourceMode: () => mode,
+    lookup: () => new Promise((_resolve, reject) => { rejectLookup = reject; }), onChange() {} });
+  codes.ensure(['26测试MTN001']);
+  assert.equal(codes.get('26测试MTN001').requestMode, 'qb');
+  await tick();
+  mode = 'dm';
+  rejectLookup(new Error('接口暂不可用')); await tick();
+  assert.equal(codes.get('26测试MTN001').requestMode, 'qb');
+  assert.equal(codes.get('26测试MTN001').source, undefined);
+});
+
+test('unmatched lookups use request mode while verified codes keep their actual provider', async () => {
+  for (const status of ['missing', 'ambiguous', 'matched']) {
+    const codes = createPaymentTodoCodes({ getDataSourceMode: () => 'qb', onChange() {}, lookup: async names => {
+      const response = payload(names);
+      response.results[names[0]].status = status;
+      return response;
+    } });
+    codes.ensure(['26测试MTN001']); await tick();
+    const result = codes.get('26测试MTN001');
+    assert.equal(result.requestMode, 'qb');
+    assert.equal(result.source, status === 'matched' ? 'DM' : '');
+    assert.equal(result.status, status);
+  }
+});

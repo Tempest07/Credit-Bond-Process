@@ -226,3 +226,44 @@ test('source reset preserves pause, suspension, watchlist and background polling
   assert.equal(calls, 0);
   assert.equal(scheduled, 1);
 });
+
+function statusController(t, mode = 'qb') {
+  const previousDocument = globalThis.document;
+  globalThis.document = { hidden: false };
+  t.after(() => { if (previousDocument === undefined) delete globalThis.document; else globalThis.document = previousDocument; });
+  const labels = new Map();
+  const element = () => ({ textContent: '', dataset: {}, setAttribute() {}, querySelector() { return this.strong ||= { textContent: '' }; } });
+  const root = { querySelector(selector) { if (!labels.has(selector)) labels.set(selector, element()); return labels.get(selector); } };
+  const c = Object.create(__test__.RealtimeQuoteController.prototype);
+  Object.assign(c, { root, getDataSourceMode: () => mode, watchlist: [], active: true, paused: false, loading: false,
+    dmSuspended: false, error: '', lastFetchedAt: '', intervalMs: 20000, nextRefreshAt: 0,
+    valuationRequestMode: '', valuationProvider: '', valuationError: '', valuationLoading: false, valuationFetchedAt: '' });
+  return { c, labels };
+}
+
+test('realtime valuation pending and failure labels follow request mode and successful snapshots keep actual provider', t => {
+  for (const [mode, label] of [['qb', 'QB'], ['dm', 'DM'], ['auto', '自动（DM→QB）']]) {
+    const { c, labels } = statusController(t, mode);
+    const status = () => labels.get('#realtimeQuoteValuationStatus').textContent;
+    c.renderValuationStatus();
+    assert.equal(status(), `${label} 估值：待首次行情解析`);
+    c.valuationLoading = true; c.renderValuationStatus();
+    assert.equal(status(), `${label} 估值：更新中`);
+    c.valuationLoading = false; c.valuationError = '暂不可用'; c.renderValuationStatus();
+    assert.equal(status(), `${label} 估值：暂不可用`);
+    c.valuationError = ''; c.valuationFetchedAt = '2026-10-23T01:00:00Z'; c.valuationProvider = 'DM';
+    c.renderValuationStatus();
+    assert.match(status(), /^DM 估值快照：/);
+  }
+});
+
+test('QB selection does not relabel or imply recovery of the suspended DM broker quote API', t => {
+  const { c, labels } = statusController(t, 'qb');
+  c.dmSuspended = true; c.paused = true;
+  c.renderStatus();
+  assert.equal(labels.get('#realtimeQuoteLiveState').strong.textContent, '经纪商行情已暂停');
+  assert.match(labels.get('#realtimeQuoteStatusDetail').textContent, /实时报价接口（DM）已暂停/);
+  assert.match(labels.get('#realtimeQuoteStatusDetail').textContent, /当前资料数据源：QB/);
+  assert.match(labels.get('#realtimeQuoteStatusDetail').textContent, /不会恢复该接口/);
+  assert.equal(labels.get('#realtimeQuoteRefreshButton').disabled, true);
+});

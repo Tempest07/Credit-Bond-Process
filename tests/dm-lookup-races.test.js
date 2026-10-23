@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { normalizeLookupPayload } from "../bond-identity.js";
-import { dataProviderLabel } from '../market-data-source.js';
+import { dataProviderLabel, dataSourceModeLabel } from '../market-data-source.js';
 
 const source = await readFile(new URL("../app.js", import.meta.url), "utf8");
 function loadFunctions(context, names) {
@@ -27,7 +27,8 @@ function harness() {
   const applied = [];
   const rendered = [];
   const context = vm.createContext({
-    $, AbortController, URLSearchParams, performance, normalizeLookupPayload, dataProviderLabel,
+    $, AbortController, URLSearchParams, performance, normalizeLookupPayload, dataProviderLabel, dataSourceModeLabel,
+    dataSourceControl: { getMode: () => 'dm' },
     projectDmRequest: null, dmLookupRequest: null, project: {},
     fetch: (url, options) => new Promise(resolve => requests.push({ url, options, resolve })),
     authHeaders: () => ({}), briefTemplatePlaceholders: () => [],
@@ -37,7 +38,7 @@ function harness() {
     renderProjectDmAssist: payload => rendered.push(payload),
     applyDmLookupToCurrentProject: payload => applied.push(payload),
   });
-  loadFunctions(context, ["runProjectDmLookup", "cancelProjectDmLookup", "setProjectDmLookupBusy", "checkedDmLookupPayload"]);
+  loadFunctions(context, ["currentDataSourceLabel", "runProjectDmLookup", "cancelProjectDmLookup", "setProjectDmLookupBusy", "checkedDmLookupPayload"]);
   const answer = (index, name) => requests[index].resolve({
     ok: true, status: 200,
     json: async () => ({ ok: true, normalized: { shortName: name } }),

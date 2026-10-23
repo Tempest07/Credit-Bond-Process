@@ -1,4 +1,4 @@
-import { dataProviderLabel } from './market-data-source.js?v=20261023release532';
+import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release533';
 
 const DEFAULT_ENDPOINT = "./api/dm/realtime-quotes";
 const DEFAULT_VALUATION_ENDPOINT = "./api/dm/realtime-valuations";
@@ -79,6 +79,7 @@ class RealtimeQuoteController {
     this.endpoint = options.endpoint || DEFAULT_ENDPOINT;
     this.valuationEndpoint = options.valuationEndpoint || DEFAULT_VALUATION_ENDPOINT;
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
+    this.getDataSourceMode = typeof options.getDataSourceMode === "function" ? options.getDataSourceMode : () => 'auto';
     const saved = loadSavedState();
     this.watchlist = saved.watchlist;
     this.intervalMs = saved.intervalMs;
@@ -89,6 +90,8 @@ class RealtimeQuoteController {
     this.valuations = new Map();
     this.lastFetchedAt = "";
     this.valuationFetchedAt = "";
+    this.valuationRequestMode = '';
+    this.valuationProvider = '';
     this.valuationRetryAt = 0;
     this.error = "";
     this.valuationError = "";
@@ -270,6 +273,8 @@ class RealtimeQuoteController {
     this.valuations.clear();
     this.lastFetchedAt = "";
     this.valuationFetchedAt = "";
+    this.valuationRequestMode = '';
+    this.valuationProvider = '';
     this.valuationRetryAt = 0;
     if (!this.dmSuspended) this.error = "";
     this.valuationError = "";
@@ -493,6 +498,7 @@ class RealtimeQuoteController {
     this.valuationController = controller;
     this.valuationLoading = true;
     this.valuationError = "";
+    this.valuationRequestMode = this.getDataSourceMode?.() || 'auto';
     this.renderValuationStatus();
     try {
       const response = await fetch(this.valuationEndpoint, {
@@ -512,6 +518,9 @@ class RealtimeQuoteController {
         if (securityId) this.valuations.set(securityId, item);
       }
       this.valuationFetchedAt = payload.fetchedAt || new Date().toISOString();
+      const receivedRows = Array.isArray(payload.rows) ? payload.rows : [];
+      const receivedValues = receivedRows.flatMap(row => [row.chinaBond, row.chinaSecurities]).filter(value => value?.yield != null);
+      this.valuationProvider = dataProviderLabel(receivedValues, '') || dataProviderLabel(receivedRows, '') || dataProviderLabel(payload, '');
       this.valuationRetryAt = 0;
       this.rows = this.rows.map((row) => this.attachValuation(row));
       this.renderTable();
@@ -841,9 +850,9 @@ class RealtimeQuoteController {
     let status = "idle";
     let detailText = "导入券池后开始轮询";
     if (this.dmSuspended) {
-      label = "DM访问已暂停";
+      label = "经纪商行情已暂停";
       status = "paused";
-      detailText = "实时行情的DM访问已暂停，其他DM功能不受影响。";
+      detailText = `经纪商实时报价接口（DM）已暂停；当前资料数据源：${dataSourceModeLabel(this.getDataSourceMode?.() || 'auto')}。切换资料数据源不会恢复该接口。`;
     } else if (this.loading) {
       label = "刷新中";
       status = "loading";
@@ -903,7 +912,9 @@ class RealtimeQuoteController {
     const element = this.root.querySelector("#realtimeQuoteValuationStatus");
     if (!element) return;
     element.dataset.state = this.valuationError ? "error" : this.valuationLoading ? "loading" : "idle";
-    element.textContent = this.valuationError ? `估值：${this.valuationError}` : this.valuationLoading ? "估值：更新中" : this.valuationFetchedAt ? `估值快照：${formatChinaDateTime(this.valuationFetchedAt)}` : "估值：待首次行情解析";
+    const requested = dataSourceModeLabel(this.valuationRequestMode || this.getDataSourceMode?.() || 'auto');
+    const actual = this.valuationProvider || requested;
+    element.textContent = this.valuationError ? `${requested} 估值：${this.valuationError}` : this.valuationLoading ? `${requested} 估值：更新中` : this.valuationFetchedAt ? `${actual} 估值快照：${formatChinaDateTime(this.valuationFetchedAt)}` : `${requested} 估值：待首次行情解析`;
   }
 
   save() {

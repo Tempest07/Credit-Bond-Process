@@ -1,3 +1,5 @@
+import { renderDataSourceLabels } from './market-data-source.js?v=20261023release533';
+
 const COOKIE_NAME = 'bond_centre_data_source';
 const MODES = new Set(['auto', 'dm', 'qb']);
 const LABELS = { auto: '自动', dm: 'DM', qb: 'QB' };
@@ -47,6 +49,7 @@ export function initDataSourceControl(options = {}) {
 
   function render() {
     if (destroyed) return;
+    renderDataSourceLabels(doc, mode);
     root.setAttribute('aria-busy', String(!ready));
     root.dataset.mode = mode;
     for (const button of buttons) {

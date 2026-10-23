@@ -1,6 +1,7 @@
 import { requireUser } from "../_auth.js";
 import { withDataSources } from '../qb/fallback.js';
 import { rowProvenance } from '../qb/provenance.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 import {
   apiHeaders,
   json,
@@ -100,16 +101,18 @@ export async function onRequestPost(context) {
       },
     }, dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     const timedOut = error?.name === "AbortError";
     console.error(JSON.stringify({
-      message: "DM realtime valuation lookup failed",
+      message: "Realtime valuation lookup failed",
       timedOut,
       error: String(error?.message || error).slice(0, 240),
     }));
     return json({
       ok: false,
       error: timedOut ? "中债/中证估值查询超时。" : "中债/中证估值查询失败。",
-      hint: timedOut ? "估值批量查询已在 20 秒后中止，请稍后刷新。" : "请检查 DM 估值接口权限或稍后重试。",
+      hint: timedOut ? "估值批量查询已在 20 秒后中止，请稍后刷新。" : "请检查所选数据源的估值接口权限或稍后重试。",
     }, timedOut ? 504 : 502);
   } finally {
     clearTimeout(timeout);

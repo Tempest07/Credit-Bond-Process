@@ -55,7 +55,7 @@ test("rejects an explicit numeric code when DM basic info cannot confirm it", as
   const payload = await response.json();
 
   assert.equal(payload.rows.length, 0);
-  assert.deepEqual(payload.unresolved, [{ query: "012682081", reason: "DM 基础资料未匹配到证券代码" }]);
+  assert.deepEqual(payload.unresolved, [{ query: "012682081", reason: "基础资料未匹配到证券代码" }]);
 });
 
 test("reports unmatched names separately and validates the 200-security limit", async () => {
@@ -65,7 +65,7 @@ test("reports unmatched names separately and validates the 200-security limit", 
   }));
   const missingPayload = await missing.json();
   assert.equal(missingPayload.rows.length, 0);
-  assert.deepEqual(missingPayload.unresolved, [{ query: "不存在的债券", reason: "DM 基础资料未匹配到精确简称" }]);
+  assert.deepEqual(missingPayload.unresolved, [{ query: "不存在的债券", reason: "基础资料未匹配到精确简称" }]);
 
   const tooMany = await onRequestPost(context({
     queries: Array.from({ length: 201 }, (_, index) => String(100000 + index)),

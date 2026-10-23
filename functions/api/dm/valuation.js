@@ -14,6 +14,7 @@ import {
 import { requireUser } from "../_auth.js";
 import { withDataSources } from '../qb/fallback.js';
 import { rowProvenance } from '../qb/provenance.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const OUTSTANDING_BONDS_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/outstanding-bonds";
@@ -130,11 +131,11 @@ export async function onRequestGet(context) {
   const valuationDate = (url.searchParams.get("valuationDate") || url.searchParams.get("valuation_date") || previousChinaBusinessDate()).trim();
 
   if (!issuerName && !societyCode) {
-    return json({ ok: false, reason: "missingIssuer", hint: "缺少发行人，暂无法读取 DM 可比券估值。" });
+    return json({ ok: false, reason: "missingIssuer", hint: "缺少发行人，暂无法读取可比券估值。" });
   }
   const targetDurations = targetDurationParts(durationText);
   if (!targetDurations.length) {
-    return json({ ok: false, reason: "missingDuration", hint: "缺少期限，暂无法读取 DM 可比券估值。" });
+    return json({ ok: false, reason: "missingDuration", hint: "缺少期限，暂无法读取可比券估值。" });
   }
 
   try {
@@ -236,11 +237,13 @@ export async function onRequestGet(context) {
       },
     }, dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     return json({
       ok: false,
       reason: "dmError",
-      error: error.message || "DM 估值助手查询失败",
-      hint: "请检查 DM 估值接口权限、INNO 密钥配置，或稍后重试。",
+      error: error.message || "估值助手查询失败",
+      hint: "请检查所选数据源的估值接口权限、服务配置，或稍后重试。",
     }, 502);
   }
 }
@@ -725,7 +728,7 @@ function buildCurveOnlyFallbackSuggestion({ target, index, impliedRating, curveN
     profileLabel: comparableProfileLabel(targetProfile),
     valuationDate: curveInfo.valuationDate || "",
     preferredYield: "到期收益率",
-    method: `DM 有可比存续债但未返回同口径估值收益率；按${impliedRating}隐含评级中债中短票${nodesText}给参考；未做主体曲线偏离校准；不使用主体评级`,
+    method: `有可比存续债但数据源未返回同口径估值收益率；按${impliedRating}隐含评级中债中短票${nodesText}给参考；未做主体曲线偏离校准；不使用主体评级`,
     comparableItems: [curveItem],
     curveCalibration: {
       curveName,

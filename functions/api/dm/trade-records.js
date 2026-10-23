@@ -12,6 +12,7 @@ import {
 import { requireUser } from "../_auth.js";
 import { withDataSources } from '../qb/fallback.js';
 import { fieldProvider } from '../qb/provenance.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
 const MARKET_DATA_DATE_PATH = "/dm-quant-func-service/api/v1/bond/market-data/date";
@@ -77,8 +78,10 @@ export async function onRequestPost(context) {
       queriedAt: new Date().toISOString(),
     }, dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     console.error(JSON.stringify({
-      message: "DM trade-record lookup failed",
+      message: "Trade-record lookup failed",
       error: String(error?.message || error).slice(0, 240),
     }));
     return json({

@@ -18,6 +18,9 @@ function workspace({ cookie = '', baseUrl = 'https://tempest07.com/bond-centre/'
   const root = new Element();
   const status = new Element();
   const description = new Element();
+  const sourceCopy = new Element({ sourceTemplate: '请求来源：{source}' });
+  const liveStatus = new Element();
+  liveStatus.textContent = 'QB · 已读取 3 条';
   root.querySelectorAll = () => buttons;
   root.querySelector = selector => selector === '[data-source-status]' ? status : description;
   const writes = [];
@@ -25,6 +28,7 @@ function workspace({ cookie = '', baseUrl = 'https://tempest07.com/bond-centre/'
   const document = {
     baseURI: baseUrl,
     querySelector: () => root,
+    querySelectorAll: selector => selector === '[data-source-template]' ? [sourceCopy] : [],
     get cookie() { return cookieValue; },
     set cookie(value) { writes.push(value); if (!blocked) cookieValue = value.split(';')[0]; },
   };
@@ -38,7 +42,7 @@ function workspace({ cookie = '', baseUrl = 'https://tempest07.com/bond-centre/'
     calls.push(args);
     return (fetchImpl || (async () => ({ ok: true, json: async () => ({ mode: readDataSourceMode(cookieValue) || 'qb', defaultMode: 'qb', configured: { dm: true, qb: true } }) })))(...args);
   } });
-  return { control, root, status, description, buttons, document, writes, changes, calls };
+  return { control, root, status, description, sourceCopy, liveStatus, buttons, document, writes, changes, calls };
 }
 
 test('only valid exact source cookies are accepted', () => {
@@ -60,6 +64,7 @@ test('source cookies stay inside the product path and use Secure only on HTTPS',
 
 test('initialization reflects the server mode without changing cookies or invalidating data', async () => {
   const ui = workspace({ fetchImpl: async () => ({ ok: true, json: async () => ({ mode: 'auto', defaultMode: 'qb', configured: { dm: true, qb: true } }) }) });
+  assert.equal(ui.sourceCopy.textContent, '请求来源：QB');
   await ui.control.ready;
   assert.equal(ui.control.getMode(), 'auto');
   assert.deepEqual(ui.buttons.map(button => button.attributes['aria-pressed']), ['true', 'false', 'false']);
@@ -71,6 +76,8 @@ test('initialization reflects the server mode without changing cookies or invali
   assert.equal(ui.calls[0][1].credentials, 'same-origin');
   assert.deepEqual(ui.writes, []);
   assert.deepEqual(ui.changes, []);
+  assert.equal(ui.sourceCopy.textContent, '请求来源：自动（DM→QB）');
+  assert.equal(ui.liveStatus.textContent, 'QB · 已读取 3 条');
 });
 
 test('switching modes persists only the cookie and dispatches the exact change for cache invalidation', async () => {
@@ -82,6 +89,8 @@ test('switching modes persists only the cookie and dispatches the exact change f
   assert.deepEqual(ui.changes, [{ mode: 'dm', previousMode: 'qb', defaultMode: 'qb' }]);
   assert.equal(ui.status.textContent, '后续来源：DM');
   assert.equal(ui.description.textContent, '仅使用 DM；切换后从下次请求生效。');
+  assert.equal(ui.sourceCopy.textContent, '请求来源：DM');
+  assert.equal(ui.liveStatus.textContent, 'QB · 已读取 3 条');
   assert.equal(ui.calls.length, 1);
   assert.equal(ui.control.setMode('invalid'), false);
   assert.equal(ui.control.getMode(), 'dm');
@@ -109,6 +118,7 @@ test('a pending initialization cannot override a new user selection', async () =
   assert.equal(ui.control.getMode(), 'dm');
   assert.equal(readDataSourceMode(ui.document.cookie), 'dm');
   assert.equal(ui.status.textContent, '后续来源：DM');
+  assert.equal(ui.sourceCopy.textContent, '请求来源：DM');
   assert.equal(ui.changes.length, 1);
 });
 
@@ -119,6 +129,7 @@ test('blocked cookies leave the mode unchanged and never claim a successful swit
   assert.equal(ui.control.getMode(), 'qb');
   assert.equal(ui.changes.length, 0);
   assert.equal(ui.status.textContent, '未能保存切换，请允许本站 Cookie 后重试。');
+  assert.equal(ui.sourceCopy.textContent, '请求来源：QB');
 });
 
 test('failed initialization keeps a valid preference and does not expose upstream details', async () => {

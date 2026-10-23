@@ -1,6 +1,6 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release532';
-import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261023release532';
-import { dataProviderLabel } from './market-data-source.js?v=20261023release532';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release533';
+import { compareQuoteToValuation } from './bond-list-comparison.js?v=20261023release533';
+import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release533';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
@@ -35,7 +35,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     const value = getDataSourceMode();
     return ['dm', 'qb'].includes(value) ? value : 'auto';
   };
-  const requestLabel = value => ({ dm: 'DM', qb: 'QB', auto: '自动（DM→QB）' }[value] || '自动（DM→QB）');
+  const requestLabel = dataSourceModeLabel;
   const rateLimitMessage = (error, selectedMode) => {
     const provider = error.code === 'qb_rate_limited' ? 'QB' : requestLabel(selectedMode);
     return provider + ' 接口限流，请稍后重试。' + (error.retryAfter ? '建议至少等待 ' + error.retryAfter + ' 秒后手动刷新。' : '');
@@ -411,7 +411,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         const result = lookupResults[line.name];
         const row = document.createElement('div');
         row.textContent = !line.ready ? '请补充简称后的逗号和报价：' + line.name
-          : result?.status === 'missing' ? 'DM 未找到：' + line.name
+          : result?.status === 'missing' ? requestLabel(result.requestMode || requestMode()) + ' 未找到：' + line.name
           : result?.status === 'error' ? '返回信息不完整：' + line.name
           : result?.status === 'ambiguous' ? '请选择代码：' + line.name + ' ' : '待补码：' + line.name;
         if (result?.status === 'ambiguous') for (const match of result.matches) {
@@ -479,8 +479,11 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         for (let start = 0; start < names.length; start += 20) {
           if (!active || !current()) return;
           const response = await api('lookup', { names: names.slice(start, start + 20) }, controller.signal);
-          providers.add(dataProviderLabel(response));
-          Object.assign(all, response.results);
+          const results = response.results || {};
+          const matched = Object.values(results).filter(result => result.status === 'matched').flatMap(result => result.matches || []);
+          const provider = dataProviderLabel(matched, '') || (matched.length ? dataProviderLabel(response, '') : '');
+          if (provider) providers.add(provider);
+          Object.assign(all, Object.fromEntries(Object.entries(results).map(([name, result]) => [name, { ...result, requestMode: selectedMode }])));
         }
         if (!active || !current() || root.querySelector('[data-composing]')) return;
         lookupResults = { ...lookupResults, ...all };
@@ -490,7 +493,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         const count = applyCodes(all, snapshots);
         const unresolved = Object.values(all).filter(result => result.status !== 'matched').length;
         if (unresolved) notify('已补齐 ' + count + ' 条报价；还有 ' + unresolved + ' 个简称需要核对，详见分行下方提示。', true);
-        else if (count) notify('已通过 ' + (providers.has('DM+QB') || providers.size > 1 ? 'DM+QB' : [...providers][0] || 'DM') + ' 补齐 ' + count + ' 条报价，价格与分行保持原样。');
+        else if (count) notify('已通过 ' + (dataProviderLabel([...providers], '') || requestLabel(selectedMode)) + ' 补齐 ' + count + ' 条报价，价格与分行保持原样。');
       } catch (error) {
         if (current()) { names.forEach(name => failedNames.add(name)); notify(error.status === 429 ? rateLimitMessage(error, selectedMode) : error.message, true); }
       } finally {

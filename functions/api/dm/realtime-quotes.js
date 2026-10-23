@@ -1,5 +1,7 @@
 import { requireUser } from "../_auth.js";
 import { withDataSources } from '../qb/fallback.js';
+import { fieldProvider, rowProvenance } from '../qb/provenance.js';
+import { qbRateLimitResponse } from '../qb/errors.js';
 import {
   json,
   makeDmClient,
@@ -95,13 +97,15 @@ export async function onRequestPost(context) {
       },
     }, dm));
   } catch (error) {
+    const limited = qbRateLimitResponse(error);
+    if (limited) return limited;
     const timedOut = error?.name === "AbortError";
     return json({
       ok: false,
-      error: timedOut ? "DM 实时行情查询超时。" : (error.message || "DM 实时行情查询失败。"),
+      error: timedOut ? "实时行情查询超时。" : (error.message || "实时行情查询失败。"),
       hint: timedOut
         ? "本次请求已在 12 秒后中止，请稍后刷新。"
-        : "请检查 DM 实时行情接口权限、INNO 密钥配置或稍后重试。",
+        : "请检查所选数据源的实时行情接口权限、服务配置或稍后重试。",
     }, timedOut ? 504 : 502);
   } finally {
     clearTimeout(timeout);
@@ -140,7 +144,7 @@ async function resolveQueries(dm, queries, signal) {
     if (!matchingRows.length) {
       unresolved.push({
         query,
-        reason: looksLikeSecurityId(query) ? "DM 基础资料未匹配到证券代码" : "DM 基础资料未匹配到精确简称",
+        reason: looksLikeSecurityId(query) ? "基础资料未匹配到证券代码" : "基础资料未匹配到精确简称",
       });
       continue;
     }
@@ -196,7 +200,8 @@ function buildQuoteRow(item, quote, fetchedAt) {
       price: numberFromRow(row, ["broker_last_trade_price", "brokerLastTradePrice"]),
     },
     status,
-    source: "DM 经纪商聚合",
+    source: quote ? `${fieldProvider(quote)} 经纪商聚合` : `${fieldProvider(basic)} 基础资料（无实时报价）`,
+    ...rowProvenance(quote || basic),
     fetchedAt,
   };
 }

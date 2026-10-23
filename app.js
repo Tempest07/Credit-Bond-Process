@@ -1,13 +1,13 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261023release532';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261023release532';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261023release532';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261023release532';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261023release532';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261023release532';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261023release532';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261023release532';
-import { dataProviderLabel, isMarketDataSource } from './market-data-source.js?v=20261023release532';
-import { initDataSourceControl } from './data-source-control.js?v=20261023release532';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261023release533';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261023release533';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261023release533';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261023release533';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261023release533';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261023release533';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261023release533';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261023release533';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261023release533';
+import { initDataSourceControl } from './data-source-control.js?v=20261023release533';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -43,7 +43,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261023release532";
+} from "./core.js?v=20261023release533";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -72,15 +72,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261023release532";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261023release532";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261023release532";
+} from "./lifecycle.js?v=20261023release533";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261023release533";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261023release533";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261023release532";
+} from "./history-parser.js?v=20261023release533";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -97,23 +97,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261023release532";
+} from "./protocol-transfer.js?v=20261023release533";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261023release532";
+} from "./protocol-transfer-templates.js?v=20261023release533";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261023release532";
+} from "./protocol-transfer-docx.js?v=20261023release533";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261023release532";
+} from "./reminders.js?v=20261023release533";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -141,11 +141,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261023release532";
+} from "./secondary-inventory.js?v=20261023release533";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261023release532";
+} from "./trade-record-converter.js?v=20261023release533";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -156,16 +156,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261023release532";
+} from "./trade-record-grid.js?v=20261023release533";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261023release532";
-import { initializeDatePickers } from "./date-picker.js?v=20261023release532";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261023release532";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261023release532";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261023release532";
+} from "./trade-record-ledger.js?v=20261023release533";
+import { initializeDatePickers } from "./date-picker.js?v=20261023release533";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261023release533";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261023release533";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261023release533";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -174,33 +174,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261023release532";
+} from "./project-screenshot-ocr.js?v=20261023release533";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261023release532";
+} from "./project-screenshot-layout.js?v=20261023release533";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261023release532";
+} from "./project-screenshot-image.js?v=20261023release533";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261023release532";
+} from "./payment-receipts.js?v=20261023release533";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261023release532";
+} from "./issuer-search.js?v=20261023release533";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261023release532";
-import { initializeBondList } from "./bond-list-editor.js?v=20261023release532";
+} from "./state-history.js?v=20261023release533";
+import { initializeBondList } from "./bond-list-editor.js?v=20261023release533";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -378,13 +378,14 @@ let issuanceQueuePanel = null;
 const issuanceRecognitionQueue = createSequentialIssuanceQueue(requestQueuedIssuanceRecognition, handleIssuanceQueueChange);
 let activePrepaymentTarget = null;
 const paymentTodoCodes = createPaymentTodoCodes({
+  getDataSourceMode: () => dataSourceControl?.getMode(),
   async lookup(names, { signal } = {}) {
     const response = await fetch('./api/payment-todo/codes', {
       method: 'POST', credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Bond-List': '1', ...authHeaders() },
       body: JSON.stringify({ names }), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
     });
-    if (!response.ok) throw new Error('DM code lookup failed');
+    if (!response.ok) throw new Error('债券代码查询失败');
     return response.json();
   },
   onChange: () => renderPaymentTodo(),
@@ -403,6 +404,7 @@ let valuationAssistController = null;
 let valuationAssistRequestKey = "";
 let policyCurveController = null;
 let dataSourceGeneration = 0;
+let dataSourceControl = null;
 let projectScreenshotRows = [];
 let projectScreenshotBusy = false;
 let projectScreenshotDragDepth = 0;
@@ -479,9 +481,10 @@ async function initialize() {
   bindPlaceholderSelection();
   bindNavigation();
   bindWorkspaceChrome();
-  const dataSourceControl = initDataSourceControl();
+  dataSourceControl = initDataSourceControl();
+  void dataSourceControl.ready.then(refreshMarketDataLabels);
   window.addEventListener('bond-data-source-change', handleDataSourceChange);
-  realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast });
+  realtimeQuoteController = initializeRealtimeQuotes({ onToast: showToast, getDataSourceMode: dataSourceControl.getMode });
   configureLocalBetaQuotes(realtimeQuoteController);
   bondListController = initializeBondList({ onToast: showToast, onAccessChange: syncBondListCloudGate, getDataSourceMode: dataSourceControl.getMode });
   bindRouteHashNavigation();
@@ -545,7 +548,7 @@ function configureLocalBetaQuotes(controller) {
   root.querySelector("#realtimeQuotePauseButton")?.remove();
   root.querySelector("#realtimeQuoteCountdown")?.parentElement?.remove();
   const emptyHint = root.querySelector("#realtimeQuoteEmptyState p");
-  if (emptyHint) emptyHint.textContent = "导入券码或券名后，点击“立即刷新”读取 DM 报价。";
+  if (emptyHint) emptyHint.textContent = "导入券码或券名后，点击“立即刷新”读取经纪商报价。";
   const footnote = root.querySelector(".realtime-footnote span:last-child");
   if (footnote) footnote.textContent = "仅手动刷新；变动与到价提醒仅在刷新时检查";
   controller.renderStatus = () => {
@@ -559,7 +562,7 @@ function configureLocalBetaQuotes(controller) {
     }
     const detail = root.querySelector("#realtimeQuoteStatusDetail");
     if (detail) detail.textContent = controller.watchlist.length
-      ? "点击“立即刷新”读取 DM，后台不自动更新"
+      ? "点击“立即刷新”读取经纪商报价，后台不自动更新"
       : "导入券池后点击“立即刷新”";
   };
   controller.renderStatus();
@@ -2478,7 +2481,7 @@ async function processProjectScreenshotFile(file, input = null) {
     renderProjectScreenshotResults(projectScreenshotRows);
     const initialRowIds = projectScreenshotRows.map((row) => row.id);
     for (let index = 0; index < initialRowIds.length; index += 1) {
-      setProjectScreenshotStatus(`已识别 ${initialRowIds.length} 条，正在查 DM ${index + 1}/${initialRowIds.length}...`);
+      setProjectScreenshotStatus(`已识别 ${initialRowIds.length} 条，正在查 ${currentDataSourceLabel()} ${index + 1}/${initialRowIds.length}...`);
       const requested = projectScreenshotRows.find((row) => row.id === initialRowIds[index]);
       if (!requested || requested.status === "draft") continue;
       const requestedRevision = requested.revision;
@@ -2499,7 +2502,7 @@ async function processProjectScreenshotFile(file, input = null) {
     renderProjectScreenshotResults(projectScreenshotRows);
     const copiedCount = projectScreenshotResolvedShortNames().length;
     const finalCount = projectScreenshotRows.length;
-    setProjectScreenshotStatus(`视觉识别 ${finalCount} 条，DM 已核验 ${copiedCount} 条。${recognitionWarnings ? "部分内容需要人工核对。" : ""}`);
+    setProjectScreenshotStatus(`视觉识别 ${finalCount} 条，资料已核验 ${copiedCount} 条。${recognitionWarnings ? "部分内容需要人工核对。" : ""}`);
   } catch (error) {
     if (sessionId === projectScreenshotSessionId) {
       projectScreenshotRows = [createManualProjectScreenshotRow(sessionId)];
@@ -3757,6 +3760,7 @@ function eraseProjectScreenshotTableLines(canvas, coverageThreshold) {
 }
 
 async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
+  const requestedSource = currentDataSourceLabel();
   try {
     const { response, payload } = await requestProjectScreenshotDmLookup(entry.selectedSecurityId ? { securityId: entry.selectedSecurityId } : { fullName: entry.fullName }, { signal });
     if (!response.ok || !payload.ok) {
@@ -3780,7 +3784,8 @@ async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
             securityId: exactNormalized.securityId || reliableSuggestion.securityId || "",
             issuerName: exactNormalized.issuerName || reliableSuggestion.issuerName || "",
             correctedFullName: exactNormalized.fullName || reliableSuggestion.fullName || "",
-            correctionSource: "DM 高置信全称校正",
+            provider: dataProviderLabel(exact.payload, ''),
+            correctionSource: `${dataProviderLabel(exact.payload, '数据源')} 高置信全称校正`,
             error: "",
           };
         }
@@ -3794,7 +3799,7 @@ async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
         candidateShortName: suggestion?.shortName || "",
         securityId: "",
         candidateSecurityId: suggestion?.securityId || "",
-        error: payload?.error || (payload?.noResult ? "DM 无结果" : `HTTP ${response.status}`),
+        error: payload?.error || (payload?.noResult ? `${requestedSource} 无结果` : `HTTP ${response.status}`),
       };
     }
     const normalized = payload.normalized || {};
@@ -3803,14 +3808,15 @@ async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
       ...entry,
       status: dmMatched && normalized.shortName ? "ok" : "error",
       dmVerified: Boolean(dmMatched && normalized.shortName),
+      provider: dataProviderLabel(payload, ''),
       shortName: dmMatched ? normalized.shortName || "" : "",
       securityId: normalized.securityId || "",
       issuerName: normalized.issuerName || "",
       correctedFullName: dmMatched ? normalized.fullName || "" : "",
-      error: dmMatched && normalized.shortName ? "" : dmMatched ? "DM 未返回简称" : "DM 未匹配到该债券",
+      error: dmMatched && normalized.shortName ? "" : dmMatched ? `${requestedSource} 未返回简称` : `${requestedSource} 未匹配到该债券`,
     };
   } catch (error) {
-    return { ...entry, status: "error", dmVerified: false, shortName: "", error: error.message || "DM 查询失败" };
+    return { ...entry, status: "error", dmVerified: false, shortName: "", error: error.message || `${requestedSource} 查询失败` };
   }
 }
 
@@ -3835,6 +3841,7 @@ function finalizeProjectScreenshotLookupRow(current, resolved) {
     verifiedShortName: verified ? resolved.shortName : previousVerifiedShortName,
     verifiedSecurityId: verified ? resolved.securityId || "" : previousVerifiedSecurityId,
     verifiedIssuerName: verified ? resolved.issuerName || "" : previousVerifiedIssuerName,
+    verifiedProvider: verified ? resolved.provider || '' : current.verifiedProvider || current.provider || '',
     isEditing: verified ? false : current.isEditing,
     editSnapshot: verified ? null : current.editSnapshot,
     correctionDismissed: verified ? false : current.correctionDismissed,
@@ -3844,6 +3851,7 @@ function finalizeProjectScreenshotLookupRow(current, resolved) {
 }
 
 async function requestProjectScreenshotDmLookup(query = {}, { signal } = {}) {
+  const sourceGeneration = dataSourceGeneration;
   const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value));
   const controller = new AbortController();
   let timedOut = false;
@@ -3867,9 +3875,10 @@ async function requestProjectScreenshotDmLookup(query = {}, { signal } = {}) {
     } catch {
       payload = { ok: false, error: `HTTP ${response.status}: 返回不是 JSON` };
     }
+    if (sourceGeneration !== dataSourceGeneration) throw new DOMException('数据源已切换', 'AbortError');
     return { response, payload: checkedDmLookupPayload(payload, query) };
   } catch (error) {
-    if (error?.name === "AbortError" && timedOut) throw new Error("DM 查询超过 12 秒，已跳过本条");
+    if (error?.name === "AbortError" && timedOut) throw new Error("债券资料查询超过 30 秒，已跳过本条");
     if (error?.name === "AbortError") throw new Error("本条旧查询已取消");
     throw error;
   } finally {
@@ -3933,6 +3942,7 @@ function projectScreenshotRowSnapshot(row) {
     shortName: row.shortName || "",
     securityId: row.securityId || "",
     issuerName: row.issuerName || "",
+    provider: row.provider || row.verifiedProvider || '',
     candidateShortName: row.candidateShortName || "",
     candidateSecurityId: row.candidateSecurityId || "",
     error: row.error || "",
@@ -4039,9 +4049,10 @@ async function handleProjectScreenshotCorrectionClick(event) {
       shortName: row.verifiedShortName || "",
       securityId: row.verifiedSecurityId || "",
       issuerName: row.verifiedIssuerName || "",
+      provider: row.verifiedProvider || row.provider || '',
       candidateShortName: "",
       candidateSecurityId: "",
-      error: row.verifiedFullName ? "" : "DM 无结果",
+      error: row.verifiedFullName ? "" : "资料查询无结果",
       correctionDismissed: true,
     };
     Object.assign(row, snapshot);
@@ -4049,7 +4060,7 @@ async function handleProjectScreenshotCorrectionClick(event) {
     row.isEditing = false;
     row.correctionDismissed = row.status !== "ok";
     renderProjectScreenshotResults();
-    setProjectScreenshotStatus(row.status === "ok" ? "已取消校正，恢复 DM 核验结果。" : "已取消校正，恢复原识别内容。" );
+    setProjectScreenshotStatus(row.status === "ok" ? "已取消校正，恢复资料核验结果。" : "已取消校正，恢复原识别内容。" );
     requestAnimationFrame(() => keepProjectScreenshotRowVisible(row.id, "edit"));
     return;
   }
@@ -4122,7 +4133,7 @@ async function handleProjectScreenshotCorrectionSubmit(event) {
   renderProjectScreenshotResults();
   setProjectScreenshotStatus(resolved.status === "ok" && resolved.dmVerified
     ? `已核验：${resolved.shortName}`
-    : `本条仍未匹配：${resolved.error || "DM 无结果"}`);
+    : `本条仍未匹配：${resolved.error || "资料查询无结果"}`);
 }
 
 function syncProjectScreenshotCopyControls() {
@@ -4184,9 +4195,9 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
             ? `未验证候选：${row.candidateShortName}`
             : "未查到简称";
       const detail = row.status === "ok"
-        ? [row.securityId, "DM 已核验"].filter(Boolean).join(" · ")
+        ? [row.securityId, `${dataProviderLabel(row.provider || row.verifiedProvider, '来源待确认')} 已核验`].filter(Boolean).join(" · ")
         : row.status === "pending"
-        ? "正在查询 DM"
+        ? `正在查询 ${currentDataSourceLabel()}`
         : row.error || "查询失败";
       const showCorrection = row.isEditing
         || row.status === "draft"
@@ -4236,7 +4247,7 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
   }).join("");
 
   output.hidden = false;
-  output.innerHTML = `${groupHtml}<button class="project-screenshot-add-button" type="button" data-project-screenshot-action="add">补录一条</button>${copyText ? `<textarea class="project-screenshot-copy-box" aria-label="已匹配的 DM 简称清单" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
+  output.innerHTML = `${groupHtml}<button class="project-screenshot-add-button" type="button" data-project-screenshot-action="add">补录一条</button>${copyText ? `<textarea class="project-screenshot-copy-box" aria-label="已匹配的债券简称清单" readonly>${escapeHtml(copyText)}</textarea>` : ""}`;
   output.scrollTop = previousScrollTop;
   if (activeCorrection?.rowId) {
     requestAnimationFrame(() => {
@@ -4259,7 +4270,7 @@ function projectScreenshotResolvedShortNames() {
 async function copyProjectScreenshotShortNames() {
   const text = projectScreenshotResolvedShortNames().join("\n");
   if (!text) {
-    showToast("暂无可复制的 DM 简称。");
+    showToast("暂无可复制的债券简称。");
     return;
   }
   try {
@@ -4817,7 +4828,7 @@ function resetProjectDmWorkspace(options = {}) {
   valuationAssistController = null;
   valuationAssistRequestKey = "";
   $("#briefInput").value = "";
-  $("#projectDmStatus").textContent = "未读取 DM";
+  $("#projectDmStatus").textContent = `未读取 ${currentDataSourceLabel()}`;
   $("#projectDmStatus").className = "pill muted";
   $("#projectDmAssist").hidden = true;
   $("#projectDmAssist").innerHTML = "";
@@ -4834,7 +4845,7 @@ function resetProjectDmWorkspace(options = {}) {
   fillProjectFields();
   renderIssuerOptions();
   renderProjectDmHistoryControls();
-  if (showToastMessage) showToast("已清空当前 DM 建项草稿。");
+  if (showToastMessage) showToast("已清空当前建项草稿。");
 }
 
 function pushProjectDmHistoryFromCurrent() {
@@ -5337,7 +5348,7 @@ async function runProjectDmLookup(queryOverride = "") {
   if (looksLikeSecurityId(query)) params.set("securityId", query);
   else params.set("shortName", query);
 
-  const request = { controller: new AbortController(), query };
+  const request = { controller: new AbortController(), query, sourceLabel: currentDataSourceLabel() };
   projectDmRequest = request;
   const isCurrent = () => projectDmRequest === request && String(seedInput?.value || "").trim() === query;
   setProjectDmLookupBusy(true);
@@ -5352,30 +5363,31 @@ async function runProjectDmLookup(queryOverride = "") {
     if (!isCurrent()) return;
     renderProjectDmAssist(payload);
     if (!payload.ok) {
-      $("#projectDmStatus").textContent = payload.noResult ? "DM 无结果" : "DM 查询失败";
+      const attemptedSource = dataProviderLabel(payload, request.sourceLabel);
+      $("#projectDmStatus").textContent = payload.noResult ? `${attemptedSource} 无结果` : `${attemptedSource} 查询失败`;
       $("#projectDmStatus").className = "pill warning";
-      showToast(payload.noResult ? "DM 无结果，可查看相近候选。" : "DM 查询失败，请看提示。");
+      showToast(payload.noResult ? `${attemptedSource} 无结果，可查看相近候选。` : `${attemptedSource} 查询失败，请看提示。`);
       return;
     }
     applyDmLookupToCurrentProject(payload);
     const sourceLabel = dmPayloadSourceLabel(payload);
     const suggestionCount = Array.isArray(payload.suggestions) ? payload.suggestions.length : 0;
     $("#projectDmStatus").textContent = payload.noDmBondResult
-      ? `DM 无本期数据 · ${suggestionCount ? `${suggestionCount} 个候选` : "已读主体库"}`
+      ? `${dataProviderLabel(payload, request.sourceLabel)} 无本期数据 · ${suggestionCount ? `${suggestionCount} 个候选` : "已读主体库"}`
       : `已读取 ${sourceLabel}`;
     $("#projectDmStatus").className = payload.noDmBondResult ? "pill warning" : "pill accent";
     pushProjectDmHistoryFromCurrent();
     showToast(payload.noDmBondResult
       ? suggestionCount
-        ? `DM 未返回本期债券，已找到 ${suggestionCount} 个同主体候选，请选择后重新读取。`
-        : "DM 未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
+        ? `未返回本期债券，已找到 ${suggestionCount} 个同主体候选，请选择后重新读取。`
+        : "未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
       : `已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
   } catch (error) {
     if (!isCurrent() || error?.name === "AbortError") return;
-    renderProjectDmAssist({ ok: false, error: error.message || "DM 查询失败" });
-    $("#projectDmStatus").textContent = "DM 查询失败";
+    renderProjectDmAssist({ ok: false, source: request.sourceLabel, error: error.message || `${request.sourceLabel} 查询失败` });
+    $("#projectDmStatus").textContent = `${request.sourceLabel} 查询失败`;
     $("#projectDmStatus").className = "pill warning";
-    showToast(error.message || "DM 查询失败。");
+    showToast(error.message || `${request.sourceLabel} 查询失败。`);
   } finally {
     if (projectDmRequest === request) {
       projectDmRequest = null;
@@ -5394,8 +5406,35 @@ function cancelProjectDmLookup() {
   projectDmRequest.controller.abort();
   projectDmRequest = null;
   setProjectDmLookupBusy(false);
-  $("#projectDmStatus").textContent = "待重新读取 DM";
+  $("#projectDmStatus").textContent = `待重新读取 ${currentDataSourceLabel()}`;
   $("#projectDmStatus").className = "pill muted";
+}
+
+function currentDataSourceLabel() {
+  return dataSourceModeLabel(dataSourceControl?.getMode());
+}
+
+function refreshMarketDataLabels({ resetRequestState = false } = {}) {
+  const label = currentDataSourceLabel();
+  const projectButton = $('#projectDmLookupButton');
+  if (projectButton) projectButton.textContent = projectDmRequest ? `正在读取 ${label}…` : `读取 ${label}`;
+  const queryButton = $('#dmLookupButton');
+  if (queryButton) queryButton.textContent = dmLookupRequest ? `正在查询 ${label}…` : `查询 ${label}`;
+  const projectStatus = $('#projectDmStatus');
+  if (resetRequestState && projectStatus && !projectStatus.textContent.startsWith('已读取 ')) {
+    const assist = $('#projectDmAssist');
+    if (assist) { assist.hidden = true; assist.innerHTML = ''; }
+  }
+  if (projectStatus && (/^(?:未读取|待重新读取|正在读取)/.test(projectStatus.textContent)
+    || resetRequestState && !projectStatus.textContent.startsWith('已读取 '))) projectStatus.textContent = `未读取 ${label}`;
+  const queryStatus = $('#dmLookupStatus');
+  if (queryStatus && !dmLookupRequest && !dmLastPayload?.ok) queryStatus.textContent = `${label} · 等待查询`;
+  if (resetRequestState && !dmLastPayload?.ok) {
+    const normalized = $('#dmNormalizedOutput');
+    if (normalized) normalized.innerHTML = '<div class="empty">数据源已切换，请重新查询。</div>';
+    const issueGroup = $('#dmIssueGroupPanel');
+    if (issueGroup) issueGroup.hidden = true;
+  }
 }
 
 function handleDataSourceChange() {
@@ -5419,8 +5458,20 @@ function handleDataSourceChange() {
   paymentTodoCodes.resetDataSource();
   bondListController?.resetDataSource();
   realtimeQuoteController?.resetDataSource();
+  let screenshotChanged = false;
+  for (const row of projectScreenshotRows) {
+    if (!row.lookupController) continue;
+    cancelProjectScreenshotRowLookup(row);
+    row.revision += 1;
+    row.status = 'draft';
+    row.isEditing = true;
+    row.error = '数据源已切换，请重新核验';
+    screenshotChanged = true;
+  }
+  if (screenshotChanged) renderProjectScreenshotResults();
   updateSecondaryPendingControls();
   updateSecondaryLedgerControls();
+  refreshMarketDataLabels({ resetRequestState: true });
   if ($('.view[data-view="reminders"]')?.classList.contains('active')) void loadPolicyCurve({ refresh: true });
 }
 
@@ -5428,9 +5479,9 @@ function setProjectDmLookupBusy(isBusy) {
   const button = $("#projectDmLookupButton");
   if (!button) return;
   button.disabled = isBusy;
-  button.textContent = isBusy ? "读取中..." : "读取 DM";
+  button.textContent = isBusy ? `正在读取 ${currentDataSourceLabel()}…` : `读取 ${currentDataSourceLabel()}`;
   if (isBusy) {
-    $("#projectDmStatus").textContent = "正在读取 DM";
+    $("#projectDmStatus").textContent = `正在读取 ${currentDataSourceLabel()}`;
     $("#projectDmStatus").className = "pill";
   }
 }
@@ -5502,13 +5553,31 @@ function projectPatchFromDmLookup(payload) {
   const dmAbs = normalized?.isAbs || normalized?.absInfo || /^(ABS|ABN)$/i.test(String(issueGroup?.instrumentType || ""));
 
   if (dmAbs) {
+    const absSource = normalized.fieldSource?.absInfo
+      ? normalizedProjectFieldSource(normalized, 'absInfo')
+      : normalized.absInfo ? dataProviderLabel(payload).toLowerCase() : groupSource;
     patch.instrumentType = normalized.instrumentType || normalized.absInfo?.type || issueGroup?.instrumentType || "ABS";
-    markSource("instrumentType", "dm");
+    markSource("instrumentType", absSource);
     patch.absInfo = projectAbsInfoFromDm(normalized, issueGroup);
-    markAbsInfoSources(patch.absInfo, sourceMap, groupSource);
+    markAbsInfoSources(patch.absInfo, sourceMap, absSource);
+    if (!normalized.absInfo?.planName) sourceMap['abs.planName'] = issueGroup?.issueName ? groupSource
+      : normalized.fieldSource?.fullName ? normalizedProjectFieldSource(normalized, 'fullName') : absSource;
+    if (!Number.isFinite(numberOrNull(normalized.absInfo?.totalScale)) && issueGroup) sourceMap['abs.totalScale'] = groupSource;
+    if (!normalized.absInfo?.bookDate) sourceMap['abs.bookDate'] = issueGroup?.subscribeDate ? groupSource
+      : normalized.fieldSource?.subscribeDate ? normalizedProjectFieldSource(normalized, 'subscribeDate') : absSource;
+    patch.absInfo.tranches.forEach((tranche, index) => {
+      const original = issueGroup?.tranches?.[index] || normalized.absInfo?.tranches?.[index];
+      const source = issueGroup?.tranches?.length || original?.provider || original?.source
+        ? projectSourceFromDmIssueGroup(original) : absSource;
+      for (const field of ['className', 'shortName', 'scale', 'sharePct', 'expectedMaturityDate', 'expectedTerm', 'debtRating', 'debtRatingAgency', 'inquiryLow', 'inquiryHigh']) {
+        if (!valueHasContent(tranche[field])) continue;
+        sourceMap[`abs.tranches.${index}.${field}`] = field === 'className' ? tranche.classNameSource || source
+          : field === 'sharePct' ? tranche.sharePctSource || source : source;
+      }
+    });
     if (patch.absInfo.planName) {
       patch.fullName = patch.absInfo.planName;
-      markSource("fullName", "dm");
+      markSource("fullName", sourceMap['abs.planName']);
     }
     if (Number.isFinite(numberOrNull(patch.absInfo.totalScale))) {
       patch.issueScale = patch.absInfo.totalScale;
@@ -5543,12 +5612,13 @@ function projectPatchFromDmLookup(payload) {
       patch.inquiryHigh = ranges[0]?.high ?? null;
       patch.inquiryLow2 = ranges[1]?.low ?? null;
       patch.inquiryHigh2 = ranges[1]?.high ?? null;
-      markSource("inquiryLow", groupSource);
-      markSource("inquiryHigh", groupSource);
+      markSource("inquiryLow", projectSourceFromDmIssueGroup(tranches[0]));
+      markSource("inquiryHigh", projectSourceFromDmIssueGroup(tranches[0]));
       ranges.forEach((range, index) => {
         if (!Number.isFinite(range.low) || !Number.isFinite(range.high)) return;
-        markSource(`inquiryRanges.${index}.low`, groupSource);
-        markSource(`inquiryRanges.${index}.high`, groupSource);
+        const source = projectSourceFromDmIssueGroup(tranches[index]);
+        markSource(`inquiryRanges.${index}.low`, source);
+        markSource(`inquiryRanges.${index}.high`, source);
       });
     }
   }
@@ -5601,10 +5671,11 @@ function projectPatchFromDmLookup(payload) {
       patch.inquiryLow = range.low;
       patch.inquiryHigh = range.high;
       patch.inquiryRanges = [range];
-      markSource("inquiryLow", "dm");
-      markSource("inquiryHigh", "dm");
-      markSource("inquiryRanges.0.low", "dm");
-      markSource("inquiryRanges.0.high", "dm");
+      const source = normalizedProjectFieldSource(normalized, 'inquiryRange');
+      markSource("inquiryLow", source);
+      markSource("inquiryHigh", source);
+      markSource("inquiryRanges.0.low", source);
+      markSource("inquiryRanges.0.high", source);
     }
   }
   if (patch.durationText && !patch.durationParts?.length) {
@@ -5637,14 +5708,15 @@ function projectAbsInfoFromDm(normalized = {}, issueGroup = null) {
   const absTranches = tranches.length
     ? tranches.map((tranche) => {
         const range = parseDmInquiryRange(tranche.inquiryRange);
+        const source = projectSourceFromDmIssueGroup(tranche);
         return normalizeProjectAbsTranche({
           className: tranche.trancheLevel,
-          classNameSource: tranche.trancheLevel ? "dm" : "",
+          classNameSource: tranche.trancheLevel ? source : "",
           shortName: tranche.shortName,
           securityId: tranche.securityId,
           scale: numberOrNull(tranche.actualScale) ?? numberOrNull(tranche.planScale),
           sharePct: tranche.sharePct,
-          sharePctSource: Number.isFinite(numberOrNull(tranche.sharePct)) ? "dm" : "",
+          sharePctSource: Number.isFinite(numberOrNull(tranche.sharePct)) ? source : "",
           expectedMaturityDate: tranche.expectedMaturityDate,
           expectedTerm: normalizeDmTenor(tranche.tenor),
           debtRating: tranche.debtRating,
@@ -5818,11 +5890,11 @@ function buildProjectDmRecognitionMarks(patch) {
         ["inquiryHigh", "分档利率上限"],
       ].forEach(([field, label]) => {
         if (!valueHasContent(tranche[field])) return;
-        const source = field === "className"
+        const source = sourceMap[`abs.tranches.${index}.${field}`] || (field === "className"
           ? tranche.classNameSource || "dm"
           : field === "sharePct"
             ? tranche.sharePctSource || "dm"
-            : "dm";
+            : "dm");
         marks[`abs.tranches.${index}.${field}`] = sourcedRecognitionMark(label, source);
       });
     });
@@ -5951,7 +6023,7 @@ function renderProjectDmAssist(payload) {
     const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
     output.innerHTML = `
       <div class="project-dm-assist-head">
-        <strong>${escapeHtml(payload?.noResult ? "未查询到匹配债券" : "DM 查询失败")}</strong>
+        <strong>${escapeHtml(payload?.noResult ? "未查询到匹配债券" : `${dataProviderLabel(payload, currentDataSourceLabel())} 查询失败`)}</strong>
         <span>${escapeHtml(payload?.hint || payload?.error || "请检查简称、代码或查询窗口。")}</span>
       </div>
       ${suggestions.length ? `<div class="dm-suggestion-list">${suggestions.map(renderProjectDmSuggestion).join("")}</div>` : ""}
@@ -5970,7 +6042,7 @@ function renderProjectDmAssist(payload) {
     ].filter(Boolean);
     output.innerHTML = `
       <div class="project-dm-assist-head">
-        <strong>DM 未返回本期债券</strong>
+        <strong>未返回本期债券</strong>
         <span>${escapeHtml([
           normalized.issuerName ? `已识别发行人 ${normalized.issuerName}` : "已识别云端主体资料",
           filled.length ? `云端主体库补充：${filled.join("、")}` : "主体资料来自云端数据库",
@@ -5980,7 +6052,7 @@ function renderProjectDmAssist(payload) {
       ${suggestions.length ? `
         <div class="project-dm-assist-head compact">
           <strong>同主体债券候选</strong>
-          <span>点击候选后按该债券重新读取 DM</span>
+          <span>点击候选后按该债券重新读取资料</span>
         </div>
         <div class="dm-suggestion-list">${suggestions.map(renderProjectDmSuggestion).join("")}</div>
       ` : ""}
@@ -6018,7 +6090,7 @@ function renderProjectDmSuggestion(item) {
   return `
     <button class="dm-suggestion-card" type="button" data-project-dm-query="${escapeAttribute(query)}" aria-label="读取 ${escapeAttribute(query || "候选债券")}">
       <span>${escapeHtml(item.shortName || item.securityId || "未命名候选")}</span>
-      <small>${escapeHtml(facts.join(" · ") || "点击用该候选继续读取 DM")}</small>
+      <small>${escapeHtml(facts.join(" · ") || "点击用该候选继续读取资料")}</small>
     </button>
   `;
 }
@@ -6030,7 +6102,7 @@ function renderProjectDmIssueGroup(issueGroup) {
   const abs = /^(ABS|ABN)$/i.test(String(issueGroup.instrumentType || ""));
   const summary = [
     `${tranches.length} 个${abs ? "分档" : "期限"}`,
-    dmIssueGroupSourceLabel(issueGroup.source),
+    dmIssueGroupSourceLabel(issueGroup.provider || issueGroup.source),
     usable.length !== tranches.length ? `默认入项 ${usable.length} 个可发行${abs ? "分档" : "期限"}` : "",
   ].filter(Boolean).join(" · ");
   return `
@@ -6069,8 +6141,8 @@ function renderProjectDmIssueTranche(tranche) {
       </div>
       <div class="dm-issue-tranche-tags">
         ${tranche.isQueriedInput ? `<span>当前查询</span>` : ""}
-        ${tranche.isDmMatched ? `<span>DM命中</span>` : ""}
-        <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.source))}</span>
+        ${tranche.isDmMatched ? `<span>资料命中</span>` : ""}
+        <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.provider || tranche.source))}</span>
       </div>
       <p>${facts.length ? escapeHtml(facts.join(" · ")) : "暂无结构化发行要素"}</p>
       ${renderProjectDmReallocationReason(tranche)}
@@ -6947,7 +7019,7 @@ function renderAbsTrancheFields() {
         </div>
       </div>
     `).join("")
-    : '<div class="empty compact">暂无 ABS 分档，读取 DM 后会自动带入，也可手工增加。</div>';
+    : '<div class="empty compact">暂无 ABS 分档，读取债券资料后会自动带入，也可手工增加。</div>';
 }
 
 function updateAbsTranchesFromInputs(changedInput = null) {
@@ -7100,7 +7172,7 @@ function buildProjectRecognitionMarks(projectValue, issuer) {
   if (guaranteeInfo.guarantors.length || guaranteeInfo.method) {
     marks["guarantee.method"] = guaranteeInfo.method
       ? recognitionMark("success", "担保方式已识别")
-      : recognitionMark("attention", "DM 未提供担保方式，请根据发行文件确认");
+      : recognitionMark("attention", "返回资料未提供担保方式，请根据发行文件确认");
     guaranteeInfo.guarantors.forEach((guarantor, index) => {
       marks[`guarantee.guarantors.${index}.name`] = recognitionMark("success", "担保人已识别");
       marks[`guarantee.guarantors.${index}.subjectRating`] = guarantor.subjectRating
@@ -7318,7 +7390,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
   output.innerHTML = `
     <div class="valuation-assist-head">
       <strong>估值助手</strong>
-      <span>正在读取 DM 存续债最近可用估值...</span>
+      <span>正在读取 ${escapeHtml(currentDataSourceLabel())} 存续债最近可用估值...</span>
     </div>
   `;
 }
@@ -7347,14 +7419,14 @@ async function fetchDmValuationAssist(key, projectValue, issuerName) {
     try {
       payload = await response.json();
     } catch {
-      payload = { ok: false, reason: "badResponse", hint: `DM 估值接口返回不是 JSON（HTTP ${response.status}）。` };
+      payload = { ok: false, reason: "badResponse", hint: `估值接口返回不是 JSON（HTTP ${response.status}）。` };
     }
     if (valuationAssistRequestKey !== key) return;
     if (payload.ok) renderDmValuationAssist(payload);
     else renderDmValuationEmpty(payload);
   } catch (error) {
     if (error.name === "AbortError" || valuationAssistRequestKey !== key) return;
-    renderDmValuationEmpty({ ok: false, reason: "requestFailed", hint: error.message || "DM 估值助手请求失败。" });
+    renderDmValuationEmpty({ ok: false, reason: "requestFailed", hint: error.message || "估值助手请求失败。" });
   } finally {
     if (valuationAssistRequestKey === key) valuationAssistController = null;
   }
@@ -7368,7 +7440,7 @@ function renderDmValuationEmpty(payload) {
   output.innerHTML = `
     <div class="valuation-assist-head">
       <strong>估值助手</strong>
-      <span>${escapeHtml(payload?.hint || "暂无 DM 存续债可比估值。")}</span>
+      <span>${escapeHtml(payload?.hint || "暂无存续债可比估值。")}</span>
     </div>
   `;
 }
@@ -7379,7 +7451,7 @@ function renderDmValuationAssist(payload) {
   if (!output) return;
   const suggestions = Array.isArray(payload.trancheSuggestions) ? payload.trancheSuggestions : [];
   if (!suggestions.length) {
-    renderDmValuationEmpty({ hint: payload?.hint || "暂无 DM 存续债可比估值。" });
+    renderDmValuationEmpty({ hint: payload?.hint || "暂无存续债可比估值。" });
     return;
   }
   const actualValuationDate = payload.actualValuationDate || payload.valuationDate || "上一日";
@@ -9231,7 +9303,7 @@ function renderSecondaryTrades() {
               ${TRADE_RECORD_COLUMNS.map((column) => `
                 <th class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-column" : ""}${SECONDARY_PENDING_OPTIONAL_COLUMNS.has(column) ? " secondary-pending-optional" : ""}" scope="col">
                   ${escapeHtml(column)}
-                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM/QB</span>' : ""}
+                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">债券资料</span>' : ""}
                 </th>
               `).join("")}
               <th class="secondary-pending-action-heading">操作</th>
@@ -9454,13 +9526,18 @@ function updateSecondaryPendingControls() {
     const complete = secondaryPendingDraftRows.filter((row) => row.dmLookup?.status === "complete").length;
     const partial = secondaryPendingDraftRows.filter((row) => ["partial", "missing"].includes(row.dmLookup?.status)).length;
     const errors = secondaryPendingDraftRows.filter((row) => row.dmLookup?.status === "error").length;
+    const successfulResults = secondaryPendingDraftRows.filter(row => ['complete', 'partial'].includes(row.dmLookup?.status)).map(row => row.dmLookup);
+    const resultSource = successfulResults.length ? dataProviderLabel(successfulResults) : currentDataSourceLabel();
     dmStatus.textContent = secondaryPendingDmLoading
-      ? "DM 读取中"
-      : errors ? `DM ${errors} 笔失败 · 可重试`
-        : complete || partial ? `DM ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : "DM 待读取";
+      ? `${currentDataSourceLabel()} 读取中`
+      : errors ? `资料查询 ${errors} 笔失败 · 可重试`
+        : complete || partial ? `${resultSource} ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : `${currentDataSourceLabel()} 待读取`;
   }
   const dmButton = $("#secondaryPendingDmButton");
-  if (dmButton) dmButton.disabled = secondaryPendingDmLoading || !secondaryPendingDraftRows.length;
+  if (dmButton) {
+    dmButton.disabled = secondaryPendingDmLoading || !secondaryPendingDraftRows.length;
+    dmButton.textContent = secondaryPendingDmLoading ? `正在读取 ${currentDataSourceLabel()}…` : `重新读取 ${currentDataSourceLabel()}`;
+  }
   const undoButton = $("#secondaryPendingUndoButton");
   if (undoButton) undoButton.disabled = !secondaryPendingUndoStack.length;
   const saveButton = $("#secondaryPendingSaveButton");
@@ -9557,7 +9634,7 @@ async function requestTradeRecordDmRows(requestRows = [], { manual = false } = {
     } catch (error) {
       if (error?.dmAuthFailure || error?.name === 'AbortError') throw error;
       failedIds.push(...batch.map((row) => row.id));
-      errors.push(error?.message || "DM 查询失败");
+      errors.push(error?.message || "债券资料查询失败");
     }
   }
   return { rows, failedIds, errors };
@@ -9569,7 +9646,7 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
   const rows = ensureSecondaryPendingDraft();
   const requestRows = tradeRecordDmRequestRows(rows, { refresh });
   if (!requestRows.length) {
-    if (!automatic) showToast("当前待成交记录的 DM 字段已齐全。");
+    if (!automatic) showToast("当前待成交记录的外部资料字段已齐全。");
     return;
   }
   const requestedIds = new Set(requestRows.map((row) => row.id));
@@ -9586,15 +9663,16 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
       const complete = results.filter((row) => row.status === "complete").length;
       const partial = results.length - complete;
       const failed = failedIds.length;
+      const returnedSource = results.length ? dataProviderLabel(results) : currentDataSourceLabel();
       showToast(failed
-        ? `${dataProviderLabel(results)} 已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
-        : `${dataProviderLabel(results)} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+        ? `${returnedSource} 已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
+        : `${returnedSource} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
     if (sourceGeneration !== dataSourceGeneration || error.name === 'AbortError') return;
     secondaryPendingDraftRows = markTradeRecordDmErrors(secondaryPendingDraftRows, [...requestedIds]);
     renderSecondaryTrades();
-    if (!automatic) showToast(error.message || "DM 待成交字段读取失败。");
+    if (!automatic) showToast(error.message || "待成交债券资料读取失败。");
   } finally {
     if (sourceGeneration !== dataSourceGeneration) return;
     secondaryPendingDmLoading = false;
@@ -9738,7 +9816,7 @@ function renderSecondaryLedger() {
               ${TRADE_RECORD_COLUMNS.map((column) => `
                 <th scope="col" class="${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? "dm-column" : ""}">
                   ${escapeHtml(column)}
-                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">DM/QB</span>' : ""}
+                  ${TRADE_RECORD_FORMULA_COLUMNS.has(column) ? '<span class="secondary-ledger-column-source">债券资料</span>' : ""}
                 </th>
               `).join("")}
             </tr>
@@ -9956,16 +10034,23 @@ function updateSecondaryLedgerControls() {
   if (dmStatus) {
     const complete = secondaryLedgerDraftRows.filter((row) => row.dmLookup?.status === "complete").length;
     const partial = secondaryLedgerDraftRows.filter((row) => ["partial", "missing"].includes(row.dmLookup?.status)).length;
+    const errors = secondaryLedgerDraftRows.filter((row) => row.dmLookup?.status === 'error').length;
+    const successfulResults = secondaryLedgerDraftRows.filter(row => ['complete', 'partial'].includes(row.dmLookup?.status)).map(row => row.dmLookup);
+    const resultSource = successfulResults.length ? dataProviderLabel(successfulResults) : currentDataSourceLabel();
     dmStatus.textContent = secondaryLedgerDmLoading
-      ? "DM 读取中"
-      : complete || partial ? `DM ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : "DM 待读取";
+      ? `${currentDataSourceLabel()} 读取中`
+      : errors ? `资料查询 ${errors} 笔失败 · 可重试`
+        : complete || partial ? `${resultSource} ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : `${currentDataSourceLabel()} 待读取`;
   }
   const saveButton = $("#secondaryLedgerSaveButton");
   if (saveButton) saveButton.disabled = secondaryLedgerSavePending || !dirtyRows;
   const undoButton = $("#secondaryLedgerUndoButton");
   if (undoButton) undoButton.disabled = !secondaryLedgerUndoStack.length;
   const dmButton = $("#secondaryLedgerDmButton");
-  if (dmButton) dmButton.disabled = secondaryLedgerDmLoading || !secondaryLedgerDraftRows.length;
+  if (dmButton) {
+    dmButton.disabled = secondaryLedgerDmLoading || !secondaryLedgerDraftRows.length;
+    dmButton.textContent = secondaryLedgerDmLoading ? `正在读取 ${currentDataSourceLabel()}…` : `读取 ${currentDataSourceLabel()}`;
+  }
 }
 
 function secondaryLedgerInputMode(column) {
@@ -9983,16 +10068,17 @@ function secondaryLedgerDmRowStatus(row) {
     return { label: provider, className: "partial", title: `${provider} 部分返回：${(row.dmLookup.missing || []).join("、")}` };
   }
   if (row.dmLookup?.status === "missing") {
-    return { label: "—", className: "missing", title: "DM 未返回对应字段" };
+    return { label: "—", className: "missing", title: `${dataProviderLabel(row.dmLookup, '数据源')} 未返回对应字段` };
   }
   if (row.dmLookup?.status === "error") {
-    return { label: "!", className: "error", title: "DM 读取失败" };
+    return { label: "!", className: "error", title: `${dataProviderLabel(row.dmLookup, '数据源')} 读取失败` };
   }
   return { label: "", className: "", title: "" };
 }
 
 function secondaryLedgerDmCellTitle(row, column) {
-  const provider = dataProviderLabel(row.fieldSources?.[column] || row.dmLookup);
+  const provider = dataProviderLabel(row.fieldSources?.[column] || row.dmLookup,
+    ['missing', 'error'].includes(row.dmLookup?.status) ? '数据源' : 'DM');
   if (column === "估值收益率") {
     const basis = row.dmLookup?.valuationField === "cbYte" ? "中债行权收益率" : "中债到期收益率";
     return `${provider} ${basis} · ${row.dmLookup?.valuationDate || row.dmLookup?.requestedDate || "日期未返回"}`;
@@ -10013,7 +10099,7 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
   const rows = ensureSecondaryLedgerDraft(date);
   const requestRows = tradeRecordDmRequestRows(rows, { refresh });
   if (!requestRows.length) {
-    if (!automatic) showToast("当前台账的 DM 字段已齐全。");
+    if (!automatic) showToast("当前台账的外部资料字段已齐全。");
     return;
   }
   secondaryLedgerDmLoading = true;
@@ -10033,15 +10119,16 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
     if (!automatic) {
       const complete = results.filter((row) => row.status === "complete").length;
       const partial = results.length - complete;
+      const returnedSource = results.length ? dataProviderLabel(results) : currentDataSourceLabel();
       showToast(failedIds.length
-        ? `${dataProviderLabel(results)} 已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
-        : `${dataProviderLabel(results)} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+        ? `${returnedSource} 已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
+        : `${returnedSource} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
     if (sourceGeneration !== dataSourceGeneration || error.name === 'AbortError') return;
     secondaryLedgerDraftRows = markTradeRecordDmErrors(secondaryLedgerDraftRows, requestRows.map((row) => row.id));
     renderSecondaryLedger();
-    if (!automatic) showToast(error.message || "DM 成交台账字段读取失败。");
+    if (!automatic) showToast(error.message || "成交台账债券资料读取失败。");
   } finally {
     if (sourceGeneration !== dataSourceGeneration) return;
     secondaryLedgerDmLoading = false;
@@ -10095,7 +10182,7 @@ async function copySecondaryLedgerRows() {
   const text = buildTradeRecordTableText(rows, { includeHeader: false });
   try {
     await navigator.clipboard.writeText(text);
-    showToast(`已复制 ${rows.length} 笔 DM 可用值，不含 Wind 公式。`);
+    showToast(`已复制 ${rows.length} 笔外部资料可用值，不含 Wind 公式。`);
   } catch {
     downloadBlob(`二级成交台账-${date}.txt`, new Blob([text], { type: "text/plain;charset=utf-8" }));
     showToast(`已导出 ${rows.length} 笔交易记录。`);
@@ -10494,7 +10581,8 @@ function renderPaymentTodo() {
         const prepaymentNumber = tranche.prepaymentNumber || "";
         const dmCode = paymentTodoCodes.get(tranche.shortName || projectValue.shortName);
         const securityCode = dmCode?.status === "matched" ? dmCode.code : "";
-        const codeLabel = securityCode || (dmCode?.status === "missing" ? "DM 暂无代码" : dmCode?.status === "ambiguous" ? "代码待核对" : dmCode?.status === "error" ? "DM 查询失败" : "DM 查询中…");
+        const requestedSource = dmCode?.requestMode ? dataSourceModeLabel(dmCode.requestMode) : currentDataSourceLabel();
+        const codeLabel = securityCode || (dmCode?.status === "missing" ? `${requestedSource} 暂无代码` : dmCode?.status === "ambiguous" ? "代码待核对" : dmCode?.status === "error" ? `${requestedSource} 查询失败` : `${requestedSource} 查询中…`);
         const codeProvider = dataProviderLabel(dmCode);
         const codeTitle = securityCode ? `${codeProvider} · 债券代码 · ${dmCode.fetchedAt}` : dmCode?.status === "ambiguous" ? "数据源返回多个代码，未自动选择" : codeLabel;
         return `
@@ -12477,7 +12565,7 @@ function bindDmTest() {
   $("#dmLookupCopyButton").addEventListener("click", async () => {
     if (!dmLastPayload) return;
     await navigator.clipboard.writeText(JSON.stringify(dmLastPayload, null, 2));
-    showToast("DM 返回 JSON 已复制。");
+    showToast("查询返回 JSON 已复制。");
   });
   $("#dmIssueGroupOutput").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-dm-issue-query]");
@@ -12556,12 +12644,12 @@ async function runDmLookup() {
     const elapsedMs = Math.round(performance.now() - startedAt);
     await renderDmLookupResult({
       ok: false,
-      error: error.message || "DM 查询请求失败",
+      error: error.message || "债券资料查询请求失败",
       diagnostic: { responsePreview: "浏览器请求失败，未收到接口响应。" },
       elapsedMs,
     }, isCurrent);
     if (!isCurrent()) return;
-    showToast("DM 查询请求失败。");
+    showToast("债券资料查询请求失败。");
   } finally {
     if (dmLookupRequest === request) {
       dmLookupRequest = null;
@@ -12598,7 +12686,7 @@ function clearDmLookup() {
 
 function setDmLookupBusy(isBusy) {
   $("#dmLookupButton").disabled = isBusy;
-  $("#dmLookupButton").textContent = isBusy ? "查询中..." : "查询 DM";
+  $("#dmLookupButton").textContent = isBusy ? `正在查询 ${currentDataSourceLabel()}…` : `查询 ${currentDataSourceLabel()}`;
 }
 
 async function renderDmLookupResult(payload, isCurrent = () => true) {
@@ -12610,7 +12698,7 @@ async function renderDmLookupResult(payload, isCurrent = () => true) {
   const ok = Boolean(enrichedPayload?.ok);
   const statusParts = [
     ok ? "查询成功" : enrichedPayload?.noResult ? "无结果" : "查询失败",
-    ...(ok && dataProviderLabel(enrichedPayload) !== 'DM' ? [dataProviderLabel(enrichedPayload)] : []),
+    dataProviderLabel(enrichedPayload, currentDataSourceLabel()),
     enrichedPayload?.httpStatus ? `HTTP ${enrichedPayload.httpStatus}` : "",
     Number.isFinite(enrichedPayload?.elapsedMs) ? `${enrichedPayload.elapsedMs}ms` : "",
   ].filter(Boolean);
@@ -13037,8 +13125,8 @@ function renderDmIssueGroup(issueGroup) {
         </div>
         <div class="dm-issue-tranche-tags">
           ${tranche.isQueriedInput ? `<span>当前查询</span>` : ""}
-          ${tranche.isDmMatched ? `<span>DM命中</span>` : ""}
-          <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.source))}</span>
+          ${tranche.isDmMatched ? `<span>资料命中</span>` : ""}
+          <span>${escapeHtml(dmIssueGroupSourceLabel(tranche.provider || tranche.source))}</span>
         </div>
         <p>${facts.length ? escapeHtml(facts.join(" · ")) : "暂无结构化发行要素"}</p>
         ${renderDmReallocationReason(tranche)}
