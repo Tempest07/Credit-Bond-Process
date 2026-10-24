@@ -303,7 +303,7 @@ test("recognizes investment-bank scanned notice fields expressed in ten-thousand
   assert.equal(result.paymentDate, "2026-07-21");
   assert.equal(result.amountFen, 30_000_000_000);
   assert.equal(result.securityCode, "012681839");
-  assert.equal(result.bondShortName, "26 国新租赁 SCP007");
+  assert.equal(result.bondShortName, "26国新租赁SCP007");
 });
 
 test("recognizes broker allocation notices and exchange security codes", () => {
@@ -334,7 +334,7 @@ test("recognizes the embedded-text CICC sample with spaces in the bond short nam
   assert.equal(result.paymentDate, "2026-07-17");
   assert.equal(result.amountFen, 5_000_000_000);
   assert.equal(result.securityCode, "524901");
-  assert.equal(result.bondShortName, "26 香建 03");
+  assert.equal(result.bondShortName, "26香建03");
 });
 
 test("recognizes the live allocation-table row after its column headers", () => {
@@ -348,7 +348,19 @@ test("recognizes the live allocation-table row after its column headers", () => 
   assert.equal(result.paymentDate, "2026-07-17");
   assert.equal(result.amountFen, 30_000_000_000);
   assert.equal(result.securityCode, "245694.SH");
-  assert.equal(result.bondShortName, "26 保利 08");
+  assert.equal(result.bondShortName, "26保利08");
+});
+
+test("explicit receipt short names take precedence over truncated AI fallback and preserve qualifiers", () => {
+  const result = recognizePaymentReceiptText("债券简称 26越秀租赁MTN002B（绿色）\n债券代码102683999\n缴款金额3000万元", {
+    bondShortName: "26越秀租MTN002B", securityCode: "102683999",
+  });
+  assert.equal(result.bondShortName, "26越秀租赁MTN002B(绿色)");
+});
+
+test("a valid payment-project fallback remains usable but legal full titles are never abbreviated by guesswork", () => {
+  assert.equal(recognizePaymentReceiptText("缴款项目 26 测试 MTN001\n缴款金额1000万元").bondShortName, "26测试MTN001");
+  assert.equal(recognizePaymentReceiptText("债券简称 某某有限公司2026年度第一期中期票据").bondShortName, "");
 });
 
 test("groups a mixed PDF into project receipts while retaining blank-page provenance", () => {

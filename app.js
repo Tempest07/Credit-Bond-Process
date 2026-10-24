@@ -1,13 +1,14 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261024hotfix534curve';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261024hotfix534curve';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261024hotfix534curve';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261024hotfix534curve';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261024hotfix534curve';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261024hotfix534curve';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261024hotfix534curve';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261024hotfix534curve';
-import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261024hotfix534curve';
-import { initDataSourceControl } from './data-source-control.js?v=20261024hotfix534curve';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261024release535';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261024release535';
+import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261024release535';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261024release535';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261024release535';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261024release535';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261024release535';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261024release535';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261024release535';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261024release535';
+import { initDataSourceControl } from './data-source-control.js?v=20261024release535';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -43,7 +44,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261024hotfix534curve";
+} from "./core.js?v=20261024release535";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -73,15 +74,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261024hotfix534curve";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261024hotfix534curve";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261024hotfix534curve";
+} from "./lifecycle.js?v=20261024release535";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261024release535";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261024release535";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261024hotfix534curve";
+} from "./history-parser.js?v=20261024release535";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -98,23 +99,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261024hotfix534curve";
+} from "./protocol-transfer.js?v=20261024release535";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261024hotfix534curve";
+} from "./protocol-transfer-templates.js?v=20261024release535";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261024hotfix534curve";
+} from "./protocol-transfer-docx.js?v=20261024release535";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261024hotfix534curve";
+} from "./reminders.js?v=20261024release535";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -142,11 +143,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261024hotfix534curve";
+} from "./secondary-inventory.js?v=20261024release535";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261024hotfix534curve";
+} from "./trade-record-converter.js?v=20261024release535";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -157,16 +158,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261024hotfix534curve";
+} from "./trade-record-grid.js?v=20261024release535";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261024hotfix534curve";
-import { initializeDatePickers } from "./date-picker.js?v=20261024hotfix534curve";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261024hotfix534curve";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261024hotfix534curve";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261024hotfix534curve";
+} from "./trade-record-ledger.js?v=20261024release535";
+import { initializeDatePickers } from "./date-picker.js?v=20261024release535";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261024release535";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261024release535";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261024release535";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -175,33 +176,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261024hotfix534curve";
+} from "./project-screenshot-ocr.js?v=20261024release535";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261024hotfix534curve";
+} from "./project-screenshot-layout.js?v=20261024release535";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261024hotfix534curve";
+} from "./project-screenshot-image.js?v=20261024release535";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261024hotfix534curve";
+} from "./payment-receipts.js?v=20261024release535";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261024hotfix534curve";
+} from "./issuer-search.js?v=20261024release535";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261024hotfix534curve";
-import { initializeBondList } from "./bond-list-editor.js?v=20261024hotfix534curve";
+} from "./state-history.js?v=20261024release535";
+import { initializeBondList } from "./bond-list-editor.js?v=20261024release535";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -347,14 +348,19 @@ let paymentReceiptPendingBatches = [];
 let paymentReceiptCoverage = { expected: 0, covered: 0, missing: 0, targets: [] };
 let paymentReceiptCoverageFilter = "missing";
 let paymentReceiptCoverageError = "";
+let paymentReceiptCoverageLoading = false;
 let paymentReceiptsLoading = false;
 let paymentReceiptsError = "";
 let paymentReceiptArchiveController = null;
 let paymentReceiptArchiveRequestId = 0;
+let paymentReceiptArchiveFilterKey = "";
+let paymentReceiptLoadMutations = [];
 let paymentReceiptIndexView = "all";
 let selectedPaymentReceiptEntryKey = "";
 let paymentReceiptDetailTab = "original";
 let paymentReceiptPreview = null;
+let paymentReceiptInspectorSignature = "";
+let paymentReceiptNameResolverCache = null;
 let activePaymentReceiptRegroupFileId = "";
 let paymentReceiptRegroupData = null;
 let paymentReceiptRegroupTrigger = null;
@@ -430,7 +436,7 @@ const LIQUID_TRACK_CONFIGS = [
   { container: ".project-list", active: ".project-item.active" },
 ];
 const liquidMotionTimers = new WeakMap();
-let activeSecondaryWorkspacePanel = "intake";
+let activeSecondaryWorkspacePanel = "protocol";
 let secondaryIntakeCollapsed = false;
 let secondaryIntakeCollapseTouched = false;
 let secondaryPendingDraftSignature = "";
@@ -732,11 +738,16 @@ function bindPaymentReceipts() {
   $("#paymentReceiptArchive")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-receipt-entry]");
     if (!button) return;
+    if (selectedPaymentReceiptEntryKey === button.dataset.receiptEntry) return;
+    $("#paymentReceiptArchive [aria-pressed='true']")?.classList.remove("active");
+    $("#paymentReceiptArchive [aria-pressed='true']")?.setAttribute("aria-pressed", "false");
     selectedPaymentReceiptEntryKey = button.dataset.receiptEntry;
-    renderPaymentReceiptArchive();
-    [...$("#paymentReceiptArchive").querySelectorAll("[data-receipt-entry]")]
-      .find((item) => item.dataset.receiptEntry === selectedPaymentReceiptEntryKey)?.focus({ preventScroll: true });
+    button.classList.add("active");
+    button.setAttribute("aria-pressed", "true");
+    renderPaymentReceiptInspector(selectedPaymentReceiptEntry());
+    button.focus({ preventScroll: true });
   });
+  $("#paymentReceiptMatchToolbar")?.addEventListener("click", handlePaymentReceiptArchiveClick);
   $("#paymentReceiptFieldsPane")?.addEventListener("click", handlePaymentReceiptArchiveClick);
   $("#paymentReceiptFieldsPane")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-receipt-regroup]");
@@ -752,14 +763,26 @@ function bindPaymentReceipts() {
     }
     const detailTab = event.target.closest("[data-receipt-detail-tab]");
     if (detailTab) setPaymentReceiptDetailTab(detailTab.dataset.receiptDetailTab);
-    if (event.target.closest("[data-receipt-show-fields]")) {
-      setPaymentReceiptDetailTab("fields");
-      const manual = $("#paymentReceiptFieldsPane .payment-receipt-manual");
-      if (manual) {
-        manual.open = true;
-        manual.querySelector("select")?.focus();
-      }
+    const project = event.target.closest("[data-receipt-open-project]");
+    if (project?.dataset.receiptOpenProject) {
+      openLedgerProject(project.dataset.receiptOpenProject, { scrollOnDesktop: true });
     }
+  });
+  reader?.addEventListener("input", (event) => {
+    if (!event.target.matches("[data-receipt-target-search]")) return;
+    const scope = event.target.closest(".payment-receipt-manual");
+    const receipt = paymentReceipts.find((item) => item.id === scope?.dataset.receiptId);
+    const select = scope?.querySelector("[data-receipt-target]");
+    if (!receipt || !select) return;
+    const selected = select.value;
+    select.innerHTML = '<option value="">请选择项目品种</option>' + paymentReceiptTargetOptions(receipt, event.target.value);
+    select.value = selected;
+    scope.querySelector("[data-receipt-assign]").disabled = !select.value;
+  });
+  reader?.addEventListener("change", (event) => {
+    if (!event.target.matches("[data-receipt-target]")) return;
+    const button = event.target.closest(".payment-receipt-manual")?.querySelector("[data-receipt-assign]");
+    if (button) button.disabled = !event.target.value;
   });
   reader?.addEventListener("keydown", (event) => {
     const tab = event.target.closest('[role="tab"]');
@@ -816,6 +839,8 @@ function bindPaymentReceipts() {
 async function handlePaymentReceiptArchiveClick(event) {
   const button = event.target.closest("[data-receipt-match], [data-receipt-assign], [data-receipt-unlink], [data-receipt-delete], [data-receipt-reprocess], [data-receipt-original]");
   if (!button) return;
+  const matchControls = button.closest(".payment-receipt-match-controls");
+  if (matchControls?.disabled) return;
   if (button.dataset.receiptReprocess) {
     await reprocessPaymentReceiptFile(button.dataset.receiptReprocess, button);
     return;
@@ -832,7 +857,9 @@ async function handlePaymentReceiptArchiveClick(event) {
     return;
   }
   if (button.dataset.receiptUnlink) {
-    await unlinkPaymentReceipt(receiptId, button);
+    if (matchControls) matchControls.disabled = true;
+    try { await unlinkPaymentReceipt(receiptId, button); }
+    finally { if (matchControls) matchControls.disabled = false; }
     return;
   }
 
@@ -852,6 +879,7 @@ async function handlePaymentReceiptArchiveClick(event) {
     return;
   }
   button.disabled = true;
+  if (matchControls) matchControls.disabled = true;
   try {
     const response = await fetch(`${PAYMENT_RECEIPTS_URL}/${encodeURIComponent(receiptId)}`, {
       method: "PATCH",
@@ -884,6 +912,8 @@ async function handlePaymentReceiptArchiveClick(event) {
   } catch (error) {
     button.disabled = false;
     showToast(`对应失败：${error.message || "请稍后重试"}`);
+  } finally {
+    if (matchControls) matchControls.disabled = false;
   }
 }
 
@@ -1010,6 +1040,9 @@ function applyLocalPaymentReceiptMutation(mutation = {}) {
   const removedReceiptIds = [...new Set((mutation.removedReceiptIds || []).map(String).filter(Boolean))];
   const removedFileIds = [...new Set((mutation.removedFileIds || []).map(String).filter(Boolean))];
   const receipts = Array.isArray(mutation.receipts) ? mutation.receipts.filter((receipt) => receipt?.id) : [];
+  if (paymentReceiptsLoading || paymentReceiptCoverageLoading) {
+    paymentReceiptLoadMutations.push({ removedReceiptIds, removedFileIds, receipts: structuredClone(receipts) });
+  }
   paymentReceipts = applyPaymentReceiptArchiveMutation(paymentReceipts, {
     removedReceiptIds,
     removedFileIds,
@@ -1039,51 +1072,81 @@ function syncProjectPaymentReceiptCaches(mutation = {}) {
 }
 
 async function loadPaymentReceipts(options = {}) {
+  const date = $("#paymentReceiptDateFilter")?.value || "";
+  const status = $("#paymentReceiptStatusFilter")?.value || "";
+  const filterKey = JSON.stringify([date, status]);
+  const retainCurrent = paymentReceiptArchiveFilterKey === filterKey;
+  paymentReceiptArchiveFilterKey = filterKey;
   const requestId = ++paymentReceiptArchiveRequestId;
   paymentReceiptArchiveController?.abort();
   const controller = new AbortController();
   paymentReceiptArchiveController = controller;
+  const mutations = paymentReceiptLoadMutations = [];
+  const isCurrent = () => requestId === paymentReceiptArchiveRequestId && !controller.signal.aborted;
   paymentReceiptsLoading = true;
+  paymentReceiptCoverageLoading = true;
   paymentReceiptsError = "";
-  paymentReceipts = [];
-  paymentReceiptPendingFiles = [];
-  paymentReceiptPendingBatches = [];
-  paymentReceiptCoverage = { expected: 0, covered: 0, missing: 0, targets: [] };
   paymentReceiptCoverageError = "";
+  if (!retainCurrent) {
+    paymentReceipts = [];
+    paymentReceiptPendingFiles = [];
+    paymentReceiptPendingBatches = [];
+    paymentReceiptCoverage = { expected: 0, covered: 0, missing: 0, targets: [] };
+    selectedPaymentReceiptEntryKey = "";
+  }
   renderPaymentReceiptArchive();
   renderPaymentReceiptCoverage();
-  const date = $("#paymentReceiptDateFilter")?.value || "";
-  const status = $("#paymentReceiptStatusFilter")?.value || "";
-  try {
-    const archive = await fetchPaymentReceiptArchivePages({ date, status, signal: controller.signal });
-    if (requestId !== paymentReceiptArchiveRequestId) return;
-    paymentReceipts = archive.receipts;
-    paymentReceiptPendingFiles = archive.pendingFiles;
-    paymentReceiptPendingBatches = archive.pendingBatches;
+
+  const archiveLoad = (async () => {
     try {
-      paymentReceiptCoverage = await fetchPaymentReceiptCoverage(date, controller.signal);
-    } catch (coverageError) {
-      if (coverageError.name === "AbortError") throw coverageError;
-      paymentReceiptCoverageError = coverageError.message || "读取应收单据对账失败";
-      if (!options.silent) showToast(`单据归档已刷新，但对账读取失败：${paymentReceiptCoverageError}`);
+      const archive = await fetchPaymentReceiptArchivePages({ date, status, signal: controller.signal });
+      if (!isCurrent()) return;
+      let receipts = archive.receipts;
+      let pendingFiles = archive.pendingFiles;
+      for (const mutation of mutations) {
+        receipts = applyPaymentReceiptArchiveMutation(receipts, mutation, { date, status });
+        pendingFiles = pendingFiles.filter((file) => !mutation.removedFileIds.includes(String(file.id || "")));
+      }
+      paymentReceipts = receipts;
+      paymentReceiptPendingFiles = pendingFiles;
+      paymentReceiptPendingBatches = archive.pendingBatches;
+      if (selectedProjectId) {
+        projectPaymentReceiptCache.delete(selectedProjectId);
+        void loadProjectPaymentReceipts(selectedProjectId, { refresh: true });
+      }
+      if (!options.silent) showToast(`已刷新 ${paymentReceipts.length} 张缴款单。`);
+    } catch (error) {
+      if (!isCurrent() || error.name === "AbortError") return;
+      paymentReceiptsError = error.message || "读取缴款单失败";
+      if (!options.silent) showToast(`缴款单读取失败：${paymentReceiptsError}`);
+    } finally {
+      if (isCurrent()) {
+        paymentReceiptsLoading = false;
+        renderPaymentReceiptArchive();
+      }
     }
-    if (selectedProjectId) {
-      projectPaymentReceiptCache.delete(selectedProjectId);
-      void loadProjectPaymentReceipts(selectedProjectId, { refresh: true });
+  })();
+  const coverageLoad = (async () => {
+    try {
+      let coverage = await fetchPaymentReceiptCoverage(date, controller.signal);
+      if (!isCurrent()) return;
+      for (const mutation of mutations) coverage = applyPaymentReceiptCoverageMutation(coverage, mutation);
+      paymentReceiptCoverage = coverage;
+    } catch (error) {
+      if (!isCurrent() || error.name === "AbortError") return;
+      paymentReceiptCoverageError = error.message || "读取应收单据对账失败";
+      if (!options.silent) showToast(`对账读取失败：${paymentReceiptCoverageError}`);
+    } finally {
+      if (isCurrent()) {
+        paymentReceiptCoverageLoading = false;
+        renderPaymentReceiptCoverage();
+      }
     }
-    if (!options.silent) showToast(`已刷新 ${paymentReceipts.length} 张缴款单。`);
-  } catch (error) {
-    if (error.name === "AbortError" || requestId !== paymentReceiptArchiveRequestId) return;
-    paymentReceiptsError = error.message || "读取缴款单失败";
-    if (!paymentReceiptCoverageError) paymentReceiptCoverageError = "归档读取失败，暂时无法完成缺单对账";
-    if (!options.silent) showToast(`缴款单读取失败：${paymentReceiptsError}`);
-  } finally {
-    if (requestId === paymentReceiptArchiveRequestId) {
-      paymentReceiptsLoading = false;
-      paymentReceiptArchiveController = null;
-      renderPaymentReceiptArchive();
-      renderPaymentReceiptCoverage();
-    }
+  })();
+  await Promise.all([archiveLoad, coverageLoad]);
+  if (isCurrent()) {
+    paymentReceiptArchiveController = null;
+    paymentReceiptLoadMutations = [];
   }
 }
 
@@ -1094,8 +1157,14 @@ async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal 
   const seenReceiptIds = new Set();
   const seenFileIds = new Set();
   const seenBatchIds = new Set();
-  for (let offset = 0; ; offset += 200) {
-    const params = new URLSearchParams({ limit: "200", offset: String(offset) });
+  const takeNew = (rows, seen) => rows.filter((row) => {
+    if (!row?.id || seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+  for (let offset = 0; ; offset += 500) {
+    signal?.throwIfAborted();
+    const params = new URLSearchParams({ limit: "500", offset: String(offset) });
     if (date) params.set("date", date);
     if (status) params.set("status", status);
     const response = await fetch(`${PAYMENT_RECEIPTS_URL}?${params}`, {
@@ -1104,6 +1173,7 @@ async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal 
       headers: authHeaders(),
       signal,
     });
+    signal?.throwIfAborted();
     if (!response.ok) {
       if (response.status === 401) {
         clearAuthSession();
@@ -1113,19 +1183,17 @@ async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal 
       throw new Error(payload.error || `HTTP ${response.status}`);
     }
     const payload = await response.json();
+    signal?.throwIfAborted();
     const page = Array.isArray(payload.receipts) ? payload.receipts : [];
     const filePage = Array.isArray(payload.pendingFiles) ? payload.pendingFiles : [];
     const batchPage = Array.isArray(payload.pendingBatches) ? payload.pendingBatches : [];
-    const unseen = page.filter((receipt) => receipt?.id && !seenReceiptIds.has(receipt.id));
-    const unseenFiles = filePage.filter((file) => file?.id && !seenFileIds.has(file.id));
-    const unseenBatches = batchPage.filter((batch) => batch?.id && !seenBatchIds.has(batch.id));
-    unseen.forEach((receipt) => seenReceiptIds.add(receipt.id));
-    unseenFiles.forEach((file) => seenFileIds.add(file.id));
-    unseenBatches.forEach((batch) => seenBatchIds.add(batch.id));
+    const unseen = takeNew(page, seenReceiptIds);
+    const unseenFiles = takeNew(filePage, seenFileIds);
+    const unseenBatches = takeNew(batchPage, seenBatchIds);
     receipts.push(...unseen);
     pendingFiles.push(...unseenFiles);
     pendingBatches.push(...unseenBatches);
-    if (Math.max(page.length, filePage.length, batchPage.length) < 200) break;
+    if (Math.max(page.length, filePage.length, batchPage.length) < 500) break;
     if (!unseen.length && !unseenFiles.length && !unseenBatches.length) throw new Error("缴款单分页未推进，请刷新后重试");
   }
   return { receipts, pendingFiles, pendingBatches };
@@ -1226,7 +1294,7 @@ function renderPaymentReceiptArchive() {
   $("#paymentReceiptCoveragePanel").hidden = paymentReceiptIndexView !== "coverage";
   renderPaymentReceiptInspector(entries.find((entry) => entry.key === selectedPaymentReceiptEntryKey));
 
-  if (paymentReceiptsLoading) {
+  if (paymentReceiptsLoading && !entries.length) {
     archive.innerHTML = '<div class="empty payment-receipt-empty">正在读取邮箱识别结果……</div>';
     return;
   }
@@ -1255,16 +1323,34 @@ function renderPaymentReceiptArchive() {
   `).join("");
 }
 
+function paymentReceiptNameResolution(receipt) {
+  if (!paymentReceiptNameResolverCache
+      || paymentReceiptNameResolverCache.projects !== state.projects
+      || paymentReceiptNameResolverCache.updatedAt !== state.updatedAt) {
+    paymentReceiptNameResolverCache = {
+      projects: state.projects,
+      updatedAt: state.updatedAt,
+      resolve: createPaymentReceiptNameResolver(state.projects || []),
+    };
+  }
+  return paymentReceiptNameResolverCache.resolve(receipt);
+}
+
+function paymentReceiptNameSourceLabel(source) {
+  return ({ "matched-project": "已对应品种", "security-code": "债券代码校对", recognized: "原件识别", unavailable: "简称待核对" })[source] || "原件识别";
+}
+
 function paymentReceiptEntryTitle(entry) {
   const value = entry.value;
   if (entry.kind === "receipt") {
-    return value.bondShortName || paymentReceiptTarget(value)?.tranche?.shortName || value.subject || "未识别项目缴款单";
+    return paymentReceiptNameResolution(value).title;
   }
   return value.sourceFilename || value.subject || (entry.kind === "file" ? "待处理 PDF" : "未提取到 PDF 的邮件");
 }
 
 function renderPaymentReceiptIndexItem(entry) {
   const value = entry.value;
+  const name = entry.kind === "receipt" ? paymentReceiptNameResolution(value) : null;
   const badge = entry.kind === "receipt" ? paymentReceiptStatusBadge(value.matchStatus)
     : `<span class="payment-receipt-status ${value.processingStatus === "error" ? "error" : "review"}">${escapeHtml(paymentReceiptFileStatusLabel(value.processingStatus))}</span>`;
   const meta = entry.kind === "receipt"
@@ -1275,7 +1361,8 @@ function renderPaymentReceiptIndexItem(entry) {
     : entry.kind === "file" ? "待处理附件" : "邮件 · 暂无 PDF";
   return `<button type="button" class="payment-receipt-index-item ${entry.key === selectedPaymentReceiptEntryKey ? "active" : ""}"
     data-receipt-entry="${escapeAttribute(entry.key)}" aria-pressed="${entry.key === selectedPaymentReceiptEntryKey}">
-    <strong>${escapeHtml(paymentReceiptEntryTitle(entry))}</strong>${badge}
+    <strong title="${escapeAttribute(name ? `${paymentReceiptNameSourceLabel(name.source)}${name.rawName ? ` · 原识别：${name.rawName}` : ""}` : paymentReceiptEntryTitle(entry))}">${escapeHtml(name?.title || paymentReceiptEntryTitle(entry))}</strong>${badge}
+    ${name?.warning && name.title !== "简称待核对" ? '<span class="payment-receipt-name-warning-label">简称待核对</span>' : ""}
     <span class="payment-receipt-index-meta">${meta.filter(Boolean).map((part) => `<span>${escapeHtml(part)}</span>`).join("")}</span>
     <span class="payment-receipt-index-kind">${escapeHtml(source)}</span>
   </button>`;
@@ -1293,16 +1380,21 @@ function renderPaymentReceiptInspector(entry) {
     : paymentReceiptsLoading ? "正在读取缴款单……" : paymentReceiptsError ? "缴款单读取失败" : "选择一张缴款单";
   $(".payment-receipt-inspector").setAttribute("aria-busy", String(paymentReceiptsLoading));
   $("#paymentReceiptDetailStatus").innerHTML = entry?.kind === "receipt" ? paymentReceiptStatusBadge(entry.value.matchStatus) : "";
-  fields.innerHTML = !entry ? '<div class="empty payment-receipt-empty">从左侧选择单据查看识别信息。</div>'
-    : entry.kind === "receipt" ? renderPaymentReceiptCard(entry.value)
-      : entry.kind === "file" ? renderPendingPaymentReceiptFile(entry.value) : renderPendingPaymentReceiptBatch(entry.value);
+  const signature = JSON.stringify([entry?.key, entry?.value, state.updatedAt]);
+  if (signature === paymentReceiptInspectorSignature) {
+    setPaymentReceiptDetailTab(paymentReceiptDetailTab);
+    return;
+  }
+  paymentReceiptInspectorSignature = signature;
+  fields.innerHTML = "";
+  const matchToolbar = $("#paymentReceiptMatchToolbar");
+  matchToolbar.hidden = entry?.kind !== "receipt";
+  matchToolbar.innerHTML = entry?.kind === "receipt" ? renderPaymentReceiptQuickMatch(entry.value) : "";
   const preview = paymentReceiptReaderPreview(entry);
   $("#receiptTabOriginal").disabled = Boolean(entry && !preview);
   const emailUrl = !entry ? "" : entry.kind === "receipt" ? paymentReceiptEmailUrl(entry.value.id)
     : entry.kind === "file" ? paymentReceiptPendingEmailUrl(entry.value.id) : paymentReceiptPendingBatchEmailUrl(entry.value.id);
-  $("#paymentReceiptDetailActions").innerHTML = entry ? `
-    <button class="button primary" type="button" data-receipt-show-fields>${entry.kind === "receipt" && !["duplicate", "error"].includes(entry.value.matchStatus) ? "核对与对应" : "查看识别信息"}</button>
-    <a class="text-button" href="${emailUrl}">原始邮件</a>` : "";
+  $("#paymentReceiptDetailActions").innerHTML = entry ? `<a class="text-button" href="${emailUrl}">原始邮件</a>` : "";
   setPaymentReceiptDetailTab(paymentReceiptDetailTab);
 }
 
@@ -1321,11 +1413,16 @@ function setPaymentReceiptDetailTab(tab) {
   });
   $("#paymentReceiptOriginalPane").hidden = activeTab !== "original";
   $("#paymentReceiptFieldsPane").hidden = activeTab !== "fields";
+  if (activeTab === "fields" && !$("#paymentReceiptFieldsPane").innerHTML) {
+    $("#paymentReceiptFieldsPane").innerHTML = !entry ? '<div class="empty payment-receipt-empty">从左侧选择单据查看识别信息。</div>'
+      : entry.kind === "receipt" ? renderPaymentReceiptCard(entry.value)
+        : entry.kind === "file" ? renderPendingPaymentReceiptFile(entry.value) : renderPendingPaymentReceiptBatch(entry.value);
+  }
   $("#paymentReceiptDetailActions").hidden = activeTab !== "original" || !entry;
   if (activeTab === "original" && preview && $('.view[data-view="payment-receipts"]')?.classList.contains("active")) {
     void paymentReceiptPreview?.show(preview);
   } else {
-    paymentReceiptPreview?.clear();
+    paymentReceiptPreview?.hide?.();
   }
 }
 
@@ -1348,7 +1445,7 @@ function renderPaymentReceiptCoverage() {
       aria-controls="paymentReceiptCoverage"
     ><strong>${filter.count}</strong> ${filter.label}</button>
   `).join("");
-  if (paymentReceiptsLoading) {
+  if (paymentReceiptCoverageLoading && !coverage.targets.length) {
     container.innerHTML = '<div class="empty payment-receipt-coverage-empty">正在核对应收单据……</div>';
     return;
   }
@@ -1444,7 +1541,8 @@ function paymentReceiptFileStatusLabel(status) {
 
 function renderPaymentReceiptCard(receipt) {
   const target = paymentReceiptTarget(receipt);
-  const title = receipt.bondShortName || target?.tranche?.shortName || receipt.subject || "未识别项目缴款单";
+  const name = paymentReceiptNameResolution(receipt);
+  const title = name.title;
   const amount = formatPaymentReceiptAmount(receipt.amountFen);
   const identity = [receipt.securityCode, receipt.prepaymentNumber, amount].filter(Boolean).join(" · ");
   const source = [
@@ -1460,14 +1558,13 @@ function renderPaymentReceiptCard(receipt) {
           ${paymentReceiptStatusBadge(receipt.matchStatus)}
         </div>
         <p>${escapeHtml(identity || "金额或债券代码待识别")}</p>
+        <dl class="payment-receipt-name-evidence"><div><dt>显示依据</dt><dd>${escapeHtml(paymentReceiptNameSourceLabel(name.source))}</dd></div><div><dt>原识别简称</dt><dd>${escapeHtml(name.rawName || "未识别")}</dd></div></dl>
         <div class="payment-receipt-meta">
           <span>${escapeHtml(source || "邮件附件")}</span>
           <span>${escapeHtml(formatPaymentReceiptReceivedAt(receipt.receivedAt))}</span>
           ${receipt.sender ? `<span>${escapeHtml(receipt.sender)}</span>` : ""}
         </div>
         ${renderPaymentReceiptTargetLine(receipt, target)}
-        ${renderPaymentReceiptCandidates(receipt)}
-        ${renderPaymentReceiptManualAssignment(receipt)}
         ${receipt.errorMessage ? `<p class="payment-receipt-error">${escapeHtml(receipt.errorMessage)}</p>` : ""}
       </div>
       <div class="payment-receipt-file-actions">
@@ -1497,28 +1594,37 @@ function renderPaymentReceiptCandidates(receipt) {
   `;
 }
 
-function renderPaymentReceiptManualAssignment(receipt) {
-  if (["duplicate", "error"].includes(receipt.matchStatus)) return "";
-  const options = paymentReceiptTargetOptions(receipt);
+function renderPaymentReceiptQuickMatch(receipt) {
+  const target = paymentReceiptTarget(receipt);
+  const name = paymentReceiptNameResolution(receipt);
+  const title = target ? target.tranche.shortName || target.project.shortName : "尚未对应项目";
+  const editable = !["duplicate", "error"].includes(receipt.matchStatus);
+  const selected = Boolean(target);
+  const options = editable ? paymentReceiptTargetOptions(receipt) : "";
+  const candidates = editable ? renderPaymentReceiptCandidates(receipt) : "";
   return `
-    <details class="payment-receipt-manual">
-      <summary>${receipt.matchStatus === "matched" ? "更正或解除对应" : "从全部项目中人工选择"}</summary>
-      <div>
+    <div class="payment-receipt-match-summary"><span>对应项目</span><strong>${escapeHtml(title)}</strong>
+      ${target ? `<button class="text-button" type="button" data-receipt-open-project="${escapeAttribute(target.project.id)}">查看项目 ↗</button>` : ""}
+    </div>
+    ${name.warning ? `<p class="payment-receipt-name-warning" role="status">${escapeHtml(name.warning)}</p>` : ""}
+    ${editable ? `<fieldset class="payment-receipt-match-controls" aria-label="项目对应操作"><div class="payment-receipt-manual payment-receipt-quick-match" data-receipt-id="${escapeAttribute(receipt.id)}">
+        <input type="search" data-receipt-target-search placeholder="搜索项目、主体或日期" aria-label="筛选可对应项目" autocomplete="off">
         <select data-receipt-target aria-label="选择缴款单对应项目品种">
           <option value="">请选择项目品种</option>
           ${options}
         </select>
-        <button class="button subtle" type="button" data-receipt-assign="${escapeAttribute(receipt.id)}">确认对应</button>
+        <button class="button primary" type="button" data-receipt-assign="${escapeAttribute(receipt.id)}" ${selected ? "" : "disabled"}>${receipt.matchStatus === "matched" ? "更正对应" : "确认对应"}</button>
         ${receipt.matchStatus === "matched" ? `<button class="button subtle danger-button" type="button" data-receipt-unlink="${escapeAttribute(receipt.id)}">解除对应</button>` : ""}
-      </div>
-    </details>
+    </div>${candidates ? `<details class="payment-receipt-match-candidates"><summary>候选项目 (${receipt.candidates.length})</summary>${candidates}</details>` : ""}</fieldset>` : `<p class="payment-receipt-match-unavailable">${receipt.matchStatus === "duplicate" ? "重复单据，请在识别信息中查看原始记录。" : "识别失败，请在识别信息中重新识别。"}</p>`}
   `;
 }
 
-function paymentReceiptTargetOptions(receipt) {
+function paymentReceiptTargetOptions(receipt, search = "") {
+  const query = String(search).replace(/\s/g, "").toLocaleLowerCase();
   const rows = (state.projects || []).flatMap((projectValue) =>
     (projectValue.tranches || []).flatMap((tranche) => {
       if (!projectValue.id || !tranche.id) return [];
+      if (query && ![tranche.shortName, projectValue.shortName, projectValue.issuerName, projectValue.branch, tranche.paymentDate].filter(Boolean).join("").replace(/\s/g, "").toLocaleLowerCase().includes(query)) return [];
       return [{ project: projectValue, tranche }];
     }),
   ).sort((left, right) => {
@@ -2339,7 +2445,8 @@ function switchView(viewName, options = {}) {
   if (button) $("#pageTitle").textContent = (isUiBeta() && button.dataset.viewLabel) || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
   if (viewName === "payment-receipts") renderPaymentReceiptArchive();
-  else paymentReceiptPreview?.clear();
+  else paymentReceiptPreview?.hide?.();
+  if (viewName === "secondary-trading") switchSecondaryWorkspacePanel("protocol");
   if (viewName === "ledger") syncLedgerMobilePane();
   if (viewName === "database") {
     renderAbsCreditEnhancerOptions();
@@ -8974,7 +9081,7 @@ function bindSecondaryInventory() {
 }
 
 function switchSecondaryWorkspacePanel(panelName) {
-  activeSecondaryWorkspacePanel = panelName || "intake";
+  activeSecondaryWorkspacePanel = panelName || "protocol";
   $$(".secondary-workspace-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.secondaryWorkspaceTab === activeSecondaryWorkspacePanel);
   });
@@ -14539,6 +14646,9 @@ function setCurrentUser(user) {
 
 function clearAuthSession() {
   currentGatewayUser = null;
+  paymentReceiptPreview?.clear();
+  paymentReceiptInspectorSignature = "";
+  paymentReceiptNameResolverCache = null;
   bondListController?.clearAccess();
   syncBondListCloudGate();
   updateAuthUi();

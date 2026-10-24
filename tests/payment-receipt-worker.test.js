@@ -17,6 +17,7 @@ import {
   recipientAllowed,
 } from "../payment-receipt-worker.js";
 import { decodePaymentReceiptSubject } from "../functions/api/_payment-receipts.js";
+import { recognizePaymentReceiptText } from "../payment-receipts.js";
 
 async function scannedPagePdf() {
   const document = await PDFDocument.create();
@@ -159,7 +160,9 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
   assert.match(request.input.messages[0].content[0].text, /绝不能返回 blank/);
   assert.match(request.input.messages[0].content[0].text, /"classification":"receipt_start"/);
   assert.equal(result.classification, "receipt_start");
-  assert.equal(result.analysisVersion, 5);
+  assert.equal(result.analysisVersion, 6);
+  assert.match(request.input.messages[0].content[2].text, /逐字读取当前页/);
+  assert.match(request.input.messages[0].content[2].text, /禁止把上一页简称或代码复制/);
   assert.match(request.input.messages[0].content[0].text, /缴款金额（万元）【5000】/);
   assert.equal(result.analysisSource, "workers-ai-page-image");
   assert.equal(result.fields.securityCode, "283234.SH");
@@ -352,9 +355,45 @@ test("repairs bond suffixes and numeric codes placed in adjacent AI fields", asy
       },
     },
   }, pdf, 1);
-  assert.equal(result.fields.bondShortName, "26杭实投 SCP007");
+  assert.equal(result.fields.bondShortName, "26杭实投SCP007");
   assert.equal(result.fields.securityCode, "012681821");
   assert.equal(result.fields.prepaymentNumber, "");
+});
+
+test("preserves literal issuer characters, tranche letters and attributes instead of accepting full titles as short names", async () => {
+  const pdf = await scannedPagePdf();
+  for (const [name, code, expected] of [
+    ["26 越秀租赁 MTN002B（绿色）", "102683999", "26越秀租赁MTN002B(绿色)"],
+    ["26 越秀租赁（绿色）", "MTN002B", "26越秀租赁MTN002B(绿色)"],
+    ["26越秀租赁(绿色)", "MTN002B（绿色）", "26越秀租赁MTN002B(绿色)"],
+    ["26越秀租赁(绿色)(科创)", "MTN002B", "26越秀租赁MTN002B(绿色)(科创)"],
+    ["26 示例 MTN002AB", "102600002", "26示例MTN002AB"],
+    ["某公司2026年面向专业投资者非公开发行公司债券(第四期)", "246000.SH", ""],
+  ]) {
+    const result = await analyzePaymentReceiptPage({ AI: { async run() { return { response: {
+      classification: "receipt_start", confidence: 0.98, document_title: "配售确认及缴款通知书",
+      bond_short_name: name, security_code: code,
+    } }; } } }, pdf, 1);
+    assert.equal(result.fields.bondShortName, expected, name);
+  }
+});
+
+test("a rejected structured short name cannot be replaced by an unrequested AI summary or a different adjacent tranche", async () => {
+  const pdf = await scannedPagePdf();
+  for (const [name, code] of [
+    ["某公司2026年面向专业投资者公开发行公司债券", "102683999"],
+    ["26示例MTN002A", "26示例MTN002B"],
+  ]) {
+    const result = await analyzePaymentReceiptPage({ AI: { async run() { return { response: {
+      classification: "receipt_start", confidence: 0.98, document_title: "配售确认及缴款通知书",
+      bond_short_name: name, security_code: code,
+      recognized_text: "债券简称 26另一券MTN001\n债券代码 102683999",
+    } }; } } }, pdf, 1);
+    assert.equal(result.fields.bondShortName, "");
+    assert.equal(recognizePaymentReceiptText(result.recognizedText, result.fields).bondShortName, "");
+    assert.doesNotMatch(result.recognizedText, /26另一券/);
+    if (code.includes("MTN")) assert.equal(result.classification, "uncertain");
+  }
 });
 
 test("treats a successfully OCRed empty scan as blank but keeps OCR failures uncertain", async () => {
@@ -499,7 +538,9 @@ test("ships a complete receipt archive UI while preserving manual payment confir
   assert.match(app, /paymentReceiptSourceUrl\(receipt\.id\)/);
   assert.match(app, /paymentReceiptEmailUrl\(receipt\.id\)/);
   assert.match(app, /projectPaymentReceiptCache/);
-  assert.match(app, /从全部项目中人工选择/);
+  assert.match(html, /id="paymentReceiptMatchToolbar"[\s\S]*id="paymentReceiptOriginalPane"/);
+  assert.match(app, /data-receipt-target-search/);
+  assert.doesNotMatch(app, /data-receipt-show-fields/);
   assert.match(html, /id="paymentReceiptCoverage"/);
   assert.match(app, /paymentReceiptCoverageFilter = "missing"/);
   assert.match(app, /data-receipt-coverage-filter="\$\{filter\.value\}"/);

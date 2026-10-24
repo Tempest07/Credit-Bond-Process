@@ -43,6 +43,7 @@ function gateHarness({ locked = true, error = true, access = true, active = true
   const context = vm.createContext({
     $, document: { querySelector: $ }, bondListController: controller,
     currentGatewayUser: { username: "admin" }, updateAuthUi: () => {},
+    paymentReceiptPreview: null, paymentReceiptInspectorSignature: "",
   });
   loadFunctions(context, ["syncBondListCloudGate"]);
   return { context, main, gate, controller,
@@ -92,10 +93,13 @@ test("an OFR 401 access revocation and navigation away both remove the exception
 
 test("clearing the shared login session revokes OFR authorization before updating its gate", () => {
   const h = gateHarness();
+  let cleared = false;
+  h.context.paymentReceiptPreview = { clear() { cleared = true; } };
   h.context.syncBondListCloudGate();
   loadFunctions(h.context, ["clearAuthSession"]);
   h.context.clearAuthSession();
   assert.equal(h.context.currentGatewayUser, null);
+  assert.equal(cleared, true, "private PDF buffers and Blob links must be revoked at logout");
   assert.equal(h.controller.hasAccess(), false);
   assert.equal(h.main.classList.contains("bond-list-available"), false);
 });

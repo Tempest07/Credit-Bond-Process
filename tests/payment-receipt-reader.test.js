@@ -64,6 +64,7 @@ test("receipt preview encodes the ID and opens the first source page at a relati
   }])[0];
   assert.deepEqual(paymentReceiptReaderPreview(entry), {
     url: "./api/payment-receipts/a%2Fb%20%3F%23%E4%B8%AD%E6%96%87/source",
+    selectionKey: "receipt:a/b ?#中文",
     initialPage: 4,
     label: "合并缴款单.pdf",
   });
@@ -86,10 +87,24 @@ test("receipt preview defaults invalid first pages to one and uses the available
 test("original file preview always starts at page one and batches have no preview", () => {
   assert.deepEqual(paymentReceiptReaderPreview({
     kind: "file", value: { id: "file/1", sourceFilename: "原件.pdf", sourcePages: [7] },
-  }), { url: "./api/payment-receipt-files/file%2F1/file", initialPage: 1, label: "原件.pdf" });
+  }), { url: "./api/payment-receipt-files/file%2F1/file", selectionKey: "file:file/1", initialPage: 1, label: "原件.pdf" });
   assert.equal(paymentReceiptReaderPreview({ kind: "file", value: { id: "f", subject: "待识别邮件" } }).label, "待识别邮件");
   assert.equal(paymentReceiptReaderPreview({ kind: "file", value: { id: "f" } }).label, "缴款单原件");
   assert.equal(paymentReceiptReaderPreview({ kind: "batch", value: { id: "b" } }), null);
   assert.equal(paymentReceiptReaderPreview(null), null);
   assert.equal(paymentReceiptReaderPreview(), null);
+});
+
+test("receipts from one attachment share a canonical original but retain their selection and source page", () => {
+  const entries = paymentReceiptReaderEntries([
+    { id: "first", fileId: "file/1", sourcePages: [9, 10, 11] },
+    { id: "second", fileId: "file/1", sourcePages: [8] },
+  ]);
+  const [first, second] = entries.map(paymentReceiptReaderPreview);
+  assert.equal(first.url, "./api/payment-receipt-files/file%2F1/file");
+  assert.equal(first.url, second.url);
+  assert.equal(first.selectionKey, "receipt:first");
+  assert.equal(second.selectionKey, "receipt:second");
+  assert.equal(first.initialPage, 9);
+  assert.equal(second.initialPage, 8);
 });

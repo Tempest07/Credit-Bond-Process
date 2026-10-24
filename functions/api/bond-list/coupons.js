@@ -4,6 +4,8 @@ import { checkWriteRequest, readBody } from './_shared.js';
 import { withDataSources } from '../qb/fallback.js';
 import { qbRateLimitResponse } from '../qb/errors.js';
 import { rowProvenance, fieldProvider } from '../qb/provenance.js';
+import { resolveDataSourceMode } from '../_data-source.js';
+import { BondMetadataCacheError, queryCloudBondMetadata } from './_cloud-metadata-cache.js';
 
 const BASIC_INFO_PATH = '/dm-quant-func-service/api/v1/bond/basic-info/info';
 const COUPON_FIELDS = ['securityId', 'secShortName', 'newCoupRate', 'rateTypeParDesc', 'bondTypeDesc', 'specialItem', 'paymentOrder'];
@@ -24,24 +26,27 @@ export async function onRequestPost(context) {
   } catch {
     return json({ error: '每次最多查询 20 个含市场后缀的有效债券代码。' }, 400);
   }
-  const configError = validateDmConfig(context.env, context.request);
-  if (configError) return configError;
-
   try {
-    const client = makeDmClient(context.env, context.request);
-    const raw = await client.post(BASIC_INFO_PATH, {
-      securityIdList: codes,
-      fieldNames: COUPON_FIELDS,
-    }, { signal: AbortSignal.timeout(12000) });
-    return json(withDataSources({
-      source: 'DM',
-      sourcePath: BASIC_INFO_PATH,
-      fetchedAt: new Date().toISOString(),
-      results: matchCouponRows(codes, rowsFromDm(raw)),
-    }, client));
+    const { terminalError, ...payload } = await queryCloudBondMetadata(context.env.DB, {
+      codes, kind: 'coupons', mode: resolveDataSourceMode(context.env, context.request),
+      lookup: async requested => {
+        if (validateDmConfig(context.env, context.request)) throw Object.assign(new Error('Metadata source unavailable'), { status: 503 });
+        const client = makeDmClient(context.env, context.request);
+        const raw = await client.post(BASIC_INFO_PATH, {
+          securityIdList: requested, fieldNames: COUPON_FIELDS,
+        }, { signal: AbortSignal.timeout(12000) });
+        return withDataSources({ source: 'DM', sourcePath: BASIC_INFO_PATH, fetchedAt: new Date().toISOString(),
+          results: matchCouponRows(requested, rowsFromDm(raw)),
+        }, client);
+      },
+    });
+    if (terminalError) throw Object.assign(new Error('Metadata query unavailable'), terminalError);
+    return json(payload);
   } catch (error) {
+    if (error instanceof BondMetadataCacheError) return json({ code: 'bond_metadata_cache_unavailable', error: '债券资料云端缓存暂时不可用，请稍后重试。' }, 503);
     const limited = qbRateLimitResponse(error);
     if (limited) return limited;
+    if (Number(error.status) === 503) return json({ code: 'bond_metadata_source_unavailable', error: '债券资料数据源暂未配置，请检查工作区数据源后重试。' }, 503);
     return json({ error: '债券资料查询暂时失败或超时，请稍后重试。' }, 502);
   }
 }

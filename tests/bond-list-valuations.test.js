@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { onRequestPost, matchValuationRows, __test__ } from '../functions/api/bond-list/valuations.js';
+import { onRequestPost as valuationHandler, matchValuationRows, __test__ } from '../functions/api/bond-list/valuations.js';
 import { __test__ as dmCrypto } from '../functions/api/dm/lookup.js';
+import { createMemoryD1 } from './helpers/d1-memory.js';
+
+const onRequestPost = context => valuationHandler({ request: context.request, data: context.data, env: { DB: createMemoryD1(), ...context.env } });
 
 const asOf = '2026-10-22';
 const secret = '1234567890abcdef';

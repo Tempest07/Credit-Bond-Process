@@ -4,30 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.3.4">
-  <meta name="application-build-version" content="5.3.4">
-  <meta name="application-build" content="20261024hotfix534curve">
-  <title>Bond Centre 5.3.4 - Tempest07</title>
+  <meta name="application-version" content="5.3.5">
+  <meta name="application-build-version" content="5.3.5">
+  <meta name="application-build" content="20261024release535">
+  <title>Bond Centre 5.3.5 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261024hotfix534curve"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261024hotfix534curve">
+  <script src="./app-shell-mode.js?v=20261024release535"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261024release535">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261024hotfix534curve" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261024hotfix534curve" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261024hotfix534curve" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261024hotfix534curve">
-  <script src="./ui-preference.js?v=20261024hotfix534curve"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261024hotfix534curve">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261024hotfix534curve">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261024hotfix534curve">
-  <link rel="stylesheet" href="./release-notes.css?v=20261024hotfix534curve">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261024hotfix534curve">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261024hotfix534curve">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261024hotfix534curve">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261024release535" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261024release535" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261024release535" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261024release535">
+  <script src="./ui-preference.js?v=20261024release535"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261024release535">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261024release535">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261024release535">
+  <link rel="stylesheet" href="./release-notes.css?v=20261024release535">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261024release535">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261024release535">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261024release535">
 </head>
 <body>
   <div class="app-shell">
@@ -52,13 +52,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.3.4">v5.3.4</span>
+      <span class="header-version" aria-label="当前版本 5.3.5">v5.3.5</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.4 · 2026-10-24">v5.3.4</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.5 · 2026-10-24">v5.3.5</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -637,12 +637,12 @@
       <section class="view" data-view="secondary-trading">
         <div class="secondary-workspace">
           <div class="secondary-workspace-nav" role="tablist" aria-label="二级交易">
-            <button class="secondary-workspace-tab active" type="button" data-secondary-workspace-tab="intake">二级交易录入</button>
+            <button class="secondary-workspace-tab" type="button" data-secondary-workspace-tab="intake">二级交易录入</button>
             <button class="secondary-workspace-tab" type="button" data-secondary-workspace-tab="ledger">当日成交台账</button>
-            <button class="secondary-workspace-tab" type="button" data-secondary-workspace-tab="protocol">协议转让</button>
+            <button class="secondary-workspace-tab active" type="button" data-secondary-workspace-tab="protocol">协议转让</button>
           </div>
 
-          <div class="secondary-workspace-panel active" data-secondary-workspace-panel="intake">
+          <div class="secondary-workspace-panel" data-secondary-workspace-panel="intake">
             <div class="secondary-intake-grid">
               <section class="panel secondary-input-panel">
                 <div class="panel-head">
@@ -724,7 +724,7 @@
             </section>
           </div>
 
-          <div class="secondary-workspace-panel" data-secondary-workspace-panel="protocol">
+          <div class="secondary-workspace-panel active" data-secondary-workspace-panel="protocol">
             <div class="protocol-transfer-grid">
           <section class="panel protocol-transfer-left">
             <div class="panel-head">
@@ -1374,6 +1374,7 @@
                 <button class="button subtle active" id="receiptTabOriginal" type="button" role="tab" data-receipt-detail-tab="original" aria-selected="true" aria-controls="paymentReceiptOriginalPane">原件预览</button>
                 <button class="button subtle" id="receiptTabFields" type="button" role="tab" data-receipt-detail-tab="fields" aria-selected="false" aria-controls="paymentReceiptFieldsPane">识别信息</button>
               </div>
+              <div id="paymentReceiptMatchToolbar" class="payment-receipt-match-toolbar" role="region" aria-label="缴款单项目对应" hidden></div>
               <div id="paymentReceiptOriginalPane" role="tabpanel" aria-labelledby="receiptTabOriginal"><div id="paymentReceiptPdfPreview"></div></div>
               <div id="paymentReceiptFieldsPane" role="tabpanel" aria-labelledby="receiptTabFields" hidden></div>
               <div id="paymentReceiptDetailActions" class="payment-receipt-detail-actions" hidden></div>
@@ -1646,6 +1647,23 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.3.5</strong><time datetime="2026-10-24">2026 / 10 / 24</time></div>
+      <section><h3>OFR/BID 资料复用</h3><ul>
+        <li>票面利率及品种资料成功取得后复用，估值每个北京时间自然日成功更新一次，重新进入页面保留已有资料。</li>
+        <li>新增券与失败项在进入或手动刷新时继续查询；刷新失败保留上次成功资料，避免连续重试。</li>
+        <li>资料存放在服务端缓存，多页面共用；原清单、项目及历史数据不变。</li>
+      </ul></section>
+      <section><h3>二级交易入口</h3><ul><li>点击“二级交易”默认打开“协议转让”次栏目，其他次栏目仍可手动切换。</li></ul></section>
+      <section><h3>缴款单对应与预览</h3><ul>
+        <li>原件预览上方直接搜索、选择对应项目，确认、更正或解除对应，无需先进入识别信息。</li>
+        <li>同一附件复用原件，切换单据直接跳至对应页；清单与对账并行加载，减少重复读取和等待。</li>
+        <li>对应单据不会自动改变项目缴款状态。</li>
+      </ul></section>
+      <section><h3>缴款单简称校对</h3><ul>
+        <li>规范简称格式，保留品种、期次及属性；通过已对应品种或准确券码校对显示名称。</li>
+        <li>券码或期次冲突单独提示，识别信息保留原识别简称与显示依据，历史数据及对应关系不变。</li>
+        <li>改进后续识别的逐字提取规则，不用发行全称代替简称，不借用其他页面的债券信息。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.3.4</strong><time datetime="2026-10-24">2026 / 10 / 24</time></div>
       <section><h3>查询提示文案精简</h3><ul>
         <li>国开债曲线去掉重复来源标签，估值日与查询日分行完整显示，查询时间按北京时间展示，不再被省略号截断。</li>
@@ -1827,10 +1845,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261024hotfix534curve"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261024hotfix534curve"></script>
-  <script type="module" src="./app.js?v=20261024hotfix534curve"></script>
-  <script type="module" src="./todo-fluid.js?v=20261024hotfix534curve"></script>
-  <script type="module" src="./release-notes.js?v=20261024hotfix534curve"></script>
+  <script src="./ui-mode.js?v=20261024release535"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261024release535"></script>
+  <script type="module" src="./app.js?v=20261024release535"></script>
+  <script type="module" src="./todo-fluid.js?v=20261024release535"></script>
+  <script type="module" src="./release-notes.js?v=20261024release535"></script>
 </body>
 </html>

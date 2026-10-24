@@ -28,6 +28,7 @@ import {
   recognizePaymentReceiptText,
   selectPaymentReceiptMatch,
 } from "./payment-receipts.js";
+import { normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -39,7 +40,8 @@ const MAX_PDF_PAGES = 60;
 const STALE_JOB_MINUTES = 20;
 const RECONCILE_LIMIT = 50;
 const RECEIPT_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
-const PAGE_ANALYSIS_VERSION = 5;
+const PAGE_ANALYSIS_VERSION = 6;
+const SHORT_NAME_OCR_INSTRUCTIONS = "简称校对要求：bond_short_name 必须逐字读取当前页“债券简称”或“证券简称”字段，不得自行缩写；不得遗漏“租赁”“城投”等字，保留 SCP/CP/MTN/PPN 等品种、期次、A/B/AB 等字母以及“(绿色)”“(科创)”等原有属性。字段跨行时合并完整内容，可用本页缴款附言中重复出现的简称交叉核对；原件未写的内容不得补造。“债券名称”的发行全称、公司名称和 document_title 均不能代替简称，无法确认时留空。security_code 只能填写本页债券代码，不能填银行账号或金额。上一页摘要只用于判断分页边界，禁止把上一页简称或代码复制到当前页。";
 
 export default {
   async fetch(request, env) {
@@ -734,6 +736,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
                 type: "image_url",
                 image_url: { url: imageData, detail: "high" },
               },
+              { type: "text", text: SHORT_NAME_OCR_INSTRUCTIONS },
             ],
           }],
           temperature: 0,
@@ -1136,7 +1139,6 @@ function comparePaymentReceiptIdentity(current = {}, previous = {}) {
 
 function paymentReceiptKeyText(parsed = {}) {
   return [
-    parsed.recognized_text,
     parsed.document_title ? `标题 ${parsed.document_title}` : "",
     parsed.bond_short_name ? `债券简称 ${parsed.bond_short_name}` : "",
     parsed.security_code ? `债券代码 ${parsed.security_code}` : "",
@@ -1148,21 +1150,37 @@ function paymentReceiptKeyText(parsed = {}) {
 
 function normalizeAiPaymentReceiptFields(parsed = {}) {
   const normalized = { ...parsed };
-  const rawShortName = stripPaymentReceiptFieldLabel(parsed.bond_short_name);
-  const rawSecurityCode = stripPaymentReceiptFieldLabel(parsed.security_code).replace(/\s+/g, "");
-  const rawPrepaymentNumber = stripPaymentReceiptFieldLabel(parsed.prepayment_number).replace(/\s+/g, "");
+  const rawShortName = stripPaymentReceiptFieldLabel(parsed.bond_short_name).normalize("NFKC");
+  const rawSecurityCode = stripPaymentReceiptFieldLabel(parsed.security_code).normalize("NFKC").replace(/\s+/g, "");
+  const rawPrepaymentNumber = stripPaymentReceiptFieldLabel(parsed.prepayment_number).normalize("NFKC").replace(/\s+/g, "");
   const numericSecurityCode = [rawSecurityCode, rawPrepaymentNumber].find((value) => /^\d{6,18}(?:\.[A-Z]{2})?$/i.test(value)) || "";
   const prepaymentNumber = [rawPrepaymentNumber, rawSecurityCode].find((value) => /^W20\d{11}$/i.test(value)) || "";
 
   let bondShortName = rawShortName;
   if (/^\d{2}[\u4e00-\u9fff].*(?:SCP|CP|MTN|PPN)\d{3}/i.test(rawSecurityCode)) {
-    bondShortName = rawSecurityCode;
-  } else if (/^(?:SCP|CP|MTN|PPN)\d{3}(?:BC)?(?:\(.*\))?$/i.test(rawSecurityCode)
+    const fieldName = normalizePaymentReceiptBondShortName(rawShortName);
+    const adjacentName = normalizePaymentReceiptBondShortName(rawSecurityCode);
+    if (fieldName && adjacentName && fieldName !== adjacentName) {
+      bondShortName = "";
+      normalized.classification = "uncertain";
+      normalized.confidence = Math.min(Number(parsed.confidence) || 0, 0.79);
+    } else {
+      bondShortName = rawShortName || rawSecurityCode;
+    }
+  } else if (/^(?:SCP|CP|MTN|PPN)\d{3}[A-Z]{0,3}(?:\(.*\))?$/i.test(rawSecurityCode)
+      && !/(?:SCP|CP|MTN|PPN)\s*\d{3}/i.test(bondShortName)
       && !bondShortName.replace(/\s+/g, "").toUpperCase().includes(rawSecurityCode.toUpperCase())) {
-    bondShortName = `${bondShortName} ${rawSecurityCode}`.trim();
+    // OCR sometimes moves the product/issue into the adjacent code field.
+    // Keep any attributes after the issue instead of inventing a new name.
+    const nameParts = bondShortName.match(/^([^()]*?)((?:\([^()]*\))*)$/);
+    const issueParts = rawSecurityCode.match(/^([^()]+)((?:\([^()]*\))*)$/);
+    if (nameParts && issueParts) {
+      const attributes = [...new Set((nameParts[2] + issueParts[2]).match(/\([^()]*\)/g) || [])];
+      bondShortName = `${nameParts[1]}${issueParts[1]}${attributes.join("")}`;
+    }
   }
 
-  normalized.bond_short_name = bondShortName;
+  normalized.bond_short_name = normalizePaymentReceiptBondShortName(bondShortName);
   normalized.security_code = numericSecurityCode;
   normalized.prepayment_number = prepaymentNumber;
   normalized.payment_date = stripPaymentReceiptFieldLabel(parsed.payment_date);

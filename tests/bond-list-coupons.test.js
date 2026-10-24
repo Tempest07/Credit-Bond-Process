@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { onRequestPost, matchCouponRows, normalizeCouponCode } from '../functions/api/bond-list/coupons.js';
+import { onRequestPost as couponHandler, matchCouponRows, normalizeCouponCode } from '../functions/api/bond-list/coupons.js';
 import { __test__ as dm } from '../functions/api/dm/lookup.js';
+import { createMemoryD1 } from './helpers/d1-memory.js';
+
+const onRequestPost = context => couponHandler({ ...context, env: { DB: createMemoryD1(), ...context.env } });
 
 const secret = '1234567890abcdef';
 const env = { INNO_APP_KEY: 'test', INNO_APP_SECRET: secret };
@@ -69,7 +72,14 @@ test('coupon API uses encrypted DM basic-info and documented coupon/classificati
     assert.match(payload.sourcePath, /\/bond\/basic-info\/info$/);
     assert.ok(Number.isFinite(Date.parse(payload.fetchedAt)));
     assert.deepEqual(Object.keys(payload.results), ['123456.SH', '102600001.IB']);
-    assert.deepEqual(payload.results['123456.SH'], {
+    const { provider, sourcePath, fetchedAt, checkedAt, nextCheckAt, refreshStatus, refreshFailed, cached, ...coupon } = payload.results['123456.SH'];
+    assert.equal(provider, 'DM');
+    assert.equal(refreshStatus, 'matched');
+    assert.equal(refreshFailed, false);
+    assert.equal(cached, false);
+    assert.equal(nextCheckAt, '');
+    assert.ok(Number.isFinite(Date.parse(checkedAt)) && Number.isFinite(Date.parse(fetchedAt)));
+    assert.deepEqual(coupon, {
       status: 'matched', couponRate: 2.5, name: '26测试01', rateType: '固定利率',
       bondType: '公司债', attributes: [], typeDescription: '公司债券',
     });

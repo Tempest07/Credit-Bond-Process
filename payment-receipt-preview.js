@@ -1,4 +1,6 @@
 const PDFJS_BASE = new URL("./vendor/pdfjs/", import.meta.url);
+const MAX_CACHED_DOCUMENTS = 2;
+const MAX_CACHED_BYTES = 32 * 1024 * 1024;
 let pdfJsPromise;
 
 function loadPdfJs() {
@@ -21,6 +23,10 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
   const window = document.defaultView || globalThis;
   const fetchPdf = runtime.fetch || window.fetch.bind(window);
   const getPdfJs = runtime.loadPdfJs || loadPdfJs;
+  const objectUrls = runtime.URL || window.URL;
+  const BlobType = runtime.Blob || window.Blob;
+  // Private documents remain in this reader only. No HTTP or persistent cache.
+  const documents = new Map();
   let current = null;
 
   function element(tag, className, text = "") {
@@ -46,7 +52,7 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
   pageInput.step = "1";
   pageInput.setAttribute("aria-label", "原件页码");
   const pageCount = element("span", "payment-receipt-pdf-page-count");
-  const open = element("a", "button subtle payment-receipt-pdf-open", "新页打开");
+  const open = element("a", "button subtle payment-receipt-pdf-open", "打开原件");
   open.target = "_blank";
   open.rel = "noopener noreferrer";
   const viewport = element("div", "payment-receipt-pdf-viewport");
@@ -75,6 +81,11 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
     pageCount.textContent = `/ ${total}`;
     previous.disabled = !total || item.pageNumber <= 1;
     next.disabled = !total || item.pageNumber >= total;
+    if (item) open.href = originalUrl(item);
+  }
+
+  function originalUrl(item = current) {
+    return item ? `${item.objectUrl || item.href}#page=${item.pageNumber}` : "";
   }
 
   function disposeCanvas(canvas) {
@@ -101,7 +112,26 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
     // LoadingTask.destroy also releases its PDFDocumentProxy and worker.
     const resource = item.loadingTask || item.pdf;
     try { Promise.resolve(resource?.destroy()).catch(() => {}); } catch { /* Already destroyed. */ }
+    if (item.objectUrl) {
+      objectUrls?.revokeObjectURL?.(item.objectUrl);
+      item.objectUrl = null;
+    }
     item.pdf = null;
+  }
+
+  function forget(item) {
+    if (!item) return;
+    if (documents.get(item.href) === item) documents.delete(item.href);
+    release(item);
+  }
+
+  function trimCache() {
+    const retained = () => [...documents.values(), ...(current && !documents.has(current.href) ? [current] : [])];
+    while (retained().length > MAX_CACHED_DOCUMENTS || retained().reduce((sum, item) => sum + (item.byteLength || 0), 0) > MAX_CACHED_BYTES) {
+      const victim = [...documents.values()].find((item) => item !== current);
+      if (!victim) break; // A large current file is usable but is not retained on hide.
+      forget(victim);
+    }
   }
 
   function active(item) {
@@ -117,7 +147,14 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
   async function render(item, force = false) {
     if (!active(item) || !item.pdf) return;
     const width = availableWidth();
-    if (!width || (!force && item.renderedWidth === width && item.renderedPage === item.pageNumber)) return;
+    if (!width) return;
+    if (!force && item.canvas && item.renderedWidth === width && item.renderedPage === item.pageNumber) {
+      item.canvas.hidden = false;
+      item.canvas.setAttribute("aria-label", `${item.label}，第 ${item.pageNumber} 页，共 ${item.pdf.numPages} 页`);
+      if (viewport.firstChild !== item.canvas) viewport.replaceChildren(item.canvas);
+      state("", "ready");
+      return;
+    }
     cancelRender(item);
     const version = item.renderVersion;
     const pageNumber = item.pageNumber;
@@ -156,39 +193,64 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
       item.renderedWidth = width;
       item.renderedPage = pageNumber;
       viewport.replaceChildren(canvas);
+      item.failed = false;
       state("", "ready");
     } catch {
       disposeCanvas(canvas);
       if (active(item) && item.renderVersion === version) {
         item.pendingCanvas = null;
         item.renderTask = null;
-        state("原件预览失败，请重试或在新页打开。", "error");
+        item.failed = true;
+        documents.delete(item.href);
+        state("原件预览失败，请重试或打开原件。", "error");
       }
     }
   }
 
-  function clear() {
-    release(current);
+  function hide() {
+    const previous = current;
     current = null;
+    if (previous) {
+      cancelRender(previous);
+      if (!previous.pdf || previous.failed) forget(previous);
+      else previous.canvas?.remove();
+    }
     viewport.replaceChildren();
     toolbar.hidden = true;
     open.removeAttribute("href");
     updatePager();
     state("选择一张缴款单查看原件", "empty");
+    trimCache();
+  }
+
+  function clear() {
+    const previous = current;
+    current = null;
+    forget(previous);
+    for (const item of [...documents.values()]) forget(item);
+    hide();
   }
 
   async function load(item) {
     try {
-      const response = await fetchPdf(item.href, {
-        credentials: "same-origin", mode: "same-origin", redirect: "error", cache: "no-store",
-        signal: item.controller.signal,
-      });
+      // Load the renderer while the original downloads, rather than afterwards.
+      const bytesPromise = (async () => {
+        const response = await fetchPdf(item.href, {
+          credentials: "same-origin", mode: "same-origin", redirect: "error", cache: "no-store",
+          signal: item.controller.signal,
+        });
+        if (!active(item)) return null;
+        if (!response.ok) throw new Error("PDF request failed");
+        return new Uint8Array(await response.arrayBuffer());
+      })();
+      const [bytes, pdfjs] = await Promise.all([bytesPromise, Promise.resolve().then(getPdfJs)]);
       if (!active(item)) return;
-      if (!response.ok) throw new Error("PDF request failed");
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (!active(item)) return;
-      const pdfjs = await getPdfJs();
-      if (!active(item)) return;
+      item.byteLength = bytes.byteLength;
+      trimCache();
+      if (typeof objectUrls?.createObjectURL === "function" && typeof BlobType === "function") {
+        try { item.objectUrl = objectUrls.createObjectURL(new BlobType([bytes], { type: "application/pdf" })); } catch { /* Source URL remains available. */ }
+      }
+      updatePager(item);
       item.loadingTask = pdfjs.getDocument({
         data: bytes,
         cMapUrl: new URL("cmaps/", PDFJS_BASE).href,
@@ -202,15 +264,27 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
       const pdf = await item.loadingTask.promise;
       if (!active(item)) return;
       item.pdf = pdf;
+      documents.delete(item.href);
+      documents.set(item.href, item);
+      trimCache();
       item.pageNumber = Math.max(1, Math.min(pdf.numPages, item.pageNumber));
       updatePager(item);
       await render(item);
     } catch {
-      if (active(item)) state("原件预览失败，请重试或在新页打开。", "error");
+      if (active(item)) {
+        item.failed = true;
+        item.controller.abort();
+        documents.delete(item.href);
+        state("原件预览失败，请重试或打开原件。", "error");
+      }
     }
   }
 
-  function show({ url, label = "缴款单原件", initialPage = 1 } = {}, force = false) {
+  function show(options = {}, force = false) {
+    const { url, label = "缴款单原件", initialPage = 1, selectionKey = "" } = options;
+    const initial = Number(initialPage);
+    const requestedInitialPage = Number.isFinite(initial) ? Math.max(1, Math.trunc(initial)) : 1;
+    const hasInitialPage = Object.hasOwn(options, "initialPage");
     if (!url) {
       clear();
       return Promise.resolve();
@@ -231,17 +305,45 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
     }
     if (!force && current?.href === href) {
       current.label = String(label || "缴款单原件");
+      if (current.selectionKey !== selectionKey || hasInitialPage && current.requestedInitialPage !== requestedInitialPage) {
+        current.selectionKey = selectionKey;
+        current.requestedInitialPage = requestedInitialPage;
+        current.pageNumber = requestedInitialPage;
+        if (current.pdf) {
+          current.pageNumber = Math.min(current.pdf.numPages, current.pageNumber);
+          current.promise = render(current);
+        }
+        updatePager(current);
+      }
       return current.promise;
     }
-    clear();
-    const item = {
+    hide();
+    if (force) forget(documents.get(href));
+    let item = documents.get(href);
+    if (item) {
+      documents.delete(href);
+      documents.set(href, item);
+      item.label = String(label || "缴款单原件");
+      if (item.selectionKey !== selectionKey || hasInitialPage && item.requestedInitialPage !== requestedInitialPage) {
+        item.pageNumber = Math.min(item.pdf.numPages, requestedInitialPage);
+        item.requestedInitialPage = requestedInitialPage;
+      }
+      item.selectionKey = selectionKey;
+      current = item;
+      toolbar.hidden = false;
+      updatePager(item);
+      item.promise = render(item);
+      return item.promise;
+    }
+    item = {
       href, label: String(label || "缴款单原件"),
-      pageNumber: Math.max(1, Math.trunc(Number(initialPage)) || 1),
+      selectionKey, requestedInitialPage,
+      pageNumber: requestedInitialPage,
       controller: new AbortController(), renderVersion: 0,
     };
     current = item;
+    trimCache();
     toolbar.hidden = false;
-    open.href = href;
     updatePager(item);
     state("正在加载原件…", "loading", true);
     item.promise = load(item);
@@ -258,10 +360,14 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
     }
     current.pageNumber = page;
     updatePager();
-    void render(current);
+    current.promise = render(current);
   }
 
-  function resize() { return current?.pdf ? render(current) : Promise.resolve(); }
+  function resize() {
+    if (!current?.pdf) return Promise.resolve();
+    current.promise = render(current);
+    return current.promise;
+  }
   previous.addEventListener("click", () => goToPage((current?.pageNumber || 1) - 1));
   next.addEventListener("click", () => goToPage((current?.pageNumber || 1) + 1));
   pageInput.addEventListener("change", () => goToPage(pageInput.value));
@@ -272,10 +378,14 @@ export function createPaymentReceiptPreview(container, runtime = {}) {
     }
   });
   retry.addEventListener("click", () => {
-    if (current) void show({ url: current.href, label: current.label, initialPage: current.pageNumber }, true);
+    if (!current) return;
+    const requestedInitialPage = current.requestedInitialPage;
+    void show({ url: current.href, label: current.label, initialPage: current.pageNumber, selectionKey: current.selectionKey }, true);
+    // Retry the page the user was reading without changing the source-page hint.
+    if (current) current.requestedInitialPage = requestedInitialPage;
   });
   if (window.ResizeObserver) new window.ResizeObserver(() => { void resize(); }).observe(viewport);
   else window.addEventListener?.("resize", () => { void resize(); });
   clear();
-  return { show, clear, resize };
+  return { show, hide, clear, resize };
 }

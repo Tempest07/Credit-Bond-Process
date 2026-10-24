@@ -1,6 +1,6 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261024hotfix534curve';
-import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261024hotfix534curve';
-import { dataProviderLabel } from './market-data-source.js?v=20261024hotfix534curve';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261024release535';
+import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261024release535';
+import { dataProviderLabel } from './market-data-source.js?v=20261024release535';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
@@ -18,11 +18,12 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
   let saveTimer, lookupTimer, savePromise = null, lookupPromise = null, lookupAbort = null;
   let lookupGeneration = 0;
   let backupKey, recoveryKey, archived = [], busy = false;
-  let access = false, accessVersion = 0, retryMode = '';
+  let access = false, accessVersion = 0, retryMode = '', metadataUserId = '';
   const failedNames = new Set();
   let lookupResults = {};
   const couponResults = new Map();
   const valuationResults = new Map();
+  const couponAttempted = new Map(), valuationAttempted = new Map();
   let couponTimer, couponAbort = null, couponPromise = null, couponGeneration = 0;
   let couponPending = new Set();
   let valuationPending = new Set();
@@ -71,6 +72,8 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     if (response.status === 401) {
       accessVersion++;
       setAccess(false);
+      stopCoupons(true);
+      renderResults();
       $('login-link').hidden = false;
       const error = new Error('请重新登录；未保存的输入可先导出草稿。');
       error.status = 401;
@@ -111,7 +114,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     const all = quoteRows(sections, couponResults);
     const result = filterQuotes(all, filters);
     selectedText = quoteOutput(result.rows); selectedCount = result.rows.length; filterActive = result.active;
-    const pending = all.filter(row => row.code && (!couponResults.has(row.code) || couponPending.has(row.code))).length;
+    const pending = all.filter(row => row.code && (!couponResults.has(row.code) || couponPending.has(row.code) || couponResults.get(row.code)?.status === 'loading')).length;
     const missingCoupon = all.filter(row => couponResults.get(row.code)?.status === 'missing').length;
     const missingType = all.filter(row => couponResults.get(row.code)?.status === 'matched' && row.bondType === '未知').length;
     const unknownSide = all.filter(row => row.direction === 'unknown').length;
@@ -119,7 +122,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       .some(value => value?.status === 'error' && value.reason !== 'rate_limit_skipped')).length;
     const incomplete = all.filter(row => [couponResults.get(row.code), valuationResults.get(row.code)]
       .some(value => value?.reason === 'rate_limit_skipped')).length;
-    const valuationWaiting = all.filter(row => row.code && (!valuationResults.has(row.code) || valuationPending.has(row.code))).length;
+    const valuationWaiting = all.filter(row => row.code && (!valuationResults.has(row.code) || valuationPending.has(row.code) || valuationResults.get(row.code)?.status === 'loading')).length;
     const valuationMissing = all.filter(row => valuationResults.get(row.code)?.status === 'missing').length;
     const valuationAccessDenied = all.some(row => valuationResults.get(row.code)?.reason === 'dm_valuation_access_denied');
     const retained = all.filter(row => couponResults.get(row.code)?.refreshFailed || valuationResults.get(row.code)?.refreshFailed).length;
@@ -169,7 +172,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         }
       } else {
         rate.className += ' unavailable';
-        rate.textContent = !quote.code ? '待补代码' : metadata?.reason === 'rate_limit_skipped' ? '未完成' : metadata?.status === 'error' ? '查询失败' : metadata ? '未返回' : !access ? '请登录' : couponPending.has(quote.code) ? '查询中…' : '待查询';
+        rate.textContent = !quote.code ? '待补代码' : metadata?.reason === 'rate_limit_skipped' ? '未完成' : metadata?.status === 'error' ? '查询失败' : metadata?.status === 'loading' ? '查询中…' : metadata ? '未返回' : !access ? '请登录' : couponPending.has(quote.code) ? '查询中…' : '待查询';
       }
       const couponCell = cell('票面利率'); couponCell.append(rate);
       if (comparison.couponNear) {
@@ -194,7 +197,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         }
       } else {
         valuationRate.className += ' unavailable';
-        valuationRate.textContent = !quote.code ? '待补代码' : !access ? '请登录' : valuation?.reason === 'dm_valuation_access_denied' ? '权限待核对' : valuation?.reason === 'rate_limit_skipped' ? '未完成' : valuation?.status === 'error' ? '查询失败' : valuation ? '未返回' : valuationPending.has(quote.code) ? '查询中…' : '待查询';
+        valuationRate.textContent = !quote.code ? '待补代码' : !access ? '请登录' : valuation?.reason === 'dm_valuation_access_denied' ? '权限待核对' : valuation?.reason === 'rate_limit_skipped' ? '未完成' : valuation?.status === 'error' ? '查询失败' : valuation?.status === 'loading' ? '查询中…' : valuation ? '未返回' : valuationPending.has(quote.code) ? '查询中…' : '待查询';
         if (valuation?.reason === 'dm_valuation_access_denied') valuationRate.title = 'DM 当前个券估值请求被拒绝（GW-000-4006）；需核对该应用的接口授权或调用配置，不能据此判断估值服务未开通。';
         valuationCell.append(valuationRate);
       }
@@ -234,31 +237,59 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     clearTimeout(couponTimer);
     couponGeneration++;
     couponAbort?.abort(); couponAbort = null; couponPromise = null; couponPending = new Set(); valuationPending = new Set();
-    if (clearCache) { couponResults.clear(); valuationResults.clear(); }
+    if (clearCache) {
+      couponResults.clear(); valuationResults.clear();
+      couponAttempted.clear(); valuationAttempted.clear();
+    }
+  }
+  function resetMetadataAttempts() {
+    couponAttempted.clear(); valuationAttempted.clear();
+  }
+  function chinaDay(value = Date.now()) {
+    const at = typeof value === 'number' ? value : Date.parse(value);
+    return Number.isFinite(at) ? new Date(at + 8 * 60 * 60 * 1000).toISOString().slice(0, 10) : '';
+  }
+  function needsMetadata(path, code) {
+    const cache = path === 'coupons' ? couponResults : valuationResults;
+    const attempted = path === 'coupons' ? couponAttempted : valuationAttempted;
+    if (attempted.get(code) === chinaDay()) return false;
+    const result = cache.get(code);
+    if (['rate_limited', 'rate_limit_skipped'].includes(result?.reason)
+      && Date.parse(result.nextCheckAt) > Date.now()) return false;
+    const successful = result?.status === 'matched' && !result.refreshFailed
+      && result.requestMode === requestMode()
+      && Number.isFinite(path === 'coupons' ? result.couponRate : result.yield);
+    return !successful || (path === 'valuations'
+      && chinaDay(result.checkedAt || result.fetchedAt) !== chinaDay());
   }
   function scheduleCoupons() {
     clearTimeout(couponTimer);
     if (active && access && loaded && !loading && !flushing && !couponPromise && !root.querySelector('[data-composing]')
-      && couponCodes().some(code => !couponResults.has(code) || !valuationResults.has(code))) {
+      && couponCodes().some(code => needsMetadata('coupons', code) || needsMetadata('valuations', code))) {
       couponTimer = setTimeout(() => { void fetchCoupons(); }, 350);
     }
   }
   function fetchCoupons(refresh = false) {
     if (!active || !access || !loaded || loading || flushing || couponPromise || root.querySelector('[data-composing]')) return Promise.resolve();
     clearTimeout(couponTimer);
-    const codes = couponCodes().filter(code => refresh || !couponResults.has(code) || !valuationResults.has(code));
+    if (refresh) resetMetadataAttempts();
+    const codes = couponCodes().filter(code => needsMetadata('coupons', code) || needsMetadata('valuations', code));
     if (!codes.length) return Promise.resolve();
     if (refresh) clearMetadataLimitNotice();
     const generation = couponGeneration, controller = new AbortController(), selectedMode = requestMode();
     let rateLimitError = null;
-    couponAbort = controller; couponPending = new Set(codes.filter(code => refresh || !couponResults.has(code))); valuationPending = new Set(codes.filter(code => refresh || !valuationResults.has(code)));
+    couponAbort = controller;
+    couponPending = new Set(codes.filter(code => needsMetadata('coupons', code)));
+    valuationPending = new Set(codes.filter(code => needsMetadata('valuations', code)));
+    couponPending.forEach(code => couponAttempted.set(code, chinaDay()));
+    valuationPending.forEach(code => valuationAttempted.set(code, chinaDay()));
     couponPromise = (async () => {
       try {
         for (let start = 0; start < codes.length; start += 20) {
           const batch = codes.slice(start, start + 20);
           await Promise.allSettled([
-            fetchMetadata('coupons', batch.filter(code => refresh || !couponResults.has(code)), couponResults, couponPending),
-            fetchMetadata('valuations', batch.filter(code => refresh || !valuationResults.has(code)), valuationResults, valuationPending),
+            fetchMetadata('coupons', batch.filter(code => couponPending.has(code)), couponResults, couponPending),
+            fetchMetadata('valuations', batch.filter(code => valuationPending.has(code)), valuationResults, valuationPending),
           ]);
           if (!active || controller.signal.aborted || generation !== couponGeneration) return;
           if (rateLimitError) {
@@ -290,30 +321,46 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       try {
         const response = await api(path, { codes: batch }, controller.signal);
         if (!active || controller.signal.aborted || generation !== couponGeneration) return;
+        if (response.rateLimited) {
+          const seconds = Number(response.retryAfter);
+          rateLimitError ||= { retryAfter: Number.isFinite(seconds) && seconds > 0 && seconds <= 86400 ? Math.ceil(seconds) : undefined };
+        }
         for (const code of batch) {
           const result = response.results?.[code];
           const previous = cache.get(code);
           if (previous?.status === 'matched' && result?.status !== 'matched') {
-            cache.set(code, { ...previous, refreshFailed: true, requestMode: selectedMode }); continue;
+            cache.set(code, { ...previous, refreshFailed: true, requestMode: selectedMode,
+              ...(result?.reason ? { reason: result.reason } : {}),
+              ...(result?.nextCheckAt ? { nextCheckAt: result.nextCheckAt } : {}) }); continue;
           }
-          cache.set(code, result && ['matched', 'missing'].includes(result.status)
-            ? { ...result, provider: result.provider || response.source, fetchedAt: response.fetchedAt, requestMode: selectedMode }
+          cache.set(code, result && ['matched', 'missing', 'loading', 'error'].includes(result.status)
+            ? { ...result, provider: result.provider || response.source,
+              fetchedAt: result.fetchedAt || response.fetchedAt || new Date().toISOString(), requestMode: selectedMode }
             : { status: 'error', requestMode: selectedMode });
         }
       } catch (error) {
         if (controller.signal.aborted || generation !== couponGeneration) return;
         if (error.status === 429) rateLimitError ||= error;
-        const reason = path === 'valuations' && error.code === 'dm_valuation_access_denied' ? error.code : undefined;
+        const reason = error.status === 429 ? 'rate_limited'
+          : path === 'valuations' && error.code === 'dm_valuation_access_denied' ? error.code : undefined;
         for (const code of batch) failMetadata(cache, code, reason);
       }
       if (controller.signal.aborted || generation !== couponGeneration) return;
-      batch.forEach(code => pending.delete(code));
+      batch.forEach(code => {
+        pending.delete(code);
+        (path === 'coupons' ? couponAttempted : valuationAttempted).set(code, chinaDay());
+      });
       renderResults();
     }
     function failMetadata(cache, code, reason) {
       const previous = cache.get(code);
+      (cache === couponResults ? couponAttempted : valuationAttempted).set(code, chinaDay());
+      const retrySeconds = Number(rateLimitError?.retryAfter);
+      const nextCheckAt = ['rate_limited', 'rate_limit_skipped'].includes(reason)
+        ? new Date(Date.now() + (Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds : 60) * 1000).toISOString() : '';
       cache.set(code, previous?.status === 'matched' ? { ...previous, refreshFailed: true, requestMode: selectedMode }
         : { status: 'error', requestMode: selectedMode, ...(reason ? { reason } : {}) });
+      if (reason) Object.assign(cache.get(code), { reason, ...(nextCheckAt ? { nextCheckAt } : {}) });
     }
   }
   function output(includeEmpty = false) {
@@ -536,7 +583,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     if (loaded && (!refresh || dirty || savePromise)) return Promise.resolve();
     if (loading) return loading;
     const version = editVersion;
-    stopCoupons(true);
+    stopCoupons();
     retryState();
     notify('');
     $('save-state').textContent = '正在读取清单…';
@@ -548,6 +595,8 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         const state = await api('state');
         // A refresh must not replace input or a write started while it was reading.
         if (refresh && (editVersion !== version || dirty || savePromise)) return;
+        if (metadataUserId && metadataUserId !== state.userId) stopCoupons(true);
+        metadataUserId = state.userId;
         sections = state.sections; revision = state.revision;
         restoreBackup(state.userId);
         failedNames.clear(); lookupResults = {};
@@ -678,6 +727,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       const entering = Boolean(nextActive) && !active;
       active = Boolean(nextActive);
       if (!active) { clearTimeout(lookupTimer); lookupAbort?.abort(); stopCoupons(); return; }
+      if (entering) resetMetadataAttempts();
       await load({ refresh: entering && !flushing });
       if (loaded && active) { fitEditors(); scheduleLookup(); scheduleCoupons(); }
     },
@@ -695,7 +745,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     },
     // Only resume after an attempted logout has stopped; no lookup may add codes
     // between the last confirmed save and the logout request.
-    resume() { flushing = false; renderResults(); scheduleLookup(); scheduleCoupons(); },
+    resume() { flushing = false; resetMetadataAttempts(); renderResults(); scheduleLookup(); scheduleCoupons(); },
     hasAccess() { return access; },
     clearAccess() { accessVersion++; setAccess(false); stopCoupons(true); renderResults(); },
     hasPendingChanges() { return dirty || Boolean(savePromise); }

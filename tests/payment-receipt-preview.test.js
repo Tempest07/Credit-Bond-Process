@@ -35,6 +35,8 @@ function fixture(options = {}) {
   const document = { baseURI: "http://localhost:8814/", defaultView: {
     devicePixelRatio: 2,
     getComputedStyle: () => ({ paddingLeft: "20px", paddingRight: "20px" }),
+    URL: options.objectUrls,
+    Blob: options.objectUrls ? Blob : undefined,
   } };
   document.createElement = (tag) => new Element(tag, document);
   const container = document.createElement("div");
@@ -67,7 +69,7 @@ function fixture(options = {}) {
     return options.fetch ? options.fetch(url, init) : Promise.resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(5) });
   };
   const controller = createPaymentReceiptPreview(container, { fetch, loadPdfJs: options.loadPdfJs || (async () => pdfJs) });
-  return { container, controller, requests, documents, renders, pageRequests,
+  return { container, controller, requests, documents, renders, pageRequests, pdfJs,
     node: (suffix) => container.find(`payment-receipt-pdf${suffix ? `-${suffix}` : ""}`) };
 }
 
@@ -96,6 +98,7 @@ test("renders an authenticated same-origin PDF at the initial page and clamps pa
   assert.equal(ui.node("page-input").value, "1");
   assert.equal(ui.node("previous").disabled, true);
   assert.equal(ui.node("open").rel, "noopener noreferrer");
+  assert.equal(ui.node("open").textContent, "打开原件");
 });
 
 test("does not fetch or reset pagination when the same source is shown again", async () => {
@@ -153,7 +156,7 @@ test("fetch failure has a working retry and keeps the original source link avail
   await ui.controller.show({ url: "./api/one" });
   assert.equal(ui.node().dataset.state, "error");
   assert.equal(ui.node("retry").hidden, false);
-  assert.equal(ui.node("open").href, "http://localhost:8814/api/one");
+  assert.equal(ui.node("open").href, "http://localhost:8814/api/one#page=1");
   ui.node("retry").click();
   await tick();
   assert.equal(attempts, 2);
@@ -242,5 +245,169 @@ test("rejects external, credential-bearing and executable URLs before fetching",
   }
   assert.equal(ui.requests.length, 0);
   await ui.controller.show({ url: "" });
+  assert.equal(ui.node().dataset.state, "empty");
+});
+
+test("loads PDF.js in parallel with the authenticated download", async () => {
+  const library = deferred(), response = deferred();
+  let libraryStarted = false, bodyRead = false;
+  const ui = fixture({ fetch: () => response.promise, loadPdfJs: () => {
+    libraryStarted = true;
+    return library.promise;
+  } });
+  const loading = ui.controller.show({ url: "./api/one" });
+  await tick();
+  assert.equal(libraryStarted, true);
+  response.resolve({ ok: true, arrayBuffer: async () => { bodyRead = true; return new ArrayBuffer(1); } });
+  await tick();
+  assert.equal(bodyRead, true);
+  assert.equal(ui.documents.length, 0);
+  library.resolve(ui.pdfJs);
+  await loading;
+  assert.equal(ui.node().dataset.state, "ready");
+});
+
+test("receipts sharing an original reuse its PDF and select each receipt's own source page", async () => {
+  const ui = fixture();
+  const source = "./api/payment-receipt-files/shared/file";
+  await ui.controller.show({ url: source, selectionKey: "receipt:a", initialPage: 2 });
+  ui.node("next").click();
+  await tick();
+  await ui.controller.show({ url: source, selectionKey: "receipt:b", initialPage: 1 });
+  assert.equal(ui.node("page-input").value, "1");
+  ui.node("next").click();
+  await tick();
+  await ui.controller.show({ url: source, selectionKey: "receipt:b", initialPage: 1 });
+  assert.equal(ui.node("page-input").value, "2", "rerendering one receipt preserves manual pagination");
+  await ui.controller.show({ url: source, selectionKey: "receipt:a", initialPage: 2 });
+  assert.equal(ui.node("page-input").value, "2");
+  assert.deepEqual(ui.pageRequests, [2, 3, 1, 2]);
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.documents.length, 1);
+  assert.equal(ui.node("open").href, "http://localhost:8814/api/payment-receipt-files/shared/file#page=2");
+});
+
+test("switching receipts while their shared source downloads uses the latest requested page", async () => {
+  const response = deferred();
+  const ui = fixture({ fetch: () => response.promise });
+  const first = ui.controller.show({ url: "./api/shared", selectionKey: "a", initialPage: 1 });
+  const second = ui.controller.show({ url: "./api/shared", selectionKey: "b", initialPage: 3 });
+  assert.equal(first, second);
+  assert.equal(ui.node("open").href, "http://localhost:8814/api/shared#page=3");
+  response.resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) });
+  await second;
+  assert.equal(ui.requests.length, 1);
+  assert.deepEqual(ui.pageRequests, [3]);
+});
+
+test("an updated source-page hint for the same receipt is applied without resetting unchanged manual pagination", async () => {
+  const ui = fixture();
+  const source = { url: "./api/shared", selectionKey: "receipt:a", initialPage: 1 };
+  await ui.controller.show(source);
+  ui.node("next").click();
+  await tick();
+  await ui.controller.show(source);
+  assert.equal(ui.node("page-input").value, "2");
+  ui.controller.hide();
+  await ui.controller.show({ ...source, initialPage: 3 });
+  assert.equal(ui.node("page-input").value, "3");
+  assert.equal(ui.requests.length, 1);
+  assert.deepEqual(ui.pageRequests, [1, 2, 3]);
+});
+
+test("retry preserves a manually selected page when the receipt's unchanged descriptor is shown again", async () => {
+  let attempts = 0;
+  const ui = fixture({ render: () => ({
+    promise: ++attempts === 2 ? Promise.reject(Error('page failed')) : Promise.resolve(), cancel() {},
+  }) });
+  const source = { url: "./api/shared", selectionKey: "receipt:a", initialPage: 1 };
+  await ui.controller.show(source);
+  ui.node("next").click();
+  await tick();
+  assert.equal(ui.node().dataset.state, "error");
+  ui.node("retry").click();
+  await tick();
+  await ui.controller.show(source);
+  assert.equal(ui.node("page-input").value, "2");
+  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.documents[0].loading.destroyed, true);
+});
+
+test("hiding and revisiting nearby originals reuses parsed PDFs and rendered pages", async () => {
+  const ui = fixture();
+  await ui.controller.show({ url: "./api/a", selectionKey: "a", initialPage: 2 });
+  const canvasA = ui.node("canvas");
+  ui.controller.hide();
+  assert.equal(ui.node("canvas"), undefined);
+  assert.equal(ui.documents[0].loading.destroyed, undefined);
+  await ui.controller.show({ url: "./api/a", selectionKey: "a", initialPage: 2 });
+  assert.equal(ui.node("canvas"), canvasA);
+  assert.equal(ui.node("page-input").value, "2");
+  await ui.controller.show({ url: "./api/b", selectionKey: "b" });
+  await ui.controller.show({ url: "./api/a", selectionKey: "a", initialPage: 2 });
+  assert.equal(ui.node("canvas"), canvasA);
+  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.documents.length, 2);
+  assert.equal(ui.renders.length, 2);
+  ui.controller.clear();
+  assert.ok(ui.documents.every(({ loading }) => loading.destroyed));
+  assert.equal(canvasA.width, 0);
+  assert.equal(ui.node("open").href, undefined);
+});
+
+test("evicts least recently used originals after two documents", async () => {
+  const ui = fixture();
+  for (const name of ["a", "b", "c"]) await ui.controller.show({ url: "./api/" + name });
+  assert.equal(ui.documents[0].loading.destroyed, true);
+  assert.equal(ui.documents[1].loading.destroyed, undefined);
+  assert.equal(ui.documents[2].loading.destroyed, undefined);
+  await ui.controller.show({ url: "./api/a" });
+  assert.equal(ui.requests.length, 4);
+  assert.equal(ui.documents[1].loading.destroyed, true);
+  assert.equal(ui.documents.filter(({ loading }) => !loading.destroyed).length, 2);
+});
+
+test("the original-byte cache is bounded and does not retain oversized documents on hide", async () => {
+  const ui = fixture({ fetch: async url => ({ ok: true, arrayBuffer: async () => new ArrayBuffer((url.endsWith("large") ? 33 : 17) * 1024 * 1024) }) });
+  await ui.controller.show({ url: "./api/a" });
+  await ui.controller.show({ url: "./api/b" });
+  assert.equal(ui.documents[0].loading.destroyed, true, "34 MiB must not remain in the 32 MiB cache");
+  await ui.controller.show({ url: "./api/large" });
+  assert.equal(ui.documents[1].loading.destroyed, true);
+  assert.equal(ui.node().dataset.state, "ready", "a large active original can still be read");
+  ui.controller.hide();
+  assert.equal(ui.documents[2].loading.destroyed, true);
+});
+
+test("new-page links reuse private in-memory originals, retain the page and revoke on eviction or clear", async () => {
+  const blobs = [], revoked = [];
+  const ui = fixture({ objectUrls: {
+    createObjectURL(blob) { blobs.push(blob); return `blob:http://localhost:8814/pdf-${blobs.length}`; },
+    revokeObjectURL(value) { revoked.push(value); },
+  } });
+  await ui.controller.show({ url: "./api/a", initialPage: 2 });
+  assert.equal(blobs[0].type, "application/pdf");
+  assert.equal(blobs[0].size, 5);
+  assert.equal(ui.node("open").href, "blob:http://localhost:8814/pdf-1#page=2");
+  ui.node("next").click();
+  await tick();
+  assert.equal(ui.node("open").href, "blob:http://localhost:8814/pdf-1#page=3");
+  await ui.controller.show({ url: "./api/b" });
+  await ui.controller.show({ url: "./api/c" });
+  assert.deepEqual(revoked, ["blob:http://localhost:8814/pdf-1"]);
+  ui.controller.clear();
+  assert.deepEqual(new Set(revoked), new Set(["blob:http://localhost:8814/pdf-1", "blob:http://localhost:8814/pdf-2", "blob:http://localhost:8814/pdf-3"]));
+  assert.equal(ui.node("open").href, undefined);
+});
+
+test("hide cancels an unfinished original rather than keeping a background download", async () => {
+  const response = deferred();
+  const ui = fixture({ fetch: () => response.promise });
+  const pending = ui.controller.show({ url: "./api/a" });
+  ui.controller.hide();
+  assert.equal(ui.requests[0].init.signal.aborted, true);
+  response.resolve({ ok: true, arrayBuffer: async () => { throw Error("late source must not be read"); } });
+  await pending;
+  assert.equal(ui.documents.length, 0);
   assert.equal(ui.node().dataset.state, "empty");
 });

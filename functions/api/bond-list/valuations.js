@@ -5,6 +5,8 @@ import { normalizeCouponCode } from './coupons.js';
 import { withDataSources } from '../qb/fallback.js';
 import { qbRateLimitResponse } from '../qb/errors.js';
 import { rowProvenance } from '../qb/provenance.js';
+import { resolveDataSourceMode } from '../_data-source.js';
+import { BondMetadataCacheError, queryCloudBondMetadata } from './_cloud-metadata-cache.js';
 
 const BASIC_INFO_PATH = '/dm-quant-func-service/api/v1/bond/basic-info/info';
 const MARKET_DATA_PATH = '/dm-quant-func-service/api/v1/bond/market-data/date';
@@ -32,33 +34,43 @@ export async function onRequestPost(context) {
   } catch {
     return json({ error: '每次最多查询 20 个含市场后缀的有效债券代码。' }, 400);
   }
-  const configError = validateDmConfig(context.env, context.request);
-  if (configError) return configError;
   const requestedDate = chinaToday();
-  const startDate = offsetDate(requestedDate, -LOOKBACK_DAYS);
-  const signal = AbortSignal.timeout(20000);
   try {
-    const dm = context.data?.dmClient || makeDmClient(context.env, context.request);
-    const batches = [];
-    for (let start = 0; start < codes.length; start += 5) batches.push(codes.slice(start, start + 5));
-    // At most four market-data requests plus one basic-info request; all share the deadline.
-    const [basic, ...market] = await Promise.all([
-      dm.post(BASIC_INFO_PATH, { securityIdList: codes, fieldNames: BASIC_FIELDS }, { signal }),
-      ...batches.map(securityIdList => dm.post(MARKET_DATA_PATH, {
-        securityIdList, dataSourceList: DATA_SOURCES, startDate, endDate: requestedDate, fieldNames: VALUATION_FIELDS,
-      }, { signal })),
-    ]);
-    signal.throwIfAborted();
-    return json(withDataSources({
-      source: 'DM', sourcePath: MARKET_DATA_PATH, fetchedAt: new Date().toISOString(), requestedDate,
-      results: matchValuationRows(codes, checkedRows(basic), market.flatMap(checkedRows), requestedDate),
-    }, dm));
+    const { terminalError, ...payload } = await queryCloudBondMetadata(context.env.DB, {
+      codes, kind: 'valuations', mode: resolveDataSourceMode(context.env, context.request),
+      lookup: async requested => {
+        if (validateDmConfig(context.env, context.request)) throw Object.assign(new Error('Metadata source unavailable'), { status: 503 });
+        const dm = context.data?.dmClient || makeDmClient(context.env, context.request);
+        const startDate = offsetDate(requestedDate, -LOOKBACK_DAYS);
+        const signal = AbortSignal.timeout(20000), batches = [];
+        for (let start = 0; start < requested.length; start += 5) batches.push(requested.slice(start, start + 5));
+        try {
+          const [basic, ...market] = await Promise.all([
+            dm.post(BASIC_INFO_PATH, { securityIdList: requested, fieldNames: BASIC_FIELDS }, { signal }),
+            ...batches.map(securityIdList => dm.post(MARKET_DATA_PATH, {
+              securityIdList, dataSourceList: DATA_SOURCES, startDate, endDate: requestedDate, fieldNames: VALUATION_FIELDS,
+            }, { signal })),
+          ]);
+          signal.throwIfAborted();
+          return withDataSources({ source: 'DM', sourcePath: MARKET_DATA_PATH, fetchedAt: new Date().toISOString(), requestedDate,
+            results: matchValuationRows(requested, checkedRows(basic), market.flatMap(checkedRows), requestedDate),
+          }, dm);
+        } catch (error) {
+          if (/\bGW-000-4006\b/.test(String(error?.message || ''))) throw Object.assign(new Error('Valuation access denied'), { status: 503, code: 'dm_valuation_access_denied' });
+          throw error;
+        }
+      },
+    });
+    if (terminalError) throw Object.assign(new Error('Valuation query unavailable'), terminalError);
+    return json({ ...payload, requestedDate });
   } catch (error) {
+    if (error instanceof BondMetadataCacheError) return json({ code: 'bond_metadata_cache_unavailable', error: '债券资料云端缓存暂时不可用，请稍后重试。' }, 503);
     const limited = qbRateLimitResponse(error);
     if (limited) return limited;
-    if (/\bGW-000-4006\b/.test(String(error?.message || ''))) {
+    if (error.code === 'dm_valuation_access_denied') {
       return json({ code: 'dm_valuation_access_denied', error: 'DM 当前估值请求被拒绝（GW-000-4006），请核对该应用的接口授权或调用配置。' }, 503);
     }
+    if (Number(error.status) === 503) return json({ code: 'bond_metadata_source_unavailable', error: '债券资料数据源暂未配置，请检查工作区数据源后重试。' }, 503);
     return json({ error: '估值查询暂时失败或超时，请稍后重试。' }, 502);
   }
 }

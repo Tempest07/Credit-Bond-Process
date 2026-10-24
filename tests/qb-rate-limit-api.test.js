@@ -7,6 +7,7 @@ import { onRequestPost as paymentCodes } from '../functions/api/payment-todo/cod
 import { onRequestGet as curve } from '../functions/api/dm/curve.js';
 import { onRequestGet as details } from '../functions/api/dm/lookup.js';
 import { qbRateLimitResponse } from '../functions/api/qb/errors.js';
+import { createMemoryD1 } from './helpers/d1-memory.js';
 
 const origin = 'http://127.0.0.1:8814';
 const env = { QB_ACCESS_KEY: 'fixture-key', BOND_DATA_SOURCE_MODE: 'qb' };
@@ -39,7 +40,8 @@ for (const businessStatus of [false, true]) {
           headers: { Origin: origin, 'X-Bond-List': '1', 'Content-Type': 'application/json' },
           ...(body ? { body: JSON.stringify(body) } : {}),
         });
-        const response = await handler({ request, env });
+        const requestEnv = ['coupons', 'valuations'].includes(path) ? { ...env, DB: createMemoryD1() } : env;
+        const response = await handler({ request, env: requestEnv });
         assert.equal(response.status, 429, path);
         assert.equal(response.headers.get('Retry-After'), '17');
         assert.equal(response.headers.get('Cache-Control'), 'no-store');

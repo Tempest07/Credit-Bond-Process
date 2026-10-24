@@ -1,3 +1,5 @@
+import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
+
 const DATE_PATTERN = /(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?/;
 const PREPAYMENT_PATTERN = /\bW20\d{11}\b/i;
 const MONEY_LABEL_PATTERN = /(?:应缴款项总额|应缴款总额|交易金额|付款金额|转账金额|汇款金额|缴款金额|发生额)[^\d+-]{0,24}(?:人民币|CNY|RMB|[¥￥])?\s*([+-]?\d[\d,]*(?:\.\d{1,4})?)\s*(万元|万人民币|元|人民币)?/i;
@@ -204,21 +206,23 @@ export function recognizePaymentReceiptText(rawText = "", fallback = {}) {
   const amountFen = normalizeAmountFen(
     fallback.amountFen ?? allocationTable.amountFen ?? extractAmountFen(text),
   );
+  const securityCode = cleanIdentifier(
+    fallback.securityCode
+      || allocationTable.securityCode
+      || extractLabelValue(text, ["债券代码", "证券代码", "债券编码"], /[A-Z]?\d{6,18}(?:\.[A-Z]{2})?/i),
+  );
 
   return {
     paymentDate,
     amountFen,
     prepaymentNumber,
-    securityCode: cleanIdentifier(
-      fallback.securityCode
-        || allocationTable.securityCode
-        || extractLabelValue(text, ["债券代码", "证券代码", "债券编码"], /[A-Z]?\d{6,18}(?:\.[A-Z]{2})?/i),
-    ),
-    bondShortName: cleanBondShortName(
-      fallback.bondShortName
+    securityCode,
+    bondShortName: extractPaymentReceiptBondShortName(text, {
+      fallback: cleanBondShortName(fallback.bondShortName)
         || allocationTable.bondShortName
-        || extractLabelValue(text, ["债券简称", "证券简称", "缴款项目"], /[^\n；;]{2,50}/),
-    ),
+        || cleanBondShortName(extractLabelValue(text, ["缴款项目"], /[^\n；;]{2,80}/)),
+      securityCode,
+    }),
     payerName: cleanTextField(
       fallback.payerName || extractLabelValue(text, ["投资者名称", "付款人", "付款单位", "汇款人", "缴款人"], /[^\n；;]{2,80}/),
     ),
@@ -710,9 +714,7 @@ function cleanTextField(value) {
 }
 
 function cleanBondShortName(value) {
-  return cleanTextField(value)
-    .replace(/\s*(?:债券代码|证券代码|债券编码|缴款金额|应缴款(?:项)?总额|付款金额|交易金额)\s*[:：]?.*$/i, "")
-    .trim();
+  return normalizePaymentReceiptBondShortName(value);
 }
 
 function normalizeWhitespace(value) {

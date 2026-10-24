@@ -19,8 +19,10 @@ export function paymentReceiptReaderPreview(entry) {
   const firstPage = value.sourcePages?.[0];
   return {
     url: kind === "receipt"
-      ? `./api/payment-receipts/${encodeURIComponent(value.id)}/source`
+      ? value.fileId ? `./api/payment-receipt-files/${encodeURIComponent(value.fileId)}/file`
+        : `./api/payment-receipts/${encodeURIComponent(value.id)}/source`
       : `./api/payment-receipt-files/${encodeURIComponent(value.id)}/file`,
+    selectionKey: entry.key || `${kind}:${value.id}`,
     initialPage: kind === "receipt" && Number.isSafeInteger(firstPage) && firstPage > 0 ? firstPage : 1,
     label: value.sourceFilename || value.bondShortName || value.subject || "缴款单原件",
   };
