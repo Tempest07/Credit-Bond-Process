@@ -792,7 +792,7 @@ html[data-ui="legacy"] .ledger-search-beam [data-beam-bloom] { display: none; }
 .policy-curve-point.is-key strong { color: #2746ba; font-weight: 900; }
 .policy-curve-point.is-missing strong { color: #9aa5b5; }
 .policy-curve-placeholder { height: 34px; border-radius: 7px; background: linear-gradient(90deg, rgba(217,231,237,.72), rgba(244,249,250,.96), rgba(217,231,237,.72)); background-size: 220% 100%; animation: policyCurveLoading 1.2s ease-in-out infinite; }
-.policy-curve-card p { grid-column: 1; grid-row: 2; margin: 0; overflow: hidden; color: #738296; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; }
+.policy-curve-card p { grid-column: 1; grid-row: 2; display: grid; gap: 2px; margin: 0; color: #738296; white-space: normal; font-size: 10px; font-weight: 700; line-height: 1.5; }
 .policy-curve-card[data-curve-state="error"] { border-color: rgba(220,96,111,.2); background: rgba(255,250,251,.92); }
 .policy-curve-card[data-curve-state="stale"] { border-color: rgba(218,153,47,.26); background: rgba(255,252,245,.94); }
 .policy-curve-message { grid-column: 1 / -1; display: grid; place-items: center; min-height: 34px; color: #7c8799; font-size: 10px; font-weight: 750; }

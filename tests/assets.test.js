@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261024hotfix534labels";
+const VERSION = "20261024hotfix534curve";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -35,15 +35,15 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../bond-list-editor.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261024hotfix534labels/);
-  assert.match(html, /bond-list-editor\.css\?v=20261024hotfix534labels/);
-  assert.match(app, /bond-list-editor\.js\?v=20261024hotfix534labels/);
-  assert.match(html, /payment-receipt-reader\.css\?v=20261024hotfix534labels/);
-  assert.match(app, /payment-receipt-preview\.js\?v=20261024hotfix534labels/);
-  assert.match(app, /payment-receipt-reader\.js\?v=20261024hotfix534labels/);
-  assert.match(html, /project-target-note\.css\?v=20261024hotfix534labels/);
-  assert.match(app, /project-target-note\.js\?v=20261024hotfix534labels/);
-  assert.match(app, /data-source-control\.js\?v=20261024hotfix534labels/);
+  assert.match(html, /app\.js\?v=20261024hotfix534curve/);
+  assert.match(html, /bond-list-editor\.css\?v=20261024hotfix534curve/);
+  assert.match(app, /bond-list-editor\.js\?v=20261024hotfix534curve/);
+  assert.match(html, /payment-receipt-reader\.css\?v=20261024hotfix534curve/);
+  assert.match(app, /payment-receipt-preview\.js\?v=20261024hotfix534curve/);
+  assert.match(app, /payment-receipt-reader\.js\?v=20261024hotfix534curve/);
+  assert.match(html, /project-target-note\.css\?v=20261024hotfix534curve/);
+  assert.match(app, /project-target-note\.js\?v=20261024hotfix534curve/);
+  assert.match(app, /data-source-control\.js\?v=20261024hotfix534curve/);
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));

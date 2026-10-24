@@ -1,13 +1,13 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261024hotfix534labels';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261024hotfix534labels';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261024hotfix534labels';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261024hotfix534labels';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261024hotfix534labels';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261024hotfix534labels';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261024hotfix534labels';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261024hotfix534labels';
-import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261024hotfix534labels';
-import { initDataSourceControl } from './data-source-control.js?v=20261024hotfix534labels';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261024hotfix534curve';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261024hotfix534curve';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261024hotfix534curve';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261024hotfix534curve';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261024hotfix534curve';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261024hotfix534curve';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261024hotfix534curve';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261024hotfix534curve';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261024hotfix534curve';
+import { initDataSourceControl } from './data-source-control.js?v=20261024hotfix534curve';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -43,7 +43,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261024hotfix534labels";
+} from "./core.js?v=20261024hotfix534curve";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -73,15 +73,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261024hotfix534labels";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261024hotfix534labels";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261024hotfix534labels";
+} from "./lifecycle.js?v=20261024hotfix534curve";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261024hotfix534curve";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261024hotfix534curve";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261024hotfix534labels";
+} from "./history-parser.js?v=20261024hotfix534curve";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -98,23 +98,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261024hotfix534labels";
+} from "./protocol-transfer.js?v=20261024hotfix534curve";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261024hotfix534labels";
+} from "./protocol-transfer-templates.js?v=20261024hotfix534curve";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261024hotfix534labels";
+} from "./protocol-transfer-docx.js?v=20261024hotfix534curve";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261024hotfix534labels";
+} from "./reminders.js?v=20261024hotfix534curve";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -142,11 +142,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261024hotfix534labels";
+} from "./secondary-inventory.js?v=20261024hotfix534curve";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261024hotfix534labels";
+} from "./trade-record-converter.js?v=20261024hotfix534curve";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -157,16 +157,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261024hotfix534labels";
+} from "./trade-record-grid.js?v=20261024hotfix534curve";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261024hotfix534labels";
-import { initializeDatePickers } from "./date-picker.js?v=20261024hotfix534labels";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261024hotfix534labels";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261024hotfix534labels";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261024hotfix534labels";
+} from "./trade-record-ledger.js?v=20261024hotfix534curve";
+import { initializeDatePickers } from "./date-picker.js?v=20261024hotfix534curve";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261024hotfix534curve";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261024hotfix534curve";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261024hotfix534curve";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -175,33 +175,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261024hotfix534labels";
+} from "./project-screenshot-ocr.js?v=20261024hotfix534curve";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261024hotfix534labels";
+} from "./project-screenshot-layout.js?v=20261024hotfix534curve";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261024hotfix534labels";
+} from "./project-screenshot-image.js?v=20261024hotfix534curve";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261024hotfix534labels";
+} from "./payment-receipts.js?v=20261024hotfix534curve";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261024hotfix534labels";
+} from "./issuer-search.js?v=20261024hotfix534curve";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261024hotfix534labels";
-import { initializeBondList } from "./bond-list-editor.js?v=20261024hotfix534labels";
+} from "./state-history.js?v=20261024hotfix534curve";
+import { initializeBondList } from "./bond-list-editor.js?v=20261024hotfix534curve";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -7973,14 +7973,11 @@ function renderPolicyCurve(payload) {
     `;
   }).join("");
   const labels = [
-    dataProviderLabel(payload),
     payload.actualValuationDate ? `估值日 ${formatPolicyCurveDate(payload.actualValuationDate)}` : "",
-    payload.retrievedAt ? `查询 ${formatPolicyCurveQueryTime(payload.retrievedAt)}` : "",
-    payload.derivedTerms?.length ? "含线性插值" : "",
-    payload.partial ? "部分档位" : "",
-    payload.stale ? "旧数据" : "",
+    payload.retrievedAt ? `查询日 ${formatPolicyCurveQueryTime(payload.retrievedAt)}` : "",
+    [payload.derivedTerms?.length ? "含线性插值" : "", payload.partial ? "部分档位" : "", payload.stale ? "旧数据" : ""].filter(Boolean).join(" · "),
   ].filter(Boolean);
-  updatedAt.textContent = labels.join(" · ");
+  updatedAt.innerHTML = labels.map((label) => `<span>${escapeHtml(label)}</span>`).join("");
 }
 
 function renderPolicyCurveMessage(stateName, message) {
@@ -8005,13 +8002,14 @@ function formatPolicyCurveQueryTime(value = "") {
   if (Number.isNaN(date.getTime())) return "—";
   const parts = Object.fromEntries(new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
+    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   }).formatToParts(date).map((part) => [part.type, part.value]));
-  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 async function callMailer(action) {

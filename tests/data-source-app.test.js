@@ -34,6 +34,31 @@ test('late policy curve results cannot replace the current source display',async
   resolve({ok:true,text:async()=>JSON.stringify({ok:true,nodes:[{yield:1.5}]})});await pending;
   assert.equal(displayed.length,0);
 });
+
+test('policy curve dates remain separate from source routing and use the Beijing query day',()=>{
+  const elements = new Map();
+  const $ = selector => {
+    if (!elements.has(selector)) elements.set(selector, { dataset: {}, innerHTML: '', setAttribute() {} });
+    return elements.get(selector);
+  };
+  const context = vm.createContext({ $, POLICY_CURVE_TERMS: ['1Y', '3Y'], POLICY_CURVE_KEY_TERMS: new Set(['1Y']) });
+  for (const name of ['renderPolicyCurve', 'formatPolicyCurveDate', 'formatPolicyCurveQueryTime', 'escapeHtml']) load(context, name);
+  const payload = {
+    source: 'DM+QB', actualValuationDate: '2026-10-23', retrievedAt: '2026-10-23T16:05:00Z',
+    nodes: [{ tenor: '1Y', yieldPct: 1.534 }, { tenor: '3Y', yieldPct: 1.69, method: 'derived-linear' }],
+    derivedTerms: ['3Y'], partial: true, stale: true,
+  };
+  const before = JSON.stringify(payload);
+  context.renderPolicyCurve(payload);
+  const dateLines = [...$('#policyCurveUpdatedAt').innerHTML.matchAll(/<span>(.*?)<\/span>/g)].map(match => match[1]);
+  assert.deepEqual(dateLines, ['估值日 2026-10-23', '查询日 2026-10-24 00:05', '含线性插值 · 部分档位 · 旧数据']);
+  assert.doesNotMatch($('#policyCurveUpdatedAt').innerHTML, /DM|QB/);
+  assert.equal($('#policyCurveCard').dataset.curveState, 'stale');
+  assert.match($('#policyCurvePoints').innerHTML, /1\.534%/);
+  assert.match($('#policyCurvePoints').innerHTML, /≈1\.690%/);
+  assert.equal(JSON.stringify(payload), before);
+  assert.equal(context.formatPolicyCurveQueryTime('invalid'), '—');
+});
 test('trade batches stop after switching mode and do not merge mixed-source records',async()=>{
   let resolve,calls=0;
   const context=vm.createContext({dataSourceGeneration:0,LOCAL_BETA:false,DOMException,DM_TRADE_RECORDS_URL:'./trades',
