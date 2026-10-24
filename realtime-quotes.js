@@ -1,4 +1,4 @@
-import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release534';
+import { dataProviderLabel } from './market-data-source.js?v=20261024hotfix534labels';
 
 const DEFAULT_ENDPOINT = "./api/dm/realtime-quotes";
 const DEFAULT_VALUATION_ENDPOINT = "./api/dm/realtime-valuations";
@@ -852,7 +852,7 @@ class RealtimeQuoteController {
     if (this.dmSuspended) {
       label = "经纪商行情已暂停";
       status = "paused";
-      detailText = `经纪商实时报价接口（DM）已暂停；当前资料数据源：${dataSourceModeLabel(this.getDataSourceMode?.() || 'auto')}。切换资料数据源不会恢复该接口。`;
+      detailText = "经纪商实时报价服务已暂停，暂时无法更新报价。";
     } else if (this.loading) {
       label = "刷新中";
       status = "loading";
@@ -912,9 +912,7 @@ class RealtimeQuoteController {
     const element = this.root.querySelector("#realtimeQuoteValuationStatus");
     if (!element) return;
     element.dataset.state = this.valuationError ? "error" : this.valuationLoading ? "loading" : "idle";
-    const requested = dataSourceModeLabel(this.valuationRequestMode || this.getDataSourceMode?.() || 'auto');
-    const actual = this.valuationProvider || requested;
-    element.textContent = this.valuationError ? `${requested} 估值：${this.valuationError}` : this.valuationLoading ? `${requested} 估值：更新中` : this.valuationFetchedAt ? `${actual} 估值快照：${formatChinaDateTime(this.valuationFetchedAt)}` : `${requested} 估值：待首次行情解析`;
+    element.textContent = this.valuationError ? `估值：${this.valuationError}` : this.valuationLoading ? "估值更新中…" : this.valuationFetchedAt ? `估值快照：${formatChinaDateTime(this.valuationFetchedAt)}` : "估值待更新";
   }
 
   save() {

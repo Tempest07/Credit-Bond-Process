@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261023release534";
+const VERSION = "20261024hotfix534labels";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -35,15 +35,15 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../bond-list-editor.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261023release534/);
-  assert.match(html, /bond-list-editor\.css\?v=20261023release534/);
-  assert.match(app, /bond-list-editor\.js\?v=20261023release534/);
-  assert.match(html, /payment-receipt-reader\.css\?v=20261023release534/);
-  assert.match(app, /payment-receipt-preview\.js\?v=20261023release534/);
-  assert.match(app, /payment-receipt-reader\.js\?v=20261023release534/);
-  assert.match(html, /project-target-note\.css\?v=20261023release534/);
-  assert.match(app, /project-target-note\.js\?v=20261023release534/);
-  assert.match(app, /data-source-control\.js\?v=20261023release534/);
+  assert.match(html, /app\.js\?v=20261024hotfix534labels/);
+  assert.match(html, /bond-list-editor\.css\?v=20261024hotfix534labels/);
+  assert.match(app, /bond-list-editor\.js\?v=20261024hotfix534labels/);
+  assert.match(html, /payment-receipt-reader\.css\?v=20261024hotfix534labels/);
+  assert.match(app, /payment-receipt-preview\.js\?v=20261024hotfix534labels/);
+  assert.match(app, /payment-receipt-reader\.js\?v=20261024hotfix534labels/);
+  assert.match(html, /project-target-note\.css\?v=20261024hotfix534labels/);
+  assert.match(app, /project-target-note\.js\?v=20261024hotfix534labels/);
+  assert.match(app, /data-source-control\.js\?v=20261024hotfix534labels/);
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));
@@ -130,8 +130,8 @@ test("ships a configurable dark DM realtime quote tab without a large text-entry
   assert.match(html, /id="realtimeQuoteTableHead"/);
   const realtimeSection = html.match(/<section class="view realtime-quotes-view"[\s\S]*?<section class="view" data-view="dm-test">/)?.[0] || "";
   assert.match(realtimeSection, /realtime-kicker[^>]*>[\s\S]*MARKET DATA/);
-  assert.equal((realtimeSection.match(/\bDM\b/g) || []).length, 1);
-  assert.match(realtimeSection, /经纪商行情接口：DM（已暂停）/);
+  assert.equal((realtimeSection.match(/\bDM\b/g) || []).length, 0);
+  assert.match(realtimeSection, /经纪商实时行情已暂停/);
   assert.doesNotMatch(realtimeSection, /DM MARKET DATA|读取 DM|DM估值|DM 当前接口/);
   assert.match(app, /realtimeQuoteController\?\.setActive\(viewName === "realtime-quotes"\)/);
   assert.match(realtime, /document\.addEventListener\("visibilitychange"/);

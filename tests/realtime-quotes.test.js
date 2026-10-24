@@ -241,29 +241,30 @@ function statusController(t, mode = 'qb') {
   return { c, labels };
 }
 
-test('realtime valuation pending and failure labels follow request mode and successful snapshots keep actual provider', t => {
-  for (const [mode, label] of [['qb', 'QB'], ['dm', 'DM'], ['auto', '自动（DM→QB）']]) {
+test('realtime valuation status stays neutral while snapshot metadata keeps its actual provider and time', t => {
+  for (const mode of ['qb', 'dm', 'auto']) {
     const { c, labels } = statusController(t, mode);
     const status = () => labels.get('#realtimeQuoteValuationStatus').textContent;
     c.renderValuationStatus();
-    assert.equal(status(), `${label} 估值：待首次行情解析`);
+    assert.equal(status(), '估值待更新');
     c.valuationLoading = true; c.renderValuationStatus();
-    assert.equal(status(), `${label} 估值：更新中`);
+    assert.equal(status(), '估值更新中…');
     c.valuationLoading = false; c.valuationError = '暂不可用'; c.renderValuationStatus();
-    assert.equal(status(), `${label} 估值：暂不可用`);
+    assert.equal(status(), '估值：暂不可用');
     c.valuationError = ''; c.valuationFetchedAt = '2026-10-23T01:00:00Z'; c.valuationProvider = 'DM';
     c.renderValuationStatus();
-    assert.match(status(), /^DM 估值快照：/);
+    assert.equal(status(), '估值快照：10-23 09:00:00');
+    assert.equal(c.valuationProvider, 'DM');
+    assert.equal(c.valuationFetchedAt, '2026-10-23T01:00:00Z');
   }
 });
 
-test('QB selection does not relabel or imply recovery of the suspended DM broker quote API', t => {
+test('QB selection keeps broker quotes suspended with a neutral service explanation', t => {
   const { c, labels } = statusController(t, 'qb');
   c.dmSuspended = true; c.paused = true;
   c.renderStatus();
   assert.equal(labels.get('#realtimeQuoteLiveState').strong.textContent, '经纪商行情已暂停');
-  assert.match(labels.get('#realtimeQuoteStatusDetail').textContent, /实时报价接口（DM）已暂停/);
-  assert.match(labels.get('#realtimeQuoteStatusDetail').textContent, /当前资料数据源：QB/);
-  assert.match(labels.get('#realtimeQuoteStatusDetail').textContent, /不会恢复该接口/);
+  assert.equal(labels.get('#realtimeQuoteStatusDetail').textContent, '经纪商实时报价服务已暂停，暂时无法更新报价。');
+  assert.equal(c.dmSuspended, true);
   assert.equal(labels.get('#realtimeQuoteRefreshButton').disabled, true);
 });

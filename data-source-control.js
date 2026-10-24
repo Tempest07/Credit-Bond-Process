@@ -1,4 +1,4 @@
-import { renderDataSourceLabels } from './market-data-source.js?v=20261023release534';
+import { renderDataSourceLabels } from './market-data-source.js?v=20261024hotfix534labels';
 
 const COOKIE_NAME = 'bond_centre_data_source';
 const MODES = new Set(['auto', 'dm', 'qb']);
@@ -37,7 +37,6 @@ export function initDataSourceControl(options = {}) {
   const baseUrl = doc.baseURI || win.location.href;
   const buttons = [...root.querySelectorAll('[data-source-mode]')];
   const status = root.querySelector('[data-source-status]');
-  const description = root.querySelector('[data-source-description]');
   let mode = readDataSourceMode(doc.cookie) || 'qb';
   let defaultMode = 'qb';
   let configured = {};
@@ -58,10 +57,10 @@ export function initDataSourceControl(options = {}) {
       button.disabled = configured[value] === false;
       button.title = configured[value] === false ? `${LABELS[value]} 尚未配置` : '';
     }
-    if (status) status.textContent = warning || (!ready ? '正在确认数据源…' : `后续来源：${mode === 'auto' ? 'DM → QB' : LABELS[mode]}`);
-    if (description) description.textContent = mode === 'auto'
-      ? '优先 DM，失败或缺数时使用 QB。'
-      : `仅使用 ${LABELS[mode]}；切换后从下次请求生效。`;
+    if (status) {
+      status.textContent = warning || (!ready ? '正在载入…' : '');
+      status.hidden = ready && !warning;
+    }
   }
 
   function setMode(nextMode) {
@@ -119,7 +118,7 @@ export function initDataSourceControl(options = {}) {
       warning = '';
     } catch {
       if (destroyed) return;
-      if (selectionRevision === initialRevision) warning = `来源状态暂不可用 · 本机模式 ${LABELS[mode]}`;
+      if (selectionRevision === initialRevision) warning = '暂时无法确认设置，请稍后重试。';
     } finally {
       ready = true;
       render();

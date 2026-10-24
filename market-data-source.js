@@ -5,7 +5,7 @@ export function dataSourceModeLabel(mode) {
   switch (mode) {
     case 'dm': return 'DM';
     case 'qb': return 'QB';
-    case 'auto': return '自动（DM→QB）';
+    case 'auto': return '自动';
     default: return '数据源';
   }
 }

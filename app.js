@@ -1,13 +1,13 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261023release534';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261023release534';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261023release534';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261023release534';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261023release534';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261023release534';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261023release534';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261023release534';
-import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261023release534';
-import { initDataSourceControl } from './data-source-control.js?v=20261023release534';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261024hotfix534labels';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261024hotfix534labels';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261024hotfix534labels';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261024hotfix534labels';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261024hotfix534labels';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261024hotfix534labels';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261024hotfix534labels';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261024hotfix534labels';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261024hotfix534labels';
+import { initDataSourceControl } from './data-source-control.js?v=20261024hotfix534labels';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -43,7 +43,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261023release534";
+} from "./core.js?v=20261024hotfix534labels";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -73,15 +73,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261023release534";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261023release534";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261023release534";
+} from "./lifecycle.js?v=20261024hotfix534labels";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261024hotfix534labels";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261024hotfix534labels";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261023release534";
+} from "./history-parser.js?v=20261024hotfix534labels";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -98,23 +98,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261023release534";
+} from "./protocol-transfer.js?v=20261024hotfix534labels";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261023release534";
+} from "./protocol-transfer-templates.js?v=20261024hotfix534labels";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261023release534";
+} from "./protocol-transfer-docx.js?v=20261024hotfix534labels";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261023release534";
+} from "./reminders.js?v=20261024hotfix534labels";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -142,11 +142,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261023release534";
+} from "./secondary-inventory.js?v=20261024hotfix534labels";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261023release534";
+} from "./trade-record-converter.js?v=20261024hotfix534labels";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -157,16 +157,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261023release534";
+} from "./trade-record-grid.js?v=20261024hotfix534labels";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261023release534";
-import { initializeDatePickers } from "./date-picker.js?v=20261023release534";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261023release534";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261023release534";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261023release534";
+} from "./trade-record-ledger.js?v=20261024hotfix534labels";
+import { initializeDatePickers } from "./date-picker.js?v=20261024hotfix534labels";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261024hotfix534labels";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261024hotfix534labels";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261024hotfix534labels";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -175,33 +175,33 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261023release534";
+} from "./project-screenshot-ocr.js?v=20261024hotfix534labels";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261023release534";
+} from "./project-screenshot-layout.js?v=20261024hotfix534labels";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261023release534";
+} from "./project-screenshot-image.js?v=20261024hotfix534labels";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261023release534";
+} from "./payment-receipts.js?v=20261024hotfix534labels";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261023release534";
+} from "./issuer-search.js?v=20261024hotfix534labels";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261023release534";
-import { initializeBondList } from "./bond-list-editor.js?v=20261023release534";
+} from "./state-history.js?v=20261024hotfix534labels";
+import { initializeBondList } from "./bond-list-editor.js?v=20261024hotfix534labels";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -2487,7 +2487,7 @@ async function processProjectScreenshotFile(file, input = null) {
     renderProjectScreenshotResults(projectScreenshotRows);
     const initialRowIds = projectScreenshotRows.map((row) => row.id);
     for (let index = 0; index < initialRowIds.length; index += 1) {
-      setProjectScreenshotStatus(`已识别 ${initialRowIds.length} 条，正在查 ${currentDataSourceLabel()} ${index + 1}/${initialRowIds.length}...`);
+      setProjectScreenshotStatus(`已识别 ${initialRowIds.length} 条，正在查询 ${index + 1}/${initialRowIds.length}...`);
       const requested = projectScreenshotRows.find((row) => row.id === initialRowIds[index]);
       if (!requested || requested.status === "draft") continue;
       const requestedRevision = requested.revision;
@@ -3766,7 +3766,6 @@ function eraseProjectScreenshotTableLines(canvas, coverageThreshold) {
 }
 
 async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
-  const requestedSource = currentDataSourceLabel();
   try {
     const { response, payload } = await requestProjectScreenshotDmLookup(entry.selectedSecurityId ? { securityId: entry.selectedSecurityId } : { fullName: entry.fullName }, { signal });
     if (!response.ok || !payload.ok) {
@@ -3805,7 +3804,7 @@ async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
         candidateShortName: suggestion?.shortName || "",
         securityId: "",
         candidateSecurityId: suggestion?.securityId || "",
-        error: payload?.error || (payload?.noResult ? `${requestedSource} 无结果` : `HTTP ${response.status}`),
+        error: payload?.error || (payload?.noResult ? "未查询到匹配债券" : `HTTP ${response.status}`),
       };
     }
     const normalized = payload.normalized || {};
@@ -3819,10 +3818,10 @@ async function lookupProjectScreenshotEntry(entry, { signal } = {}) {
       securityId: normalized.securityId || "",
       issuerName: normalized.issuerName || "",
       correctedFullName: dmMatched ? normalized.fullName || "" : "",
-      error: dmMatched && normalized.shortName ? "" : dmMatched ? `${requestedSource} 未返回简称` : `${requestedSource} 未匹配到该债券`,
+      error: dmMatched && normalized.shortName ? "" : dmMatched ? "未返回债券简称" : "未匹配到该债券",
     };
   } catch (error) {
-    return { ...entry, status: "error", dmVerified: false, shortName: "", error: error.message || `${requestedSource} 查询失败` };
+    return { ...entry, status: "error", dmVerified: false, shortName: "", error: error.message || "债券资料查询失败" };
   }
 }
 
@@ -4203,7 +4202,7 @@ function renderProjectScreenshotResults(rows = projectScreenshotRows, { force = 
       const detail = row.status === "ok"
         ? [row.securityId, `${dataProviderLabel(row.provider || row.verifiedProvider, '来源待确认')} 已核验`].filter(Boolean).join(" · ")
         : row.status === "pending"
-        ? `正在查询 ${currentDataSourceLabel()}`
+        ? "正在查询债券资料…"
         : row.error || "查询失败";
       const showCorrection = row.isEditing
         || row.status === "draft"
@@ -4834,7 +4833,7 @@ function resetProjectDmWorkspace(options = {}) {
   valuationAssistController = null;
   valuationAssistRequestKey = "";
   $("#briefInput").value = "";
-  $("#projectDmStatus").textContent = `未读取 ${currentDataSourceLabel()}`;
+  $("#projectDmStatus").textContent = "未读取资料";
   $("#projectDmStatus").className = "pill muted";
   $("#projectDmAssist").hidden = true;
   $("#projectDmAssist").innerHTML = "";
@@ -5370,31 +5369,29 @@ async function runProjectDmLookup(queryOverride = "") {
     if (!isCurrent()) return;
     renderProjectDmAssist(payload);
     if (!payload.ok) {
-      const attemptedSource = dataProviderLabel(payload, request.sourceLabel);
-      $("#projectDmStatus").textContent = payload.noResult ? `${attemptedSource} 无结果` : `${attemptedSource} 查询失败`;
+      $("#projectDmStatus").textContent = payload.noResult ? "未查询到匹配债券" : "查询失败";
       $("#projectDmStatus").className = "pill warning";
-      showToast(payload.noResult ? `${attemptedSource} 无结果，可查看相近候选。` : `${attemptedSource} 查询失败，请看提示。`);
+      showToast(payload.noResult ? "未查询到匹配债券，可查看相近候选。" : "查询失败，请看提示。");
       return;
     }
     applyDmLookupToCurrentProject(payload);
-    const sourceLabel = dmPayloadSourceLabel(payload);
     const suggestionCount = Array.isArray(payload.suggestions) ? payload.suggestions.length : 0;
     $("#projectDmStatus").textContent = payload.noDmBondResult
-      ? `${dataProviderLabel(payload, request.sourceLabel)} 无本期数据 · ${suggestionCount ? `${suggestionCount} 个候选` : "已读主体库"}`
-      : `已读取 ${sourceLabel}`;
+      ? `未返回本期数据 · ${suggestionCount ? `${suggestionCount} 个候选` : "已读主体库"}`
+      : "已读取资料";
     $("#projectDmStatus").className = payload.noDmBondResult ? "pill warning" : "pill accent";
     pushProjectDmHistoryFromCurrent();
     showToast(payload.noDmBondResult
       ? suggestionCount
         ? `未返回本期债券，已找到 ${suggestionCount} 个同主体候选，请选择后重新读取。`
         : "未返回本期债券，已从云端主体库预填发行人资料；本期发行要素请继续填写。"
-      : `已用 ${sourceLabel} 预填新增项目，请复核后保存。`);
+      : "已预填新增项目，请复核后保存。");
   } catch (error) {
     if (!isCurrent() || error?.name === "AbortError") return;
-    renderProjectDmAssist({ ok: false, source: request.sourceLabel, error: error.message || `${request.sourceLabel} 查询失败` });
-    $("#projectDmStatus").textContent = `${request.sourceLabel} 查询失败`;
+    renderProjectDmAssist({ ok: false, source: request.sourceLabel, error: error.message || "债券资料查询失败" });
+    $("#projectDmStatus").textContent = "查询失败";
     $("#projectDmStatus").className = "pill warning";
-    showToast(error.message || `${request.sourceLabel} 查询失败。`);
+    showToast(error.message || "债券资料查询失败。");
   } finally {
     if (projectDmRequest === request) {
       projectDmRequest = null;
@@ -5413,7 +5410,7 @@ function cancelProjectDmLookup() {
   projectDmRequest.controller.abort();
   projectDmRequest = null;
   setProjectDmLookupBusy(false);
-  $("#projectDmStatus").textContent = `待重新读取 ${currentDataSourceLabel()}`;
+  $("#projectDmStatus").textContent = "待重新读取";
   $("#projectDmStatus").className = "pill muted";
 }
 
@@ -5422,20 +5419,19 @@ function currentDataSourceLabel() {
 }
 
 function refreshMarketDataLabels({ resetRequestState = false } = {}) {
-  const label = currentDataSourceLabel();
   const projectButton = $('#projectDmLookupButton');
-  if (projectButton) projectButton.textContent = projectDmRequest ? `正在读取 ${label}…` : `读取 ${label}`;
+  if (projectButton) projectButton.textContent = projectDmRequest ? "正在读取…" : "读取资料";
   const queryButton = $('#dmLookupButton');
-  if (queryButton) queryButton.textContent = dmLookupRequest ? `正在查询 ${label}…` : `查询 ${label}`;
+  if (queryButton) queryButton.textContent = dmLookupRequest ? "正在查询…" : "查询资料";
   const projectStatus = $('#projectDmStatus');
-  if (resetRequestState && projectStatus && !projectStatus.textContent.startsWith('已读取 ')) {
+  if (resetRequestState && projectStatus && !projectStatus.textContent.startsWith('已读取')) {
     const assist = $('#projectDmAssist');
     if (assist) { assist.hidden = true; assist.innerHTML = ''; }
   }
   if (projectStatus && (/^(?:未读取|待重新读取|正在读取)/.test(projectStatus.textContent)
-    || resetRequestState && !projectStatus.textContent.startsWith('已读取 '))) projectStatus.textContent = `未读取 ${label}`;
+    || resetRequestState && !projectStatus.textContent.startsWith('已读取'))) projectStatus.textContent = "未读取资料";
   const queryStatus = $('#dmLookupStatus');
-  if (queryStatus && !dmLookupRequest && !dmLastPayload?.ok) queryStatus.textContent = `${label} · 等待查询`;
+  if (queryStatus && !dmLookupRequest && !dmLastPayload?.ok) queryStatus.textContent = "等待查询";
   if (resetRequestState && !dmLastPayload?.ok) {
     const normalized = $('#dmNormalizedOutput');
     if (normalized) normalized.innerHTML = '<div class="empty">数据源已切换，请重新查询。</div>';
@@ -5486,9 +5482,9 @@ function setProjectDmLookupBusy(isBusy) {
   const button = $("#projectDmLookupButton");
   if (!button) return;
   button.disabled = isBusy;
-  button.textContent = isBusy ? `正在读取 ${currentDataSourceLabel()}…` : `读取 ${currentDataSourceLabel()}`;
+  button.textContent = isBusy ? "正在读取…" : "读取资料";
   if (isBusy) {
-    $("#projectDmStatus").textContent = `正在读取 ${currentDataSourceLabel()}`;
+    $("#projectDmStatus").textContent = "正在读取…";
     $("#projectDmStatus").className = "pill";
   }
 }
@@ -6030,7 +6026,7 @@ function renderProjectDmAssist(payload) {
     const suggestions = Array.isArray(payload?.suggestions) ? payload.suggestions : [];
     output.innerHTML = `
       <div class="project-dm-assist-head">
-        <strong>${escapeHtml(payload?.noResult ? "未查询到匹配债券" : `${dataProviderLabel(payload, currentDataSourceLabel())} 查询失败`)}</strong>
+        <strong>${escapeHtml(payload?.noResult ? "未查询到匹配债券" : "债券资料查询失败")}</strong>
         <span>${escapeHtml(payload?.hint || payload?.error || "请检查简称、代码或查询窗口。")}</span>
       </div>
       ${suggestions.length ? `<div class="dm-suggestion-list">${suggestions.map(renderProjectDmSuggestion).join("")}</div>` : ""}
@@ -7397,7 +7393,7 @@ function scheduleDmValuationAssist(projectValue, issuer) {
   output.innerHTML = `
     <div class="valuation-assist-head">
       <strong>估值助手</strong>
-      <span>正在读取 ${escapeHtml(currentDataSourceLabel())} 存续债最近可用估值...</span>
+      <span>正在读取存续债最近可用估值…</span>
     </div>
   `;
 }
@@ -9533,17 +9529,15 @@ function updateSecondaryPendingControls() {
     const complete = secondaryPendingDraftRows.filter((row) => row.dmLookup?.status === "complete").length;
     const partial = secondaryPendingDraftRows.filter((row) => ["partial", "missing"].includes(row.dmLookup?.status)).length;
     const errors = secondaryPendingDraftRows.filter((row) => row.dmLookup?.status === "error").length;
-    const successfulResults = secondaryPendingDraftRows.filter(row => ['complete', 'partial'].includes(row.dmLookup?.status)).map(row => row.dmLookup);
-    const resultSource = successfulResults.length ? dataProviderLabel(successfulResults) : currentDataSourceLabel();
     dmStatus.textContent = secondaryPendingDmLoading
-      ? `${currentDataSourceLabel()} 读取中`
+      ? "资料读取中…"
       : errors ? `资料查询 ${errors} 笔失败 · 可重试`
-        : complete || partial ? `${resultSource} ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : `${currentDataSourceLabel()} 待读取`;
+        : complete || partial ? `${complete} 笔完整${partial ? ` · ${partial} 笔待补` : ""}` : "待读取资料";
   }
   const dmButton = $("#secondaryPendingDmButton");
   if (dmButton) {
     dmButton.disabled = secondaryPendingDmLoading || !secondaryPendingDraftRows.length;
-    dmButton.textContent = secondaryPendingDmLoading ? `正在读取 ${currentDataSourceLabel()}…` : `重新读取 ${currentDataSourceLabel()}`;
+    dmButton.textContent = secondaryPendingDmLoading ? "正在读取…" : "重新读取资料";
   }
   const undoButton = $("#secondaryPendingUndoButton");
   if (undoButton) undoButton.disabled = !secondaryPendingUndoStack.length;
@@ -9670,10 +9664,9 @@ async function enrichSecondaryPendingFromDm({ refresh = false, automatic = false
       const complete = results.filter((row) => row.status === "complete").length;
       const partial = results.length - complete;
       const failed = failedIds.length;
-      const returnedSource = results.length ? dataProviderLabel(results) : currentDataSourceLabel();
       showToast(failed
-        ? `${returnedSource} 已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
-        : `${returnedSource} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+        ? `已返回 ${results.length} 笔，${failed} 笔失败：${errors[0] || "可重试"}。`
+        : `已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
     if (sourceGeneration !== dataSourceGeneration || error.name === 'AbortError') return;
@@ -10042,12 +10035,10 @@ function updateSecondaryLedgerControls() {
     const complete = secondaryLedgerDraftRows.filter((row) => row.dmLookup?.status === "complete").length;
     const partial = secondaryLedgerDraftRows.filter((row) => ["partial", "missing"].includes(row.dmLookup?.status)).length;
     const errors = secondaryLedgerDraftRows.filter((row) => row.dmLookup?.status === 'error').length;
-    const successfulResults = secondaryLedgerDraftRows.filter(row => ['complete', 'partial'].includes(row.dmLookup?.status)).map(row => row.dmLookup);
-    const resultSource = successfulResults.length ? dataProviderLabel(successfulResults) : currentDataSourceLabel();
     dmStatus.textContent = secondaryLedgerDmLoading
-      ? `${currentDataSourceLabel()} 读取中`
+      ? "资料读取中…"
       : errors ? `资料查询 ${errors} 笔失败 · 可重试`
-        : complete || partial ? `${resultSource} ${complete} 完整${partial ? ` · ${partial} 待补` : ""}` : `${currentDataSourceLabel()} 待读取`;
+        : complete || partial ? `${complete} 笔完整${partial ? ` · ${partial} 笔待补` : ""}` : "待读取资料";
   }
   const saveButton = $("#secondaryLedgerSaveButton");
   if (saveButton) saveButton.disabled = secondaryLedgerSavePending || !dirtyRows;
@@ -10056,7 +10047,7 @@ function updateSecondaryLedgerControls() {
   const dmButton = $("#secondaryLedgerDmButton");
   if (dmButton) {
     dmButton.disabled = secondaryLedgerDmLoading || !secondaryLedgerDraftRows.length;
-    dmButton.textContent = secondaryLedgerDmLoading ? `正在读取 ${currentDataSourceLabel()}…` : `读取 ${currentDataSourceLabel()}`;
+    dmButton.textContent = secondaryLedgerDmLoading ? "正在读取…" : "读取资料";
   }
 }
 
@@ -10126,10 +10117,9 @@ async function enrichSecondaryLedgerFromDm({ refresh = false, automatic = false 
     if (!automatic) {
       const complete = results.filter((row) => row.status === "complete").length;
       const partial = results.length - complete;
-      const returnedSource = results.length ? dataProviderLabel(results) : currentDataSourceLabel();
       showToast(failedIds.length
-        ? `${returnedSource} 已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
-        : `${returnedSource} 已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
+        ? `已返回 ${results.length} 笔，${failedIds.length} 笔失败：${errors[0] || "可重试"}。`
+        : `已返回 ${results.length} 笔：${complete} 笔完整${partial ? `，${partial} 笔部分返回` : ""}。`);
     }
   } catch (error) {
     if (sourceGeneration !== dataSourceGeneration || error.name === 'AbortError') return;
@@ -12777,7 +12767,7 @@ function clearDmLookup() {
 
 function setDmLookupBusy(isBusy) {
   $("#dmLookupButton").disabled = isBusy;
-  $("#dmLookupButton").textContent = isBusy ? `正在查询 ${currentDataSourceLabel()}…` : `查询 ${currentDataSourceLabel()}`;
+  $("#dmLookupButton").textContent = isBusy ? "正在查询…" : "查询资料";
 }
 
 async function renderDmLookupResult(payload, isCurrent = () => true) {
@@ -12789,7 +12779,7 @@ async function renderDmLookupResult(payload, isCurrent = () => true) {
   const ok = Boolean(enrichedPayload?.ok);
   const statusParts = [
     ok ? "查询成功" : enrichedPayload?.noResult ? "无结果" : "查询失败",
-    dataProviderLabel(enrichedPayload, currentDataSourceLabel()),
+    dataProviderLabel(enrichedPayload, ''),
     enrichedPayload?.httpStatus ? `HTTP ${enrichedPayload.httpStatus}` : "",
     Number.isFinite(enrichedPayload?.elapsedMs) ? `${enrichedPayload.elapsedMs}ms` : "",
   ].filter(Boolean);

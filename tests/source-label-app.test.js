@@ -43,20 +43,20 @@ function harness(mode = 'qb') {
   return { context, $ };
 }
 
-test('project and query actions follow all three modes while idle and loading', () => {
+test('project and query actions use business copy in every source mode while idle and loading', () => {
   const h = harness();
-  for (const [mode, label] of [['dm', 'DM'], ['qb', 'QB'], ['auto', '自动（DM→QB）']]) {
+  for (const mode of ['dm', 'qb', 'auto']) {
     h.context.mode = mode;
     h.context.setProjectDmLookupBusy(false);
     h.context.setDmLookupBusy(false);
-    assert.equal(h.$('#projectDmLookupButton').textContent, `读取 ${label}`);
-    assert.equal(h.$('#dmLookupButton').textContent, `查询 ${label}`);
+    assert.equal(h.$('#projectDmLookupButton').textContent, '读取资料');
+    assert.equal(h.$('#dmLookupButton').textContent, '查询资料');
     assert.equal(h.$('#projectDmLookupButton').disabled, false);
     h.context.setProjectDmLookupBusy(true);
     h.context.setDmLookupBusy(true);
-    assert.equal(h.$('#projectDmLookupButton').textContent, `正在读取 ${label}…`);
-    assert.equal(h.$('#projectDmStatus').textContent, `正在读取 ${label}`);
-    assert.equal(h.$('#dmLookupButton').textContent, `正在查询 ${label}…`);
+    assert.equal(h.$('#projectDmLookupButton').textContent, '正在读取…');
+    assert.equal(h.$('#projectDmStatus').textContent, '正在读取…');
+    assert.equal(h.$('#dmLookupButton').textContent, '正在查询…');
     assert.equal(h.$('#dmLookupButton').disabled, true);
   }
 });
@@ -68,15 +68,15 @@ test('source changes clear stale failure and idle labels while retaining success
   h.$('#projectDmAssist').innerHTML = 'DM 查询失败';
   h.context.dmLastPayload = { ok: false };
   h.context.refreshMarketDataLabels({ resetRequestState: true });
-  assert.equal(h.$('#projectDmStatus').textContent, '未读取 QB');
-  assert.equal(h.$('#dmLookupStatus').textContent, 'QB · 等待查询');
+  assert.equal(h.$('#projectDmStatus').textContent, '未读取资料');
+  assert.equal(h.$('#dmLookupStatus').textContent, '等待查询');
   assert.equal(h.$('#projectDmAssist').hidden, true);
   assert.equal(h.$('#projectDmAssist').innerHTML, '');
   assert.match(h.$('#dmNormalizedOutput').innerHTML, /重新查询/);
   h.context.mode = 'auto';
   h.context.refreshMarketDataLabels();
-  assert.equal(h.$('#projectDmStatus').textContent, '未读取 自动（DM→QB）');
-  assert.equal(h.$('#dmLookupStatus').textContent, '自动（DM→QB） · 等待查询');
+  assert.equal(h.$('#projectDmStatus').textContent, '未读取资料');
+  assert.equal(h.$('#dmLookupStatus').textContent, '等待查询');
 
   h.$('#projectDmStatus').textContent = '已读取 DM+云端数据库';
   h.$('#dmLookupStatus').textContent = '查询成功 · DM · HTTP 200';
@@ -87,21 +87,28 @@ test('source changes clear stale failure and idle labels while retaining success
   h.context.refreshMarketDataLabels({ resetRequestState: true });
   assert.equal(h.$('#projectDmStatus').textContent, '已读取 DM+云端数据库');
   assert.equal(h.$('#dmLookupStatus').textContent, '查询成功 · DM · HTTP 200');
-  assert.equal(h.$('#projectDmLookupButton').textContent, '读取 QB');
+  assert.equal(h.$('#projectDmLookupButton').textContent, '读取资料');
+  assert.equal(h.$('#projectDmAssist').hidden, false);
+  assert.equal(h.$('#projectDmAssist').innerHTML, 'DM 已带入新增项目');
+  h.$('#projectDmStatus').textContent = '已读取资料';
+  h.context.mode = 'auto';
+  h.context.refreshMarketDataLabels({ resetRequestState: true });
+  assert.equal(h.$('#projectDmStatus').textContent, '已读取资料');
   assert.equal(h.$('#projectDmAssist').hidden, false);
   assert.equal(h.$('#projectDmAssist').innerHTML, 'DM 已带入新增项目');
 });
 
-test('project lookup failure uses the request source and a successful assistant retains its real provider', () => {
+test('project lookup failures use business copy while a successful assistant retains its real provider', () => {
   const h = harness('qb');
   Object.assign(h.context, { renderProjectDmIssueGroup: () => '', formatNumber: String });
   loadFunctions(h.context, ['renderProjectDmAssist', 'numberOrNull']);
   h.context.renderProjectDmAssist({ ok: false, error: '接口暂不可用' });
-  assert.match(h.$('#projectDmAssist').innerHTML, /QB 查询失败/);
+  assert.match(h.$('#projectDmAssist').innerHTML, /债券资料查询失败/);
   assert.doesNotMatch(h.$('#projectDmAssist').innerHTML, /DM 查询失败/);
   h.context.mode = 'auto';
   h.context.renderProjectDmAssist({ ok: false, error: '接口暂不可用' });
-  assert.match(h.$('#projectDmAssist').innerHTML, /自动（DM→QB） 查询失败/);
+  assert.match(h.$('#projectDmAssist').innerHTML, /债券资料查询失败/);
+  assert.doesNotMatch(h.$('#projectDmAssist').innerHTML, /自动|→|DM|QB/);
   h.context.mode = 'dm';
   h.context.renderProjectDmAssist({ ok: true, source: 'QB', normalized: { shortName: '26测试MTN001' } });
   assert.match(h.$('#projectDmAssist').innerHTML, /QB 已带入新增项目/);
@@ -180,12 +187,12 @@ test('changing source aborts an old project request and ignores a late response 
   h.context.mode = 'qb';
   h.context.handleDataSourceChange();
   assert.equal(requests[0].options.signal.aborted, true);
-  assert.equal(h.$('#projectDmLookupButton').textContent, '读取 QB');
-  assert.equal(h.$('#projectDmStatus').textContent, '未读取 QB');
+  assert.equal(h.$('#projectDmLookupButton').textContent, '读取资料');
+  assert.equal(h.$('#projectDmStatus').textContent, '未读取资料');
   requests[0].resolve({ ok: true, status: 200, json: async () => ({ ok: true, source: 'DM', normalized: { shortName: '26测试MTN001' } }) });
   await pending;
   assert.equal(applied.length, 0);
-  assert.equal(h.$('#projectDmStatus').textContent, '未读取 QB');
+  assert.equal(h.$('#projectDmStatus').textContent, '未读取资料');
 });
 
 test('a screenshot response from the previous source cannot be accepted after switching modes', async () => {

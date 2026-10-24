@@ -69,14 +69,15 @@ test('initialization reflects the server mode without changing cookies or invali
   assert.equal(ui.control.getMode(), 'auto');
   assert.deepEqual(ui.buttons.map(button => button.attributes['aria-pressed']), ['true', 'false', 'false']);
   assert.equal(ui.root.attributes['aria-busy'], 'false');
-  assert.equal(ui.status.textContent, '后续来源：DM → QB');
-  assert.equal(ui.description.textContent, '优先 DM，失败或缺数时使用 QB。');
+  assert.equal(ui.status.textContent, '');
+  assert.equal(ui.status.hidden, true);
+  assert.equal(ui.description.textContent, '');
   assert.equal(ui.calls[0][0], 'https://tempest07.com/bond-centre/api/data-source');
   assert.equal(ui.calls[0][1].cache, 'no-store');
   assert.equal(ui.calls[0][1].credentials, 'same-origin');
   assert.deepEqual(ui.writes, []);
   assert.deepEqual(ui.changes, []);
-  assert.equal(ui.sourceCopy.textContent, '请求来源：自动（DM→QB）');
+  assert.equal(ui.sourceCopy.textContent, '请求来源：自动');
   assert.equal(ui.liveStatus.textContent, 'QB · 已读取 3 条');
 });
 
@@ -87,8 +88,9 @@ test('switching modes persists only the cookie and dispatches the exact change f
   assert.equal(ui.control.getMode(), 'dm');
   assert.equal(readDataSourceMode(ui.document.cookie), 'dm');
   assert.deepEqual(ui.changes, [{ mode: 'dm', previousMode: 'qb', defaultMode: 'qb' }]);
-  assert.equal(ui.status.textContent, '后续来源：DM');
-  assert.equal(ui.description.textContent, '仅使用 DM；切换后从下次请求生效。');
+  assert.equal(ui.status.textContent, '');
+  assert.equal(ui.status.hidden, true);
+  assert.equal(ui.description.textContent, '');
   assert.equal(ui.sourceCopy.textContent, '请求来源：DM');
   assert.equal(ui.liveStatus.textContent, 'QB · 已读取 3 条');
   assert.equal(ui.calls.length, 1);
@@ -117,7 +119,8 @@ test('a pending initialization cannot override a new user selection', async () =
   await ui.control.ready;
   assert.equal(ui.control.getMode(), 'dm');
   assert.equal(readDataSourceMode(ui.document.cookie), 'dm');
-  assert.equal(ui.status.textContent, '后续来源：DM');
+  assert.equal(ui.status.textContent, '');
+  assert.equal(ui.status.hidden, true);
   assert.equal(ui.sourceCopy.textContent, '请求来源：DM');
   assert.equal(ui.changes.length, 1);
 });
@@ -136,11 +139,13 @@ test('failed initialization keeps a valid preference and does not expose upstrea
   const ui = workspace({ cookie: 'bond_centre_data_source=auto', fetchImpl: async () => { throw new Error('secret response'); } });
   await ui.control.ready;
   assert.equal(ui.control.getMode(), 'auto');
-  assert.equal(ui.status.textContent, '来源状态暂不可用 · 本机模式 自动');
+  assert.equal(ui.status.textContent, '暂时无法确认设置，请稍后重试。');
+  assert.equal(ui.status.hidden, false);
   assert.equal(ui.status.textContent.includes('secret'), false);
   assert.deepEqual(ui.writes, []);
   assert.equal(ui.control.setMode('qb'), true);
-  assert.equal(ui.status.textContent, '后续来源：QB');
+  assert.equal(ui.status.textContent, '');
+  assert.equal(ui.status.hidden, true);
 });
 
 test('unconfigured fixed sources cannot be selected', async () => {

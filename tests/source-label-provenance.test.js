@@ -108,13 +108,14 @@ test('multi-tranche inquiry ranges keep their own provider instead of assigning 
   assert.equal(context.buildProjectDmRecognitionMarks(patch)['inquiryRanges.1.low'].source, 'dm');
 });
 
-test('secondary summaries keep legacy DM successful records and combine real QB results', () => {
+test('secondary summaries show business counts while leaving legacy and actual source metadata intact', () => {
   for (const name of ['updateSecondaryPendingControls', 'updateSecondaryLedgerControls']) {
     for (const [rows, expected] of [
-      [[{ dmLookup: { status: 'complete' } }], 'DM 1 完整'],
-      [[{ dmLookup: { status: 'complete', provider: 'QB' } }], 'QB 1 完整'],
-      [[{ dmLookup: { status: 'complete' } }, { dmLookup: { status: 'partial', provider: 'QB' } }], 'DM+QB 1 完整 · 1 待补'],
-      [[], 'QB 待读取'],
+      [[{ dmLookup: { status: 'complete' } }], '1 笔完整'],
+      [[{ dmLookup: { status: 'complete', provider: 'QB' } }], '1 笔完整'],
+      [[{ dmLookup: { status: 'complete' } }, { dmLookup: { status: 'partial', provider: 'QB' } }], '1 笔完整 · 1 笔待补'],
+      [[{ dmLookup: { status: 'error', provider: 'QB', error: '保留原错误明细' } }], '资料查询 1 笔失败 · 可重试'],
+      [[], '待读取资料'],
     ]) {
       const elements = new Map(), $ = selector => {
         if (!elements.has(selector)) elements.set(selector, { classList: { toggle() {} }, setAttribute() {} });
@@ -124,9 +125,11 @@ test('secondary summaries keep legacy DM successful records and combine real QB 
         secondaryPendingDraftRows: rows, secondaryLedgerDraftRows: rows, secondaryPendingSavePending: false, secondaryLedgerSavePending: false,
         secondaryPendingDmLoading: false, secondaryLedgerDmLoading: false, secondaryPendingUndoStack: [], secondaryLedgerUndoStack: [],
         secondaryPendingShowAllColumns: false, secondaryPendingQuickDelete: false });
+      const original = JSON.stringify(rows);
       load(context, [name]); context[name]();
       const selector = name === 'updateSecondaryPendingControls' ? '#secondaryPendingDmStatus' : '#secondaryLedgerDmStatus';
       assert.equal(elements.get(selector).textContent, expected, name);
+      assert.equal(JSON.stringify(rows), original, 'summary rendering must not rewrite provider or error metadata');
     }
   }
 });

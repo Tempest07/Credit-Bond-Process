@@ -1,4 +1,4 @@
-import { dataProviderLabel } from './market-data-source.js?v=20261023release534';
+import { dataProviderLabel } from './market-data-source.js?v=20261024hotfix534labels';
 
 const CODE = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/;
 const nameKey = value => String(value || '').normalize('NFKC').replace(/\s+/g, '').toUpperCase();

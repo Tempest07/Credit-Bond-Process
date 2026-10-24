@@ -752,7 +752,7 @@ test('QB valuation fallback shows the actual provider and institution without mo
     } });
   } }, async env => {
     const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
-    assert.match(env.elements['metadata-status'].textContent, /^DM\+QB/);
+    assert.equal(env.elements['metadata-status'].textContent, '');
     const source = env.resultRow(0).children[3].querySelector('.bond-list-valuation-meta');
     assert.match(source.textContent, /^QB \/ 中债/);
     assert.match(source.title, /QB 查询于/);
@@ -826,7 +826,7 @@ test('source reset clears metadata, rejects old responses and preserves draft, f
     assert.equal(env.rows().length, 0);
     await env.advance(350);
     assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '2.03%');
-    assert.match(env.elements['metadata-status'].textContent, /^QB/);
+    assert.equal(env.elements['metadata-status'].textContent, '');
     oldCoupons.resolve(json({ source: 'DM', results: { '102600001.IB': { status: 'matched', couponRate: 1.54, bondType: 'MTN' } } }));
     oldValuations.resolve(json({ source: 'DM', results: { '102600001.IB': { status: 'matched', yield: 1.51 } } }));
     await oldRefresh;
@@ -879,20 +879,20 @@ test('source reset clears failed name suppression while keeping an existing save
   });
 });
 
-test('empty, loading and failed metadata identify the requested mode without inventing a DM result provider', async () => {
-  for (const [selectedMode, label] of [['qb', 'QB'], ['dm', 'DM'], ['auto', '自动（DM→QB）']]) {
+test('empty, loading and failed metadata use neutral business status for every request mode', async () => {
+  for (const selectedMode of ['qb', 'dm', 'auto']) {
     const response = deferred();
     await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
       if (request.url.endsWith('/coupons') || request.url.endsWith('/valuations')) return response.promise;
     } }, async env => {
       const editor = initializeBondList({ getDataSourceMode: () => selectedMode });
       await editor.setActive(true);
-      assert.ok(env.elements['metadata-status'].textContent.startsWith(label));
+      assert.equal(env.elements['metadata-status'].textContent, '1 条资料读取中');
       await env.advance(350);
       assert.match(env.elements['metadata-status'].textContent, /资料读取中/);
-      assert.ok(env.elements['metadata-status'].textContent.startsWith(label));
+      assert.doesNotMatch(env.elements['metadata-status'].textContent, /DM|QB|自动/);
       response.resolve(json({ error: '上游暂不可用' }, 502)); await settle(); await settle();
-      assert.ok(env.elements['metadata-status'].textContent.startsWith(label));
+      assert.doesNotMatch(env.elements['metadata-status'].textContent, /DM|QB|自动/);
       assert.match(env.elements['metadata-status'].textContent, /1 条查询失败/);
       assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '查询失败');
       assert.equal(env.state.revision, 6);
@@ -900,7 +900,7 @@ test('empty, loading and failed metadata identify the requested mode without inv
   }
 });
 
-test('switching mode updates empty and failed metadata labels and ignores missing-result default source', async () => {
+test('switching mode preserves neutral failure, loading and missing-data status', async () => {
   let selectedMode = 'dm', fail = true;
   await fixture({ state: { sections: [{ title: '北京', text: '102600001.IB，测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
     if (request.url.endsWith('/coupons') || request.url.endsWith('/valuations')) return fail
@@ -909,14 +909,15 @@ test('switching mode updates empty and failed metadata labels and ignores missin
   } }, async env => {
     const editor = initializeBondList({ getDataSourceMode: () => selectedMode });
     await editor.setActive(true); await env.advance(350);
-    assert.match(env.elements['metadata-status'].textContent, /^DM · 1 条查询失败/);
+    assert.equal(env.elements['metadata-status'].textContent, '1 条查询失败');
     selectedMode = 'qb'; editor.resetDataSource();
-    assert.match(env.elements['metadata-status'].textContent, /^QB · 1 条资料读取中/);
+    assert.equal(env.elements['metadata-status'].textContent, '1 条资料读取中');
     await env.advance(350);
-    assert.match(env.elements['metadata-status'].textContent, /^QB · 1 条查询失败/);
+    assert.equal(env.elements['metadata-status'].textContent, '1 条查询失败');
     fail = false; await env.elements['coupons-refresh'].click();
-    assert.match(env.elements['metadata-status'].textContent, /^QB ·/);
-    assert.doesNotMatch(env.elements['metadata-status'].textContent, /^DM/);
+    assert.match(env.elements['metadata-status'].textContent, /票面缺失 1/);
+    assert.match(env.elements['metadata-status'].textContent, /估值缺失 1/);
+    assert.doesNotMatch(env.elements['metadata-status'].textContent, /DM|QB|自动/);
     assert.equal(editor.hasPendingChanges(), false);
     assert.equal(env.state.revision, 6);
   });
@@ -934,7 +935,7 @@ test('a QB refresh failure keeps successful DM data labelled DM with its origina
     const editor = initializeBondList({ getDataSourceMode: () => selectedMode });
     await editor.setActive(true); await env.advance(350);
     selectedMode = 'qb'; fail = true; await env.elements['coupons-refresh'].click();
-    assert.match(env.elements['metadata-status'].textContent, /^DM · 1 条刷新未完成，保留上次资料/);
+    assert.match(env.elements['metadata-status'].textContent, /^1 条刷新未完成，保留上次资料/);
     const valuation = env.resultRow(0).querySelector('.bond-list-valuation-meta');
     assert.match(valuation.textContent, /^中债.*10-21/);
     assert.match(valuation.title, /2026-10-21 · DM 查询于/);
@@ -961,9 +962,9 @@ test('QB throttling stops the remaining metadata batches and leaves skipped quot
     const requests = () => env.requests.filter(request => request.url.endsWith('/coupons') || request.url.endsWith('/valuations'));
     assert.equal(requests().length, 2);
     assert.ok(requests().every(request => request.body.codes.length === 20));
-    assert.match(env.elements.notice.textContent, /^QB 接口限流，请稍后重试。建议至少等待 30 秒后手动刷新。$/);
+    assert.equal(env.elements.notice.textContent, '查询过于频繁，请稍后重试。建议至少等待 30 秒后手动刷新。');
     assert.equal(env.elements.notice.hidden, false);
-    assert.match(env.elements['metadata-status'].textContent, /^QB · 20 条查询失败 · 29 条未完成/);
+    assert.match(env.elements['metadata-status'].textContent, /^20 条查询失败 · 29 条未完成/);
     assert.doesNotMatch(env.elements['metadata-status'].textContent, /票面缺失|估值缺失/);
     assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '查询失败');
     assert.equal(env.resultRow(20).querySelector('.bond-list-coupon-value').textContent, '未完成');
@@ -998,8 +999,8 @@ test('a rate-limited refresh preserves all previous providers, values and valuat
     assert.equal(before, 6);
     limited = true; await env.elements['coupons-refresh'].click();
     assert.equal(env.requests.filter(request => request.body?.codes).length, before + 2);
-    assert.equal(env.elements.notice.textContent, 'QB 接口限流，请稍后重试。');
-    assert.match(env.elements['metadata-status'].textContent, /^DM · 49 条刷新未完成，保留上次资料/);
+    assert.equal(env.elements.notice.textContent, '查询过于频繁，请稍后重试。');
+    assert.match(env.elements['metadata-status'].textContent, /^49 条刷新未完成，保留上次资料/);
     for (const index of [0, 20, 48]) {
       assert.equal(env.resultRow(index).querySelector('.bond-list-coupon-value').textContent, '1.54%');
       const valuation = env.resultRow(index).querySelector('.bond-list-valuation-meta');
@@ -1010,7 +1011,7 @@ test('a rate-limited refresh preserves all previous providers, values and valuat
   });
 });
 
-test('rate-limited code lookup stops its later batches and gives a safe explicit QB notice', async () => {
+test('rate-limited code lookup stops later batches and gives a safe neutral retry notice', async () => {
   const text = Array.from({ length: 49 }, (_, index) => `26测试${index}，1.60*ofr`).join('\n');
   await fixture({ state: { sections: [{ title: '北京', text }], revision: 6, userId: 'admin' }, fetch(request) {
     if (request.url.endsWith('/lookup')) return json({ error: 'unsafe upstream message', code: 'qb_rate_limited', retryAfter: 'Infinity' }, 429);
@@ -1018,39 +1019,39 @@ test('rate-limited code lookup stops its later batches and gives a safe explicit
     const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
     await editor.setActive(true); await env.elements.fill.click();
     assert.equal(env.requests.filter(request => request.url.endsWith('/lookup')).length, 1);
-    assert.equal(env.elements.notice.textContent, 'QB 接口限流，请稍后重试。');
+    assert.equal(env.elements.notice.textContent, '查询过于频繁，请稍后重试。');
     assert.equal(env.textarea(0).value, text);
     assert.equal(editor.hasPendingChanges(), false); assert.equal(env.state.revision, 6);
   });
 });
 
-test('unmatched branch names identify their requested source after switching rather than a fixed DM label', async () => {
+test('unmatched branch names retain the business message after source changes', async () => {
   let mode = 'dm';
   await fixture({ state: { sections: [{ title: '北京', text: '26测试，1.60*ofr' }], revision: 6, userId: 'admin' } }, async env => {
     const editor = initializeBondList({ getDataSourceMode: () => mode });
     await editor.setActive(true); await env.elements.fill.click();
     const issue = () => env.root.querySelector('.bond-list-issue').children[0].textContent;
-    assert.equal(issue(), 'DM 未找到：26测试');
+    assert.equal(issue(), '未找到债券：26测试');
     mode = 'qb'; editor.resetDataSource();
     await env.elements.fill.click();
-    assert.equal(issue(), 'QB 未找到：26测试');
+    assert.equal(issue(), '未找到债券：26测试');
     mode = 'auto'; editor.resetDataSource();
     await env.elements.fill.click();
-    assert.equal(issue(), '自动（DM→QB） 未找到：26测试');
+    assert.equal(issue(), '未找到债券：26测试');
     assert.equal(env.state.revision, 6);
     assert.equal(editor.hasPendingChanges(), false);
   });
 });
 
-test('code completion reports actual provider when present and requested route when legacy results omit it', async () => {
-  for (const [provider, expected] of [['DM', 'DM'], ['QB', 'QB'], ['', 'QB']]) {
+test('code completion reports the completed count without vendor or routing labels', async () => {
+  for (const provider of ['DM', 'QB', '']) {
     await fixture({ match: true, state: { sections: [{ title: '北京', text: '26测试，1.60*ofr' }], revision: 6, userId: 'admin' }, fetch(request) {
       if (!request.url.endsWith('/lookup')) return;
       return json({ source: provider, results: { '26测试': { status: 'matched', matches: [{ code: '102600001.IB', name: '26测试', market: '银行间' }] } } });
     } }, async env => {
       const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
       await editor.setActive(true); await env.elements.fill.click();
-      assert.match(env.elements.notice.textContent, new RegExp('^已通过 ' + expected + ' 补齐 1 条报价'));
+      assert.equal(env.elements.notice.textContent, '已补齐 1 条报价，价格与分行保持原样。');
       assert.equal(env.textarea(0).value, '102600001.IB，26测试，1.60*ofr');
     });
   }

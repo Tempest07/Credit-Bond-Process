@@ -1,6 +1,6 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261023release534';
-import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261023release534';
-import { dataProviderLabel, dataSourceModeLabel } from './market-data-source.js?v=20261023release534';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261024hotfix534labels';
+import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261024hotfix534labels';
+import { dataProviderLabel } from './market-data-source.js?v=20261024hotfix534labels';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
@@ -35,10 +35,8 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     const value = getDataSourceMode();
     return ['dm', 'qb'].includes(value) ? value : 'auto';
   };
-  const requestLabel = dataSourceModeLabel;
-  const rateLimitMessage = (error, selectedMode) => {
-    const provider = error.code === 'qb_rate_limited' ? 'QB' : requestLabel(selectedMode);
-    return provider + ' 接口限流，请稍后重试。' + (error.retryAfter ? '建议至少等待 ' + error.retryAfter + ' 秒后手动刷新。' : '');
+  const rateLimitMessage = error => {
+    return '查询过于频繁，请稍后重试。' + (error.retryAfter ? '建议至少等待 ' + error.retryAfter + ' 秒后手动刷新。' : '');
   };
 
   function setAccess(value) {
@@ -132,15 +130,10 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     const comparisons = result.rows.map(quote => compareQuoteToValuation(quote, valuationResults.get(quote.code)));
     const warnings = comparisons.filter(comparison => comparison.warning).length;
     const close = comparisons.filter(comparison => comparison.couponNear).length;
-    const metadata = all.flatMap(row => [couponResults.get(row.code), valuationResults.get(row.code)]).filter(Boolean);
-    const actualSource = dataProviderLabel(metadata.filter(value => value.status === 'matched'), '');
-    const attemptedModes = [...new Set(metadata.map(value => value.requestMode).filter(Boolean))];
-    const attemptedLabel = requestLabel(attemptedModes.length === 1 ? attemptedModes[0] : requestMode());
-    const sourceLabel = actualSource || attemptedLabel;
     $('results-counts').textContent = '符合 ' + selectedCount + ' / 共 ' + all.length + ' 条报价 · ' + branches + ' 个分行'
       + (warnings ? ' · ' + warnings + ' 条报价提示' : '') + (close ? ' · ' + close + ' 条票面接近估值' : '');
-    $('metadata-status').textContent = pending && access ? sourceLabel + ' · ' + pending + ' 条资料读取中'
-      : [sourceLabel, retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', incomplete ? incomplete + ' 条未完成' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
+    $('metadata-status').textContent = pending && access ? pending + ' 条资料读取中'
+      : [retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', incomplete ? incomplete + ' 条未完成' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
     $('filter-error').textContent = result.error; $('filter-error').hidden = !result.error;
     $('results-body').replaceChildren();
     for (const quote of result.rows) {
@@ -419,7 +412,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         const result = lookupResults[line.name];
         const row = document.createElement('div');
         row.textContent = !line.ready ? '请补充简称后的逗号和报价：' + line.name
-          : result?.status === 'missing' ? requestLabel(result.requestMode || requestMode()) + ' 未找到：' + line.name
+          : result?.status === 'missing' ? '未找到债券：' + line.name
           : result?.status === 'error' ? '返回信息不完整：' + line.name
           : result?.status === 'ambiguous' ? '请选择代码：' + line.name + ' ' : '待补码：' + line.name;
         if (result?.status === 'ambiguous') for (const match of result.matches) {
@@ -433,7 +426,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     });
     $('counts').textContent = populated + ' 个分行 · ' + total + ' 条报价';
     $('fill').disabled = !loaded || Boolean(loading) || busy || !pendingNames().length;
-    $('fill').textContent = busy ? requestLabel(requestMode()) + ' 查询中…' : '补齐代码';
+    $('fill').textContent = busy ? '正在查询…' : '补齐代码';
     renderResults();
   }
   function scheduleLookup() {
@@ -483,14 +476,11 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     busy = true; renderSummary();
     lookupPromise = (async () => {
       try {
-        const all = {}, providers = new Set();
+        const all = {};
         for (let start = 0; start < names.length; start += 20) {
           if (!active || !current()) return;
           const response = await api('lookup', { names: names.slice(start, start + 20) }, controller.signal);
           const results = response.results || {};
-          const matched = Object.values(results).filter(result => result.status === 'matched').flatMap(result => result.matches || []);
-          const provider = dataProviderLabel(matched, '') || (matched.length ? dataProviderLabel(response, '') : '');
-          if (provider) providers.add(provider);
           Object.assign(all, Object.fromEntries(Object.entries(results).map(([name, result]) => [name, { ...result, requestMode: selectedMode }])));
         }
         if (!active || !current() || root.querySelector('[data-composing]')) return;
@@ -501,7 +491,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         const count = applyCodes(all, snapshots);
         const unresolved = Object.values(all).filter(result => result.status !== 'matched').length;
         if (unresolved) notify('已补齐 ' + count + ' 条报价；还有 ' + unresolved + ' 个简称需要核对，详见分行下方提示。', true);
-        else if (count) notify('已通过 ' + (dataProviderLabel([...providers], '') || requestLabel(selectedMode)) + ' 补齐 ' + count + ' 条报价，价格与分行保持原样。');
+        else if (count) notify('已补齐 ' + count + ' 条报价，价格与分行保持原样。');
       } catch (error) {
         if (current()) { names.forEach(name => failedNames.add(name)); notify(error.status === 429 ? rateLimitMessage(error, selectedMode) : error.message, true); }
       } finally {
