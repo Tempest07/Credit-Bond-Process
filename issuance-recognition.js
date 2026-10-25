@@ -1,6 +1,6 @@
 // Shared by the API and browser: model output is untrusted until validated.
 import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
-  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261025release5351';
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261025release5351r2';
 
 export const ISSUANCE_FIELDS = {
   securityCode: "债券代码", durationText: "期限", issueScale: "发行规模（亿元）",
@@ -89,12 +89,22 @@ export function validateSemanticResult(request, result) {
     // Keep the identity inside the outcome evidence. Only a stated transfer
     // destination may mention another tranche; it is never the issuing subject.
     const ownSource = outcome === "reallocated" ? withoutTransferDestinations(source, target, request.tranches) : source;
-    const explicitTokens = [...String(ownSource).normalize('NFKC')
-      .matchAll(/(?<![A-Z0-9])(?:\d{6}|\d{9})\s*\.\s*(?:IB|SH|SZ)(?![A-Z0-9])/gi)]
-      .map(match => codeIdentity(match[0]));
-    const identities = [codeIdentity(target.securityCode), codeIdentity(code), ...sourceCodes(ownSource), ...explicitTokens].filter(Boolean);
-    const reference = identities.find(identity => identity.market) || identities[0];
-    if (identities.some(identity => identity.invalid || !sameCode(identity, reference))) {
+    const sourceContexts = evidenceContexts(request.text, source);
+    // Check the full named-owner scope as well as the quoted sentence. Codes on
+    // separate lines still belong to their named tranche, even when the model crops its source.
+    sourceContexts.push(request.text);
+    const identityConflict = context => contextCodeConflict(outcome === 'reallocated'
+      ? withoutTransferDestinations(context, target, request.tranches) : context, target, request.tranches, code);
+    const documentCodes = sourceCodes(request.text);
+    const targetCode = codeIdentity(target.securityCode);
+    const retainsDocumentIdentity = sourceCodes(ownSource).some(identity => !identity.invalid
+      && (!targetCode || sameCode(targetCode, identity))
+      && documentCodes.some(original => !original.invalid && original.body === identity.body && original.market === identity.market));
+    if (documentCodes.length && !retainsDocumentIdentity) {
+      needsModelRepair = true;
+      errors.push(`${prefix}品种原文摘录未保留可核验的完整证券代码，请补齐身份上下文后人工核对。`);
+    }
+    if (identityConflict(ownSource) || sourceContexts.some(identityConflict)) {
       needsModelRepair = true;
       errors.push(`${prefix}券码或交易市场与本品种原文／项目已有券码冲突，不能采用。`);
     }
@@ -108,6 +118,7 @@ export function validateSemanticResult(request, result) {
       if (cell?.raw == null || cell.raw === "") continue;
       if (typeof cell.raw !== "string" || typeof cell.evidence !== "string" || cell.raw.length > 100 || cell.evidence.length > 2000
         || !hasValueQuote(cell.evidence, cell.raw) || !hasQuote(request.text, cell.evidence)
+        || evidenceContexts(request.text, cell.evidence).some(identityConflict)
         || (!hasQuote(source, cell.evidence) && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(cell.evidence, target, request.tranches, request.text)))) {
         needsModelRepair = true;
         errors.push(`${prefix}${label}的摘录与原文不符，未采用（值“${String(cell?.raw || "").slice(0, 60)}”；依据“${String(cell?.evidence || "").slice(0, 120)}”）。`); continue;
@@ -210,10 +221,32 @@ function evidenceContexts(text, quote) {
   return contexts;
 }
 
+function contextCodeConflict(context, target, tranches, extractedCode = '') {
+  const scope = nameKey(String(context).replace(/[\r\n]+/g, ';'));
+  const owners = tranches.flatMap(tranche => {
+    const names = [...scope.matchAll(new RegExp(`${escapePattern(nameKey(tranche.shortName))}(?![A-Z0-9])`, 'g'))];
+    const alias = trancheAlias(tranche, tranches);
+    if (alias) names.push(...scope.matchAll(new RegExp(`(?<![A-Z0-9])${alias}(?![A-Z0-9])`, 'g')));
+    return names.map(match => ({ index: match.index, id: tranche.id }));
+  }).sort((a, b) => a.index - b.index);
+  const scopedCodes = sourceCodes(context).filter(identity => {
+    if (identity.invalid) return true;
+    const occurrences = [...scope.matchAll(new RegExp(`(?<![A-Z0-9])${escapePattern(identity.text)}(?![A-Z0-9])`, 'g'))];
+    return occurrences.some(match => {
+      const owner = owners.filter(item => item.index < match.index).at(-1) || owners[0];
+      return !owner || owner.id === target.id;
+    });
+  });
+  const identities = [codeIdentity(target.securityCode), codeIdentity(extractedCode), ...scopedCodes].filter(Boolean);
+  const reference = identities.find(identity => identity.market) || identities[0];
+  return identities.some(identity => identity.invalid || !sameCode(identity, reference));
+}
+
 function isSharedFor(quote, target, tranches, notice = quote) {
   const contexts = evidenceContexts(notice, quote);
   if (!contexts.length) return false;
   return contexts.every(context => {
+    if (contextCodeConflict(context, target, tranches)) return false;
     if (otherBondNames(context, tranches)) return false;
     const common = /均|共同|统一|同为|都是|各|两个品种|全部品种/.test(context) && !/分别|依次/.test(context);
     const names = tranches.filter(t => referencesTranche(context, t, tranches));

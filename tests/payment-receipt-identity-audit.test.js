@@ -32,3 +32,58 @@ test("real OCR normalization and receipt parsing cannot turn a bank-account subs
     assert.ok(result.candidates.every(candidate => !candidate.signals.securityCode));
   }
 });
+
+test("PDF text fallback rejects an unlabelled full security or market conflict even without structured code fields", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([100, 100]);
+  const pdfBytes = await document.save();
+  const projects = [{ id: "p", shortName: "26测试01", tranches: [{ id: "t", shortName: "26测试01",
+    securityCode: "246129.SH", paymentDate: "2026-10-26", winningAmountWan: 1000 }] }];
+  for (const code of ["246130.SH", "246129.SZ"]) {
+    for (const identity of [`（${code}）`, ` ${code} `, `（${code.replace(".", " . ")}）`,
+      `（${code.replace(/[0-9A-Z.]/g, character => String.fromCharCode(character.charCodeAt(0) + 0xfee0))}）`]) {
+      const text = `配售缴款通知书\n债券简称26测试01${identity}\n缴款日期2026-10-26\n缴款金额1000万元`;
+      const analysis = await analyzePaymentReceiptPage({ AI: {
+        async toMarkdown() { return { format: "text", data: text }; },
+      } }, pdfBytes, 1);
+      assert.equal(analysis.analysisSource, "pdf-text-fallback");
+      assert.equal(analysis.classification, "receipt_start");
+      assert.deepEqual(analysis.fields, {}, "this path has no structured AI security field to enforce the conflict");
+      const recognized = recognizePaymentReceiptText(analysis.recognizedText, analysis.fields);
+      assert.equal(recognized.amountFen, 1_000_000_000);
+      const result = selectPaymentReceiptMatch(recognized, projects);
+      assert.equal(result.status, "review", identity);
+      assert.equal(result.projectId, "", identity);
+      assert.equal(result.trancheId, "", identity);
+      assert.equal(result.candidates[0].securityCodeConflict, true, identity);
+    }
+  }
+});
+
+test("unlabelled complete codes can confirm the same security while account tails with a market suffix are never exact-code evidence", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([100, 100]);
+  const pdfBytes = await document.save();
+  for (const [projectCode, sourceCode] of [["246129.SH", "246129.SH"], ["012682531.IB", "012682531 . IB"]]) {
+    const text = `配售缴款通知书\n债券简称26测试01（${sourceCode}）\n缴款日期2026-10-26\n缴款金额1000万元`;
+    const analysis = await analyzePaymentReceiptPage({ AI: {
+      async toMarkdown() { return { format: "text", data: text }; },
+    } }, pdfBytes, 1);
+    const result = selectPaymentReceiptMatch(recognizePaymentReceiptText(analysis.recognizedText, analysis.fields), [
+      { id: "p", tranches: [{ id: "t", shortName: "26测试01", securityCode: projectCode,
+        paymentDate: "2026-10-26", winningAmountWan: 1000 }] },
+    ]);
+    assert.equal(result.status, "matched", sourceCode);
+    assert.equal(result.projectId, "p");
+    assert.equal(result.candidates[0].signals.securityCode, true);
+    assert.equal(result.candidates[0].securityCodeConflict, false);
+  }
+  for (const account of ["6222246129.SH", "6222012682531.IB", "F246129.SH"]) {
+    const result = selectPaymentReceiptMatch({ recognizedText: `银行账号${account}\n缴款金额2000万元`, paymentDate: "2026-10-25" }, [
+      { id: "p", tranches: [{ id: "t", shortName: "26测试01", securityCode: "246129.SH",
+        paymentDate: "2026-10-26", winningAmountWan: 1000 }] },
+    ]);
+    assert.notEqual(result.status, "matched", account);
+    assert.ok(result.candidates.every(candidate => !candidate.signals.securityCode), account);
+  }
+});

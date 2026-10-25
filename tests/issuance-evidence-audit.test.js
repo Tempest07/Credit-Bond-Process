@@ -74,6 +74,65 @@ test('F05 bare and full matching codes remain compatible and a transfer destinat
   assert.equal(parsed.canApply, true, parsed.errors.join('；'));
 });
 
+test('F05 cropped model source and shared fields cannot hide original code or market conflicts', () => {
+  const shortName = '26测试01';
+  for (const securityCode of ['246129.SZ', '246130.SH']) {
+    for (const identifier of [`证券代码${securityCode}`, `（${securityCode}）`]) {
+      for (const text of [`${shortName}，${identifier}，票面2.30%`, `${identifier}，${shortName}，票面2.30%`,
+        `${identifier}\n${shortName}，票面2.30%`, `${shortName}，票面2.30%\n${identifier}`]) {
+        const request = { text, noticeDate: '2026-10-25', tranches: [{ id: 'a', shortName, securityCode: '246129.SH' }] };
+        for (const sourceText of [shortName, text.endsWith(`${shortName}，票面2.30%`) ? `${shortName}，票面2.30%` : shortName]) {
+          const model = { sharedEvidence: ['票面2.30%'], items: [issued(shortName, sourceText, '2.30%')] };
+          const parsed = validateSemanticResult(request, model);
+          assert.equal(parsed.canApply, false, text);
+          assert.match(parsed.errors.join('；'), /券码|交易市场/);
+          const before = normalizeProjectRecord({ id: 'p', shortName, tranches: [{ id: 'a', shortName,
+            securityCode: '246129.SH', winningRate: 1.7, winningAmountWan: 1000 }] });
+          const project = structuredClone(before);
+          assert.throws(() => applySemanticIssuanceResult(project, parsed, text));
+          assert.deepEqual(project, before);
+        }
+      }
+    }
+  }
+});
+
+test('F05 explicit common fields retain each named tranche identity instead of comparing all sibling codes to one target', () => {
+  const pricing = `${A}（246129.SH）、${B}（246130.SH）票面均为1.70%`;
+  const request = { text: pricing, noticeDate: '2026-10-25', tranches: [
+    { ...tranches[0], securityCode: '246129.SH' }, { ...tranches[1], securityCode: '246130.SH' },
+  ] };
+  const result = validateSemanticResult(request, { sharedEvidence: [pricing], items: [
+    issued(A, `${A}（246129.SH）`, '1.70%', '票面均为1.70%'), issued(B, `${B}（246130.SH）`, '1.70%', '票面均为1.70%'),
+  ] });
+  assert.equal(result.canApply, true, result.errors.join('；'));
+  assert.deepEqual(result.items.map(item => item.couponRate), [1.7, 1.7]);
+});
+
+test('F05 multiple named-owner scopes retain codes on separate lines and cannot swap known identities', () => {
+  const targets = [{ id: 'a', shortName: '26测试01A', securityCode: '246129.SH' },
+    { id: 'b', shortName: '26测试01B', securityCode: '246130.SH' }];
+  const shared = '两个品种票面均2.30%';
+  for (const [aCode, bCode] of [['246129.SZ', '246130.SH'], ['246130.SH', '246129.SH']]) {
+    const text = `26测试01A\n证券代码${aCode}\n26测试01B\n证券代码${bCode}\n${shared}`;
+    for (const source of ['26测试01A', `26测试01A\n证券代码${aCode}`]) {
+      const parsed = validateSemanticResult({ text, tranches: targets, noticeDate: '2026-10-25' }, {
+        sharedEvidence: [shared], items: [issued('26测试01A', source, '2.30%', '票面均2.30%')],
+      });
+      assert.equal(parsed.canApply, false, `${aCode}/${bCode}/${source}`);
+      const project = normalizeProjectRecord({ id: 'p', shortName: '26测试01A/B', tranches: targets.map(t => ({ ...t, winningRate: 1.7 })) });
+      const before = structuredClone(project);
+      assert.throws(() => applySemanticIssuanceResult(project, parsed, text));
+      assert.deepEqual(project, before);
+    }
+  }
+  const text = `26测试01A\n证券代码246129.SH\n26测试01B\n证券代码246130.SH\n${shared}`;
+  const parsed = validateSemanticResult({ text, tranches: targets, noticeDate: '2026-10-25' }, {
+    sharedEvidence: [shared], items: [issued('26测试01A', '26测试01A\n证券代码246129.SH', '2.30%', '票面均2.30%')],
+  });
+  assert.equal(parsed.canApply, true, parsed.errors.join('；'));
+});
+
 test('F05 a different tranche cancellation remains visible inside the outcome evidence', () => {
   for (const outcome of ['cancelled', 'reallocated']) {
     const fact = outcome === 'cancelled' ? `${B}取消发行` : `${B}全部回拨至A`;

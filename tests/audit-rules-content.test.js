@@ -5,6 +5,7 @@ import vm from "node:vm";
 import { calculateSuggestion, generateOpinion } from "../core.js";
 
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
 const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
 const absProject = () => ({ instrumentType: "ABS", shortName: "测试优先A1", warnings: [],
   absInfo: { creditApprovalId: "approval", approvalRatio: 20, approvalAmount: 2,
@@ -57,4 +58,8 @@ test("published overdue rule branches agree with actual ordinary-credit calculat
   assert.ok(cards.some(card => /AA\(2\)及以下/.test(card) && /公募上限10%，私募不可投资/.test(card)));
   assert.match(html, /向下取整到1000万元（0.1亿元）/);
   assert.match(html, /等于阈值时归下一级/);
+  assert.match(readme, /AA\+公募最高20%、私募最高10%/);
+  assert.match(readme, /AA公募最高15%、私募不可投资（0%）/);
+  assert.match(readme, /AA\(2\)及以下公募最高10%、私募不可投资（0%）/);
+  assert.doesNotMatch(readme, /一级投标利率固定留作待填写|Word 导入解析器将在/);
 });

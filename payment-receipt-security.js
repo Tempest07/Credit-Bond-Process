@@ -11,9 +11,12 @@ export function samePaymentReceiptCode(left, right) {
     && (!left.market || !right.market || left.market === right.market));
 }
 
-/** Only explicitly labelled securities are identity evidence, never account-number substrings. */
+/** Labelled codes and complete market-qualified tokens are identity evidence. */
 export function paymentReceiptSourceCodes(text = '') {
   const raw = String(text || '').normalize('NFKC');
-  return [...raw.matchAll(/(?:债\s*券\s*(?:代\s*码|编\s*码)|证\s*券\s*代\s*码)\s*[:：]?\s*([A-Z]?\d{6,18}(?:\s*\.\s*[A-Z]{2})?)/gi)]
+  const labelled = [...raw.matchAll(/(?:债\s*券\s*(?:代\s*码|编\s*码)|证\s*券\s*代\s*码)\s*[:：]?\s*([A-Z]?\d{6,18}(?:\s*\.\s*[A-Z]{2})?)/gi)]
     .map(match => paymentReceiptCodeIdentity(match[1]));
+  const qualified = [...raw.matchAll(/(?<![A-Z0-9])(?:\d{6}|\d{9})\s*\.\s*(?:IB|SH|SZ)(?![A-Z0-9])/gi)]
+    .map(match => paymentReceiptCodeIdentity(match[0]));
+  return [...labelled, ...qualified];
 }
