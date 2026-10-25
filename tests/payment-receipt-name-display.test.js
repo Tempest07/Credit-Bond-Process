@@ -115,6 +115,17 @@ test("uses exact labelled transcription and cleans only field wrappers", () => {
   assert.equal(resolve({ bondShortName: "" }).source, "unavailable");
 });
 
+test("display recovers a labelled code-first name while keeping an explicit code conflict visible", () => {
+  const text = '债券代码246129.SH\n债券简称26测试01\n缴款金额1000万元';
+  const resolve = createPaymentReceiptNameResolver([]);
+  const source = { securityCode: '246129.SH', recognizedText: text, bondShortName: '' };
+  assert.equal(resolve(source).title, '26测试01');
+  assert.equal(resolve(source).warning, '');
+  assert.equal(source.bondShortName, '', 'display never writes back to the historical OCR fields');
+  const conflict = resolve({ ...source, securityCode: '246130.SH' });
+  assert.match(conflict.warning, /原文证券代码不一致/);
+});
+
 test("missing targets do not borrow a code match behind an obsolete correspondence", () => {
   const { resolve } = fixture("26测试01", "246129.SH");
   const result = resolve({ matchStatus: "matched", projectId: "deleted", trancheId: "tranche", bondShortName: "26 测试 01", securityCode: "246129.SH" });

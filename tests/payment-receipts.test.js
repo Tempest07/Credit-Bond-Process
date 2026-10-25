@@ -363,6 +363,23 @@ test("a valid payment-project fallback remains usable but legal full titles are 
   assert.equal(recognizePaymentReceiptText("债券简称 某某有限公司2026年度第一期中期票据").bondShortName, "");
 });
 
+test("receipt recognition preserves the same name, code and amount for either field order", () => {
+  for (const fields of [
+    ['债券代码246129.SH', '债券简称26测试01'],
+    ['债券简称26测试01', '债券代码246129.SH'],
+  ]) {
+    const text = fields.join('\n') + '\n缴款日期2026-10-26\n缴款金额1000万元';
+    for (const fallback of [{}, { bondShortName: '26测试01', securityCode: '246129.SH' }]) {
+      const result = recognizePaymentReceiptText(text, fallback);
+      assert.equal(result.bondShortName, '26测试01');
+      assert.equal(result.securityCode, '246129.SH');
+      assert.equal(result.paymentDate, '2026-10-26');
+      assert.equal(result.amountFen, 1_000_000_000);
+    }
+    assert.equal(recognizePaymentReceiptText(text, { bondShortName: '26测试01', securityCode: '246130.SH' }).bondShortName, '');
+  }
+});
+
 test("groups a mixed PDF into project receipts while retaining blank-page provenance", () => {
   const grouped = groupPaymentReceiptPages([
     { pageNumber: 1, text: "26项目A 配售缴款通知书 债券简称 26项目A01", inkRatio: 0.15 },

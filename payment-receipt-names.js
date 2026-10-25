@@ -1,6 +1,7 @@
 const SHORT_NAME_LABEL = /(?:债\s*券|证\s*券)\s*(?:简\s*称|短\s*名)\s*[:：]?\s*/g;
 const NEXT_FIELD = /(?:债券(?:代码|编码|全称|名称|期限)|证券(?:代码|名称)|票面利率|发行(?:价格|规模|期限)|获配(?:面值|金额)|配售(?:金额|确认|缴款)|应缴款(?:项)?总额|缴款(?:日期|截止|金额)|付款(?:人|单位|金额)|投资者(?:名称)?|收款(?:人|单位|账号)|开户行|银行账号|标题)\s*[:：]?/;
 const CODE_LABEL = /(?:债券(?:代码|编码)|证券代码)\s*[:：]?\s*([A-Z]?\d{6,18}(?:\.[A-Z]{2})?)/i;
+const DOCUMENT_BOUNDARY = /\f|标题[ \t]*[:：]|(?:^|[\s；;])标题[ \t]*|缴款通知(?:书)?/;
 const FULL_NAME_OR_BODY = /(?:有限公司|股份公司|有限责任|面向专业|公开发行|年度第|配售|缴款通知|确认书|资金(?:营运|运营)中心|付款人|投资者|收款人|人民币|发行规模|获配金额)/;
 
 // Only formatting is corrected here. Missing issuer characters, year, tranche
@@ -56,29 +57,46 @@ function bestExplicitName(names, fallback) {
 export function extractPaymentReceiptBondShortName(rawText = "", { fallback = "", securityCode = "" } = {}) {
   const text = String(rawText || "").normalize("NFKC").replace(/\r\n?/g, "\n");
   const fallbackName = normalizePaymentReceiptBondShortName(fallback);
-  const labels = [...text.matchAll(SHORT_NAME_LABEL)];
   const candidates = [];
-  for (let index = 0; index < labels.length; index++) {
-    const label = labels[index];
-    const start = label.index + label[0].length;
-    const end = labels[index + 1]?.index ?? text.length;
-    const block = text.slice(start, end);
-    const boundary = block.search(NEXT_FIELD);
-    const rawName = block.slice(0, boundary >= 0 ? boundary : Math.min(block.length, 160)).trim();
-    const name = normalizePaymentReceiptBondShortName(rawName)
-      || normalizePaymentReceiptBondShortName(rawName.split("\n").find(line => line.trim()) || "");
-    if (!name) continue;
-    // The closest code following a label belongs to that field block. Never
-    // attach a later continuation/new-document code to the first short name.
-    const nextTitle = block.search(/\n\s*标题\s*[:：]?/);
-    const identityBlock = nextTitle >= 0 ? block.slice(0, nextTitle) : block;
-    const code = identityBlock.match(CODE_LABEL)?.[1] || "";
-    candidates.push({ name, code });
+  for (const documentText of text.split(DOCUMENT_BOUNDARY)) {
+    const labels = [...documentText.matchAll(SHORT_NAME_LABEL)];
+    const codes = [...documentText.matchAll(new RegExp(CODE_LABEL.source, 'gi'))];
+    const local = [];
+    for (let index = 0; index < labels.length; index++) {
+      const label = labels[index];
+      const start = label.index + label[0].length;
+      const end = labels[index + 1]?.index ?? documentText.length;
+      const block = documentText.slice(start, end);
+      const boundary = block.search(NEXT_FIELD);
+      const rawName = block.slice(0, boundary >= 0 ? boundary : Math.min(block.length, 160)).trim();
+      const name = normalizePaymentReceiptBondShortName(rawName)
+        || normalizePaymentReceiptBondShortName(rawName.split("\n").find(line => line.trim()) || "");
+      if (!name) continue;
+      const following = [...block.matchAll(new RegExp(CODE_LABEL.source, 'gi'))].map(match => match[1]);
+      const code = following.find(value => value.includes('.')) || following[0] || "";
+      local.push({ name, code, conflict: following.some(value => !sameSecurityCode(value, code)) });
+    }
+    // Reversed fields are safe only within an explicitly bounded, single identity.
+    // Never borrow a code across document titles or guess pairs in unbounded multi-bond text.
+    if (local.length && codes.length) {
+      if (local.length === labels.length && new Set(local.map(candidate => candidate.name)).size === 1) {
+        const code = codes.find(match => match[1].includes('.'))?.[1] || codes[0][1];
+        const conflict = codes.some(match => !sameSecurityCode(match[1], code));
+        for (const candidate of local) { candidate.code = code; candidate.conflict ||= conflict; }
+      } else if (codes[0].index < labels[0].index) {
+        local.forEach(candidate => { candidate.conflict = true; });
+      }
+    }
+    candidates.push(...local);
   }
   if (!candidates.length) return fallbackName;
   if (securityCode) {
-    const matching = candidates.filter(candidate => sameSecurityCode(candidate.code, securityCode));
-    if (matching.length) return bestExplicitName(matching.map(candidate => candidate.name), fallbackName);
+    const matching = candidates.filter(candidate => !candidate.conflict && sameSecurityCode(candidate.code, securityCode));
+    if (matching.length) {
+      const code = matching.find(candidate => candidate.code.includes('.'))?.code || matching[0].code;
+      if (matching.some(candidate => !sameSecurityCode(candidate.code, code))) return "";
+      return bestExplicitName(matching.map(candidate => candidate.name), fallbackName);
+    }
     if (candidates.some(candidate => candidate.code) || CODE_LABEL.test(text)) return "";
   }
   return bestExplicitName(candidates.map(candidate => candidate.name), fallbackName);

@@ -59,3 +59,47 @@ test("a clear labelled suffix may enrich its own base, while a title remains onl
   assert.equal(extract("债券简称 某某股份有限公司2026年度第三期中期票据"), "");
   assert.equal(extract("某某股份有限公司2026年度第三期中期票据", { fallback: "26测试MTN003" }), "26测试MTN003");
 });
+
+test("a single explicit identity has the same name with code before or after the name", () => {
+  for (const separator of ['\n', ' ']) {
+    for (const fields of [
+      ['债券代码246129.SH', '债券简称26测试01'],
+      ['债券简称26测试01', '债券代码246129.SH'],
+    ]) {
+      const text = fields.join(separator) + '\n缴款金额1000万元';
+      assert.equal(extract(text, { securityCode: '246129.SH' }), '26测试01');
+      assert.equal(extract(text, { securityCode: '246129', fallback: '26测试01' }), '26测试01');
+      assert.equal(extract(text, { securityCode: '246130.SH', fallback: '26测试01' }), '');
+      assert.equal(extract(text, { securityCode: '246129.SZ', fallback: '26测试01' }), '');
+    }
+  }
+  assert.equal(extract('证券代码０１２６８２５３１\n证券简称２６ 测试 ＳＣＰ００１Ｂ（绿 色）', {
+    securityCode: '012682531.IB', fallback: '26测试SCP001',
+  }), '26测试SCP001B(绿色)');
+});
+
+test("reversed fields stay within one document and refuse unbounded multi-bond ambiguity", () => {
+  const first = '债券代码246129.SH\n债券简称26测试01';
+  const second = '债券代码246130.SH\n债券简称26测试02';
+  for (const separator of ['\n标题 第二份缴款通知\n', '\n第二份配售缴款通知书\n', '\f',
+    ' 标题 另一项目通知 ', ' 标题：另一项目通知 ', '标题:另一项目通知 ']) {
+    const text = first + separator + second;
+    assert.equal(extract(text, { securityCode: '246129.SH' }), '26测试01');
+    assert.equal(extract(text, { securityCode: '246130.SH' }), '26测试02');
+    assert.equal(extract('债券简称26测试01' + separator + '债券代码246129.SH', { securityCode: '246129.SH' }), '');
+    assert.equal(extract('债券代码246129.SH' + separator + '债券简称26测试01', { securityCode: '246129.SH' }), '');
+  }
+  const unlabelledTitle = ' 第二份配售缴款通知书 ';
+  assert.equal(extract('债券简称26测试01' + unlabelledTitle + '债券代码246129.SH', { securityCode: '246129.SH' }), '');
+  assert.equal(extract('债券代码246129.SH' + unlabelledTitle + '债券简称26测试01', { securityCode: '246129.SH' }), '');
+  assert.equal(extract(first + '\n' + second, { securityCode: '246130.SH', fallback: '26测试01' }), '');
+  assert.equal(extract('债券简称26测试01\n债券简称某某有限公司2026年度第一期公司债券\n债券代码246130.SH', {
+    securityCode: '246130.SH', fallback: '26测试01',
+  }), '', 'an unreadable second name still denotes another identity; its code cannot repair the first name');
+  for (const codes of ['债券代码246129.SH\n证券代码246129.SZ', '债券代码246129\n证券代码246129.SH\n证券代码246129.SZ']) {
+    assert.equal(extract(codes + '\n债券简称26测试01', { securityCode: '246129', fallback: '26测试01' }), '');
+  }
+  assert.equal(extract('标题 第一单\n债券代码246129.SH\n债券简称26测试01\n标题 第二单\n债券代码246129.SZ\n债券简称26测试02', {
+    securityCode: '246129', fallback: '26测试01',
+  }), '', 'a bare requested code cannot choose between two explicit markets');
+});

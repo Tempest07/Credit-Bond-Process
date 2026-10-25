@@ -485,6 +485,27 @@ test("keeps meaningful embedded-text pages as continuations only after a trusted
   assert.equal(orphan.classification, "uncertain");
 });
 
+test("PDF text fallback recognizes a complete code-first receipt without structured AI fields", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([100, 100]);
+  const bytes = await document.save();
+  for (const fields of [
+    ['债券代码246129.SH', '债券简称26测试01'],
+    ['债券简称26测试01', '债券代码246129.SH'],
+  ]) {
+    const text = '配售缴款通知书\n' + fields.join('\n') + '\n缴款日期2026-10-26\n缴款金额1000万元';
+    const analysis = await analyzePaymentReceiptPage({ AI: {
+      async toMarkdown() { return { format: 'text', data: text }; },
+    } }, bytes, 1);
+    assert.equal(analysis.analysisSource, 'pdf-text-fallback');
+    assert.equal(analysis.classification, 'receipt_start');
+    const recognized = recognizePaymentReceiptText(analysis.recognizedText, analysis.fields);
+    assert.equal(recognized.bondShortName, '26测试01');
+    assert.equal(recognized.securityCode, '246129.SH');
+    assert.equal(recognized.amountFen, 1_000_000_000);
+  }
+});
+
 test("decodes RFC 2047 payment-receipt subjects while preserving ordinary text", () => {
   assert.equal(decodePaymentReceiptSubject("=?UTF-8?B?5rWL6K+V?="), "测试");
   assert.equal(decodePaymentReceiptSubject("=?UTF-8?Q?=E7=BC=B4=E6=AC=BE=E5=8D=95?="), "缴款单");
