@@ -1,4 +1,5 @@
 import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
+import { paymentReceiptCodeIdentity, samePaymentReceiptCode, paymentReceiptSourceCodes } from './payment-receipt-security.js';
 
 const DATE_PATTERN = /(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?/;
 const PREPAYMENT_PATTERN = /\bW20\d{11}\b/i;
@@ -283,14 +284,14 @@ export function classifyPaymentReceiptPage(input = {}) {
 
 export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
   const receipt = normalizeReceipt(receiptInput);
-  const allCandidates = flattenPaymentProjects(projects);
+  const allCandidates = flattenPaymentProjects(projects).map(candidate => scoreCandidate(receipt, candidate));
   const datedCandidates = receipt.paymentDate
     ? allCandidates.filter((item) => item.paymentDate === receipt.paymentDate)
     : allCandidates;
-  const identifierCandidates = allCandidates.filter((candidate) => candidateHasExactIdentifier(receipt, candidate));
+  const identifierCandidates = allCandidates.filter(candidate => !candidate.securityCodeConflict
+    && (candidate.signals.prepaymentNumber || candidate.signals.securityCode));
   const candidatePool = identifierCandidates.length ? identifierCandidates : datedCandidates;
   const candidates = candidatePool
-    .map((candidate) => scoreCandidate(receipt, candidate))
     .filter((candidate) => candidate.score > 0)
     .sort(compareCandidates);
 
@@ -306,7 +307,7 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
   }
 
   const best = candidates[0];
-  const second = candidates[1];
+  const second = candidates.slice(1).find(candidate => !candidate.securityCodeConflict);
   const uniqueBest = !second || best.score - second.score >= 20;
   const exactIdentifier = best.signals.prepaymentNumber || best.signals.securityCode;
   const exactBusinessMatch = best.signals.shortName
@@ -317,7 +318,7 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
     || best.signals.amount
     || best.signals.issuerName
     || exactIdentifier;
-  const canAutoMatch = uniqueBest && (exactIdentifier || (exactBusinessMatch && abbreviationCorroborated));
+  const canAutoMatch = !best.securityCodeConflict && uniqueBest && (exactIdentifier || (exactBusinessMatch && abbreviationCorroborated));
 
   return {
     status: canAutoMatch ? "matched" : "review",
@@ -326,21 +327,10 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
     score: best.score,
     reason: canAutoMatch
       ? describeMatch(best)
-      : `存在${Math.min(candidates.length, 5)}个候选项目，需要人工确认`,
+      : best.securityCodeConflict ? '证券代码或交易市场存在冲突，需要人工核对'
+        : `存在${Math.min(candidates.length, 5)}个候选项目，需要人工确认`,
     candidates: candidates.slice(0, 5).map(publicCandidate),
   };
-}
-
-function candidateHasExactIdentifier(receipt, candidate) {
-  return Boolean(
-    candidate.prepaymentNumber
-      && (candidate.prepaymentNumber === receipt.prepaymentNumber
-        || receipt.searchText.includes(normalizeMatchText(candidate.prepaymentNumber))),
-  ) || Boolean(
-    candidate.securityCode
-      && (candidate.securityCode === receipt.securityCode
-        || receipt.searchText.includes(normalizeMatchText(candidate.securityCode))),
-  );
 }
 
 export function flattenPaymentProjects(projects = []) {
@@ -479,6 +469,7 @@ function normalizeReceipt(input = {}) {
   const recognized = recognizePaymentReceiptText(input.recognizedText, input);
   return {
     ...recognized,
+    securityCodes: [paymentReceiptCodeIdentity(recognized.securityCode), ...paymentReceiptSourceCodes(recognized.recognizedText)].filter(Boolean),
     searchText: normalizeMatchText([
       recognized.recognizedText,
       recognized.bondShortName,
@@ -497,6 +488,10 @@ function positiveFiniteNumber(value) {
 }
 
 function scoreCandidate(receipt, candidate) {
+  const code = paymentReceiptCodeIdentity(candidate.securityCode);
+  const codes = [...receipt.securityCodes, code].filter(Boolean);
+  const reference = codes.find(value => value.market) || codes[0];
+  const securityCodeConflict = codes.some(value => value.invalid || !samePaymentReceiptCode(value, reference));
   const exactShortName = textContainsBusinessName(receipt.searchText, candidate.shortName)
     || textContainsBusinessName(receipt.searchText, candidate.projectShortName);
   const abbreviatedShortName = !exactShortName && (
@@ -507,8 +502,7 @@ function scoreCandidate(receipt, candidate) {
     date: Boolean(receipt.paymentDate && receipt.paymentDate === candidate.paymentDate),
     prepaymentNumber: Boolean(candidate.prepaymentNumber
       && (candidate.prepaymentNumber === receipt.prepaymentNumber || receipt.searchText.includes(normalizeMatchText(candidate.prepaymentNumber)))),
-    securityCode: Boolean(candidate.securityCode
-      && (candidate.securityCode === receipt.securityCode || receipt.searchText.includes(normalizeMatchText(candidate.securityCode)))),
+    securityCode: !securityCodeConflict && receipt.securityCodes.some(value => samePaymentReceiptCode(value, code)),
     shortName: exactShortName || abbreviatedShortName,
     abbreviatedShortName,
     issuerName: textContainsBusinessName(receipt.searchText, candidate.issuerName),
@@ -520,7 +514,7 @@ function scoreCandidate(receipt, candidate) {
     + (signals.shortName ? 65 : 0)
     + (signals.amount ? 45 : 0)
     + (signals.issuerName ? 15 : 0);
-  return { ...candidate, score, signals };
+  return { ...candidate, score, signals, securityCodeConflict };
 }
 
 function amountsMatch(amountFen, winningAmountWan) {
@@ -530,6 +524,7 @@ function amountsMatch(amountFen, winningAmountWan) {
 }
 
 function compareCandidates(left, right) {
+  if (left.securityCodeConflict !== right.securityCodeConflict) return Number(left.securityCodeConflict) - Number(right.securityCodeConflict);
   if (right.score !== left.score) return right.score - left.score;
   if (left.paymentCompleted !== right.paymentCompleted) return Number(left.paymentCompleted) - Number(right.paymentCompleted);
   return `${left.projectId}:${left.trancheId}`.localeCompare(`${right.projectId}:${right.trancheId}`);
@@ -545,6 +540,7 @@ function publicCandidate(candidate) {
     paymentCompleted: candidate.paymentCompleted,
     score: candidate.score,
     signals: candidate.signals,
+    securityCodeConflict: candidate.securityCodeConflict,
   };
 }
 

@@ -658,3 +658,75 @@ test("lets an exact security code recover from an incorrectly recognized payment
   assert.equal(result.projectId, "project-identifier");
   assert.equal(result.trancheId, "tranche-identifier");
 });
+
+test('a different security or market vetoes automatic correspondence despite all other matching signals', () => {
+  const projects = [{ id: 'p', shortName: '26测试01', tranches: [{ id: 't', shortName: '26测试01',
+    securityCode: '246129.SH', paymentDate: '2026-10-26', winningAmountWan: 1000, prepaymentNumber: 'W2026102600001' }] }];
+  for (const securityCode of ['246130.SH', '246129.SZ']) {
+    const receipt = { bondShortName: '26测试01', securityCode, paymentDate: '2026-10-26', amountFen: 1_000_000_000,
+      prepaymentNumber: 'W2026102600001' };
+    const before = JSON.stringify([receipt, projects]);
+    const result = selectPaymentReceiptMatch(receipt, projects);
+    assert.equal(result.status, 'review'); assert.equal(result.projectId, ''); assert.equal(result.trancheId, '');
+    assert.match(result.reason, /代码|市场/);
+    assert.equal(result.candidates[0].securityCodeConflict, true);
+    assert.equal(result.candidates[0].signals.prepaymentNumber, true, 'even the prepayment number cannot override a conflicting code');
+    assert.equal(JSON.stringify([receipt, projects]), before);
+  }
+});
+
+test('structured and labelled source securities must agree before automatic matching', () => {
+  const makeProject = securityCode => [{ id: 'p', shortName: '26测试01', tranches: [{ id: 't', shortName: '26测试01',
+    securityCode, paymentDate: '2026-10-26', winningAmountWan: 1000 }] }];
+  for (const targetCode of ['246129.SH', '246130.SH', '246129.SZ']) {
+    const result = selectPaymentReceiptMatch({ bondShortName: '26测试01', securityCode: '246129.SH',
+      paymentDate: '2026-10-26', amountFen: 1_000_000_000, recognizedText: '证券代码246130.SH' }, makeProject(targetCode));
+    assert.equal(result.status, 'review', targetCode);
+    assert.equal(result.projectId, '');
+  }
+  const rawOnly = selectPaymentReceiptMatch({ bondShortName: '26测试01', recognizedText: '证券代码246130.SH',
+    paymentDate: '2026-10-26', amountFen: 1_000_000_000 }, makeProject('246129.SH'));
+  assert.equal(rawOnly.status, 'review');
+  const mixedMarkets = selectPaymentReceiptMatch({ bondShortName: '26测试01', securityCode: '246129',
+    recognizedText: '债券代码246129.SH\n证券代码246129.SZ', paymentDate: '2026-10-26', amountFen: 1_000_000_000 }, makeProject('246129'));
+  assert.equal(mixedMarkets.status, 'review');
+  for (const code of ['246129 . SH', '246129. SH', '246129 .SH', '２４６１２９ ． ＳＨ']) {
+    const receipt = { bondShortName: '26测试01', paymentDate: '2026-10-26', amountFen: 1_000_000_000,
+      recognizedText: `债券简称26测试01\n债券代码${code}\n缴款金额1000万元` };
+    assert.equal(selectPaymentReceiptMatch(receipt, makeProject('246129.SZ')).status, 'review', code);
+    assert.equal(selectPaymentReceiptMatch(receipt, makeProject('246129.SH')).status, 'matched', code);
+  }
+});
+
+test('missing suffixes stay compatible while exact code signals never come from account substrings', () => {
+  const project = securityCode => [{ id: 'p', tranches: [{ id: 't', shortName: '26测试SCP001', securityCode,
+    paymentDate: '2026-10-26', winningAmountWan: 1000 }] }];
+  for (const [receiptCode, targetCode] of [['012682531', '012682531.IB'], ['246129.SH', '246129'], ['２４６１２９．ＳＨ', '246129.SH']]) {
+    const result = selectPaymentReceiptMatch({ securityCode: receiptCode, paymentDate: '2026-10-25' }, project(targetCode));
+    assert.equal(result.status, 'matched'); assert.equal(result.candidates[0].signals.securityCode, true);
+  }
+  for (const [receiptCode, targetCode] of [['012682531', '12682531'], ['123456789', '123456']]) {
+    assert.notEqual(selectPaymentReceiptMatch({ securityCode: receiptCode, bondShortName: '26测试SCP001',
+      paymentDate: '2026-10-26', amountFen: 1_000_000_000 }, project(targetCode)).status, 'matched');
+  }
+  const account = selectPaymentReceiptMatch({ recognizedText: '银行账号6222123456789012', paymentDate: '2026-10-25' }, project('123456'));
+  assert.notEqual(account.status, 'matched');
+  assert.equal(selectPaymentReceiptMatch({ bondShortName: '26测试SCP001', paymentDate: '2026-10-26',
+    amountFen: 1_000_000_000 }, project('')).status, 'matched', 'absence of codes is not an explicit conflict');
+});
+
+test('multi-tranche projects compare each security independently and code conflicts cannot win by a larger score', () => {
+  const projects = [{ id: 'p', shortName: '26测试01/02', tranches: [
+    { id: 'a', shortName: '26测试01', securityCode: '246129.SH', paymentDate: '2026-10-26', winningAmountWan: 1000 },
+    { id: 'b', shortName: '26测试02', securityCode: '246130.SH', paymentDate: '2026-10-26', winningAmountWan: 1000 },
+  ] }];
+  for (const [securityCode, trancheId] of [['246129.SH', 'a'], ['246130.SH', 'b']]) {
+    const result = selectPaymentReceiptMatch({ securityCode, paymentDate: '2026-10-26', amountFen: 1_000_000_000 }, projects);
+    assert.equal(result.status, 'matched'); assert.equal(result.trancheId, trancheId);
+  }
+  projects[0].tranches[0].securityCode = '';
+  projects[0].tranches[1].prepaymentNumber = 'W2026102600001';
+  const result = selectPaymentReceiptMatch({ securityCode: '246129.SH', bondShortName: '26测试01',
+    paymentDate: '2026-10-26', amountFen: 1_000_000_000, prepaymentNumber: 'W2026102600001' }, projects);
+  assert.equal(result.status, 'matched'); assert.equal(result.trancheId, 'a');
+});

@@ -69,6 +69,10 @@ test("explicitly differing markets cannot share one numeric code", () => {
   const { resolve, matched } = fixture("26测试01", "246129.SH");
   assert.match(resolve({ ...matched, bondShortName: "26测试01", securityCode: "246129.SZ" }).warning, /代码/);
   assert.match(resolve({ bondShortName: "26测试01", securityCode: "246129.SZ" }).warning, /交易市场/);
+  for (const code of ["246129 . SZ", "246129. SZ", "246129 .SZ", "２４６１２９ ． ＳＺ"]) {
+    assert.match(resolve({ ...matched, bondShortName: "26测试01", securityCode: "246129",
+      recognizedText: `债券简称26测试01\n债券代码${code}` }).warning, /原文证券代码与已对应品种不一致/, code);
+  }
 });
 
 test("different year, product, issuer and A/B/AB are identity conflicts", () => {

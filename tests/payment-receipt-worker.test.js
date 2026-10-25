@@ -13,6 +13,7 @@ import {
   paymentReceiptMessageIdConflict,
   paymentReceiptRetryDelaySeconds,
   paymentReceiptWorkerReadiness,
+  processPaymentReceiptFile,
   recordDeadLetterFailure,
   recipientAllowed,
 } from "../payment-receipt-worker.js";
@@ -36,6 +37,91 @@ async function scannedPagePdf() {
   page.node.newXObject("Image", imageRef);
   return document.save({ useObjectStreams: false });
 }
+
+test("the real file processor never persists an automatic match across a security or market conflict", async () => {
+  const pdf = await scannedPagePdf();
+  const projects = [{
+    id: "project-1",
+    shortName: "26测试01",
+    tranches: [{
+      id: "tranche-1",
+      shortName: "26测试01",
+      securityCode: "246129.SH",
+      paymentDate: "2026-10-26",
+      winningAmountWan: 1000,
+    }],
+  }];
+
+  for (const securityCode of ["246130.SH", "246129.SZ", "246129.SH"]) {
+    const writes = [];
+    let aiCalls = 0;
+    const db = {
+      prepare(sql) {
+        return {
+          values: [],
+          bind(...values) { this.values = values; return this; },
+          async first() {
+            return sql.includes("FROM user_app_state")
+              ? { data: JSON.stringify({ projects }), revision: 1 }
+              : null;
+          },
+          async all() { return { results: [] }; },
+          async run() {
+            writes.push({ sql, values: this.values });
+            return { meta: { changes: 1 } };
+          },
+        };
+      },
+      async batch(statements) { return Promise.all(statements.map((statement) => statement.run())); },
+    };
+    const env = {
+      DB: db,
+      PAYMENT_RECEIPTS: {
+        async get() { return { async arrayBuffer() { return pdf; } }; },
+        async put() {},
+      },
+      AI_PROCESSING_APPROVED: "true",
+      AI: {
+        async run() {
+          aiCalls += 1;
+          return { response: {
+            classification: "receipt_start",
+            confidence: 0.98,
+            document_title: "配售确认及缴款通知书",
+            bond_short_name: "26测试01",
+            security_code: securityCode,
+            payment_date: "2026-10-26",
+            amount_text: "1000万元",
+          } };
+        },
+      },
+    };
+
+    const result = await processPaymentReceiptFile(env, {
+      ownerUserId: "owner-1",
+      fileId: "file-1",
+      batchId: "batch-1",
+      objectKey: "attachments/file-1.pdf",
+      receivedDate: "2026-10-25",
+    });
+    assert.equal(aiCalls, 1, securityCode);
+    assert.equal(result.receiptIds.length, 1, securityCode);
+    const receiptWrite = writes.find(({ sql }) => /INSERT INTO payment_receipts\s*\(/.test(sql));
+    assert.ok(receiptWrite, securityCode);
+    assert.equal(receiptWrite.values[18], "recognized", securityCode);
+    const matches = writes.filter(({ sql }) => /INSERT INTO payment_receipt_matches\s*\(/.test(sql));
+
+    if (securityCode === "246129.SH") {
+      assert.equal(matches.length, 1);
+      assert.deepEqual(matches[0].values.slice(3, 6), ["project-1", "tranche-1", "auto"]);
+    } else {
+      assert.equal(matches.length, 0, securityCode);
+      assert.equal(receiptWrite.values[19], "review", securityCode);
+      const candidates = JSON.parse(receiptWrite.values[20]);
+      assert.equal(candidates[0].securityCodeConflict, true, securityCode);
+    }
+  }
+});
 
 test("fails closed when the dedicated receipt recipient is not configured", () => {
   assert.equal(recipientAllowed("payment-receipts@tempest07.com", ""), false);

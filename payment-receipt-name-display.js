@@ -1,20 +1,10 @@
 import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js?v=20261024release535";
+import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261024release535';
 
 const SHORT_NAME_LABEL = /(?:债\s*券|证\s*券)\s*(?:简\s*称|短\s*名)\s*[:：]?\s*/g;
 const compact = value => String(value || "").normalize("NFKC").replace(/[\s\u200b-\u200d\ufeff]/g, "").toUpperCase();
 const targetKey = (projectId, trancheId) => JSON.stringify([String(projectId || ""), String(trancheId || "")]);
-
-function codeIdentity(value) {
-  const text = compact(value);
-  if (!text) return null;
-  const match = text.match(/^(\d{6}|\d{9})(?:\.(IB|SH|SZ))?$/);
-  return match ? { body: match[1], market: match[2] || "", text } : { invalid: true, text };
-}
-
-function sameCode(a, b) {
-  return Boolean(a && b && !a.invalid && !b.invalid && a.body === b.body
-    && (!a.market || !b.market || a.market === b.market));
-}
 
 function cleanedFallback(value) {
   const original = String(value || "").normalize("NFKC").trim();
@@ -72,12 +62,6 @@ function sourceNames(text) {
     if (name) names.push(name);
   }
   return [...new Set(names)];
-}
-
-function sourceCodes(text) {
-  const raw = String(text || "").normalize("NFKC");
-  return [...raw.matchAll(/(?:债\s*券\s*(?:代\s*码|编\s*码)|证\s*券\s*代\s*码)\s*[:：]?\s*([A-Z]?\d{6,18}(?:\.[A-Z]{2})?)/gi)]
-    .map(match => codeIdentity(match[1]));
 }
 
 function hasSourceConflict(names) {
