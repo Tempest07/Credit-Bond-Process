@@ -621,6 +621,13 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
   font-weight: 400;
 }
 
+.bond-list-zero-confirm {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .bond-list-preview-panel {
   position: sticky;
   top: 24px;

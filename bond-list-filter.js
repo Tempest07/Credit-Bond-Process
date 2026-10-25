@@ -26,7 +26,7 @@ function typeOf(value) {
   return BOND_TYPES.includes(normalized) ? normalized : '其他';
 }
 
-export function quoteRows(sections, metadata = {}) {
+export function quoteRows(sections, metadata = {}, zeroConfirmed = () => false) {
   const rows = [];
   for (const [sectionIndex, section] of (sections || []).entries()) {
     let blankBefore = [];
@@ -42,11 +42,12 @@ export function quoteRows(sections, metadata = {}) {
       const name = coded ? fields[1]?.trim() || first : first;
       const quote = fields.slice(coded ? 2 : 1).join(',').trim();
       const result = metadataFor(metadata, code);
+      const couponNeedsConfirmation = result?.couponRate === 0 && !zeroConfirmed(code, result);
       const couponRate = typeof result?.couponRate === 'number' && Number.isFinite(result.couponRate)
-        && result.couponRate >= 0 ? result.couponRate : null;
+        && result.couponRate >= 0 && !couponNeedsConfirmation ? result.couponRate : null;
       rows.push({
         sectionIndex, lineIndex, branch: section.title || '', raw, blankBefore, code, name, quote,
-        direction: directionOf(quote), couponRate, bondType: typeOf(result?.bondType),
+        direction: directionOf(quote), couponRate, couponNeedsConfirmation, bondType: typeOf(result?.bondType),
         attributes: Array.isArray(result?.attributes) ? result.attributes.filter(value => typeof value === 'string') : [],
         metadataStatus: result?.status || (coded ? 'pending' : 'uncoded')
       });

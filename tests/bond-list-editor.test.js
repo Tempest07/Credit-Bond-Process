@@ -464,7 +464,7 @@ test('coupon display batches unique full codes and keeps zero, missing values an
     await env.elements['coupons-refresh'].click();
     assert.deepEqual(env.requests.filter(request => request.url.endsWith('/coupons')).map(request => request.body.codes.length), [20, 20, 1]);
     const values = env.rows().map(row => row.querySelector('.bond-list-coupon-value').textContent);
-    assert.equal(values[0], '0.00%'); assert.equal(values[1], '未返回'); assert.equal(values[2], '2.504%'); assert.equal(values[41], '0.00%');
+    assert.equal(values[0], '0.00%（待确认）'); assert.equal(values[1], '未返回'); assert.equal(values[2], '2.504%'); assert.equal(values[41], '0.00%（待确认）');
     assert.equal(env.elements.preview.textContent, preview);
     assert.equal(env.textarea(0).value, text);
     assert.equal(env.elements.copy.disabled, false);
@@ -481,7 +481,7 @@ test('successful static fields are reused and valuations refresh once per Beijin
     fetch(request) {
       if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
       return json({ source: 'QB', fetchedAt: new Date().toISOString(), results: { [code]: {
-        ...(request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN' }
+        ...(request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
           : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-22' }),
         checkedAt: new Date().toISOString(),
       } } });
@@ -503,6 +503,174 @@ test('successful static fields are reused and valuations refresh once per Beijin
   });
 });
 
+test('partial static fields retry on manual refresh or reentry without losing cached coupons or looping', async () => {
+  const code = '102600001.IB';
+  for (const missing of ['name', 'bondType', 'rateType']) {
+    for (const refresh of ['manual', 'reentry']) {
+      let reads = 0;
+      const text = `${code}，测试，1.60*ofr`;
+      await fixture({ now: '2026-10-24T02:00:00Z',
+        state: { sections: [{ title: '北京', text }], revision: 3, userId: 'admin' },
+        fetch(request) {
+          if (request.url.endsWith('/valuations')) return json({ source: 'QB', results: { [code]: {
+            status: 'matched', yield: 1.6, institution: '中债', basis: '到期', date: '2026-10-23', checkedAt: new Date().toISOString(),
+          } } });
+          if (!request.url.endsWith('/coupons')) return;
+          reads++;
+          const result = { status: 'matched', couponRate: reads === 1 ? 1.54 : 9, name: '26测试MTN001', bondType: '其他', rateType: '固定利率', attributes: [], typeDescription: '' };
+          if (reads === 1) result[missing] = missing === 'bondType' ? '未知' : '';
+          return json({ source: reads === 1 ? 'DM' : 'QB', fetchedAt: reads === 1 ? '2026-10-23T01:00:00Z' : '2026-10-24T02:00:00Z', results: { [code]: result } });
+        },
+      }, async env => {
+        const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+        await env.advance(5000); assert.equal(reads, 1, 'partial success must not start a retry loop');
+        if (refresh === 'manual') await env.elements['coupons-refresh'].click();
+        else { await editor.setActive(false); await editor.setActive(true); await env.advance(350); }
+        assert.equal(reads, 2, `${missing}: ${refresh}`);
+        const row = env.resultRow(0), coupon = row.querySelector('.bond-list-coupon-value');
+        assert.equal(coupon.textContent, '1.54%', 'known positive coupon must survive a different returned coupon');
+        assert.match(coupon.title, /DM 查询于/, 'retained coupon must not be attributed to QB');
+        assert.match(coupon.title, /2026\/10\/23|2026-10-23/);
+        assert.equal(row.children[1].children[0].textContent, '其他');
+        assert.match(coupon.title, /固定利率/);
+        await env.elements['coupons-refresh'].click();
+        await editor.setActive(false); await editor.setActive(true); await env.advance(350);
+        assert.equal(reads, 2, 'complete data with empty optional attributes stays cached');
+        assert.equal(env.textarea(0).value, text);
+        assert.equal(env.state.revision, 3);
+        assert.equal(env.requests.filter(request => request.url.endsWith('/state') && request.body).length, 0);
+      });
+    }
+  }
+});
+
+test('metadata-only responses fill missing fields without erasing known names, types or coupons', async () => {
+  const code = '102600001.IB'; let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: `${code}，测试，1.60*ofr` }], revision: 0, userId: 'admin' },
+    fetch(request) {
+      if (!request.url.endsWith('/coupons')) return;
+      reads++;
+      return json({ source: 'DM', results: { [code]: reads === 1
+        ? { status: 'matched', couponRate: 1.54, name: '26测试MTN001', bondType: 'MTN', rateType: '' }
+        : { status: 'missing', reason: 'coupon_unavailable', couponRate: null, name: '', bondType: '未知', rateType: '固定利率' },
+      } });
+    },
+  }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    await env.elements['coupons-refresh'].click();
+    assert.equal(reads, 2);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    assert.equal(env.resultRow(0).children[1].children[0].textContent, 'MTN');
+    assert.match(env.resultRow(0).querySelector('.bond-list-coupon-value').title, /固定利率/);
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 2);
+  });
+});
+
+test('partial static metadata respects a retained-value rate-limit cooldown and recovers on manual retry', async () => {
+  const code = '102600001.IB'; let reads = 0;
+  await fixture({ now: '2026-10-24T02:00:00Z',
+    state: { sections: [{ title: '北京', text: `${code}，测试，1.60*ofr` }], revision: 0, userId: 'admin' },
+    fetch(request) {
+      if (!request.url.endsWith('/coupons')) return;
+      reads++;
+      return json({ source: 'DM', ...(reads === 2 ? { rateLimited: true, retryAfter: 8 } : {}), results: { [code]: {
+        status: 'matched', couponRate: 1.54, name: '26测试MTN001', bondType: 'MTN', rateType: reads >= 3 ? '固定利率' : '',
+        ...(reads === 2 ? { refreshFailed: true, reason: 'rate_limited', nextCheckAt: new Date(Date.now() + 8000).toISOString() } : { refreshFailed: false }),
+      } } });
+    },
+  }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 2);
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 2);
+    await env.advance(8000); assert.equal(reads, 2, 'no automatic retry at cooldown expiry');
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 3);
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 3, 'successful supplement clears prior failure flags');
+    assert.match(env.resultRow(0).querySelector('.bond-list-coupon-value').title, /固定利率/);
+  });
+});
+
+test('classification-first metadata survives a failed attempt and is combined with a later coupon', async () => {
+  const code = '102600001.IB'; let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: `${code}，测试，1.60*ofr` }], revision: 0, userId: 'admin' },
+    fetch(request) {
+      if (!request.url.endsWith('/coupons')) return;
+      reads++;
+      if (reads === 2) return json({ error: 'failed' }, 502);
+      return json({ source: 'DM', results: { [code]: reads === 1
+        ? { status: 'missing', reason: 'coupon_unavailable', couponRate: null, name: '26测试MTN001', bondType: 'MTN', rateType: '固定利率' }
+        : { status: 'matched', couponRate: 1.54, name: '', bondType: '未知', rateType: '' },
+      } });
+    },
+  }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).children[1].children[0].textContent, 'MTN');
+    await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    assert.match(env.resultRow(0).querySelector('.bond-list-coupon-value').title, /固定利率/);
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 3);
+  });
+});
+
+test('zero coupons require an explicit session confirmation before screening or comparison', async () => {
+  const code = '102600001.IB'; let mode = 'dm', reads = 0;
+  await fixture({ now: '2026-10-24T02:00:00Z',
+    state: { sections: [{ title: '北京', text: `${code}，测试，1.60*ofr` }], revision: 3, userId: 'admin' },
+    fetch(request) {
+      if (request.url.endsWith('/coupons')) { reads++; return json({ source: 'DM', fetchedAt: '2026-10-23T01:00:00Z', results: { [code]: {
+        status: 'matched', couponRate: 0, name: '26测试MTN001', bondType: 'MTN', rateType: '零息',
+      } } }); }
+      if (request.url.endsWith('/valuations')) return json({ source: 'DM', fetchedAt: new Date().toISOString(), results: { [code]: {
+        status: 'matched', yield: 0.03, institution: '中债', basis: '到期', date: '2026-10-23', checkedAt: new Date().toISOString(),
+      } } });
+    },
+  }, async env => {
+    const editor = initializeBondList({ getDataSourceMode: () => mode }); await editor.setActive(true); await env.advance(350);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%（待确认）');
+    assert.equal(env.resultRow(0).querySelector('.near'), null);
+    await env.filter('coupon-min', '0', 'input'); await env.filter('coupon-op', 'lte');
+    assert.equal(env.rows().length, 0, 'unconfirmed zero is excluded from numeric coupon screening');
+    await env.filter('coupon-op', 'any'); await env.filter('missing', 'coupon');
+    assert.equal(env.rows().length, 1, 'unconfirmed zero participates in missing-coupon review');
+    const before = env.requests.length;
+    await env.resultRow(0).querySelector('.bond-list-zero-confirm').click();
+    assert.equal(env.requests.length, before, 'confirmation must not write business state or shared metadata');
+    await env.filter('missing', 'all');
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%');
+    assert.ok(env.resultRow(0).querySelector('.near'));
+    await env.filter('coupon-op', 'lte'); assert.equal(env.rows().length, 1);
+    await env.filter('coupon-op', 'any');
+    await editor.setActive(false); await editor.setActive(true); await env.advance(350);
+    assert.equal(reads, 1, 'ordinary navigation retains the current-page confirmation');
+    mode = 'qb'; editor.resetDataSource(); await env.advance(350);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%（待确认）');
+    await env.resultRow(0).querySelector('.bond-list-zero-confirm').click();
+    editor.clearAccess(); await editor.setActive(false); await editor.setActive(true); await env.advance(350);
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%（待确认）');
+    assert.equal(env.state.revision, 3);
+    assert.equal(env.requests.filter(request => request.body && request.url.endsWith('/state')).length, 0);
+    assert.ok(env.requests.filter(request => request.body?.codes).every(request => !JSON.stringify(request.body).includes('confirm')));
+  });
+});
+
+test('an unconfirmed zero can be corrected by a later positive coupon without confirmation', async () => {
+  const code = '102600001.IB'; let reads = 0;
+  await fixture({ state: { sections: [{ title: '北京', text: `${code}，测试，1.60*ofr` }], revision: 0, userId: 'admin' },
+    fetch(request) {
+      if (!request.url.endsWith('/coupons')) return;
+      reads++;
+      return json({ source: 'DM', results: { [code]: { status: 'matched', couponRate: reads === 1 ? 0 : 1.54,
+        name: '26测试MTN001', bondType: 'MTN', rateType: '固定利率' } } });
+    },
+  }, async env => {
+    const editor = initializeBondList(); await editor.setActive(true); await env.advance(350);
+    await env.elements['coupons-refresh'].click();
+    assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '1.54%');
+    assert.equal(env.resultRow(0).querySelector('.bond-list-zero-confirm'), null);
+    await env.elements['coupons-refresh'].click(); assert.equal(reads, 2);
+  });
+});
+
 test('staying on the page across Beijing midnight lets a newly-added quote also refresh old valuations', async () => {
   const first = '102600001.IB', added = '102600002.IB';
   await fixture({ now: '2026-10-23T15:59:00Z',
@@ -510,7 +678,7 @@ test('staying on the page across Beijing midnight lets a newly-added quote also 
     fetch(request) {
       if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
       return json({ source: 'QB', fetchedAt: new Date().toISOString(), results: Object.fromEntries(request.body.codes.map(code => [code,
-        request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54 }
+        request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
           : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-22' },
       ])) });
     },
@@ -532,7 +700,7 @@ test('same-day cloud hits use each value successful check time instead of the va
     fetch(request) {
       if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
       return json({ source: 'QB', fetchedAt: '2026-10-23T01:00:00Z', results: { [code]: {
-        ...(request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54 }
+        ...(request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
           : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-22' }),
         checkedAt: '2026-10-23T17:00:00Z', fetchedAt: '2026-10-23T17:00:00Z', cached: true,
       } } });
@@ -555,7 +723,7 @@ test('adding a quote queries only new codes and failures retry on the next exter
       if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
       return json({ source: 'QB', fetchedAt: new Date().toISOString(), results: Object.fromEntries(request.body.codes.map(code => [code,
         failed && code === added ? { status: 'missing', reason: 'not_found' }
-          : request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54 }
+          : request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
             : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-23' },
       ])) });
     },
@@ -581,7 +749,7 @@ test('cloud refresh leases remain pending until an external retry and never beco
       if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
       return json({ source: 'QB', fetchedAt: new Date().toISOString(), results: { [code]: pending
         ? { status: 'loading', refreshStatus: 'loading', nextCheckAt: '2026-10-24T02:01:00Z' }
-        : request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54 }
+        : request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
           : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-23' },
       } });
     },
@@ -769,7 +937,8 @@ test('missing-data views distinguish zero coupon, missing coupon and unknown sid
     '111111.SH': { status: 'missing', couponRate: null, bondType: '未知' },
   } }) : null }, async env => {
     const editor = initializeBondList(); await editor.setActive(true); await env.elements['coupons-refresh'].click();
-    assert.equal(env.rows().length, 3); assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%');
+    assert.equal(env.rows().length, 3); assert.equal(env.resultRow(0).querySelector('.bond-list-coupon-value').textContent, '0.00%（待确认）');
+    await env.resultRow(0).querySelector('.bond-list-zero-confirm').click();
     await env.filter('missing', 'coupon'); assert.equal(env.rows().length, 2);
     await env.filter('missing', 'type'); assert.equal(env.rows().length, 1);
     await env.filter('missing', 'side'); assert.equal(env.rows().length, 1);
@@ -935,7 +1104,7 @@ test('source reset clears metadata, rejects old responses and preserves draft, f
   const text = '102600001.IB，测试，1.60*ofr';
   await fixture({ state: { sections: [{ title: '北京', text }], revision: 9, userId: 'admin' }, fetch(request) {
     if (request.url.endsWith('/coupons')) return hold && provider === 'DM' ? oldCoupons.promise : json({ source: provider, results: {
-      '102600001.IB': { status: 'matched', couponRate: provider === 'QB' ? 2.03 : 1.54, bondType: 'MTN' },
+      '102600001.IB': { status: 'matched', couponRate: provider === 'QB' ? 2.03 : 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' },
     } });
     if (request.url.endsWith('/valuations')) return hold && provider === 'DM' ? oldValuations.promise : json({ source: provider, fetchedAt: '2026-10-23T01:00:00Z', results: {
       '102600001.IB': { status: 'matched', institution: '中债', yield: provider === 'QB' ? 2.01 : 1.51, basis: '到期', date: '2026-10-22' },
@@ -1085,7 +1254,7 @@ test('QB throttling stops the remaining metadata batches and leaves skipped quot
     if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
     if (limited && request.url.endsWith('/coupons')) return json({ error: 'upstream failure', code: 'qb_rate_limited', retryAfter: 30 }, 429);
     return json({ source: 'QB', fetchedAt: '2026-10-23T01:00:00Z', results: Object.fromEntries(request.body.codes.map(code => [code,
-      request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN' }
+      request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
         : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-22' }])) });
   } }, async env => {
     const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
@@ -1121,7 +1290,7 @@ test('a rate-limited refresh preserves all previous providers, values and valuat
     if (!request.url.endsWith('/coupons') && !request.url.endsWith('/valuations')) return;
     if (limited) return json({ error: 'upstream failure', code: 'qb_rate_limited', retryAfter: -1 }, 429);
     return json({ source: 'DM', fetchedAt: '2026-10-22T01:00:00Z', results: Object.fromEntries(request.body.codes.map(code => [code,
-      request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN' }
+      request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
         : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-21' }])) });
   } }, async env => {
     const editor = initializeBondList({ getDataSourceMode: () => 'qb' });
@@ -1152,7 +1321,7 @@ test('a mixed cached-success and rate-limit response stops later batches and res
       return json({ source: 'QB', fetchedAt: new Date().toISOString(), rateLimited: limited, retryAfter: limited ? 30 : undefined,
         results: Object.fromEntries(request.body.codes.map(code => [code,
           limited && code !== codes[0] ? { status: 'error', reason: 'rate_limited', nextCheckAt: '2026-10-24T02:00:30Z' }
-            : request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54 }
+            : request.url.endsWith('/coupons') ? { status: 'matched', couponRate: 1.54, bondType: 'MTN', name: '26测试MTN001', rateType: '固定利率' }
               : { status: 'matched', institution: '中债', yield: 1.51, basis: '到期', date: '2026-10-23' },
         ])) });
     },

@@ -1,6 +1,7 @@
 import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261024release535';
 import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261024release535';
 import { dataProviderLabel } from './market-data-source.js?v=20261024release535';
+import { couponMetadataComplete, couponMetadataUsable, supplementCouponMetadata } from './bond-list-metadata.js?v=20261024release535';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
@@ -19,6 +20,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
   let lookupGeneration = 0;
   let backupKey, recoveryKey, archived = [], busy = false;
   let access = false, accessVersion = 0, retryMode = '', metadataUserId = '';
+  const zeroCouponConfirmations = new Set();
   const failedNames = new Set();
   let lookupResults = {};
   const couponResults = new Map();
@@ -111,11 +113,12 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       .filter(line => line?.coded).map(line => line.code)))];
   }
   function renderResults() {
-    const all = quoteRows(sections, couponResults);
+    const all = quoteRows(sections, couponResults, (code, result) => zeroCouponConfirmations.has(zeroCouponKey(code, result)));
     const result = filterQuotes(all, filters);
     selectedText = quoteOutput(result.rows); selectedCount = result.rows.length; filterActive = result.active;
     const pending = all.filter(row => row.code && (!couponResults.has(row.code) || couponPending.has(row.code) || couponResults.get(row.code)?.status === 'loading')).length;
     const missingCoupon = all.filter(row => couponResults.get(row.code)?.status === 'missing').length;
+    const unconfirmedZero = all.filter(row => row.couponNeedsConfirmation).length;
     const missingType = all.filter(row => couponResults.get(row.code)?.status === 'matched' && row.bondType === '未知').length;
     const unknownSide = all.filter(row => row.direction === 'unknown').length;
     const failed = all.filter(row => [couponResults.get(row.code), valuationResults.get(row.code)]
@@ -136,7 +139,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     $('results-counts').textContent = '符合 ' + selectedCount + ' / 共 ' + all.length + ' 条报价 · ' + branches + ' 个分行'
       + (warnings ? ' · ' + warnings + ' 条报价提示' : '') + (close ? ' · ' + close + ' 条票面接近估值' : '');
     $('metadata-status').textContent = pending && access ? pending + ' 条资料读取中'
-      : [retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', incomplete ? incomplete + ' 条未完成' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
+      : [unconfirmedZero ? unconfirmedZero + ' 条票面为 0，待人工确认' : '', retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', incomplete ? incomplete + ' 条未完成' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
     $('filter-error').textContent = result.error; $('filter-error').hidden = !result.error;
     $('results-body').replaceChildren();
     for (const quote of result.rows) {
@@ -163,10 +166,13 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       }
       const rate = document.createElement('span'); rate.className = 'bond-list-coupon-value';
       const metadata = couponResults.get(quote.code);
-      if (quote.couponRate !== null) {
-        rate.textContent = couponFormatter.format(quote.couponRate) + '%';
-        rate.title = [metadata?.rateType, metadata?.fetchedAt ? dataProviderLabel(metadata) + ' 查询于 ' + new Date(metadata.fetchedAt).toLocaleString('zh-CN') : dataProviderLabel(metadata) + ' 最新票面利率'].filter(Boolean).join(' · ');
+      if (quote.couponRate !== null || quote.couponNeedsConfirmation) {
+        rate.textContent = couponFormatter.format(metadata.couponRate) + '%' + (quote.couponNeedsConfirmation ? '（待确认）' : '');
+        const couponSource = dataProviderLabel(metadata?.fieldSources?.couponRate || metadata);
+        const couponFetchedAt = metadata?.fieldFetchedAt?.couponRate || metadata?.fetchedAt;
+        rate.title = [metadata?.rateType, couponFetchedAt ? couponSource + ' 查询于 ' + new Date(couponFetchedAt).toLocaleString('zh-CN') : couponSource + ' 最新票面利率'].filter(Boolean).join(' · ');
         if (metadata?.refreshFailed) rate.title += ' · 刷新未完成，保留上次资料';
+        if (quote.couponRate === 0) rate.title += ' · 已人工确认0%票面（仅本页有效）';
         if (/浮动|浮息/.test(metadata?.rateType || '')) {
           const floating = document.createElement('span'); floating.className = 'bond-list-result-attribute bond-list-coupon-type'; floating.textContent = '浮动'; type.append(floating);
         }
@@ -175,6 +181,20 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         rate.textContent = !quote.code ? '待补代码' : metadata?.reason === 'rate_limit_skipped' ? '未完成' : metadata?.status === 'error' ? '查询失败' : metadata?.status === 'loading' ? '查询中…' : metadata ? '未返回' : !access ? '请登录' : couponPending.has(quote.code) ? '查询中…' : '待查询';
       }
       const couponCell = cell('票面利率'); couponCell.append(rate);
+      if (quote.couponNeedsConfirmation) {
+        const confirm = document.createElement('button');
+        confirm.type = 'button'; confirm.className = 'button subtle bond-list-zero-confirm';
+        confirm.textContent = '确认0%票面';
+        confirm.setAttribute('aria-label', `确认${quote.name}（${quote.code}）的0%票面`);
+        const key = zeroCouponKey(quote.code, metadata);
+        confirm.addEventListener('click', () => {
+          const current = couponResults.get(quote.code);
+          if (!active || !access || current?.couponRate !== 0 || zeroCouponKey(quote.code, current) !== key) return;
+          zeroCouponConfirmations.add(key);
+          renderResults();
+        });
+        couponCell.append(confirm);
+      }
       if (comparison.couponNear) {
         const near = document.createElement('span'); near.className = 'bond-list-comparison-badge near'; near.textContent = '≈ 估值';
         near.title = `票面与${valuation.institution}估值相差 ${comparison.couponGapBp >= 0 ? '+' : ''}${spreadFormatter.format(comparison.couponGapBp)}bp；接近范围为 ±5bp`;
@@ -245,6 +265,11 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
   function resetMetadataAttempts() {
     couponAttempted.clear(); valuationAttempted.clear();
   }
+  function zeroCouponKey(code, result) {
+    return JSON.stringify([metadataUserId, requestMode(), code,
+      result.fieldSources?.couponRate || result.provider,
+      result.fieldFetchedAt?.couponRate || result.fetchedAt]);
+  }
   function chinaDay(value = Date.now()) {
     const at = typeof value === 'number' ? value : Date.parse(value);
     return Number.isFinite(at) ? new Date(at + 8 * 60 * 60 * 1000).toISOString().slice(0, 10) : '';
@@ -254,11 +279,11 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     const attempted = path === 'coupons' ? couponAttempted : valuationAttempted;
     if (attempted.get(code) === chinaDay()) return false;
     const result = cache.get(code);
-    if (['rate_limited', 'rate_limit_skipped'].includes(result?.reason)
+    if ((result?.refreshFailed || ['rate_limited', 'rate_limit_skipped'].includes(result?.reason))
       && Date.parse(result.nextCheckAt) > Date.now()) return false;
     const successful = result?.status === 'matched' && !result.refreshFailed
       && result.requestMode === requestMode()
-      && Number.isFinite(path === 'coupons' ? result.couponRate : result.yield);
+      && (path === 'coupons' ? couponMetadataComplete(result, zeroCouponConfirmations.has(zeroCouponKey(code, result))) : Number.isFinite(result.yield));
     return !successful || (path === 'valuations'
       && chinaDay(result.checkedAt || result.fetchedAt) !== chinaDay());
   }
@@ -326,11 +351,21 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
           rateLimitError ||= { retryAfter: Number.isFinite(seconds) && seconds > 0 && seconds <= 86400 ? Math.ceil(seconds) : undefined };
         }
         for (const code of batch) {
-          const result = response.results?.[code];
+          let result = response.results?.[code];
           const previous = cache.get(code);
-          if (previous?.status === 'matched' && result?.status !== 'matched') {
+          if (path === 'coupons' && couponMetadataUsable(previous) && previous.requestMode === selectedMode && result) {
+            const incoming = { ...result, provider: result.provider || response.source,
+              fetchedAt: result.fetchedAt || response.fetchedAt || new Date().toISOString() };
+            result = { ...supplementCouponMetadata(previous, incoming) };
+            for (const key of ['checkedAt', 'nextCheckAt', 'refreshStatus', 'refreshFailed', 'cached', 'reason', 'retryAfter']) {
+              if (Object.hasOwn(incoming, key)) result[key] = incoming[key];
+              else delete result[key];
+            }
+          }
+          if ((previous?.status === 'matched' || path === 'coupons' && couponMetadataUsable(previous))
+            && !(path === 'coupons' ? couponMetadataUsable(result) : result?.status === 'matched')) {
             cache.set(code, { ...previous, refreshFailed: true, requestMode: selectedMode,
-              ...(result?.reason ? { reason: result.reason } : {}),
+              ...(result?.reason && previous.status === 'matched' ? { reason: result.reason } : {}),
               ...(result?.nextCheckAt ? { nextCheckAt: result.nextCheckAt } : {}) }); continue;
           }
           cache.set(code, result && ['matched', 'missing', 'loading', 'error'].includes(result.status)
@@ -358,9 +393,11 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       const retrySeconds = Number(rateLimitError?.retryAfter);
       const nextCheckAt = ['rate_limited', 'rate_limit_skipped'].includes(reason)
         ? new Date(Date.now() + (Number.isFinite(retrySeconds) && retrySeconds > 0 ? retrySeconds : 60) * 1000).toISOString() : '';
-      cache.set(code, previous?.status === 'matched' ? { ...previous, refreshFailed: true, requestMode: selectedMode }
+      const partial = cache === couponResults && couponMetadataUsable(previous) && previous.status === 'missing';
+      cache.set(code, previous?.status === 'matched' || partial ? { ...previous, refreshFailed: true, requestMode: selectedMode }
         : { status: 'error', requestMode: selectedMode, ...(reason ? { reason } : {}) });
-      if (reason) Object.assign(cache.get(code), { reason, ...(nextCheckAt ? { nextCheckAt } : {}) });
+      if (reason && !partial) Object.assign(cache.get(code), { reason });
+      if (nextCheckAt) cache.get(code).nextCheckAt = nextCheckAt;
     }
   }
   function output(includeEmpty = false) {
@@ -595,7 +632,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
         const state = await api('state');
         // A refresh must not replace input or a write started while it was reading.
         if (refresh && (editVersion !== version || dirty || savePromise)) return;
-        if (metadataUserId && metadataUserId !== state.userId) stopCoupons(true);
+        if (metadataUserId && metadataUserId !== state.userId) { zeroCouponConfirmations.clear(); stopCoupons(true); }
         metadataUserId = state.userId;
         sections = state.sections; revision = state.revision;
         restoreBackup(state.userId);
@@ -747,7 +784,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     // between the last confirmed save and the logout request.
     resume() { flushing = false; resetMetadataAttempts(); renderResults(); scheduleLookup(); scheduleCoupons(); },
     hasAccess() { return access; },
-    clearAccess() { accessVersion++; setAccess(false); stopCoupons(true); renderResults(); },
+    clearAccess() { accessVersion++; zeroCouponConfirmations.clear(); setAccess(false); stopCoupons(true); renderResults(); },
     hasPendingChanges() { return dirty || Boolean(savePromise); }
   };
 }

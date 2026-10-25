@@ -163,6 +163,8 @@ export function matchCouponRows(codes, rows) {
       Object.assign(value, provenance, { fieldSources: {
         couponRate: fieldProvider(matches[0], ['newCoupRate', 'new_coup_rate']),
         bondType: fieldProvider(matches[0], ['bondTypeDesc', 'bond_type_desc']),
+        name: fieldProvider(matches[0], ['secShortName', 'sec_short_name']),
+        rateType: fieldProvider(matches[0], ['rateTypeParDesc', 'rate_type_par_desc']),
       } });
     }
     results[code] = value.couponRate === null

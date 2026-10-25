@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMemoryD1 } from './helpers/d1-memory.js';
 import { BondMetadataCacheError, nextChinaMetadataDay, queryCloudBondMetadata } from '../functions/api/bond-list/_cloud-metadata-cache.js';
-import { onRequestPost as coupons } from '../functions/api/bond-list/coupons.js';
+import { onRequestPost as coupons, matchCouponRows } from '../functions/api/bond-list/coupons.js';
 import { onRequestPost as valuations } from '../functions/api/bond-list/valuations.js';
 import { __test__ as dm } from '../functions/api/dm/lookup.js';
 
@@ -52,15 +52,15 @@ test('daily valuation expires at Beijing midnight by successful query day, not v
   assert.equal(nextChinaMetadataDay(Date.parse('2026-12-31T16:00:00Z')), Date.parse('2027-01-01T16:00:00Z'));
 });
 
-test('mixed cached providers and zero coupons retain their original source and collection time', async () => {
+test('mixed cached providers retain their original source and collection time', async () => {
   const db = createMemoryD1();
-  for (const [value, source, rate, at] of [[code, 'DM', 0, today - 1000], [other, 'QB', 1.5, today]]) {
+  for (const [value, source, rate, at] of [[code, 'DM', 1.3, today - 1000], [other, 'QB', 1.5, today]]) {
     await queryCloudBondMetadata(db, { codes: [value], kind: 'coupons', mode: 'auto', now: () => at,
       lookup: async codes => { const result = payload(codes, 'coupons', source, at); result.results[value].couponRate = rate; return result; } });
   }
   const result = await queryCloudBondMetadata(db, { codes: [code, other], kind: 'coupons', mode: 'auto', now: () => today + 1000,
     lookup: async () => { throw Error('must use shared successful data'); } });
-  assert.equal(result.source, 'DM+QB'); assert.equal(result.results[code].couponRate, 0);
+  assert.equal(result.source, 'DM+QB'); assert.equal(result.results[code].couponRate, 1.3);
   assert.equal(result.results[code].provider, 'DM'); assert.equal(result.results[other].provider, 'QB');
   assert.notEqual(result.results[code].fetchedAt, result.results[other].fetchedAt);
 });
@@ -154,7 +154,8 @@ test('missing or broken D1 fails closed before any paid request and does not exp
 test('API serves shared successes without configured suppliers, while auth and invalid requests cannot read the cache', async () => {
   const db = createMemoryD1(), secret = '1234567890abcdef';
   const original = globalThis.fetch; let calls = 0;
-  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ data: dm.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data: [{ securityId: code, newCoupRate: 1.3 }] }), secret) })); };
+  globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ data: dm.sm4EncryptToBase64Url(JSON.stringify({ code: 0, data: [{ securityId: code, newCoupRate: 1.3,
+    secShortName: '26测试SCP001', bondTypeDesc: '超短期融资券', rateTypeParDesc: '固定利率' }] }), secret) })); };
   try {
     assert.equal((await coupons({ request: request(), env: { DB: db, INNO_APP_KEY: 'test', INNO_APP_SECRET: secret } })).status, 200);
     const cached = await coupons({ request: request({ codes: [code], force: true }), env: { DB: db } });
@@ -166,4 +167,171 @@ test('API serves shared successes without configured suppliers, while auth and i
     assert.equal((await coupons({ request: unauthorized, env: { DB: db } })).status, 401);
     assert.equal(db.statements.length, count);
   } finally { globalThis.fetch = original; }
+});
+
+test('old permanent partial rows are supplemented without replacing the cached coupon or its provenance', async () => {
+  for (const returnedCoupon of [null, 2]) {
+    const db = createMemoryD1(); let at = today, calls = 0;
+    await queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'auto', now: () => at,
+      lookup: async () => ({ source: 'DM', fetchedAt: new Date(today).toISOString(),
+        results: matchCouponRows([code], [{ securityId: code, newCoupRate: 1.5, secShortName: '26测试SCP001' }]) }) });
+    // An existing 5.3.5 record, not a database migration or a newly due row.
+    db.sql.prepare('UPDATE bond_list_metadata_cache SET next_check_at = ?').run(253402300799999);
+    at += 366 * 86400_000;
+    const query = () => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'auto', now: () => at,
+      lookup: async () => { calls++; return { source: 'QB', fetchedAt: new Date(at).toISOString(),
+        results: matchCouponRows([code], [{ securityId: code, newCoupRate: returnedCoupon,
+          secShortName: '新返回简称', bondTypeDesc: '超短期融资券', rateTypeParDesc: '固定利率' }]) }; } });
+    const supplemented = (await query()).results[code];
+    assert.equal(calls, 1);
+    assert.equal(supplemented.couponRate, 1.5);
+    assert.equal(supplemented.name, '26测试SCP001');
+    assert.equal(supplemented.bondType, 'SCP');
+    assert.equal(supplemented.rateType, '固定利率');
+    assert.equal(supplemented.provider, 'DM+QB');
+    assert.equal(supplemented.fieldSources.couponRate, 'DM');
+    assert.equal(supplemented.fieldSources.rateType, 'QB');
+    assert.equal(supplemented.fieldFetchedAt.couponRate, new Date(today).toISOString());
+    assert.equal(supplemented.fieldFetchedAt.rateType, new Date(at).toISOString());
+    assert.equal(supplemented.nextCheckAt, '');
+    await query(); assert.equal(calls, 1, 'complete metadata is shared indefinitely');
+  }
+});
+
+test('each required static field can be supplemented while optional empty attributes remain complete', async () => {
+  for (const field of ['name', 'rateType', 'bondType']) {
+    const db = createMemoryD1(); let calls = 0;
+    const query = () => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'dm', now: () => today,
+      lookup: async codes => {
+        const result = payload(codes); calls++;
+        if (calls === 1) result.results[code][field] = field === 'bondType' ? '未知' : '';
+        else result.results[code].bondType = field === 'bondType' ? '其他' : 'SCP';
+        return result;
+      } });
+    const partial = (await query()).results[code];
+    assert.notEqual(partial.nextCheckAt, '', field);
+    const complete = (await query()).results[code];
+    assert.equal(complete.nextCheckAt, '', field);
+    await query(); assert.equal(calls, 2, field);
+  }
+});
+
+test('partial static data retains values and times on failure, ambiguity or 429 and retries only after cooldown', async () => {
+  for (const failure of ['throw', 'ambiguous', 'missing', '429']) {
+    const db = createMemoryD1(); let at = today, calls = 0;
+    const query = () => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'dm', now: () => at,
+      lookup: async codes => {
+        calls++;
+        if (calls === 1) { const initial = payload(codes); initial.results[code].rateType = ''; return initial; }
+        if (calls === 2) {
+          if (failure === 'throw') throw Error('private failure');
+          if (failure === '429') throw Object.assign(Error('limited'), { status: 429, retryAfter: 8 });
+          return { results: { [code]: { status: 'missing', reason: failure, rateType: 'untrusted' } } };
+        }
+        return payload(codes);
+      } });
+    const original = (await query()).results[code];
+    at++;
+    const failed = (await query()).results[code];
+    assert.equal(failed.couponRate, original.couponRate);
+    assert.equal(failed.rateType, '');
+    assert.equal(failed.fetchedAt, original.fetchedAt);
+    assert.equal(failed.checkedAt, original.checkedAt);
+    assert.equal(failed.refreshFailed, true);
+    if (failure === '429') {
+      assert.equal(failed.reason, 'rate_limited');
+      assert.equal(Date.parse(failed.nextCheckAt), at + 8000);
+      at += 7999; await query(); assert.equal(calls, 2);
+      at++;
+    }
+    assert.equal((await query()).results[code].rateType, '固定');
+    assert.equal(calls, 3);
+  }
+});
+
+test('concurrent legacy partial refreshes share a lease and stale reads cannot reclaim a completed row', async () => {
+  const db = createMemoryD1(); let calls = 0, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'dm', now: () => today,
+    lookup: async codes => { const result = payload(codes); result.results[code].rateType = ''; return result; } });
+  db.sql.prepare('UPDATE bond_list_metadata_cache SET next_check_at = ?').run(253402300799999);
+  const originalBatch = db.batch.bind(db);
+  let stalled = false, completeFirst;
+  const completion = new Promise(resolve => { completeFirst = resolve; });
+  // Pause one reader after it has read the old permanent JSON, before lease acquisition.
+  db.batch = async statements => {
+    const result = await originalBatch(statements);
+    if (!stalled && statements.length === 1 && !result[0]?.meta?.changes) {
+      stalled = true; await completion;
+    }
+    return result;
+  };
+  const query = lookup => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'dm', now: () => today, lookup });
+  const staleReader = query(async () => { throw Error('stale reader must not refresh again'); });
+  while (!stalled) await new Promise(resolve => setImmediate(resolve));
+  const owner = query(async codes => { calls++; await gate; return payload(codes); });
+  while (!calls) await new Promise(resolve => setImmediate(resolve));
+  const concurrent = await query(async () => { throw Error('duplicate supplier query'); });
+  assert.equal(concurrent.results[code].refreshStatus, 'loading');
+  release(); await owner; completeFirst();
+  const cached = (await staleReader).results[code];
+  assert.equal(cached.rateType, '固定');
+  assert.equal(cached.cached, true);
+  assert.equal(calls, 1);
+});
+
+test('classification arriving before the coupon survives intervening failures and rate limits', async () => {
+  for (const failure of [null, 'error', '429']) {
+    const db = createMemoryD1(); let calls = 0, at = today;
+    const query = () => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'auto', now: () => at,
+      lookup: async () => {
+        calls++;
+        if (calls === 1) return { source: 'QB', fetchedAt: new Date(at).toISOString(), results: matchCouponRows([code], [{
+          securityId: code, newCoupRate: null, secShortName: '26测试MTN001', bondTypeDesc: '中期票据', rateTypeParDesc: '固定利率',
+        }]) };
+        if (calls === 2 && failure) throw Object.assign(Error('lookup failed'), failure === '429' ? { status: 429, retryAfter: 8 } : {});
+        return { source: 'DM', fetchedAt: new Date(at).toISOString(), results: matchCouponRows([code], [{ securityId: code, newCoupRate: 1.5 }]) };
+      } });
+    await query(); at++;
+    if (failure) {
+      const retained = (await query()).results[code];
+      assert.equal(retained.name, '26测试MTN001'); assert.equal(retained.rateType, '固定利率');
+      assert.equal(retained.refreshFailed, true);
+      if (failure === '429') { at += 7999; await query(); assert.equal(calls, 2); at++; }
+    }
+    const complete = (await query()).results[code];
+    assert.equal(complete.couponRate, 1.5); assert.equal(complete.bondType, 'MTN');
+    assert.equal(complete.fieldSources.couponRate, 'DM'); assert.equal(complete.fieldSources.rateType, 'QB');
+    assert.equal(complete.fieldFetchedAt.rateType, new Date(today).toISOString());
+    const before = calls; await query(); assert.equal(calls, before);
+  }
+});
+
+test('raw zero coupons remain pending confirmation and can be resolved by a later positive coupon', async () => {
+  const db = createMemoryD1(); let calls = 0;
+  const query = () => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'dm', now: () => today + calls,
+    lookup: async codes => { calls++; const result = payload(codes); result.results[code].couponRate = calls <= 2 ? 0 : 1.5; return result; } });
+  const pending = (await query()).results[code];
+  assert.equal(pending.couponRate, 0); assert.equal(pending.couponConfirmationRequired, true);
+  assert.notEqual(pending.nextCheckAt, '');
+  db.sql.prepare('UPDATE bond_list_metadata_cache SET next_check_at = ?').run(253402300799999);
+  assert.equal((await query()).results[code].couponRate, 0, 'legacy permanent zeros remain readable and are rechecked');
+  const resolved = (await query()).results[code];
+  assert.equal(resolved.couponRate, 1.5); assert.equal(resolved.couponConfirmationRequired, undefined);
+  assert.equal(resolved.nextCheckAt, '');
+  await query(); assert.equal(calls, 3);
+});
+
+test('several metadata-only responses accumulate until a final coupon completes the record', async () => {
+  const db = createMemoryD1(); let calls = 0;
+  const pieces = [{ secShortName: '26测试MTN001' }, { bondTypeDesc: '中期票据', rateTypeParDesc: '固定利率' }, { newCoupRate: 1.5 }];
+  const query = () => queryCloudBondMetadata(db, { codes: [code], kind: 'coupons', mode: 'dm', now: () => today + calls,
+    lookup: async () => ({ source: 'DM', results: matchCouponRows([code], [{ securityId: code, ...pieces[calls++] }]) }) });
+  await query();
+  const partial = (await query()).results[code];
+  assert.equal(partial.status, 'missing'); assert.equal(partial.reason, 'coupon_unavailable');
+  assert.equal(partial.name, '26测试MTN001'); assert.equal(partial.bondType, 'MTN'); assert.equal(partial.rateType, '固定利率');
+  const complete = (await query()).results[code];
+  assert.equal(complete.status, 'matched'); assert.equal(complete.couponRate, 1.5); assert.equal(complete.rateType, '固定利率');
+  assert.equal(complete.nextCheckAt, ''); await query(); assert.equal(calls, 3);
 });

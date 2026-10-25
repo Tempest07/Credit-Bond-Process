@@ -35,7 +35,9 @@ test('type and coupon are metadata facts, never guesses from short name or quote
   assert.equal(rows[2].couponRate, null);
   assert.equal(rows[1].bondType, 'SCP');
   assert.equal(rows[1].couponRate, null);
-  assert.equal(rows[4].couponRate, 0);
+  assert.equal(rows[4].couponRate, null);
+  assert.equal(rows[4].couponNeedsConfirmation, true);
+  assert.equal(quoteRows(sections, metadata, code => code === '123456.SH')[4].couponRate, 0);
   assert.equal(rows[0].couponRate, 2.3);
   assert.equal(rows[0].metadataStatus, 'matched');
   assert.equal(rows[2].metadataStatus, 'uncoded');
@@ -86,7 +88,7 @@ test('both-side quotes match either side while missing directions match neither'
 });
 
 test('coupon comparisons use percentage units and correct strict/inclusive decimal boundaries', () => {
-  const rows = quoteRows(sections, metadata);
+  const rows = quoteRows(sections, metadata, code => code === '123456.SH');
   const rates = filters => filterQuotes(rows, filters).rows.map(row => row.couponRate);
   assert.deepEqual(rates({ couponOp: 'gt', couponMin: '2.30' }), [3.5]);
   assert.deepEqual(rates({ couponOp: 'gte', couponMin: '2.30' }), [2.3, 2.3, 3.5]);
@@ -101,7 +103,7 @@ test('coupon comparisons use percentage units and correct strict/inclusive decim
 
 test('missing metadata can be isolated and never becomes zero coupon or a quoted direction', () => {
   const rows = quoteRows(sections, metadata);
-  assert.deepEqual(filterQuotes(rows, { missing: 'coupon' }).rows.map(row => row.name), ['26测试SCP001', '未补码MTN', '26测试03']);
+  assert.deepEqual(filterQuotes(rows, { missing: 'coupon' }).rows.map(row => row.name), ['26测试SCP001', '未补码MTN', '26测试01', '26测试03']);
   assert.deepEqual(filterQuotes(rows, { missing: 'type' }).rows.map(row => row.name), ['未补码MTN', '26测试03']);
   assert.deepEqual(filterQuotes(rows, { missing: 'side' }).rows.map(row => row.name), ['26测试03']);
   assert.equal(filterQuotes(rows, { missing: 'coupon', couponOp: 'gte', couponMin: '0' }).rows.length, 0);

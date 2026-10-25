@@ -1,3 +1,5 @@
+import { couponMetadataComplete, couponMetadataUsable, supplementCouponMetadata } from '../../../bond-list-metadata.js';
+
 const TABLE = 'bond_list_metadata_cache';
 const LEASE_MS = 35_000;
 const FOREVER = 253402300799999;
@@ -57,14 +59,16 @@ function verifiedResult(row, kind, code) {
 function renderRow(row, kind, code, at, refreshed) {
   const verified = verifiedResult(row, kind, code);
   const current = decode(row?.result_json) || { status: 'error' };
+  const partial = kind === 'coupons' && couponMetadataUsable(current);
   const loading = Boolean(row?.lease_token) && row.lease_until > at;
   return {
     ...(verified || (loading ? { status: 'loading' } : current)),
     checkedAt: verified ? row.checked_at : '', fetchedAt: verified ? row.fetched_at : current.fetchedAt || '',
-    nextCheckAt: kind === 'coupons' && verified && !loading ? '' : new Date(loading ? row.lease_until : row.next_check_at).toISOString(),
+    nextCheckAt: kind === 'coupons' && couponMetadataComplete(verified) && !loading ? '' : new Date(loading ? row.lease_until : row.next_check_at).toISOString(),
     refreshStatus: loading ? 'loading' : row.refresh_status,
-    refreshFailed: Boolean(verified && !loading && row.refresh_status !== 'matched'),
+    refreshFailed: Boolean(!loading && (verified ? row.refresh_status !== 'matched' : partial && row.refresh_status === 'error')),
     cached: !refreshed,
+    ...(kind === 'coupons' && (verified || current).couponRate === 0 ? { couponConfirmationRequired: true } : {}),
     ...(row.error_http_status === 429 ? { retryAfter: row.retry_after, reason: 'rate_limited' } : {}),
   };
 }
@@ -78,18 +82,26 @@ export async function queryCloudBondMetadata(db, { codes, mode, kind, lookup, no
   const initial = assertResults(await operation(() => db.batch(codes.map(read))));
   const at = now(), token = crypto.randomUUID();
   const due = [];
+  const legacyPartial = new Map();
   codes.forEach((code, index) => {
     const row = initial[index]?.results?.[0];
-    if (row) { verifiedResult(row, kind, code); rows.set(code, row); }
-    if (!row || row.next_check_at <= at && row.lease_until <= at) due.push(code);
+    if (row) {
+      const verified = verifiedResult(row, kind, code);
+      rows.set(code, row);
+      if (kind === 'coupons' && verified && row.next_check_at === FOREVER && !couponMetadataComplete(verified)) {
+        legacyPartial.set(code, row.verified_json);
+      }
+    }
+    if (!row || (row.next_check_at <= at || legacyPartial.has(code)) && row.lease_until <= at) due.push(code);
   });
   if (due.length) {
     const claims = assertResults(await operation(() => db.batch(due.flatMap(code => [
       db.prepare(`INSERT INTO ${TABLE} (mode, kind, security_code, lease_token, lease_until)
         VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(mode, kind, security_code) DO UPDATE SET lease_token = excluded.lease_token, lease_until = excluded.lease_until
-        WHERE ${TABLE}.next_check_at <= ?6 AND ${TABLE}.lease_until <= ?6`)
-        .bind(mode, kind, code, token, at + LEASE_MS, at), read(code),
+        WHERE ${TABLE}.lease_until <= ?6 AND (${TABLE}.next_check_at <= ?6
+          OR (?7 = 1 AND ${TABLE}.next_check_at = ?8 AND ${TABLE}.verified_json IS ?9))`)
+        .bind(mode, kind, code, token, at + LEASE_MS, at, Number(legacyPartial.has(code)), FOREVER, legacyPartial.get(code) ?? null), read(code),
     ]))));
     due.forEach((code, index) => {
       const row = claims[index * 2 + 1]?.results?.[0];
@@ -116,17 +128,25 @@ export async function queryCloudBondMetadata(db, { codes, mode, kind, lookup, no
         ...(payload.sourcePath ? { sourcePath: payload.sourcePath } : {}),
         ...(payload.sourcePaths ? { sourcePaths: payload.sourcePaths } : {}),
       } : { status: 'error', provider, fetchedAt };
+      const retained = verifiedResult(previous, kind, code);
+      const previousPartial = kind === 'coupons' ? decode(previous.result_json) : null;
+      const previousMetadata = retained || (couponMetadataUsable(previousPartial) ? previousPartial : null);
+      if (kind === 'coupons') current = supplementCouponMetadata(previousMetadata, current);
       if (current.status === 'matched' && !validSuccess(current, kind, code)) current = { status: 'error', provider, fetchedAt };
       if (status === 429) current.reason = 'rate_limited';
       if (lookupError?.code === 'dm_valuation_access_denied') current.reason = lookupError.code;
       const matched = current.status === 'matched';
-      const verified = matched ? current : verifiedResult(previous, kind, code);
+      const verified = matched ? current : retained;
+      const changed = matched && current !== retained;
+      // Before the coupon arrives, retain trusted classification through failed attempts
+      // in result_json. verified_json keeps its existing valid-coupon contract.
+      const retainedPartial = kind === 'coupons' && !retained && previousMetadata && !couponMetadataUsable(current);
       return { ...previous,
         verified_json: verified ? JSON.stringify(verified) : null,
-        checked_at: matched ? new Date(completed).toISOString() : previous.checked_at,
-        fetched_at: matched ? fetchedAt : previous.fetched_at,
-        result_json: JSON.stringify(current), refresh_status: current.status,
-        next_check_at: matched ? kind === 'coupons' ? FOREVER : nextChinaMetadataDay(completed)
+        checked_at: changed ? new Date(completed).toISOString() : previous.checked_at,
+        fetched_at: changed ? current.fetchedAt : previous.fetched_at,
+        result_json: JSON.stringify(retainedPartial ? previousMetadata : current), refresh_status: retainedPartial ? 'error' : current.status,
+        next_check_at: matched ? kind === 'coupons' ? couponMetadataComplete(verified) ? FOREVER : 0 : nextChinaMetadataDay(completed)
           : status === 429 ? Math.min(FOREVER, completed + (retryAfter ?? 60) * 1000) : 0,
         lease_token: '', lease_until: 0, error_http_status: status,
         error_code: lookupError?.code === 'dm_valuation_access_denied' ? lookupError.code : '', retry_after: retryAfter,
