@@ -1,4 +1,7 @@
 // Shared by the API and browser: model output is untrusted until validated.
+import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261025release5351';
+
 export const ISSUANCE_FIELDS = {
   securityCode: "债券代码", durationText: "期限", issueScale: "发行规模（亿元）",
   couponRate: "票面利率（%）", fullMarketMultiple: "全场倍数", marginalMultiple: "边际倍数",
@@ -15,7 +18,7 @@ const codeKey = (value) => compact(value).toUpperCase().replace(/\.(?:SH|SZ|IB)$
 const hasQuote = (text, quote) => Boolean(compact(quote)) && compact(text).includes(compact(quote));
 const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function mentionsTranche(text, tranche) {
-  return nameKey(text).includes(nameKey(tranche.shortName))
+  return Boolean(nameKey(tranche.shortName) && new RegExp(`${escapePattern(nameKey(tranche.shortName))}(?![A-Z0-9])`).test(nameKey(text)))
     || Boolean(tranche.securityCode && new RegExp(`(?<!\\d)${escapePattern(codeKey(tranche.securityCode))}(?!\\d)`).test(compact(text)));
 }
 function hasValueQuote(text, raw) {
@@ -57,7 +60,7 @@ export function validateSemanticResult(request, result) {
     const source = typeof extracted.sourceText === "string" ? extracted.sourceText : "";
     const code = extracted.fields?.securityCode?.raw || "";
     const named = request.tranches.filter((t) => nameKey(t.shortName) === nameKey(name));
-    const coded = code ? request.tranches.filter((t) => t.securityCode && codeKey(t.securityCode) === codeKey(code)) : [];
+    const coded = code ? request.tranches.filter((t) => sameCode(codeIdentity(t.securityCode), codeIdentity(code))) : [];
     const target = named.length === 1 ? named[0] : coded.length === 1 ? coded[0] : null;
     if (!target || (named.length && coded.length && named[0].id !== coded[0].id)) {
       needsModelRepair = true;
@@ -68,13 +71,12 @@ export function validateSemanticResult(request, result) {
     if (used.has(target.id)) { needsModelRepair = true; errors.push(`${prefix}同一品种返回多组结果，请拆分或核对通知。`); continue; }
     used.add(target.id);
     const sourceIdentifiesTarget = mentionsTranche(source, target)
-      || Boolean(target.securityCode && code && codeKey(target.securityCode) === codeKey(code) && hasQuote(source, code));
+      || Boolean(sameCode(codeIdentity(target.securityCode), codeIdentity(code)) && hasQuote(source, code));
     if (!hasQuote(request.text, source) || !sourceIdentifiesTarget) {
       needsModelRepair = true;
       errors.push(`${prefix}品种原文依据无法核对（摘录“${source.slice(0, 250)}”）。`);
       continue;
     }
-    if (target.securityCode && code && codeKey(target.securityCode) !== codeKey(code)) errors.push(`${prefix}券码与项目已有券码冲突。`);
     const outcome = extracted.outcome;
     if (!Object.hasOwn(ISSUANCE_OUTCOMES, outcome)) { errors.push(`${prefix}发行状态无效。`); continue; }
     const noIssue = outcome === "cancelled" || outcome === "reallocated";
@@ -84,8 +86,20 @@ export function validateSemanticResult(request, result) {
       : /全(?:部|数|额).{0,12}(?:回拨|转|拨|划)/;
     if (noIssue && (!outcomePattern.test(outcomeEvidence) || /(?:未|不|不会|并非).{0,3}(?:取消发行|回拨)/.test(source))) errors.push(`${prefix}缺少明确的取消发行/全部回拨事实，不能清空结果。`);
     if (noIssue && /部分回拨|回拨部分|剩余.{0,15}(?:发行|保留)|仍(?:将|然)?发行/.test(source)) errors.push(`${prefix}原文仍有实际发行安排，不能按取消/全部回拨清空结果。`);
-    const ownSource = noIssue ? source.replace(outcomeEvidence, "") : source;
-    if (request.tranches.some((t) => t.id !== target.id && mentionsTranche(ownSource, t))) { needsModelRepair = true; errors.push(`${prefix}源片段混入其他品种，请拆分后重新识别。`); }
+    // Keep the identity inside the outcome evidence. Only a stated transfer
+    // destination may mention another tranche; it is never the issuing subject.
+    const ownSource = outcome === "reallocated" ? withoutTransferDestinations(source, target, request.tranches) : source;
+    const explicitTokens = [...String(ownSource).normalize('NFKC')
+      .matchAll(/(?<![A-Z0-9])(?:\d{6}|\d{9})\s*\.\s*(?:IB|SH|SZ)(?![A-Z0-9])/gi)]
+      .map(match => codeIdentity(match[0]));
+    const identities = [codeIdentity(target.securityCode), codeIdentity(code), ...sourceCodes(ownSource), ...explicitTokens].filter(Boolean);
+    const reference = identities.find(identity => identity.market) || identities[0];
+    if (identities.some(identity => identity.invalid || !sameCode(identity, reference))) {
+      needsModelRepair = true;
+      errors.push(`${prefix}券码或交易市场与本品种原文／项目已有券码冲突，不能采用。`);
+    }
+    if (request.tranches.some((t) => t.id !== target.id && referencesTranche(ownSource, t, request.tranches))
+      || otherBondNames(ownSource, [target])) { needsModelRepair = true; errors.push(`${prefix}源片段混入其他品种，请拆分后重新识别。`); }
     const item = { trancheId: target.id, shortName: target.shortName, outcome, evidence: {}, sourceText: source,
       allocationNote: noIssue ? `${ISSUANCE_OUTCOMES[outcome]}：${outcomeEvidence.replace(/^[-—]+|[-—]+$/g, "").trim()}` : "" };
     for (const [field, label] of Object.entries(ISSUANCE_FIELDS)) {
@@ -94,13 +108,13 @@ export function validateSemanticResult(request, result) {
       if (cell?.raw == null || cell.raw === "") continue;
       if (typeof cell.raw !== "string" || typeof cell.evidence !== "string" || cell.raw.length > 100 || cell.evidence.length > 2000
         || !hasValueQuote(cell.evidence, cell.raw) || !hasQuote(request.text, cell.evidence)
-        || (!hasQuote(source, cell.evidence) && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(quote, target, request.tranches)))) {
+        || (!hasQuote(source, cell.evidence) && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(cell.evidence, target, request.tranches, request.text)))) {
         needsModelRepair = true;
         errors.push(`${prefix}${label}的摘录与原文不符，未采用（值“${String(cell?.raw || "").slice(0, 60)}”；依据“${String(cell?.evidence || "").slice(0, 120)}”）。`); continue;
       }
       // A field mentioning another explicit tranche cannot silently cross over.
-      const mentionsOther = request.tranches.some((t) => t.id !== target.id && mentionsTranche(cell.evidence, t));
-      if (mentionsOther && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(quote, target, request.tranches))) {
+      const mentionsOther = request.tranches.some((t) => t.id !== target.id && referencesTranche(cell.evidence, t, request.tranches));
+      if (mentionsOther && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(cell.evidence, target, request.tranches, request.text))) {
         needsModelRepair = true;
         errors.push(`${prefix}${label}引用了其他品种的内容。`); continue;
       }
@@ -119,9 +133,9 @@ export function validateSemanticResult(request, result) {
       const scopedNoticeEvidence = request.text
         .split(/[\r\n。；;！？!?]+/)
         .map((quote) => quote.trim())
-        .filter((quote) => quote && isSharedFor(quote, target, request.tranches));
+        .filter((quote) => quote && isSharedFor(quote, target, request.tranches, request.text));
       const inferredPayment = explicitPaymentDateFromEvidence(
-        [source, ...shared.filter((quote) => isSharedFor(quote, target, request.tranches)), ...scopedNoticeEvidence],
+        [source, ...shared.filter((quote) => isSharedFor(quote, target, request.tranches, request.text)), ...scopedNoticeEvidence],
         request.noticeDate,
       );
       if (inferredPayment?.error) {
@@ -143,14 +157,77 @@ export function validateSemanticResult(request, result) {
   return { items, errors: [...new Set(errors)], warnings: [...new Set(warnings)], canApply: errors.length === 0 && items.length > 0, needsModelRepair };
 }
 
-function isSharedFor(quote, target, tranches) {
-  const names = tranches.filter((t) => mentionsTranche(quote, t));
-  if (names.length && !names.some((t) => t.id === target.id)) return false;
-  if (names.length > 1 && !/均|共同|统一|同为|都是|各|两个品种|全部品种/.test(quote)) return false;
-  // A footer explicitly scoped to "B于..." is not a common date for A.
-  const alias = compact(quote).match(/^([A-Z])(?:品种)?(?:于|的|缴款|起息)/)?.[1];
-  if (alias && !nameKey(target.shortName).endsWith(alias)) return false;
-  return true;
+function trancheAlias(tranche, tranches) {
+  const alias = nameKey(tranche.shortName).match(/([A-Z])$/)?.[1];
+  return alias && tranches.filter(t => nameKey(t.shortName).endsWith(alias)).length === 1 ? alias : "";
+}
+
+function referencesTranche(text, tranche, tranches) {
+  const alias = trancheAlias(tranche, tranches);
+  return mentionsTranche(text, tranche) || Boolean(alias && new RegExp(`(?<![A-Z0-9])${alias}(?![A-Z0-9])`).test(nameKey(text)));
+}
+
+function otherBondNames(text, tranches) {
+  const value = nameKey(text);
+  const patterns = [/(?<!\d)\d{2}[\p{Script=Han}A-Z·]{1,32}?(?:ABCP|SCP|MTN|PPN|ABN|CP|GN|CD)\d{1,5}[A-Z]*(?![A-Z\d])/gu,
+    /(?<!\d)\d{2}[\p{Script=Han}·]{2,24}[A-Z]?\d{1,4}[A-Z]*(?![A-Z\d])/gu];
+  return patterns.some(pattern => [...value.matchAll(pattern)].some(match =>
+    !/^\d{2}(?:年|月|日|天|亿元|万元)/.test(match[0])
+    && !tranches.some(t => nameKey(t.shortName) === match[0])));
+}
+
+function withoutTransferDestinations(source, target, tranches) {
+  return String(source).normalize("NFKC").replace(/[^\S\r\n]/g, "")
+    .replace(/((?:回拨|转|拨|划)(?:至|到|给|入))([^，,。；;\r\n]+)/g, (_all, direction, destination) => {
+      let remainder = destination;
+      for (const other of tranches.filter(t => t.id !== target.id)) {
+        remainder = remainder.replace(new RegExp(escapePattern(nameKey(other.shortName)), "gi"), "");
+        if (other.securityCode) remainder = remainder.replace(new RegExp(`(?<!\\d)${escapePattern(codeKey(other.securityCode))}(?:\\.(?:SH|SZ|IB))?(?!\\d)`, "gi"), "");
+        const alias = trancheAlias(other, tranches);
+        if (alias) remainder = remainder.replace(new RegExp(`(?<![A-Z0-9])${alias}(?![A-Z0-9])`, "g"), "");
+      }
+      return direction + remainder;
+    });
+}
+
+function evidenceContexts(text, quote) {
+  const normalized = String(text).normalize("NFKC");
+  const notice = compact(normalized), needle = compact(quote);
+  if (!needle) return [];
+  const units = [];
+  let previousEnd = 0, offset = 0;
+  for (const match of normalized.matchAll(/[^\r\n。；;！？!?]+[。；;！？!?]?/g)) {
+    offset += compact(normalized.slice(previousEnd, match.index)).length;
+    const start = offset;
+    offset += compact(match[0]).length;
+    units.push({ text: match[0], start, end: offset });
+    previousEnd = match.index + match[0].length;
+  }
+  const contexts = [];
+  for (let index = notice.indexOf(needle); index >= 0; index = notice.indexOf(needle, index + 1)) {
+    contexts.push(...units.filter(unit => unit.end > index && unit.start < index + needle.length).map(unit => unit.text));
+  }
+  return contexts;
+}
+
+function isSharedFor(quote, target, tranches, notice = quote) {
+  const contexts = evidenceContexts(notice, quote);
+  if (!contexts.length) return false;
+  return contexts.every(context => {
+    if (otherBondNames(context, tranches)) return false;
+    const common = /均|共同|统一|同为|都是|各|两个品种|全部品种/.test(context) && !/分别|依次/.test(context);
+    const names = tranches.filter(t => referencesTranche(context, t, tranches));
+    if (names.length && !names.some(t => t.id === target.id)) return false;
+    if (names.length === 1) return true;
+    if (tranches.length === 1) return common || /缴款|缴付|付款|到账|起息/.test(quote);
+    if (!common) return false;
+    // Common applicability must follow the named scope. A later tranche name
+    // indicates a new private statement, not the scope of an earlier "均".
+    const scope = compact(context);
+    const marker = [...scope.matchAll(/均|共同|统一|同为|都是|各/g)].at(-1)?.index
+      ?? scope.search(/两个品种|全部品种/);
+    return !tranches.some(t => referencesTranche(scope.slice(marker + 1), t, tranches));
+  });
 }
 
 function explicitPaymentDateFromEvidence(sources, noticeDate) {

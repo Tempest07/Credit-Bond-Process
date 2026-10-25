@@ -4,30 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.3.5">
-  <meta name="application-build-version" content="5.3.5">
-  <meta name="application-build" content="20261024release535">
-  <title>Bond Centre 5.3.5 - Tempest07</title>
+  <meta name="application-version" content="5.3.5.1">
+  <meta name="application-build-version" content="5.3.5.1">
+  <meta name="application-build" content="20261025release5351">
+  <title>Bond Centre 5.3.5.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261024release535"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261024release535">
+  <script src="./app-shell-mode.js?v=20261025release5351"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261025release5351">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261024release535" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261024release535" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261024release535" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261024release535">
-  <script src="./ui-preference.js?v=20261024release535"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261024release535">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261024release535">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261024release535">
-  <link rel="stylesheet" href="./release-notes.css?v=20261024release535">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261024release535">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261024release535">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261024release535">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261025release5351" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261025release5351" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261025release5351" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261025release5351">
+  <script src="./ui-preference.js?v=20261025release5351"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261025release5351">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261025release5351">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261025release5351">
+  <link rel="stylesheet" href="./release-notes.css?v=20261025release5351">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261025release5351">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261025release5351">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261025release5351">
 </head>
 <body>
   <div class="app-shell">
@@ -52,13 +52,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.3.5">v5.3.5</span>
+      <span class="header-version" aria-label="当前版本 5.3.5.1">v5.3.5.1</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.5 · 2026-10-24">v5.3.5</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.5.1 · 2026-10-25">v5.3.5.1</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1387,12 +1387,15 @@
       <section class="view" data-view="rules">
         <div class="rules-grid">
           <article class="rule-card"><span>比例规则 01</span><h2>授信比例为默认值</h2><p>普通信用债采用主体 50206 批复比例；ABS 仅采用项目所关联的 50217 批单比例。</p></article>
-          <article class="rule-card"><span>比例规则 02</span><h2>兴业主承最高 20%</h2><p>主承身份为“牵头”或“联席”时，建议投资比例不得超过最终发行规模的20%。</p></article>
-          <article class="rule-card"><span>比例规则 03</span><h2>AA 超授信期限最高 15%</h2><p>隐含评级为AA，且债券期限超过授信投资期限时，建议投资比例不得超过15%。</p></article>
-          <article class="rule-card"><span>比例规则 04</span><h2>AA(2) 超授信期限最高 10%</h2><p>隐含评级为AA(2)，且债券期限超过授信投资期限时，建议投资比例不得超过10%。</p></article>
-          <article class="rule-card"><span>比例规则</span><h2>AAA+ 与 AAA 规则一致</h2><p>超授信投资期限时，AAA+与AAA均不额外设置评级比例上限，仍受授信批准比例及我行主承20%上限约束。</p></article>
-          <article class="rule-card"><span>金额规则</span><h2>发行规模 × 建议比例</h2><p>申请与建议投资金额暂按发行规模乘以最终建议比例自动计算，并允许在流程意见中手工修改。</p></article>
-          <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>房地产债由林总终批；AAA+与AAA投资金额超过8亿由金处、超过10亿由周总终批；其他评级超过3.2亿由金处、超过4亿由周总终批。</p></article>
+          <article class="rule-card"><span>比例规则 02</span><h2>兴业主承最高 20%</h2><p>普通信用债主承身份为“牵头”或“联席”时，建议投资比例不得超过最终发行规模的20%；授信比例和适用上限取最低值。</p></article>
+          <article class="rule-card"><span>比例规则 03</span><h2>AA+ 超授信期限</h2><p>隐含评级为AA+且债券期限超过授信投资期限时，公募上限20%，私募上限10%。</p></article>
+          <article class="rule-card"><span>比例规则 04</span><h2>AA 超授信期限</h2><p>隐含评级为AA且债券期限超过授信投资期限时，公募上限15%，私募不可投资（0%）。</p></article>
+          <article class="rule-card"><span>比例规则 05</span><h2>AA(2)及以下超授信期限</h2><p>隐含评级为AA(2)及以下且债券期限超过授信投资期限时，公募上限10%，私募不可投资（0%）。</p></article>
+          <article class="rule-card"><span>比例规则</span><h2>AAA 档不追加超期比例上限</h2><p>超授信投资期限时，AAA+、AAA与AAA-均不额外设置评级比例上限，仍受授信批准比例及普通信用债我行主承20%上限约束；期限不覆盖仍须提示。</p></article>
+          <article class="rule-card"><span>期限规则</span><h2>按首次行权期限校验</h2><p>3+2按3年、5+5+5按5年比较授信期限；18个月、18月和18M均可识别。期限缺失或无法解析时，比例和金额待核对，不视为期限已覆盖。</p></article>
+          <article class="rule-card"><span>金额规则</span><h2>普通债按 1000 万元向下取整</h2><p>普通信用债按发行规模×最终建议比例计算，向下取整到1000万元（0.1亿元）：5.9亿元×10%=0.59亿元，建议0.5亿元。</p></article>
+          <article class="rule-card"><span>ABS 金额</span><h2>按关联的 50217 批复核对</h2><p>ABS保留申请金额、批复金额及建议金额的现有优先规则；超过所选分档规模×比例时提示冲突，必须核对并确认后保存，不静默调整批复金额。</p></article>
+          <article class="rule-card"><span>终批规则</span><h2>按隐含评级与投资金额判断</h2><p>普通信用债中，房地产债由林总终批；AAA+与AAA金额严格大于8亿由金处、严格大于10亿由周总；其他评级严格大于3.2亿由金处、严格大于4亿由周总。等于阈值时归下一级，其余由处室终批。ABS沿用处室终批。</p></article>
           <article class="rule-card"><span>主承表述</span><h2>牵头与联席自动改写</h2><p>牵头时主承销商写兴业银行；联席时写“牵头主承销商、兴业银行”。</p></article>
           <article class="rule-card"><span>交易所债券</span><h2>发行方式与期次需确认</h2><p>简称尾号不等于发行期次。简表需注明公开/非公开及“第几期”，也可在结构化字段中手工确认。</p></article>
           <article class="rule-card"><span>双品种互拨</span><h2>一条意见分别列示</h2><p>自动合并 A/B 或相邻交易所简称，规模按合计、期限按双向互拨表述，询价和比例按两个期限分别列示。</p></article>
@@ -1647,6 +1650,21 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.3.5.1</strong><time datetime="2026-10-25">2026 / 10 / 25</time></div>
+      <section><h3>评级、期限与金额核验</h3><ul>
+        <li>保留有效外部评级与实际来源，主体库补充缺失字段；支持18个月等期限格式，未知期限明确待核对。</li>
+        <li>补全公募、私募超期比例及1000万元取整说明；ABS保留批复金额规则，金额与比例冲突时须核对确认。</li>
+      </ul></section>
+      <section><h3>保存与缴款单保护</h3><ul>
+        <li>本机缓存失败仍继续云端保存，明确提示未保存状态；处理中禁止删除原件或覆盖对应。</li>
+        <li>证券代码或市场冲突不得自动对应；修正拆页与人工对应互斥，支持代码在简称前的文本顺序。</li>
+      </ul></section>
+      <section><h3>识别、估值与交收</h3><ul>
+        <li>发行结果按原文归属核验证据；估值按每个品种区分普通与行权结构。</li>
+        <li>T+1按2026年银行间／沪深市场日历推算，保留已确认日期；日历未覆盖时可人工填写。</li>
+        <li>已知票面继续缓存，缺失分类可补查；0%票面需人工确认。邮件发信仅接受同源POST。</li>
+        <li>Android后台提醒修正接口及失败重试，需安装新版APK。缴款单OCR相邻字段恢复项继续暂缓。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.3.5</strong><time datetime="2026-10-24">2026 / 10 / 24</time></div>
       <section><h3>OFR/BID 资料复用</h3><ul>
         <li>票面利率及品种资料成功取得后复用，估值每个北京时间自然日成功更新一次，重新进入页面保留已有资料。</li>
@@ -1845,10 +1863,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261024release535"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261024release535"></script>
-  <script type="module" src="./app.js?v=20261024release535"></script>
-  <script type="module" src="./todo-fluid.js?v=20261024release535"></script>
-  <script type="module" src="./release-notes.js?v=20261024release535"></script>
+  <script src="./ui-mode.js?v=20261025release5351"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261025release5351"></script>
+  <script type="module" src="./app.js?v=20261025release5351"></script>
+  <script type="module" src="./todo-fluid.js?v=20261025release5351"></script>
+  <script type="module" src="./release-notes.js?v=20261025release5351"></script>
 </body>
 </html>

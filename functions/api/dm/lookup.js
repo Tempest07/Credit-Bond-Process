@@ -6,6 +6,7 @@ import { createFallbackClient, withDataSources } from "../qb/fallback.js";
 import { fieldProvider, rowProvenance } from '../qb/provenance.js';
 import { resolveDataSourceMode } from '../_data-source.js';
 import { qbRateLimitResponse } from '../qb/errors.js';
+import { normalizeMarketImpliedRating } from "../../../bond-ratings.js";
 
 const DM_BASE_URL = "https://gapi-ext.innodealing.com";
 const BASIC_INFO_PATH = "/dm-quant-func-service/api/v1/bond/basic-info/info";
@@ -3138,8 +3139,7 @@ function impliedRatingFieldRank(key) {
 }
 
 function normalizeImpliedRating(value) {
-  const text = String(value ?? "").trim().toUpperCase().replace(/（/g, "(").replace(/）/g, ")");
-  return /^(?:AAA[+-]?|AA(?:[+-]|\(2\))?|A[+-]?|BBB[+-]?|BB[+-]?|B[+-]?|CCC[+-]?|CC|C|D)$/.test(text) ? text : "";
+  return normalizeMarketImpliedRating(value);
 }
 
 function pickRatingLike(rows, kind) {

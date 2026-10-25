@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const VERSION = "20261024release535";
+const VERSION = "20261025release5351";
 
 test("exposes a readable product version consistent with package metadata", async () => {
   const [html, packageText, lockText] = await Promise.all([
@@ -35,15 +35,15 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../bond-list-editor.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261024release535/);
-  assert.match(html, /bond-list-editor\.css\?v=20261024release535/);
-  assert.match(app, /bond-list-editor\.js\?v=20261024release535/);
-  assert.match(html, /payment-receipt-reader\.css\?v=20261024release535/);
-  assert.match(app, /payment-receipt-preview\.js\?v=20261024release535/);
-  assert.match(app, /payment-receipt-reader\.js\?v=20261024release535/);
-  assert.match(html, /project-target-note\.css\?v=20261024release535/);
-  assert.match(app, /project-target-note\.js\?v=20261024release535/);
-  assert.match(app, /data-source-control\.js\?v=20261024release535/);
+  assert.match(html, /app\.js\?v=20261025release5351/);
+  assert.match(html, /bond-list-editor\.css\?v=20261025release5351/);
+  assert.match(app, /bond-list-editor\.js\?v=20261025release5351/);
+  assert.match(html, /payment-receipt-reader\.css\?v=20261025release5351/);
+  assert.match(app, /payment-receipt-preview\.js\?v=20261025release5351/);
+  assert.match(app, /payment-receipt-reader\.js\?v=20261025release5351/);
+  assert.match(html, /project-target-note\.css\?v=20261025release5351/);
+  assert.match(app, /project-target-note\.js\?v=20261025release5351/);
+  assert.match(app, /data-source-control\.js\?v=20261025release5351/);
   assert.match(app, new RegExp(`core\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`lifecycle\\.js\\?v=${VERSION}`));
   assert.match(app, new RegExp(`issuance-recognition\\.js\\?v=${VERSION}`));
@@ -846,8 +846,8 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(rootBuildGradle, /com\.android\.application" version "8\.6\.1"/);
   assert.match(buildGradle, /namespace "com\.tempest07\.bondcentre"/);
   assert.match(buildGradle, /applicationId "com\.tempest07\.bondcentre"/);
-  assert.match(buildGradle, /versionCode 4/);
-  assert.match(buildGradle, /versionName "0\.3\.1"/);
+  assert.match(buildGradle, /versionCode 5/);
+  assert.match(buildGradle, /versionName "5\.3\.5\.1"/);
   assert.match(buildGradle, /androidx\.work:work-runtime:2\.11\.2/);
   assert.match(gradleProperties, /android\.useAndroidX=true/);
   assert.match(mainActivity, /https:\/\/tempest07\.com\/bond-centre\//);
@@ -860,7 +860,7 @@ test("ships Android shell and debug APK workflow", async () => {
   assert.match(receiver, /CHANNEL_ID = "bond-centre-reminders"/);
   assert.match(reminderSync, /routeUrl\(item\)/);
   assert.match(reminderSync, /appendQueryParam\(builder, "kind"/);
-  assert.match(syncWorker, /https:\/\/tempest07\.com\/api\/reminders/);
+  assert.match(syncWorker, /REMINDER_API_URL = MainActivity\.BASE_URL \+ "api\/reminders"/);
   assert.match(syncWorker, /CookieManager\.getInstance\(\)\.getCookie/);
   assert.match(syncWorker, /enqueueUniquePeriodicWork/);
   assert.match(syncWorker, /ExistingPeriodicWorkPolicy\.UPDATE/);

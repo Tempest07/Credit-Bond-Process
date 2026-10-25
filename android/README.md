@@ -12,7 +12,7 @@ Android shell for the Tempest07 Bond Centre workbench.
 - Supports file upload from WebView forms.
 - Receives the web app's unified reminders through `Tempest07Android.syncReminders(...)`.
 - Posts local Android notifications for immediate reminders and schedules simple local alarms for dated reminders.
-- Periodically fetches `https://tempest07.com/api/reminders` through WorkManager with the saved Gateway session cookie, so reminder sync survives app exits and device restarts.
+- Periodically fetches `https://tempest07.com/bond-centre/api/reminders` through WorkManager with the saved Gateway session cookie, so reminder sync survives app exits and device restarts. HTTP configuration errors and invalid JSON responses fail the sync and are retried; an expired login waits for a new session.
 - Opens reminder notifications back into the relevant workbench module, such as the project ledger or secondary trading centre.
 - Rejects external intent URLs before they reach the WebView and its JavaScript bridge.
 

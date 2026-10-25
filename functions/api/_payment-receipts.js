@@ -614,6 +614,11 @@ export async function insertPaymentReceiptMatch(db, input) {
 export async function assignPaymentReceipt(db, input) {
   const now = input.updatedAt || new Date().toISOString();
   const statements = [
+    manualReceiptMutationGuard(db, input, {
+      now,
+      eventType: "receipt_manually_matched",
+      detail: { projectId: input.projectId, trancheId: input.trancheId, paymentDate: input.paymentDate || "" },
+    }),
     db.prepare(`
       DELETE FROM payment_receipt_matches
       WHERE owner_user_id = ?1 AND receipt_id = ?2
@@ -639,14 +644,18 @@ export async function assignPaymentReceipt(db, input) {
       WHERE owner_user_id = ?3 AND id = ?4
     `).bind(input.paymentDate || "", now, input.ownerUserId, input.receiptId),
   ];
-  if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
-  await db.batch(statements);
+  await commitManualReceiptMutation(db, statements);
 }
 
 export async function unassignPaymentReceipt(db, input) {
   const now = input.updatedAt || new Date().toISOString();
-  if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
-  await db.batch([
+  await commitManualReceiptMutation(db, [
+    manualReceiptMutationGuard(db, input, {
+      now,
+      eventType: "receipt_manually_unmatched",
+      matchedOnly: true,
+      detail: { previousProjectId: input.previousProjectId || "", previousTrancheId: input.previousTrancheId || "" },
+    }),
     db.prepare(`
       DELETE FROM payment_receipt_matches
       WHERE owner_user_id = ?1 AND receipt_id = ?2
@@ -657,6 +666,39 @@ export async function unassignPaymentReceipt(db, input) {
       WHERE owner_user_id = ?2 AND id = ?3
     `).bind(now, input.ownerUserId, input.receiptId),
   ]);
+}
+
+function manualReceiptMutationGuard(db, input, { now, eventType, detail, matchedOnly = false }) {
+  // The first write shares the source-file lock used by regrouping. A failed
+  // guard violates owner_user_id's NOT NULL constraint and rolls back the batch.
+  return db.prepare(`
+    INSERT INTO payment_receipt_events (
+      id, owner_user_id, receipt_id, batch_id, event_type, detail_json, created_at
+    ) VALUES (
+      ?1,
+      (SELECT r.owner_user_id
+       FROM payment_receipts r
+       JOIN payment_receipt_files f ON f.id = r.file_id AND f.batch_id = r.batch_id
+       JOIN payment_receipt_batches b ON b.id = r.batch_id
+       WHERE r.owner_user_id = ?2 AND b.owner_user_id = ?2 AND r.id = ?3
+         AND f.processing_status IN ('processed', 'review')
+         AND r.match_status ${matchedOnly ? "= 'matched'" : "<> 'duplicate'"}),
+      ?3, (SELECT batch_id FROM payment_receipts WHERE owner_user_id = ?2 AND id = ?3),
+      ?4, ?5, ?6
+    )
+  `).bind(crypto.randomUUID(), input.ownerUserId, input.receiptId, eventType, JSON.stringify(detail), now);
+}
+
+async function commitManualReceiptMutation(db, statements) {
+  if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    if (/NOT NULL constraint failed: payment_receipt_events\.owner_user_id/i.test(error.message || "")) {
+      throw Object.assign(new Error("原件正在处理、修正拆页或单据状态已变化，请刷新后重试"), { code: "receipt_processing_conflict" });
+    }
+    throw error;
+  }
 }
 
 export async function deleteDuplicatePaymentReceipt(db, input) {

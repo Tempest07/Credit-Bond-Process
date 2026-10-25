@@ -2,6 +2,8 @@ package com.tempest07.bondcentre;
 
 import android.content.Context;
 import android.webkit.CookieManager;
+import android.util.Log;
+import org.json.JSONObject;
 
 import androidx.annotation.NonNull;
 import androidx.work.BackoffPolicy;
@@ -24,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 public class ReminderSyncWorker extends Worker {
-    private static final String REMINDER_API_URL = "https://tempest07.com/api/reminders";
+    private static final String REMINDER_API_URL = MainActivity.BASE_URL + "api/reminders";
     private static final String PERIODIC_WORK_NAME = "tempest07-periodic-reminder-sync";
     private static final String ONE_SHOT_WORK_NAME = "tempest07-one-shot-reminder-sync";
     private static final long SYNC_INTERVAL_MINUTES = 15L;
@@ -81,17 +83,23 @@ public class ReminderSyncWorker extends Worker {
         try {
             connection = (HttpURLConnection) new URL(REMINDER_API_URL).openConnection();
             connection.setRequestMethod("GET");
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(8000);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Cookie", cookie);
             connection.setRequestProperty("User-Agent", "Tempest07Android/" + BuildConfig.VERSION_NAME);
             int status = connection.getResponseCode();
-            if (status == HttpURLConnection.HTTP_UNAUTHORIZED || status == HttpURLConnection.HTTP_FORBIDDEN) {
+            if (ReminderHttpPolicy.isLoggedOut(status)) {
                 return true;
             }
-            if (status != HttpURLConnection.HTTP_OK) return status < 500;
-            ReminderSync.handleReminderPayload(context, readAll(connection.getInputStream()));
+            if (!ReminderHttpPolicy.acceptsPayload(status, connection.getContentType())) {
+                Log.w("ReminderSync", "Reminder API rejected: HTTP " + status);
+                return false;
+            }
+            String payload = readAll(connection.getInputStream());
+            if (new JSONObject(payload).optJSONArray("reminders") == null) return false;
+            ReminderSync.handleReminderPayload(context, payload);
             return true;
         } catch (Exception ignored) {
             return false;

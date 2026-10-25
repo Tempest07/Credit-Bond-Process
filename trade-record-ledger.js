@@ -3,6 +3,7 @@ import {
   normalizeTradeRecord,
 } from "./trade-record-converter.js";
 import { marketDataProvenance } from './market-data-source.js';
+import { settlementDateAfterEdit, settlementDateWarnings } from './bond-settlement-calendar.js';
 
 export function secondaryTradeRecordForOutput(trade = {}) {
   const record = normalizeTradeRecord(trade.tradeRecord || {});
@@ -123,9 +124,14 @@ export function applyTradeRecordRowsToState(state = {}, rows = []) {
       : settlementSpeed === "1"
         ? 1
         : trade.settlementSpeed;
+    const code = normalizeCode(record["债券代码"]) || String(trade.code || "");
+    const settlementDate = settlementDateAfterEdit(trade, {
+      tradeDate, settlementSpeed: normalizedSettlementSpeed, code,
+      ...(Object.hasOwn(row, "settlementDate") ? { settlementDate: row.settlementDate } : {}),
+    });
     return {
       ...trade,
-      code: normalizeCode(record["债券代码"]) || String(trade.code || ""),
+      code,
       shortName: record["债券简称"],
       account: record["组合"],
       side: direction === "买入" ? "buy" : direction === "卖出" ? "sell" : "unknown",
@@ -137,7 +143,9 @@ export function applyTradeRecordRowsToState(state = {}, rows = []) {
       tradeDate,
       ledgerDate: tradeDate,
       settlementSpeed: normalizedSettlementSpeed,
-      settlementDate: inferSettlementDate(tradeDate, normalizedSettlementSpeed),
+      settlementDate,
+      parseWarnings: settlementDateWarnings(trade.parseWarnings, settlementDate),
+      market: code.match(/\.(IB|SH|SZ)$/)?.[1] || (code === trade.code ? trade.market || "" : ""),
       counterparty: record["真实交易对手"],
       intermediary: record["中介"],
       tradeRecord: record,
@@ -190,21 +198,6 @@ function normalizedSpeedText(value) {
 
 function dateText(value) {
   return String(value || "").trim().slice(0, 10);
-}
-
-function inferSettlementDate(tradeDate, speed = 0) {
-  const match = String(tradeDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return "";
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  if (
-    date.getFullYear() !== Number(match[1])
-    || date.getMonth() !== Number(match[2]) - 1
-    || date.getDate() !== Number(match[3])
-  ) {
-    return "";
-  }
-  date.setDate(date.getDate() + (Number(speed) === 1 ? 1 : 0));
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function numberText(value) {

@@ -1,5 +1,6 @@
 // QB schemas verified 2026-10-22. These adapters retain DM's field contract;
 // _qb records the actual provider and fields rather than disguising QB as DM.
+import { normalizeMarketImpliedRating } from "../../../bond-ratings.js";
 const PREFIX = "/dm-quant-func-service/api/v1/";
 const COMPANY_RATING = `${PREFIX}company/rating/data`;
 const BOND_RATING = `${PREFIX}bond/rating/data`;
@@ -97,11 +98,11 @@ async function impliedRatings(input, client, end) {
     const raw = await client.query("cdcBondValuation", { bond_code_par: [...remaining].join(","), date });
     for (const code of [...remaining]) {
       const candidates = raw.filter(row => securityCode(row.sec_code) === code && dataDate(row.valuate_date) === date);
-      const ratings = [...new Set(candidates.map(row => text(row.implied_rating)).filter(validRating))];
+      const ratings = [...new Set(candidates.map(row => normalizeMarketImpliedRating(row.implied_rating)).filter(Boolean))];
       // Some option-bearing bonds have maturity and exercise rows. A conflicting
       // implied rating is not resolved by accidentally picking array order.
       if (ratings.length !== 1) continue;
-      const matched = candidates.find(row => text(row.implied_rating) === ratings[0]);
+      const matched = candidates.find(row => normalizeMarketImpliedRating(row.implied_rating) === ratings[0]);
       result.push(withMeta({ securityId: code, secShortName: text(matched.sec_short_name), ratingDate: date, cbImpliedRating: ratings[0] },
         client, ["cdcBondValuation"], date,
         { securityId: "sec_code", secShortName: "sec_short_name", ratingDate: "valuate_date", cbImpliedRating: "implied_rating" }));

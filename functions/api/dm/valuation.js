@@ -56,7 +56,7 @@ const MARKET_DATA_FIELDS = [
 // Model evidence deliberately bypasses mechanical adjustment, weighting and the five-bond cluster.
 export async function collectModelValuationEvidence(dm, input, { now = new Date() } = {}) {
   const requestedDate = previousChinaBusinessDate(now);
-  const targets = targetDurationParts(input.durationText);
+  const targets = targetDurationProfiles(input);
   if (!input.issuerName || !input.shortName || !targets.length) throw new Error('需要发行人、债券简称和有效期限');
   const profile = comparableProfile(input);
   const offeringType = normalizeOffering(input.offeringType);
@@ -71,7 +71,7 @@ export async function collectModelValuationEvidence(dm, input, { now = new Date(
     let reason = '';
     if (!c?.securityId) reason = '缺少有效剩余期限或券码';
     else if (sameSecurity(c, input)) reason = '目标券本身';
-    else if (!profilesAreComparable(profile, c.profile)) reason = '永续、偿付顺序、结构或品种不匹配';
+    else if (!targets.some(t => profilesAreComparable(t.profile, c.profile))) reason = '永续、偿付顺序、行权结构或品种不匹配';
     else if (!offeringType || !c.offeringType || c.offeringType !== offeringType) reason = '发行方式未知或不匹配';
     if (reason) excluded.push({ shortName: name, reason }); else eligible.push(c);
   }
@@ -103,7 +103,8 @@ export async function collectModelValuationEvidence(dm, input, { now = new Date(
     } catch { curveWarning = '评级曲线未取得，本次材料不含曲线'; }
   }
   return withDataSources({ source: 'DM market-data/date', sample: false, collectedAt: now.toISOString(), requestedDate, valuationDate: actualDate,
-    target, targets, candidates, excluded, curve, warnings: [curveWarning, eligible.length > universe.length ? `候选${eligible.length}只，按期限接近度查询前${universe.length}只` : '', actualDate && actualDate !== requestedDate ? '最新可用估值日早于请求日' : ''].filter(Boolean),
+    target, targets: targets.map(t => ({ ...t, candidateSecurityIds: candidates.filter(c => profilesAreComparable(t.profile, c.profile)).map(c => c.securityId) })),
+    candidates, excluded, curve, warnings: [curveWarning, eligible.length > universe.length ? `候选${eligible.length}只，按期限接近度查询前${universe.length}只` : '', actualDate && actualDate !== requestedDate ? '最新可用估值日早于请求日' : ''].filter(Boolean),
     counts: { outstanding: outstanding.rows.length, eligible: eligible.length, queried: universe.length, priced: candidates.length } }, dm);
 }
 
@@ -133,7 +134,7 @@ export async function onRequestGet(context) {
   if (!issuerName && !societyCode) {
     return json({ ok: false, reason: "missingIssuer", hint: "缺少发行人，暂无法读取可比券估值。" });
   }
-  const targetDurations = targetDurationParts(durationText);
+  const targetDurations = targetDurationProfiles({ shortName, fullName, venue, offeringType, durationText });
   if (!targetDurations.length) {
     return json({ ok: false, reason: "missingDuration", hint: "缺少期限，暂无法读取可比券估值。" });
   }
@@ -159,7 +160,7 @@ export async function onRequestGet(context) {
       .filter((candidate) => candidate && candidate.securityId)
       .filter((candidate) => !sameSecurity(candidate, { shortName }))
       .filter((candidate) => offeringMatches(targetOffering, candidate.offeringType))
-      .filter((candidate) => profilesAreComparable(targetProfile, candidate.profile));
+      .filter((candidate) => targetDurations.some(target => profilesAreComparable(target.profile, candidate.profile)));
 
     if (!candidates.length) {
       return json(withDataSources(noComparablePayload({ issuerName, durationText, valuationDate, reason: "noSimilarBond", hint: "有存续债，但未筛出同发行方式、同类属性的可比券。" }), dm));
@@ -188,14 +189,14 @@ export async function onRequestGet(context) {
       .filter((candidate) => !candidate.valuation.basisFallback);
 
     let trancheSuggestions = targetDurations
-      .map((target, index) => buildTrancheSuggestion(target, index, pricedCandidates, targetProfile, target.hasExercise))
+      .map((target, index) => buildTrancheSuggestion(target, index, pricedCandidates, target.profile, target.hasExercise))
       .filter(Boolean);
     if (impliedRating && trancheSuggestions.some(shouldTryCurveCalibration)) {
       trancheSuggestions = await Promise.all(trancheSuggestions.map((suggestion) => maybeApplyCurveCalibration(dm, {
         suggestion,
         impliedRating,
         valuationDate: actualValuationDate || valuationDate,
-        targetProfile,
+        targetProfile: targetDurations[suggestion.index]?.profile || targetProfile,
       })));
     }
     trancheSuggestions = trancheSuggestions.map(enforceSingleAnchorReliability);
@@ -426,6 +427,7 @@ function candidatesForMarketData(candidates, targets) {
 function buildTrancheSuggestion(target, index, candidates, targetProfile, preferExercise) {
   const maxGap = maxDurationGapYears(target.years);
   const allComparableItems = candidates
+    .filter(candidate => profilesAreComparable(targetProfile, candidate.profile))
     .map((candidate) => {
       const durationGapYears = target.years - candidate.years;
       const absoluteGapYears = Math.abs(durationGapYears);
@@ -660,7 +662,7 @@ async function buildCurveOnlyFallbackSuggestions(dm, { targetDurations, impliedR
       impliedRating,
       curveName,
       curveByTerm,
-      targetProfile,
+      targetProfile: target.profile || targetProfile,
     }))
     .filter(Boolean);
 }
@@ -1188,6 +1190,14 @@ function targetDurationParts(durationText) {
     .filter((item) => Number.isFinite(item.years) && item.years > 0);
 }
 
+function targetDurationProfiles(input) {
+  return targetDurationParts(input.durationText).map(target => ({
+    ...target,
+    offeringType: normalizeOffering(input.offeringType),
+    profile: { ...comparableProfile({ ...input, durationText: target.durationText }), exercisable: target.hasExercise },
+  }));
+}
+
 function splitDurationParts(value = "") {
   const text = String(value || "").trim().toUpperCase().replace(/期$/, "");
   const unit = text.match(/(D|M|Y|天|日|月|年)$/i)?.[1] || "";
@@ -1318,7 +1328,8 @@ function profilesAreComparable(target, candidate) {
   ) return false;
   return target.perpetual === candidate.perpetual
     && target.subordinated === candidate.subordinated
-    && target.structured === candidate.structured;
+    && target.structured === candidate.structured
+    && Boolean(target.exercisable) === Boolean(candidate.exercisable);
 }
 
 function bondClassesCrossMarketComparable(targetClass, candidateClass) {

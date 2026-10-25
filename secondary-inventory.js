@@ -3,7 +3,12 @@ import {
   parseTradeRecordLine,
 } from "./trade-record-converter.js";
 import { marketDataProvenance } from './market-data-source.js';
-import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261024release535";
+import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261025release5351";
+import {
+  resolveBondSettlementDate,
+  settlementDateAfterEdit,
+  settlementDateWarnings,
+} from "./bond-settlement-calendar.js";
 
 const ACCOUNT_ALIASES = new Map([
   ["SDR", "SDR"],
@@ -92,9 +97,10 @@ export function normalizeSecondaryOrder(input = {}) {
 export function normalizeSecondaryTrade(input = {}) {
   const now = new Date().toISOString();
   const tradeDate = normalizeDate(input.tradeDate) || localDate(new Date());
-  const settlementSpeed = normalizeSettlementSpeed(input.settlementSpeed);
-  const settlementDate = normalizeDate(input.settlementDate) || inferSettlementDate(tradeDate, settlementSpeed);
+  const settlementSpeed = normalizeSettlementSpeed(input.settlementSpeed ?? input.tradeRecord?.["清算速度(0/1)"]);
   const code = normalizeSecurityCode(input.code);
+  const market = normalizeSecondaryMarket(input.market, code);
+  const settlementDate = resolveBondSettlementDate({ tradeDate, settlementSpeed, code, market, settlementDate: input.settlementDate });
   const storedShortName = String(input.shortName || "").trim();
   const shortName = storedShortName && !extractRemainingTerm(storedShortName)
     ? storedShortName
@@ -127,9 +133,9 @@ export function normalizeSecondaryTrade(input = {}) {
     intermediary: String(input.intermediary || "").trim(),
     remainingTerm: String(input.remainingTerm || "").trim(),
     contactNote: String(input.contactNote || "").trim(),
-    market: normalizeSecondaryMarket(input.market, code),
+    market,
     instrumentScope: normalizeSecondaryInstrumentScope(input.instrumentScope, input.sourceText, code, shortName),
-    parseWarnings: Array.isArray(input.parseWarnings) ? input.parseWarnings.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    parseWarnings: settlementDateWarnings(Array.isArray(input.parseWarnings) ? input.parseWarnings.map((item) => String(item || "").trim()).filter(Boolean) : [], settlementDate),
     sourceType: String(input.sourceType || "manual").trim(),
     tradeRecord,
     tradeRecordSources: normalizeTradeRecordSources(input.tradeRecordSources),
@@ -327,7 +333,7 @@ export function tradeRecordToSecondaryTrade(record = {}, context = {}) {
     negotiationDate: tradeRecord["谈判日"] || context.negotiationDate,
     tradeDate,
     settlementSpeed,
-    settlementDate: inferSettlementDate(tradeDate, settlementSpeed),
+    settlementDate: resolveBondSettlementDate({ tradeDate, settlementSpeed, code, market: context.market, settlementDate: context.settlementDate }),
     counterparty: tradeRecord["真实交易对手"],
     intermediary: tradeRecord["中介"],
     remainingTerm: extractRemainingTerm(normalizeLine(sourceText)),
@@ -438,6 +444,9 @@ export function secondaryTradeMissingFields(input = {}) {
   if (!String(tradeRecord["真实交易对手"] || "").trim()) add("counterparty", "真实交易对手");
   if (!String(tradeRecord["中介"] || "").trim()) add("intermediary", "中介");
   if (!["0", "1"].includes(settlementSpeed)) add("settlementSpeed", "清算速度");
+  if (["0", "1"].includes(settlementSpeed) && !resolveBondSettlementDate({
+    ...input, code: tradeRecord["债券代码"], tradeDate: tradeRecord["交易日"], settlementSpeed,
+  })) add("settlementDate", "结算日期（需人工确认）");
   const netPrice = hasStructuredTradeRecord
     ? tradeRecord["净价"]
     : input.frontOfficePrice || input.price || tradeRecord["净价"];
@@ -472,6 +481,11 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
   const intermediary = String(has("intermediary") ? input.intermediary : existing["中介"] || "").trim();
   const speedValue = String(has("settlementSpeed") ? input.settlementSpeed : existing["清算速度(0/1)"] || "").trim();
   const settlementSpeed = ["0", "1"].includes(speedValue) ? speedValue : "";
+  const market = normalizeSecondaryMarket(has("market") ? input.market : code === trade.code ? trade.market : "", code);
+  const settlementDate = settlementDateAfterEdit(trade, {
+    tradeDate, settlementSpeed, code, market,
+    ...(has("settlementDate") ? { settlementDate: input.settlementDate } : {}),
+  });
   const cost = String(has("cost") ? input.cost : existing["成本"] || "").trim();
   const spread = String(has("spread") ? input.spread : existing["价差"] || "").trim();
   const settlementSpeedText = String(
@@ -525,7 +539,8 @@ export function updateSecondaryPendingTrade(trade = {}, input = {}) {
     negotiationDate,
     tradeDate,
     settlementSpeed,
-    settlementDate: tradeDate && settlementSpeed ? inferSettlementDate(tradeDate, settlementSpeed) : "",
+    settlementDate,
+    market,
     counterparty,
     intermediary,
     frontOfficePrice,
@@ -568,6 +583,7 @@ export function applySecondaryPendingDraftRows(state = {}, rows = []) {
       portfolio: record["组合"],
       intermediary: record["中介"],
       settlementSpeed: record["清算速度(0/1)"],
+      ...(Object.hasOwn(row, "settlementDate") ? { settlementDate: row.settlementDate } : {}),
       cost: record["成本"],
       spread: record["价差"],
       settlementSpeedText: record["清算速度"],
@@ -595,6 +611,10 @@ export function markSecondaryTradeFrontOffice(trade, input = {}) {
   return normalizeSecondaryTrade({
     ...trade,
     tradeDate,
+    settlementDate: settlementDateAfterEdit(trade, {
+      tradeDate,
+      ...(Object.hasOwn(input, "settlementDate") ? { settlementDate: input.settlementDate } : {}),
+    }),
     frontOfficeDone: true,
     frontOfficePrice,
     tradeRecord: {
@@ -673,9 +693,9 @@ export function calculateShadowInventory(state = {}, options = {}) {
 
     if (trade.side === "sell") {
       row.soldWan += trade.quantityWan;
-      if (trade.settlementDate > asOfDate) row.unsettledSellWan += trade.quantityWan;
+      if (!trade.settlementDate || trade.settlementDate > asOfDate) row.unsettledSellWan += trade.quantityWan;
     } else if (trade.side === "buy") {
-      if (trade.settlementDate <= asOfDate) row.settledBuyWan += trade.quantityWan;
+      if (trade.settlementDate && trade.settlementDate <= asOfDate) row.settledBuyWan += trade.quantityWan;
       else row.pendingBuyWan += trade.quantityWan;
     }
   }
@@ -792,7 +812,7 @@ export function secondaryDashboardCounts(state = {}) {
     activeOffers: orders.filter((item) => item.status === "active" && item.side === "offer").length,
     warnings: rows.filter((item) => !item.needsSnapshot && item.availableWan < 0).length,
     pendingCodes: pendingCodeTrades(state).length,
-    unsettledSells: trades.filter((item) => item.side === "sell" && item.settlementDate > localDate(new Date())).length,
+    unsettledSells: trades.filter((item) => item.side === "sell" && (!item.settlementDate || item.settlementDate > localDate(new Date()))).length,
   };
 }
 
@@ -1182,12 +1202,6 @@ function normalizeSecondaryTradeCategory(category, sourceType = "", code = "") {
 function normalizeSettlementSpeed(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
-}
-
-function inferSettlementDate(tradeDate, speed = 0) {
-  const date = parseDate(tradeDate) || new Date();
-  date.setDate(date.getDate() + normalizeSettlementSpeed(speed));
-  return localDate(date);
 }
 
 function normalizeDate(value = "") {

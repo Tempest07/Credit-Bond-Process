@@ -1,4 +1,5 @@
 import { apiHeaders, json, requireUser } from "../_auth.js";
+import { isSameOriginMutation } from "../_same-origin.js";
 
 const DEFAULT_MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
 
@@ -14,13 +15,14 @@ export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: apiHeaders() });
 }
 
-async function proxyMailer(context, fallbackAction) {
+async function proxyMailer(context, action) {
   const auth = await requireUser(context);
   if (auth.response) return auth.response;
 
   const url = new URL(context.request.url);
-  const action = (url.searchParams.get("action") || fallbackAction || "preview").toLowerCase();
   const isSend = action === "send";
+  if (isSend && !isSameOriginMutation(context.request)) return json({ ok: false, error: "不允许跨站发送邮件。" }, 403);
+  if (isSend && url.searchParams.has("action") && url.searchParams.get("action") !== "send") return json({ ok: false, error: "不支持的邮件操作。" }, 400);
   const password = String(context.env.MAILER_APP_PASSWORD || context.env.ADMIN_PASSWORD || context.env.APP_PASSWORD || "").trim();
   if (!password) return json({ ok: false, error: "Mailer Secret APP_PASSWORD 尚未配置" }, 503);
 

@@ -274,6 +274,7 @@ test("secondary ledger proxy authenticates the page session and forwards the mai
       env: { APP_PASSWORD: "mailer-password", DB: createSessionDb() },
       request: new Request("http://127.0.0.1:8788/api/mail/secondary-ledger?date=2026-07-20", {
         method: "POST",
+        headers: { Origin: "http://127.0.0.1:8788" },
       }),
     });
     const body = await response.json();

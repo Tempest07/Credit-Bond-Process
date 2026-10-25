@@ -167,3 +167,23 @@ test("recalculates settlement date when the editable speed changes", () => {
   assert.equal(next.secondaryTrades[0].settlementSpeed, 1);
   assert.equal(next.secondaryTrades[0].settlementDate, "2026-07-28");
 });
+
+test("unrelated ledger edits cannot replace the stored Monday settlement of a Friday T+1 trade", () => {
+  const trade = { id: "friday", code: "246129.SH", tradeDate: "2026-10-23", settlementSpeed: 1, settlementDate: "2026-10-26" };
+  const rows = [{ id: trade.id, source: "secondary", dirty: true, record: { 交易日: trade.tradeDate, 债券代码: trade.code, 净价: "100.1", "清算速度(0/1)": "1" } }];
+  const edited = applyTradeRecordRowsToState({ secondaryTrades: [trade] }, rows).secondaryTrades[0];
+  assert.equal(edited.settlementDate, "2026-10-26");
+  const agreed = applyTradeRecordRowsToState({ secondaryTrades: [{ ...trade, settlementDate: "2026-10-27" }] }, rows).secondaryTrades[0];
+  assert.equal(agreed.settlementDate, "2026-10-27", "preserve explicitly agreed non-default settlement dates");
+  const explicit = applyTradeRecordRowsToState({ secondaryTrades: [trade] }, [{ ...rows[0], settlementDate: "2026-10-28" }]).secondaryTrades[0];
+  assert.equal(explicit.settlementDate, "2026-10-28");
+});
+
+test("ledger T+1 changes cross holidays correctly and uncovered years require manual settlement", () => {
+  const trade = { id: "trade", code: "246129.SH", tradeDate: "2026-09-30", settlementSpeed: 0, settlementDate: "2026-09-30" };
+  const row = { id: trade.id, source: "secondary", dirty: true, record: { 交易日: "2026-09-30", 债券代码: trade.code, "清算速度(0/1)": "1" } };
+  assert.equal(applyTradeRecordRowsToState({ secondaryTrades: [trade] }, [row]).secondaryTrades[0].settlementDate, "2026-10-08");
+  const unknown = applyTradeRecordRowsToState({ secondaryTrades: [trade] }, [{ ...row, record: { ...row.record, 交易日: "2027-01-04" } }]).secondaryTrades[0];
+  assert.equal(unknown.settlementDate, "");
+  assert.match(unknown.parseWarnings.join("；"), /结算日期待人工确认/);
+});

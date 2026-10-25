@@ -375,7 +375,14 @@ async function replaceReceiptRows(db, input) {
     JSON.stringify({ groups: input.normalized.groups, blankPages: input.normalized.blankPages, preservedMatches: input.receipts.filter((receipt) => receipt.preservedMatch).length }),
     input.createdAt,
   ));
-  await db.batch(statements);
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    if (/NOT NULL constraint failed: payment_receipt_events\.owner_user_id/i.test(error.message || "")) {
+      throw httpError(409, "PDF 处理状态已经变化，请刷新后重新修正拆页");
+    }
+    throw error;
+  }
 }
 
 async function cleanupDerivedReceiptObjects(bucket, oldReceipts, newReceipts) {

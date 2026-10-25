@@ -13,8 +13,9 @@ export async function onRequestPost(context) {
   catch (error) { return json({ error: error.message }, 400); }
   const controller = new AbortController();
   const onAbort = () => controller.abort();
-  if (context.request.signal.aborted) controller.abort();
-  else context.request.signal.addEventListener("abort", onAbort, { once: true });
+  const requestSignal = context.request.signal;
+  if (requestSignal?.aborted) controller.abort();
+  else requestSignal?.addEventListener("abort", onAbort, { once: true });
   const started = Date.now();
   try {
     const result = await recognizeIssuanceWithProviders(request, context.env, { signal: controller.signal });
@@ -26,7 +27,7 @@ export async function onRequestPost(context) {
     const unavailable = error?.code === "NO_CLOUD_FALLBACK";
     return json({ error: known || unavailable ? error.message : "语义识别暂时不可用，请稍后重试；本次未改动项目。" }, unavailable ? 503 : error?.code === "CLOUD_TIMEOUT" ? 504 : 502);
   } finally {
-    context.request.signal.removeEventListener("abort", onAbort);
+    requestSignal?.removeEventListener("abort", onAbort);
   }
 }
 

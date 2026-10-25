@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ratingsCurvesFallback } from "../functions/api/qb/ratings-curves.js";
+import { calculateSuggestion } from "../core.js";
 
 const BASE = "/dm-quant-func-service/api/v1/";
 const company = `${BASE}company/rating/data`;
@@ -96,6 +97,23 @@ test("QB implied rating rejects conflicting option rows and never maps external 
   ]);
   assert.deepEqual(await ratingsCurvesFallback(implied, { securityIdList: ["123456.IB", "654321.IB"], startDate: "2026-10-22" }, qb), []);
   assert.equal(qb.calls.length, 1);
+});
+
+test("QB AA(2) and full-width variants reach the ordinary credit cap without changing provenance", async () => {
+  for (const rating of ["AA(2)", "AA（2）", "ＡＡ（２）", "aa(2)"]) {
+    const qb = client(() => [{ sec_code: "123456.IB", valuate_date: "2026-10-22", implied_rating: rating }]);
+    const rows = await ratingsCurvesFallback(implied, { securityIdList: ["123456.IB"], startDate: "2026-10-22" }, qb);
+    assert.equal(rows.length, 1, rating);
+    assert.equal(rows[0].cbImpliedRating, "AA(2)");
+    assert.deepEqual(rows[0]._qb.apiNames, ["cdcBondValuation"]);
+    const result = calculateSuggestion({ durationText: "5Y", hiddenRating: rows[0].cbImpliedRating, offeringType: "公募", issueScale: 10 },
+      { credit: { investmentTermText: "3年", approvedRatio: 30 } });
+    assert.equal(result.suggestedRatio, 10);
+  }
+  for (const rating of ["", "AA(3)", "not-a-rating", "AA(2)+"]) {
+    const qb = client(() => [{ sec_code: "123456.IB", valuate_date: "2026-10-22", implied_rating: rating }]);
+    assert.deepEqual(await ratingsCurvesFallback(implied, { securityIdList: ["123456.IB"], startDate: "2026-10-22" }, qb), []);
+  }
 });
 
 test("QB implied lookup is bounded to seven dates and batches unresolved exact securities", async () => {

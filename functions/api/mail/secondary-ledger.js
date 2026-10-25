@@ -1,10 +1,12 @@
 import { apiHeaders, json, requireUser } from "../_auth.js";
+import { isSameOriginMutation } from "../_same-origin.js";
 
 const DEFAULT_MAILER_URL = "https://credit-bond-mailer.weiqian-yu.workers.dev";
 
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
   if (auth.response) return auth.response;
+  if (!isSameOriginMutation(context.request)) return json({ ok: false, error: "不允许跨站发送邮件。" }, 403);
 
   const password = String(context.env.MAILER_APP_PASSWORD || context.env.ADMIN_PASSWORD || context.env.APP_PASSWORD || "").trim();
   if (!password) return json({ ok: false, error: "Mailer Secret APP_PASSWORD 尚未配置" }, 503);

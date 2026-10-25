@@ -1,14 +1,14 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261024release535';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261024release535';
-import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261024release535';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261024release535';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261024release535';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261024release535';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261024release535';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261024release535';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261024release535';
-import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261024release535';
-import { initDataSourceControl } from './data-source-control.js?v=20261024release535';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261025release5351';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261025release5351';
+import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261025release5351';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261025release5351';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261025release5351';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261025release5351';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261025release5351';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261025release5351';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261025release5351';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261025release5351';
+import { initDataSourceControl } from './data-source-control.js?v=20261025release5351';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -44,7 +44,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261024release535";
+} from "./core.js?v=20261025release5351";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -74,15 +74,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261024release535";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261024release535";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261024release535";
+} from "./lifecycle.js?v=20261025release5351";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261025release5351";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261025release5351";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261024release535";
+} from "./history-parser.js?v=20261025release5351";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -99,23 +99,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261024release535";
+} from "./protocol-transfer.js?v=20261025release5351";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261024release535";
+} from "./protocol-transfer-templates.js?v=20261025release5351";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261024release535";
+} from "./protocol-transfer-docx.js?v=20261025release5351";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261024release535";
+} from "./reminders.js?v=20261025release5351";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -143,11 +143,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261024release535";
+} from "./secondary-inventory.js?v=20261025release5351";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261024release535";
+} from "./trade-record-converter.js?v=20261025release5351";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -158,16 +158,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261024release535";
+} from "./trade-record-grid.js?v=20261025release5351";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261024release535";
-import { initializeDatePickers } from "./date-picker.js?v=20261024release535";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261024release535";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261024release535";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261024release535";
+} from "./trade-record-ledger.js?v=20261025release5351";
+import { initializeDatePickers } from "./date-picker.js?v=20261025release5351";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261025release5351";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261025release5351";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261025release5351";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -176,33 +176,34 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261024release535";
+} from "./project-screenshot-ocr.js?v=20261025release5351";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261024release535";
+} from "./project-screenshot-layout.js?v=20261025release5351";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261024release535";
+} from "./project-screenshot-image.js?v=20261025release5351";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261024release535";
+} from "./payment-receipts.js?v=20261025release5351";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261024release535";
+} from "./issuer-search.js?v=20261025release5351";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261024release535";
-import { initializeBondList } from "./bond-list-editor.js?v=20261024release535";
+} from "./state-history.js?v=20261025release5351";
+import { initializeBondList } from "./bond-list-editor.js?v=20261025release5351";
+import { normalizeBondSettlementDate, settlementDateWarnings } from "./bond-settlement-calendar.js?v=20261025release5351";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -5112,6 +5113,8 @@ function findExistingLedgerProject(projectValue) {
 function upsertParsedProjectToLedger(projectValue, issuer, generated, cutoffPreview = null) {
   if (!projectValue?.shortName) return null;
   if (!projectIssuerSaveStatus(projectValue, issuer).ok) return null;
+  if (generated?.suggestion?.amountRatioConflict
+    && !window.confirm(`${generated.suggestion.warnings.find(warning => warning.startsWith("ABS申请或建议金额"))}\n是否已核对并确认按当前金额保存？`)) return null;
   const existing = findExistingLedgerProject(projectValue);
   const record = buildLedgerProjectRecord(projectValue, issuer, generated, existing, cutoffPreview);
   state = upsertProject(state, record);
@@ -9812,6 +9815,19 @@ function secondaryTradeCategoryLabel(trade) {
   return "非协议";
 }
 
+function confirmSecondarySettlementDate(trade, { silent = false } = {}) {
+  if (trade.settlementDate) return trade;
+  if (silent) { showToast("结算日期待人工确认，请打开成交台账保存并填写日期。"); return null; }
+  const input = window.prompt(`${trade.shortName || trade.code || "该笔交易"}缺少可靠的结算日历，请核对交易约定并填写结算日期（YYYY-MM-DD）。`, "");
+  if (input === null) return null;
+  const settlementDate = normalizeBondSettlementDate(input);
+  if (!settlementDate || settlementDate < trade.tradeDate) {
+    showToast("结算日期格式无效或早于交易日，请重新核对。");
+    return null;
+  }
+  return { ...trade, settlementDate, parseWarnings: settlementDateWarnings(trade.parseWarnings, settlementDate) };
+}
+
 function confirmSecondaryFrontOffice(id) {
   const rows = ensureSecondaryPendingDraft();
   const rowIndex = rows.findIndex((item) => item.id === id);
@@ -9827,8 +9843,13 @@ function confirmSecondaryFrontOffice(id) {
   const trades = normalizeSecondaryTrades(state.secondaryTrades || []);
   const trade = trades.find((item) => item.id === id);
   if (!trade) return;
-  const completedTrade = secondaryPendingTradeFromDraftRow(trade, row);
-  const missingFields = secondaryTradeMissingFields(completedTrade);
+  let completedTrade = secondaryPendingTradeFromDraftRow(trade, row);
+  let missingFields = secondaryTradeMissingFields(completedTrade);
+  if (missingFields.length === 1 && missingFields[0].key === "settlementDate") {
+    completedTrade = confirmSecondarySettlementDate(completedTrade);
+    if (!completedTrade) return;
+    missingFields = secondaryTradeMissingFields(completedTrade);
+  }
   if (missingFields.length) {
     state = {
       ...state,
@@ -10256,9 +10277,17 @@ async function saveSecondaryLedgerDraft({ silent = false } = {}) {
     showToast(`第 ${first.rowIndex + 1} 行：${first.message}。`);
     return false;
   }
+  let nextState = applyTradeRecordRowsToState(state, dirtyRows);
+  const dirtyIds = new Set(dirtyRows.filter(row => row.source === "secondary").map(row => row.id));
+  for (const trade of nextState.secondaryTrades || []) {
+    if (!dirtyIds.has(trade.id) || trade.settlementDate) continue;
+    const confirmed = confirmSecondarySettlementDate(trade, { silent });
+    if (!confirmed) return false;
+    nextState = { ...nextState, secondaryTrades: nextState.secondaryTrades.map(item => item.id === trade.id ? confirmed : item) };
+  }
   secondaryLedgerSavePending = true;
   updateSecondaryLedgerControls();
-  state = applyTradeRecordRowsToState(state, dirtyRows);
+  state = nextState;
   persistLocal();
   const saved = await saveCloudState();
   secondaryLedgerSavePending = false;

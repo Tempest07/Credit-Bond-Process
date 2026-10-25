@@ -4,7 +4,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20261024release535";
+} from "./core.js?v=20261025release5351";
 
 const PROJECT_STATUSES = new Set([
   "未投标",

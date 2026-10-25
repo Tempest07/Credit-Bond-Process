@@ -4,7 +4,6 @@ import {
   deleteDuplicatePaymentReceipt,
   ensurePaymentReceiptSchema,
   getPaymentReceipt,
-  insertPaymentReceiptEvent,
   readPaymentProjects,
   unassignPaymentReceipt,
 } from "../_payment-receipts.js";
@@ -38,14 +37,6 @@ export async function onRequestPatch(context) {
       paymentDate: tranche.paymentDate || "",
       matchReason: "Bond Centre 人工确认对应",
     });
-    await insertPaymentReceiptEvent(context.env.DB, {
-      id: crypto.randomUUID(),
-      ownerUserId: auth.user.id,
-      receiptId,
-      batchId: receipt.batchId,
-      eventType: "receipt_manually_matched",
-      detail: { projectId, trancheId, paymentDate: tranche.paymentDate || "" },
-    });
     const updatedReceipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     return json({
       ok: true,
@@ -57,6 +48,7 @@ export async function onRequestPatch(context) {
     });
   } catch (error) {
     const message = error.message || "人工对应缴款单失败";
+    if (error.code === "receipt_processing_conflict") return json({ error: message }, 409);
     const conflict = /UNIQUE|constraint/i.test(message);
     return json({ error: conflict ? "该项目品种已经对应其他缴款单，请先复核" : message }, conflict ? 409 : 500);
   }
@@ -98,14 +90,11 @@ export async function onRequestDelete(context) {
     }
     if (action !== "unlink") return json({ error: "不支持的缴款单删除操作" }, 400);
     if (receipt.matchStatus !== "matched") return json({ error: "只有已对应项目的缴款单才能解除对应" }, 409);
-    await unassignPaymentReceipt(context.env.DB, { ownerUserId: auth.user.id, receiptId });
-    await insertPaymentReceiptEvent(context.env.DB, {
-      id: crypto.randomUUID(),
+    await unassignPaymentReceipt(context.env.DB, {
       ownerUserId: auth.user.id,
       receiptId,
-      batchId: receipt.batchId,
-      eventType: "receipt_manually_unmatched",
-      detail: { previousProjectId: receipt.projectId, previousTrancheId: receipt.trancheId },
+      previousProjectId: receipt.projectId,
+      previousTrancheId: receipt.trancheId,
     });
     const updatedReceipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     return json({ ok: true, receiptId, receipt: updatedReceipt });

@@ -1,4 +1,4 @@
-import { dataProviderLabel } from './market-data-source.js?v=20261024release535';
+import { dataProviderLabel } from './market-data-source.js?v=20261025release5351';
 
 const API = './api/valuation/';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

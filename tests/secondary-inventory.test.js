@@ -11,6 +11,7 @@ import {
   markSecondaryTradeFrontOffice,
   normalizeSecondaryInventoryPositions,
   normalizeSecondaryOrders,
+  normalizeSecondaryTrade,
   normalizeSecondaryTrades,
   parseInventoryLedgerRows,
   parseInventorySnapshotText,
@@ -211,9 +212,33 @@ test("keeps explicitly marked T+1 sells locked before settlement and applies sam
   })[0];
 
   assert.equal(nextDayTrade.settlementSpeed, 1);
-  assert.equal(nextDayTrade.settlementDate, "2026-06-19");
+  assert.equal(nextDayTrade.settlementDate, "2026-06-22");
   assert.equal(sameDayTrade.settlementSpeed, 0);
   assert.equal(sameDayTrade.settlementDate, "2026-06-18");
+});
+
+test("secondary settlement preserves explicit dates and uses the market calendar for T+1", () => {
+  const trade = normalizeSecondaryTrade({ tradeDate: "2026-10-23", settlementSpeed: 1, code: "246129.SH", settlementDate: "2026-10-27" });
+  assert.equal(trade.settlementDate, "2026-10-27");
+  assert.equal(normalizeSecondaryTrade({ tradeDate: "2026-10-23", settlementSpeed: 1, code: "246129.SH" }).settlementDate, "2026-10-26");
+  assert.equal(updateSecondaryPendingTrade(trade, { quantityWan: 1000 }).settlementDate, "2026-10-27");
+  assert.equal(markSecondaryTradeFrontOffice(trade, { tradeDate: "2026-10-27", frontOfficePrice: "100" }).settlementDate, "2026-10-28");
+});
+
+test("uncovered settlement dates remain pending and cannot create settled buy inventory", () => {
+  const trade = normalizeSecondaryTrade({ side: "buy", code: "246129.SH", quantityWan: 1000, tradeDate: "2027-01-04", settlementSpeed: 1 });
+  assert.equal(trade.settlementDate, "");
+  assert.match(trade.parseWarnings.join("；"), /结算日期待人工确认/);
+  const row = calculateShadowInventory({ secondaryTrades: [trade] }, { asOfDate: "2027-01-05" })[0];
+  assert.equal(row.settledBuyWan, 0);
+  assert.equal(row.pendingBuyWan, 1000);
+  const completed = updateSecondaryPendingTrade(trade, { settlementDate: "2027-01-06" });
+  assert.equal(completed.settlementDate, "2027-01-06");
+  assert.doesNotMatch(completed.parseWarnings.join("；"), /结算日期待人工确认/);
+  const draft = applySecondaryPendingDraftRows({ secondaryTrades: [trade] }, [{
+    id: trade.id, source: "secondary", dirty: true, settlementDate: "2027-01-07", record: trade.tradeRecord,
+  }]).secondaryTrades[0];
+  assert.equal(draft.settlementDate, "2027-01-07");
 });
 
 test("parses Trade-Phraser style trade elements into pending secondary trades", () => {

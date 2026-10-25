@@ -1,3 +1,5 @@
+import { normalizeMarketImpliedRating } from "./bond-ratings.js?v=20261025release5351";
+
 export const DEFAULT_STATE = {
   version: 5,
   issuers: [],
@@ -1241,6 +1243,11 @@ function calculateAbsSuggestion(project, issuer) {
     warnings.push("50217 批单未提供投资比例，暂按 20% 生成，请复核。");
   }
   if (!Number.isFinite(applicationAmount)) warnings.push("ABS 申请投标金额待补充。");
+  const amountRatioConflict = Number.isFinite(calculatedAmount)
+    && [applicationAmount, recommendedAmount].some(amount => Number.isFinite(amount) && amount > calculatedAmount);
+  if (amountRatioConflict) {
+    warnings.push(`ABS申请或建议金额超过所选分档规模的${formatNumber(ratio)}%（${formatNumber(calculatedAmount)}亿元）。请核对50217批复金额、所选分档规模及比例，确认后再保存。`);
+  }
 
   return {
     offeringType: "ABS",
@@ -1249,6 +1256,7 @@ function calculateAbsSuggestion(project, issuer) {
     investmentAmount: applicationAmount,
     recommendedAmount,
     applicationAmount,
+    amountRatioConflict,
     caps: Number.isFinite(ratio) ? [{ value: ratio, reason: `ABS 优先档投资比例不超过${formatNumber(ratio)}%` }] : [],
     trancheSuggestions,
     selectedTranches: investable,
@@ -1807,7 +1815,7 @@ function overdueRatingCaps(hiddenRating, offeringType, durationText, exceedsCred
 }
 
 function hiddenRatingRank(value = "") {
-  const text = String(value || "").trim().toUpperCase();
+  const text = normalizeMarketImpliedRating(value);
   if (["AAA+", "AAA"].includes(text)) return 7;
   if (text === "AAA-") return 6;
   if (text === "AA+") return 5;
@@ -1815,6 +1823,7 @@ function hiddenRatingRank(value = "") {
   if (text === "AA(2)") return 3;
   if (text === "AA-") return 2;
   if (/^A/.test(text)) return 1;
+  if (text) return 0;
   return null;
 }
 

@@ -413,7 +413,7 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
             sec_full_name: "青岛城市建设投资集团有限公司2025年度第一期中期票据",
             issuer_name: "青岛城市建设投资集团有限公司",
             remaining_tenor: "4.9Y",
-            bond_issue_tenor: "5Y",
+            bond_issue_tenor: "5+5Y",
             bond_type_desc: "中期票据",
           },
           {
@@ -422,7 +422,7 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
             sec_full_name: "青岛城市建设投资集团有限公司2025年面向专业投资者公开发行科技创新公司债券(第一期)",
             issuer_name: "青岛城市建设投资集团有限公司",
             remaining_tenor: "5.1Y",
-            bond_issue_tenor: "5Y",
+            bond_issue_tenor: "5+5Y",
             bond_type_desc: "公司债券",
           },
           {
@@ -519,7 +519,7 @@ test("DM valuation assistant uses current DM valuations and cross-market tech ad
             : "25青岛城投MTN001",
         valuation_date: "2026-06-26",
         cb_ytm: securityId === "2520001.SH" ? 2.46 : securityId === "102600010.IB" ? 2.51 : 2.5,
-        cb_yte: securityId === "102600010.IB" ? 2.51 : null,
+        cb_yte: securityId === "2520001.SH" ? 2.46 : securityId === "102600010.IB" ? 2.51 : 2.5,
         cb_reliability: "推荐",
       }));
     } else {
@@ -845,7 +845,7 @@ test("DM valuation assistant calibrates sparse tenors with implied-rating ChinaB
   try {
     const response = await onValuationRequestGet({
       env: { APP_PASSWORD: "pw", INNO_APP_KEY: "app", INNO_APP_SECRET: secret },
-      request: new Request("http://127.0.0.1:8788/api/dm/valuation?issuerName=Curve%20Issuer&durationText=5%2B10Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26CURVE001&hiddenRating=AA%2B&subjectRating=AAA&valuationDate=2026-06-26", {
+      request: new Request("http://127.0.0.1:8788/api/dm/valuation?issuerName=Curve%20Issuer&durationText=5Y&offeringType=%E5%85%AC%E5%8B%9F&venue=%E9%93%B6%E8%A1%8C%E9%97%B4&shortName=26CURVE001&hiddenRating=AA%2B&subjectRating=AAA&valuationDate=2026-06-26", {
         headers: { Authorization: "Bearer pw" },
       }),
     });
