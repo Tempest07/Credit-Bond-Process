@@ -1208,7 +1208,9 @@ function createReceiptDeletionDb({ matchStatus = "duplicate", fileReceiptCount =
         },
         async run() {
           if (/INSERT|UPDATE|DELETE/i.test(sql)) mutations.push(sql);
-          return { meta: { changes: 1 } };
+          const changes = /DELETE FROM payment_receipt_files/i.test(sql) ? Number(fileReceiptCount === 1)
+            : /DELETE FROM payment_receipt_batches/i.test(sql) ? Number(fileReceiptCount === 1 && batchFileCount === 1) : 1;
+          return { meta: { changes } };
         },
         async all() {
           if (/PRAGMA table_info\(payment_receipt_files\)/i.test(sql)) {
@@ -1231,6 +1233,8 @@ function createReceiptDeletionDb({ matchStatus = "duplicate", fileReceiptCount =
               receipt_object_key: receiptRow.object_key,
               file_object_key: "attachments/duplicate.pdf",
               raw_object_key: "emails/duplicate.eml",
+              file_processing_status: "processed",
+              batch_processing_status: "processed",
               file_receipt_count: fileReceiptCount,
               batch_file_count: batchFileCount,
             };
@@ -1244,10 +1248,7 @@ function createReceiptDeletionDb({ matchStatus = "duplicate", fileReceiptCount =
       };
     },
     async batch(statements) {
-      statements.forEach((statement) => {
-        if (/INSERT|UPDATE|DELETE/i.test(statement.sql)) mutations.push(statement.sql);
-      });
-      return statements.map(() => ({ meta: { changes: 1 } }));
+      return Promise.all(statements.map(statement => statement.run()));
     },
   };
 }

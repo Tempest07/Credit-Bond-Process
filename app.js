@@ -301,6 +301,7 @@ const SAMPLE_ISSUER = {
 const initialLocalCache = loadLocalState();
 let state = initialLocalCache.data;
 let localStateDirty = initialLocalCache.dirty;
+let localCacheWriteFailed = false;
 let localBaseRevision = initialLocalCache.baseRevision;
 let localChangeGeneration = localStateDirty ? 1 : 0;
 let localDirtyAt = initialLocalCache.dirtyAt;
@@ -4701,6 +4702,10 @@ function bindGenerator() {
       const field = input.dataset.projectField;
       cancelProjectDmLookup();
       project[field] = input.type === "number" ? numberOrNull(input.value) : input.value.trim();
+      if (["branch", "subjectRating", "ratingAgency", "hiddenRating"].includes(field)) {
+        project.commonFieldSources = { ...project.commonFieldSources, [field]: "manual" };
+        project.sourceCommonFields = { ...project.sourceCommonFields, [field]: project[field] };
+      }
       if (field === "hiddenRating") {
         project.hiddenRatingSource = "manual";
         project.hiddenRatingAsOf = "";
@@ -5601,6 +5606,8 @@ function applyDmLookupToCurrentProject(payload) {
   if (!payload.ok) return;
   const patch = projectPatchFromDmLookup(payload);
   const { sourceMap: _sourceMap, ...projectPatch } = patch;
+  projectPatch.commonFieldSources = Object.fromEntries(["branch", "subjectRating", "ratingAgency", "hiddenRating"]
+    .filter(field => patch.sourceMap?.[field]).map(field => [field, patch.sourceMap[field]]));
   resetOpinionForDifferentProject(projectPatch);
   project = replaceProjectWithDmLookup(project, projectPatch);
   if (isAbsProject(project)) syncAbsProjectSelectionScope({ updateField: false });
@@ -5771,7 +5778,7 @@ function projectPatchFromDmLookup(payload) {
     warnings.push(...(Array.isArray(normalized.guaranteeInfo?.warnings) ? normalized.guaranteeInfo.warnings : []));
   }
   if (patch.hiddenRating) {
-    patch.hiddenRatingSource = normalized.ratingSource?.impliedRating || "dm";
+    patch.hiddenRatingSource = normalized.ratingSource?.impliedRating || sourceMap.hiddenRating || "dm";
     patch.hiddenRatingAsOf = normalized.impliedRatingAsOf || payload?.diagnostic?.rating?.windImpliedRating?.asOf || "";
   }
 
@@ -11039,7 +11046,7 @@ function fillProjectForm(input) {
   $("#projectFormTitle").textContent = record.shortName || "项目详情";
   $("#projectStatusPill").textContent = projectStatusLabel(record.status);
   $("#projectStatusPill").classList.toggle("bid-final", record.status === "已投标结束");
-  $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
+  $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? localCacheWriteFailed ? "本机缓存未保存，等待云端确认" : "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
   updateProjectActionButtons(record);
   renderBidSubmissionHistory(record);
   renderCutoffHint(record);
@@ -11638,7 +11645,7 @@ function saveProjectRecordNow(record) {
     $("#projectStatus").value = normalized.status;
     $("#projectStatusPill").textContent = projectStatusLabel(normalized.status);
     $("#projectStatusPill").classList.toggle("bid-final", normalized.status === "已投标结束");
-    $("#projectAutosaveStatus").textContent = "已保存到本机，正在上传";
+    $("#projectAutosaveStatus").textContent = localCacheWriteFailed ? "本机缓存未保存，等待云端确认" : "已保存到本机，正在上传";
     $("#projectBidPosition").value = buildBidPositionText(normalized);
     updateProjectActionButtons(normalized);
     renderBidSubmissionHistory(normalized);
@@ -14739,7 +14746,7 @@ async function loadCloudState() {
     setCloudGate(true, {
       state: "error",
       title: isLocalApiMode() ? "本地 D1 连接失败" : "D1 连接失败",
-      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : `D1 暂时无法连接，本机副本仍保留。${error?.message ? `（${error.message}）` : ""}`,
+      detail: isLocalApiMode() ? "请确认 npm run dev:local 仍在运行。" : `D1 暂时无法连接，${localCacheWriteFailed ? "当前修改仅保留在当前页面，请导出备份后再关闭" : "本机副本仍保留"}。${error?.message ? `（${error.message}）` : ""}`,
     });
   }
   renderStateDependentViews();
@@ -14812,7 +14819,7 @@ async function saveCloudStateSnapshot(snapshot, { generation, source }) {
     );
     setCloudGate(false, { state: "success" });
     if ($("#projectAutosaveStatus") && !$("#projectForm")?.hidden) {
-      $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
+      $("#projectAutosaveStatus").textContent = localBetaSyncText(localStateDirty ? localCacheWriteFailed ? "本机缓存未保存，等待云端确认" : "已保存到本机，正在上传" : "云端已确认", LOCAL_BETA);
     }
     return true;
   } catch (error) {
@@ -14824,7 +14831,7 @@ async function saveCloudStateSnapshot(snapshot, { generation, source }) {
       state: "error",
       title: "D1 同步失败",
       reason: error.code,
-      detail: `${error.message || "请检查网络或登录状态"}。本机数据仍保留，可导出备份或重试同步。`,
+      detail: `${error.message || "请检查网络或登录状态"}。${localCacheWriteFailed ? "修改仅保留在当前页面，尚未持久保存；请导出备份或重试同步，勿关闭页面" : "本机数据仍保留，可导出备份或重试同步"}。`,
     });
     return false;
   }
@@ -14951,18 +14958,33 @@ function calculateRevenueBpFromFtpRate(winningRate, ftpRatePercent) {
 }
 
 function persistLocal() {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify({
-    cacheVersion: LOCAL_CACHE_VERSION,
-    data: state,
-    dirty: localStateDirty,
-    baseRevision: localBaseRevision,
-    dirtyAt: localDirtyAt,
-  }));
+  const wasFailed = localCacheWriteFailed;
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({
+      cacheVersion: LOCAL_CACHE_VERSION,
+      data: state,
+      dirty: localStateDirty,
+      baseRevision: localBaseRevision,
+      dirtyAt: localDirtyAt,
+    }));
+    localCacheWriteFailed = false;
+  } catch {
+    localCacheWriteFailed = true;
+    if (!wasFailed) showToast("本机缓存保存失败，云端保存仍会继续尝试。请确认云端已保存或导出备份后再关闭页面。");
+    setSyncStatus("本机缓存未保存", "浏览器存储空间不足或存储权限受限");
+    return false;
+  }
+  if (wasFailed) setSyncStatus("本机缓存已恢复", localStateDirty ? "本机修改仍待云端确认" : `云端版本 ${cloudRevision} 已确认`);
+  return true;
 }
 
 function setSyncStatus(status, detail) {
   $("#syncStatus").textContent = localBetaSyncText(status, LOCAL_BETA);
-  $("#syncDetail").textContent = localBetaSyncText(detail, LOCAL_BETA);
+  const cacheWarning = localCacheWriteFailed
+    ? localStateDirty ? "本机缓存未保存，未确认的修改仅保留在当前页面；请完成云端同步或导出备份，勿关闭页面。"
+      : "本机缓存未保存；云端版本已确认，重新打开时将从云端读取。"
+    : "";
+  $("#syncDetail").textContent = localBetaSyncText([detail, cacheWarning].filter(Boolean).join("；"), LOCAL_BETA);
   const revision = $("#syncRevision");
   if (revision) {
     const dirtyLabel = syncConflictActive ? " · 存在冲突" : localStateDirty ? " · 本机待同步" : " · 云端已确认";

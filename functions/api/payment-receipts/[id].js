@@ -110,6 +110,6 @@ export async function onRequestDelete(context) {
     const updatedReceipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     return json({ ok: true, receiptId, receipt: updatedReceipt });
   } catch (error) {
-    return json({ error: error.message || "解除缴款单对应失败" }, 500);
+    return json({ error: error.message || "解除缴款单对应失败" }, error.code === "receipt_processing_conflict" ? 409 : 500);
   }
 }

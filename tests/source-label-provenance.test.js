@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { durationParts, durationToDays, normalizeBondFullNameForProject, calculateAbsTrancheSharePct, inferAbsClassNameFromShortName } from '../core.js';
+import { durationParts, durationToDays, normalizeBondFullNameForProject, calculateAbsTrancheSharePct, inferAbsClassNameFromShortName,
+  applyIssuerCommonFields, replaceProjectWithDmLookup, findIssuer, isAbsProject, normalizeIssuer, generateOpinion } from '../core.js';
 import { normalizeLookupPayload } from '../bond-identity.js';
 import { dataProviderLabel } from '../market-data-source.js';
 
@@ -29,6 +30,72 @@ function projectHarness() {
     'markAbsInfoSources', 'buildProjectDmRecognitionMarks', 'sourcedRecognitionMark', 'recognitionMark', 'valueHasContent']);
   return context;
 }
+
+function appliedProjectHarness() {
+  const context = projectHarness();
+  const issuer = normalizeIssuer({
+    id: 'issuer-audit', legalName: '审计合成主体有限公司', linkedBranch: '广州分行',
+    subjectRating: 'AAA', ratingAgency: '中诚信国际', hiddenRating: 'AAA',
+    credit: { approvedRatio: 30, investmentTermText: '3年' },
+  });
+  Object.assign(context, {
+    applyIssuerCommonFields, replaceProjectWithDmLookup, findIssuer, isAbsProject,
+    project: {}, state: { issuers: [issuer] }, selectedIssuerId: '', projectRecognitionMarks: {},
+    resetOpinionForDifferentProject() {}, buildDmProjectSourceText: project => project.shortName,
+    $: () => ({}), buildProjectRecognitionMarks: () => ({}), fillProjectFields() {}, renderIssuerOptions() {},
+    regenerate() { context.generated = generateOpinion(context.project, issuer); },
+  });
+  load(context, ['applyDmLookupToCurrentProject', 'findIssuerForProject', 'buildIssuerCloudRecognitionMarks', 'normalizeSourceComparable']);
+  return context;
+}
+
+test('external lookup application carries field provenance through issuer fill into the final credit recommendation', () => {
+  for (const [hiddenSource, ratingSource, sourceLabel] of [
+    ['dm-rating-api', 'dm-rating-api', 'dm'],
+    ['qb-implied-rating', 'qb-rating-api', 'qb'],
+    ['wind-analytics', 'dm-rating-api', 'dm'],
+  ]) {
+    const context = appliedProjectHarness();
+    const payload = { ok: true, normalized: {
+      shortName: '26测试MTN001', securityId: '102600001.IB', issuerName: '审计合成主体有限公司',
+      durationText: '5年', issueScaleYi: 10, venue: '银行间', offeringType: '公募',
+      subjectRating: 'AA+', ratingAgency: '联合资信', impliedRating: 'AA', impliedRatingAsOf: '2026-10-25',
+      ratingSource: { subjectRating: ratingSource, ratingAgency: ratingSource, impliedRating: hiddenSource },
+    } };
+    const before = JSON.stringify(payload);
+    context.applyDmLookupToCurrentProject(payload);
+    assert.equal(context.selectedIssuerId, 'issuer-audit', hiddenSource);
+    assert.equal(context.project.subjectRating, 'AA+', hiddenSource);
+    assert.equal(context.project.ratingAgency, '联合资信', hiddenSource);
+    assert.equal(context.project.hiddenRating, 'AA', hiddenSource);
+    assert.equal(context.project.commonFieldSources.subjectRating, sourceLabel, hiddenSource);
+    assert.equal(context.project.commonFieldSources.ratingAgency, sourceLabel, hiddenSource);
+    assert.equal(context.project.hiddenRatingSource, hiddenSource, hiddenSource);
+    assert.equal(context.project.hiddenRatingAsOf, '2026-10-25', hiddenSource);
+    assert.equal(context.generated.suggestion.suggestedRatio, 15, hiddenSource);
+    assert.match(context.generated.opinion, /投资比例不超过最终发行规模的15%/, hiddenSource);
+    assert.equal(context.projectRecognitionMarks.hiddenRating.source, hiddenSource === 'wind-analytics' ? 'wind' : sourceLabel);
+    assert.equal(JSON.stringify(payload), before, 'applying the payload never rewrites its original evidence');
+  }
+});
+
+test('lookup with a missing implied rating uses cloud value and cloud provenance in the applied project', () => {
+  const context = appliedProjectHarness();
+  context.applyDmLookupToCurrentProject({ ok: true, normalized: {
+    shortName: '26测试MTN001', securityId: '102600001.IB', issuerName: '审计合成主体有限公司',
+    durationText: '5年', issueScaleYi: 10, venue: '银行间', offeringType: '公募',
+    subjectRating: 'AA+', ratingAgency: '联合资信', impliedRating: '',
+    ratingSource: { subjectRating: 'qb-rating-api', ratingAgency: 'qb-rating-api' },
+  } });
+  assert.equal(context.project.subjectRating, 'AA+');
+  assert.equal(context.project.ratingAgency, '联合资信');
+  assert.equal(context.project.commonFieldSources.subjectRating, 'qb');
+  assert.equal(context.project.hiddenRating, 'AAA');
+  assert.equal(context.project.hiddenRatingSource, 'cloud');
+  assert.equal(context.project.hiddenRatingAsOf, '');
+  assert.equal(context.projectRecognitionMarks.hiddenRating.source, 'cloud');
+  assert.equal(context.generated.suggestion.suggestedRatio, 30);
+});
 
 test('single-bond inquiry ranges retain QB provenance while legacy ranges stay DM', () => {
   const context = projectHarness();

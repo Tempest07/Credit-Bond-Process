@@ -46,7 +46,7 @@ test("capacity failures preserve the unsynced local copy and identify the gate e
   const draft = { issuers: [{ id: "existing" }], projects: [{ id: "pending", targetQuoteNote: "本机待同步备注" }] };
   const before = JSON.stringify(draft);
   const context = vm.createContext({
-    API_URL: "/api/state", localBaseRevision: 7, localStateDirty: false, cloudAvailable: true,
+    API_URL: "/api/state", localBaseRevision: 7, localStateDirty: false, localCacheWriteFailed: false, cloudAvailable: true,
     setSyncStatus() {}, authHeaders: () => ({}), stateSaveMeta: () => ({ source: "manual" }),
     fetch: async () => ({ ok: false, status: 413, json: async () => ({ code: "state_too_large", error: "容量不足" }) }),
     persistLocal() { persisted.push("local"); }, setCloudGate(locked, config) { gates.push({ locked, config }); },

@@ -366,7 +366,7 @@ test("maps DM V2.5 ratings into the new-project fields", async () => {
   assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "subjectRating", normalized\.subjectRating, normalizedProjectFieldSource\(normalized, "subjectRating"\)\)/);
   assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "ratingAgency", normalized\.ratingAgency, normalizedProjectFieldSource\(normalized, "ratingAgency"\)\)/);
   assert.match(app, /assignProjectDmValueWithSource\(patch, sourceMap, "hiddenRating", normalized\.impliedRating, normalizedProjectFieldSource\(normalized, "impliedRating"\)\)/);
-  assert.match(app, /patch\.hiddenRatingSource = normalized\.ratingSource\?\.impliedRating \|\| "dm"/);
+  assert.match(app, /patch\.hiddenRatingSource = normalized\.ratingSource\?\.impliedRating \|\| sourceMap\.hiddenRating \|\| "dm"/);
   assert.match(app, /patch\.hiddenRatingAsOf = normalized\.impliedRatingAsOf/);
 });
 

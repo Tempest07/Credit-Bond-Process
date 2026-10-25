@@ -664,9 +664,8 @@ export async function deleteDuplicatePaymentReceipt(db, input) {
     SELECT r.id, r.batch_id, r.file_id, r.match_status,
            r.object_key AS receipt_object_key,
            f.object_key AS file_object_key,
-           b.raw_object_key,
-           (SELECT COUNT(*) FROM payment_receipts other_receipt WHERE other_receipt.file_id = r.file_id) AS file_receipt_count,
-           (SELECT COUNT(*) FROM payment_receipt_files other_file WHERE other_file.batch_id = r.batch_id) AS batch_file_count
+           b.raw_object_key, f.processing_status AS file_processing_status,
+           b.processing_status AS batch_processing_status
     FROM payment_receipts r
     JOIN payment_receipt_files f ON f.id = r.file_id
     JOIN payment_receipt_batches b ON b.id = r.batch_id
@@ -676,27 +675,40 @@ export async function deleteDuplicatePaymentReceipt(db, input) {
   if (String(row.match_status || "") !== "duplicate") {
     throw new Error("只有已标记为重复的缴款单才能删除");
   }
+  const processingConflict = () => Object.assign(new Error("原件仍在处理或状态已变化，请处理完成后刷新重试"), { code: "receipt_processing_conflict" });
+  if (!["processed", "review"].includes(row.file_processing_status)
+    || !["processed", "review"].includes(row.batch_processing_status)) throw processingConflict();
   if (typeof db.batch !== "function") throw new Error("当前 D1 运行环境不支持事务批处理");
 
   const now = input.deletedAt || new Date().toISOString();
-  const fileHasOnlyThisReceipt = Number(row.file_receipt_count) === 1;
-  const batchHasOnlyThisFile = Number(row.batch_file_count) === 1;
-  const deleteBatch = fileHasOnlyThisReceipt && batchHasOnlyThisFile;
-  const results = await db.batch([
+  let results;
+  try {
+    results = await db.batch([
     db.prepare(`
       INSERT INTO payment_receipt_events (
         id, owner_user_id, receipt_id, batch_id, event_type, detail_json, created_at
-      ) VALUES (?1, ?2, ?3, ?4, 'receipt_duplicate_deleted', ?5, ?6)
+      ) VALUES (
+        ?1,
+        (SELECT r.owner_user_id FROM payment_receipts r
+         JOIN payment_receipt_files f ON f.id = r.file_id
+         JOIN payment_receipt_batches b ON b.id = r.batch_id
+         WHERE r.owner_user_id = ?2 AND b.owner_user_id = ?2 AND r.id = ?3
+           AND r.file_id = ?4 AND r.batch_id = ?5 AND r.match_status = 'duplicate'
+           AND f.processing_status IN ('processed', 'review')
+           AND b.processing_status IN ('processed', 'review')),
+        ?3, ?5, 'receipt_duplicate_deleted',
+        json_object('fileId', ?4,
+          'deletedSourceFile', json(CASE WHEN (SELECT COUNT(*) = 1 FROM payment_receipts WHERE file_id = ?4) THEN 'true' ELSE 'false' END),
+          'deletedEmailArchive', json(CASE WHEN (SELECT COUNT(*) = 1 FROM payment_receipts WHERE file_id = ?4)
+            AND (SELECT COUNT(*) = 1 FROM payment_receipt_files WHERE batch_id = ?5) THEN 'true' ELSE 'false' END)),
+        ?6
+      )
     `).bind(
       crypto.randomUUID(),
       input.ownerUserId,
       input.receiptId,
+      String(row.file_id || ""),
       String(row.batch_id || ""),
-      JSON.stringify({
-        fileId: String(row.file_id || ""),
-        deletedSourceFile: fileHasOnlyThisReceipt,
-        deletedEmailArchive: deleteBatch,
-      }),
       now,
     ),
     db.prepare(`
@@ -710,29 +722,40 @@ export async function deleteDuplicatePaymentReceipt(db, input) {
     db.prepare(`
       DELETE FROM payment_receipt_files
       WHERE id = ?1
+        AND processing_status IN ('processed', 'review')
         AND batch_id IN (SELECT id FROM payment_receipt_batches WHERE owner_user_id = ?2)
         AND NOT EXISTS (SELECT 1 FROM payment_receipts WHERE file_id = ?1)
     `).bind(String(row.file_id || ""), input.ownerUserId),
     db.prepare(`
       DELETE FROM payment_receipt_batches
       WHERE id = ?1 AND owner_user_id = ?2
+        AND processing_status IN ('processed', 'review')
         AND NOT EXISTS (SELECT 1 FROM payment_receipt_files WHERE batch_id = ?1)
     `).bind(String(row.batch_id || ""), input.ownerUserId),
-  ]);
+    ]);
+  } catch (error) {
+    // The NOT NULL event owner is the transaction guard: no partial deletion
+    // can commit if processing restarted or the duplicate changed after reading.
+    if (/NOT NULL constraint failed: payment_receipt_events\.owner_user_id/i.test(error.message || "")) throw processingConflict();
+    throw error;
+  }
   const receiptDeleteChanges = Number(results?.[2]?.meta?.changes ?? results?.[2]?.changes ?? 0);
   if (receiptDeleteChanges !== 1) throw new Error("重复单据状态已变化，请刷新后重试");
+  const deletedSourceFile = Number(results?.[3]?.meta?.changes ?? results?.[3]?.changes ?? 0) === 1;
+  const deletedEmailArchive = Number(results?.[4]?.meta?.changes ?? results?.[4]?.changes ?? 0) === 1;
 
   return {
     receiptId: input.receiptId,
     batchId: String(row.batch_id || ""),
     fileId: String(row.file_id || ""),
-    deletedSourceFile: fileHasOnlyThisReceipt,
-    deletedEmailArchive: deleteBatch,
+    deletedSourceFile,
+    deletedEmailArchive,
     objectKeys: [
       String(row.receipt_object_key || ""),
-      fileHasOnlyThisReceipt ? String(row.file_object_key || "") : "",
-      deleteBatch ? String(row.raw_object_key || "") : "",
-    ].filter(Boolean),
+      deletedSourceFile ? String(row.file_object_key || "") : "",
+      deletedEmailArchive ? String(row.raw_object_key || "") : "",
+    ].filter(key => key && (deletedSourceFile || key !== row.file_object_key)
+      && (deletedEmailArchive || key !== row.raw_object_key)),
   };
 }
 

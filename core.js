@@ -123,30 +123,29 @@ function normalizeGuaranteeMethod(value = "") {
 }
 
 export function durationToDays(value = "") {
-  const text = String(value).trim().toUpperCase().replace(/期$/, "");
-  let match = text.match(/^(\d+(?:\.\d+)?)\s*(D|天)$/i);
-  if (match) return Math.round(Number(match[1]));
-  match = text.match(/^(\d+(?:\.\d+)?)\s*(M|月)$/i);
-  if (match) return Math.round(Number(match[1]) * 30);
-  match = text.match(/^([\d.+/]+)\s*(Y|年)$/i);
-  if (match) {
-    const longestExerciseYears = Math.max(...match[1].split("/").map((part) =>
-      Number(part.split("+")[0]),
-    ));
-    return Number.isFinite(longestExerciseYears) ? Math.round(longestExerciseYears * 365) : null;
-  }
-  return null;
+  const text = normalizeDurationText(value);
+  const unit = text.match(/(D|M|Y|天|月|年)$/)?.[1];
+  if (!unit) return null;
+  const days = text.split("/").map(part => {
+    const item = /[DMY天月年]$/.test(part) ? part : `${part}${unit}`;
+    const match = item.match(/^(\d+(?:\.\d+)?)(D|天|M|月)$/);
+    if (match) return Number(match[1]) * (["M", "月"].includes(match[2]) ? 30 : 1);
+    if (/^\d+(?:\.\d+)?(?:\+\d+(?:\.\d+)?)*(?:Y|年)$/.test(item)) return Number(item.split(/[+Y年]/)[0]) * 365;
+    return null;
+  });
+  return days.every(value => Number.isFinite(value) && value > 0) ? Math.round(Math.max(...days)) : null;
+}
+
+function normalizeDurationText(value = "") {
+  return String(value || "").normalize("NFKC").toUpperCase().replace(/\s+/g, "").replace(/个月/g, "月").replace(/期$/, "");
 }
 
 export function durationParts(value = "") {
-  const text = String(value).trim().toUpperCase().replace(/期$/, "");
+  const text = normalizeDurationText(value);
   const unit = text.match(/(D|M|Y|天|月|年)$/i)?.[1] || "";
   if (!unit) return [];
-  return text
-    .slice(0, -unit.length)
-    .split("/")
-    .map((part) => `${part}${unit}`)
-    .filter((part) => Number.isFinite(durationToDays(part)));
+  const parts = text.split("/").map(part => /[DMY天月年]$/.test(part) ? part : `${part}${unit}`);
+  return parts.every(part => Number.isFinite(durationToDays(part))) ? parts : [];
 }
 
 export function parseProjectBrief(rawText) {
@@ -977,6 +976,11 @@ export function calculateSuggestion(project, issuer) {
       ? numberOrNull(credit.privateRatio)
       : numberOrNull(credit.approvedRatio);
   const commonCaps = [];
+  const creditTermDays = String(credit.investmentTermText || "").trim()
+    ? durationToDays(credit.investmentTermText) : numberOrNull(credit.investmentTermDays);
+  if (!Number.isFinite(creditTermDays) || creditTermDays <= 0) {
+    warnings.push("授信投资期限缺失或无法解析，无法确认期限覆盖，暂不计算投资比例和金额，请核对授信资料。");
+  }
 
   if (["牵头", "联席"].includes(project.sponsorStatus)) {
     commonCaps.push({ value: 20, reason: "兴业银行参与主承，投资比例上限为20%" });
@@ -985,27 +989,29 @@ export function calculateSuggestion(project, issuer) {
   const parts = projectDurationParts(project);
   const trancheSuggestions = parts.map((durationText, index) => {
     const caps = [...commonCaps];
+    const parsedDays = durationToDays(durationText);
     const durationDays = parts.length === 1 && Number.isFinite(project.durationDays)
-      ? project.durationDays
-      : durationToDays(durationText);
-    const exceedsCreditTerm =
-      Number.isFinite(durationDays) &&
-      Number.isFinite(numberOrNull(credit.investmentTermDays)) &&
-      durationDays > Number(credit.investmentTermDays);
+      && (!String(durationText || "").trim() || Number.isFinite(parsedDays)) ? project.durationDays : parsedDays;
+    const termCoverageKnown = Number.isFinite(durationDays) && durationDays > 0
+      && Number.isFinite(creditTermDays) && creditTermDays > 0;
+    const exceedsCreditTerm = termCoverageKnown && durationDays > creditTermDays;
+    if (!Number.isFinite(durationDays) || durationDays <= 0) {
+      warnings.push(`债券期限“${durationText || "未填写"}”无法解析，无法确认期限覆盖，暂不计算投资比例和金额。`);
+    }
 
     caps.push(...overdueRatingCaps(project.hiddenRating, offeringType, durationText, exceedsCreditTerm));
 
-    let ratio = approvedRatio;
+    let ratio = termCoverageKnown ? approvedRatio : null;
     if (Number.isFinite(ratio)) {
       for (const cap of caps) ratio = Math.min(ratio, cap.value);
     }
-    return { index, durationText, durationDays, suggestedRatio: ratio, caps, exceedsCreditTerm };
+    return { index, durationText, durationDays, suggestedRatio: ratio, caps, exceedsCreditTerm, termCoverageKnown };
   });
   const caps = uniqueCaps(trancheSuggestions.flatMap((item) => item.caps));
   const suggestedRatios = trancheSuggestions.map((item) => item.suggestedRatio).filter(Number.isFinite);
-  const suggestedRatio = suggestedRatios.length ? Math.max(...suggestedRatios) : null;
+  const suggestedRatio = trancheSuggestions.every(item => item.termCoverageKnown) && suggestedRatios.length ? Math.max(...suggestedRatios) : null;
 
-  if (!Number.isFinite(suggestedRatio)) {
+  if (!Number.isFinite(approvedRatio)) {
     warnings.push(exchangeOfferingUnknown
       ? "交易所债券发行方式未确认，暂不计算投资比例和金额。"
       : "主体资料中缺少授信投资比例，无法计算建议比例和投资金额。");
@@ -1434,49 +1440,63 @@ export function applyIssuerCommonFields(project, issuer) {
     ratingAgency: project.ratingAgency || "",
     hiddenRating: project.hiddenRating || "",
   };
-  if (!issuer) {
-    const normalizedSourceCommonFields = {
-      ...sourceCommonFields,
-      ratingAgency: normalizeRatingAgency(sourceCommonFields.ratingAgency),
-    };
-    return {
-      ...project,
-      ...normalizedSourceCommonFields,
-      sourceCommonFields: normalizedSourceCommonFields,
-      warnings: (project.warnings || []).filter((warning) => !warning.startsWith("主体库要素")),
-    };
-  }
   const next = {
     ...project,
     sourceCommonFields,
+    commonFieldSources: { ...project.commonFieldSources },
     warnings: (project.warnings || []).filter((warning) => !warning.startsWith("主体库要素")),
   };
-
+  if (!issuer) {
+    for (const [field, normalize] of [["branch", normalizeBranchName], ["subjectRating", normalizeRatingValue],
+      ["ratingAgency", normalizeRatingAgency], ["hiddenRating", normalizeRatingValue]]) {
+      if (preserveCommonField(next, field)) next[field] = normalize(next[field]);
+      else {
+        next[field] = normalize(sourceCommonFields[field]);
+        delete next.commonFieldSources[field];
+        if (field === "hiddenRating") { next.hiddenRatingSource = ""; next.hiddenRatingAsOf = ""; }
+      }
+    }
+    return next;
+  }
   applyIssuerCommonField(next, { branch: issuer.linkedBranch || issuer.defaultBranch }, "branch", "联动分行", normalizeBranchName);
   applyIssuerCommonField(next, issuer, "subjectRating", "主体评级", normalizeRatingValue);
   applyIssuerCommonField(next, issuer, "ratingAgency", "评级机构", normalizeRatingAgency);
-  if (next.hiddenRatingSource === "wind-analytics" && String(next.hiddenRating || "").trim()) {
-    const windRating = normalizeRatingValue(next.hiddenRating);
-    const issuerRating = normalizeRatingValue(issuer.hiddenRating);
-    if (issuerRating && issuerRating !== windRating) {
-      next.warnings.push(`主体库要素市场隐含评级为“${issuerRating}”，Wind 中债隐含评级为“${windRating}”，已优先使用 Wind，请检查。`);
-    }
-    next.hiddenRating = windRating;
-  } else {
-    applyIssuerCommonField(next, issuer, "hiddenRating", "市场隐含评级", normalizeRatingValue);
-  }
+  applyIssuerCommonField(next, issuer, "hiddenRating", "市场隐含评级", normalizeRatingValue);
   return next;
+}
+
+function preserveCommonField(project, field) {
+  const source = field === "hiddenRating" && project.hiddenRatingSource
+    || project.commonFieldSources?.[field] || "";
+  return Boolean(String(project[field] || "").trim()
+    && /^(?:dm|qb|wind)(?:$|[-+])|^manual$/i.test(source));
 }
 
 function applyIssuerCommonField(project, issuer, field, label, normalize) {
   const storedRaw = issuer?.[field];
-  if (!String(storedRaw || "").trim()) return;
   const storedValue = normalize(storedRaw);
+  if (preserveCommonField(project, field)) {
+    project[field] = normalize(project[field]);
+    if (storedValue && project[field] !== storedValue) {
+      const source = field === "hiddenRating" && project.hiddenRatingSource || project.commonFieldSources?.[field] || "";
+      const sourceLabel = /^wind/i.test(source) ? "Wind" : /^qb/i.test(source) ? "QB" : /^dm/i.test(source) ? "DM" : "人工确认值";
+      const valueLabel = /^wind/i.test(source) && field === "hiddenRating" ? "Wind 中债隐含评级" : sourceLabel;
+      project.warnings.push(`主体库要素${label}为“${storedValue}”，${valueLabel}为“${project[field]}”，已优先使用 ${sourceLabel}，请检查。`);
+    }
+    return;
+  }
   const inputValue = normalize(project.sourceCommonFields?.[field] ?? project[field]);
+  project[field] = storedValue || inputValue;
+  if (!storedValue) {
+    delete project.commonFieldSources[field];
+    if (field === "hiddenRating") { project.hiddenRatingSource = ""; project.hiddenRatingAsOf = ""; }
+    return;
+  }
   if (inputValue && inputValue !== storedValue) {
     project.warnings.push(`主体库要素${label}为“${storedValue}”，输入简表为“${inputValue}”，已优先使用主体库，请检查。`);
   }
-  project[field] = storedValue;
+  project.commonFieldSources[field] = "cloud";
+  if (field === "hiddenRating") { project.hiddenRatingSource = "cloud"; project.hiddenRatingAsOf = ""; }
 }
 
 function normalizeRatingValue(value = "") {
@@ -1505,7 +1525,8 @@ export function normalizeIssuer(input) {
       approvedRatio: numberOrNull(input.credit?.approvedRatio),
       privateRatio: numberOrNull(input.credit?.privateRatio),
       investmentTermText: String(input.credit?.investmentTermText || "").trim(),
-      investmentTermDays: durationToDays(input.credit?.investmentTermText) ?? numberOrNull(input.credit?.investmentTermDays),
+      investmentTermDays: String(input.credit?.investmentTermText || "").trim()
+        ? durationToDays(input.credit.investmentTermText) : numberOrNull(input.credit?.investmentTermDays),
       rawText: String(input.credit?.rawText || "").trim(),
       sourceRank: numberOrNull(input.credit?.sourceRank),
       updatedAt: input.credit?.updatedAt || new Date().toISOString(),
@@ -1747,9 +1768,9 @@ function exchangeSeriesMarker(shortName) {
 }
 
 function projectDurationParts(project) {
+  if (String(project?.durationText || "").trim() && !Number.isFinite(durationToDays(project.durationText))) return [String(project.durationText)];
   const parts = Array.isArray(project?.durationParts) && project.durationParts.length
-    ? project.durationParts
-    : durationParts(project?.durationText);
+    ? project.durationParts : durationParts(project?.durationText);
   return parts.length ? parts : [String(project?.durationText || "")];
 }
 
