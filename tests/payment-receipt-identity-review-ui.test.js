@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { normalizePaymentReceiptBondShortName } from '../payment-receipt-names.js';
 
 const source = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -60,7 +61,7 @@ function harness() {
         '.payment-receipt-match-candidates': 'candidates' })[selector]] : null;
   } };
   context = vm.createContext({
-    Map, AbortController, structuredClone,
+    Map, AbortController, structuredClone, normalizePaymentReceiptBondShortName,
     setTimeout(fn, ms) { const timer = setTimeout(fn, ms); timer.unref(); return timer; }, clearTimeout,
     paymentReceiptIdentityReviews: new Map(), selectedPaymentReceiptEntryKey: 'receipt:r/1',
     paymentReceipts: [
@@ -90,7 +91,7 @@ function harness() {
   });
   load(context, ['escapeHtml', 'escapeAttribute', 'clearPaymentReceiptIdentityReviews',
     'refreshPaymentReceiptIdentityReview', 'capturePaymentReceiptMatchDraft', 'restorePaymentReceiptMatchDraft',
-    'requestPaymentReceiptIdentityReview', 'renderPaymentReceiptIdentityReviewContent',
+    'paymentReceiptIdentityReviewHasCorrection', 'requestPaymentReceiptIdentityReview', 'renderPaymentReceiptIdentityReviewContent',
     'handlePaymentReceiptArchiveClick', 'clearAuthSession']);
   const click = (id, action = 'preview') => context.handlePaymentReceiptArchiveClick({ target: {
     closest: () => ({ dataset: { [action === 'apply' ? 'receiptIdentityApply' : 'receiptIdentityPreview']: id } }),
@@ -121,8 +122,40 @@ test('render and navigation never request AI; an explicit preview is single-flig
   assert.deepEqual(plain(h.context.paymentReceipts), before);
   const html = h.getPanel(first.id).innerHTML;
   for (const text of ['26苏交通CP008', '26苏交CP008', '原件第 9 页', '26 苏交通 CP008', '042680338', '采用复核简称']) assert.ok(html.includes(text), text);
-  await h.click(first.id);
-  assert.equal(h.requests.length, 1, 'a completed proposal is reused until explicitly adopted');
+  assert.match(html, /识别建议/);
+  assert.doesNotMatch(html, /复核完成/);
+  assert.match(html, /data-receipt-identity-preview="r\/1" >重新复核/);
+  assert.match(html, /本次仅识别原件第 9 页，未核对整个分组/);
+});
+
+test('a repeated unchanged reading is not a correction and can be explicitly retried', async () => {
+  const h = harness(), before = plain(h.context.paymentReceipts);
+  const unchanged = proposal({ name: '26苏交CP008', originalName: '26 苏交 CP008',
+    readings: { nameField: '26 苏交 CP008', remittanceName: '26 苏交 CP008', securityCode: '042680338', uncertainties: [] } });
+  await ready(h, 'r/1', unchanged);
+  assert.match(h.getPanel('r/1').innerHTML, /未得到更正，仍需核对原件/);
+  assert.doesNotMatch(h.getPanel('r/1').innerHTML, /复核完成|data-receipt-identity-apply/);
+  await h.click('r/1', 'apply');
+  assert.equal(h.requests.length, 1, 'an unchanged name cannot be adopted through a stale or synthetic button');
+  const retry = h.click('r/1');
+  await h.click('r/1');
+  assert.equal(h.requests.length, 2, 'only the explicit retry triggers one new request');
+  assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
+  h.requests[1].resolve(response({ reviewId: 'corrected', proposal: proposal() }));
+  await retry;
+  assert.match(h.getPanel('r/1').innerHTML, /26苏交通CP008/);
+  assert.match(h.getPanel('r/1').innerHTML, /采用复核简称/);
+  assert.equal(h.context.paymentReceiptIdentityReviews.get('r/1').reviewId, 'corrected');
+  assert.deepEqual(plain(h.context.paymentReceipts), before);
+  assert.equal(h.mutations.length, 0);
+});
+
+test('spaces, case and full-width formatting do not create a spurious name correction', async () => {
+  const h = harness();
+  h.context.paymentReceipts[0].bondShortName = '２６ 苏交 ｃｐ００８';
+  await ready(h, 'r/1', proposal({ name: '26苏交CP008' }));
+  assert.match(h.getPanel('r/1').innerHTML, /未得到更正/);
+  assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
 });
 
 test('adoption sends only its saved review id and preserves raw data, current correspondence, drafts and project state', async () => {
@@ -157,7 +190,7 @@ test('adoption sends only its saved review id and preserves raw data, current co
   assert.equal(h.getControls('r/1').search.value, '正在筛选');
   assert.equal(h.getControls('r/1').candidates.open, true);
   assert.equal(JSON.stringify(h.context.state), beforeState);
-  assert.match(h.getPanel('r/1').innerHTML, /已复核/);
+  assert.match(h.getPanel('r/1').innerHTML, /已采用/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
   await h.click('r/1');
   assert.equal(h.requests.length, 2);
@@ -176,8 +209,7 @@ test('late previews remain associated with their own receipt and are reusable wh
   h.context.selectedPaymentReceiptEntryKey = 'receipt:r/1';
   h.context.refreshPaymentReceiptIdentityReview('r/1');
   assert.match(h.getPanel('r/1').innerHTML, /采用复核简称/);
-  await h.click('r/1');
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 1, 'returning to a receipt does not automatically rerun recognition');
 });
 
 test('adoption preserves the live correspondence controls so a pending match can still unlock them', async () => {
@@ -252,7 +284,7 @@ test('already accepted identity evidence is shown without another preview or AI 
   await h.click('r/1', 'apply');
   assert.equal(h.requests.length, 0);
   const html = h.context.renderPaymentReceiptIdentityReviewContent(h.context.paymentReceipts[0]);
-  assert.match(html, /已复核/);
+  assert.match(html, /已采用/);
   assert.match(html, /26苏交通CP008/);
   assert.doesNotMatch(html, /data-receipt-identity-apply/);
 });

@@ -1,14 +1,15 @@
-import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261026release5361';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261026release5361';
-import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261026release5361';
-import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261026release5361';
-import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261026release5361';
-import { normalizeLookupPayload } from './bond-identity.js?v=20261026release5361';
-import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261026release5361';
-import { createProjectTargetNotes } from './project-target-note.js?v=20261026release5361';
-import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261026release5361';
-import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261026release5361';
-import { initDataSourceControl } from './data-source-control.js?v=20261026release5361';
+import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261026release5362';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261026release5362';
+import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261026release5362';
+import { normalizePaymentReceiptBondShortName } from './payment-receipt-names.js?v=20261026release5362';
+import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261026release5362';
+import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261026release5362';
+import { normalizeLookupPayload } from './bond-identity.js?v=20261026release5362';
+import { createIssuanceQueuePanel } from './issuance-queue-panel.js?v=20261026release5362';
+import { createProjectTargetNotes } from './project-target-note.js?v=20261026release5362';
+import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261026release5362';
+import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261026release5362';
+import { initDataSourceControl } from './data-source-control.js?v=20261026release5362';
 import {
   ABS_CREDIT_CODE,
   ABS_CREDIT_SCOPE_PROJECT,
@@ -44,7 +45,7 @@ import {
   linkAbsCreditApprovalToProject,
   upsertAbsCreditApproval,
   upsertIssuer,
-} from "./core.js?v=20261026release5361";
+} from "./core.js?v=20261026release5362";
 import {
   FTP_TENORS,
   PROJECT_STATUS_OPTIONS,
@@ -74,15 +75,15 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261026release5361";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261026release5361";
-import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261026release5361";
+} from "./lifecycle.js?v=20261026release5362";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261026release5362";
+import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261026release5362";
 import {
   deriveIssuerAlias,
   extractIssuerLegalName,
   parseCreditText,
   parseHistoryText,
-} from "./history-parser.js?v=20261026release5361";
+} from "./history-parser.js?v=20261026release5362";
 import {
   buildProtocolTransferLedgerRows,
   excelDateSerialFromLocalDate,
@@ -99,23 +100,23 @@ import {
   removeProtocolTransfer,
   setProtocolTransferStep,
   upsertProtocolTransfer,
-} from "./protocol-transfer.js?v=20261026release5361";
+} from "./protocol-transfer.js?v=20261026release5362";
 import {
   BUILTIN_PROTOCOL_TRANSFER_TEMPLATES,
   matchProtocolTransferTemplate,
   protocolTransferTemplateById,
-} from "./protocol-transfer-templates.js?v=20261026release5361";
+} from "./protocol-transfer-templates.js?v=20261026release5362";
 import {
   extractProtocolTransferTemplateMetadata,
   patchProtocolTransferDocumentXml,
   protocolTransferApplicationFilename,
   validateProtocolTransferApplication,
-} from "./protocol-transfer-docx.js?v=20261026release5361";
+} from "./protocol-transfer-docx.js?v=20261026release5362";
 import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261026release5361";
+} from "./reminders.js?v=20261026release5362";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -143,11 +144,11 @@ import {
   upsertInventoryPositions,
   upsertSecondaryOrders,
   upsertSecondaryTrades,
-} from "./secondary-inventory.js?v=20261026release5361";
+} from "./secondary-inventory.js?v=20261026release5362";
 import {
   TRADE_RECORD_COLUMNS,
   TRADE_RECORD_FORMULA_COLUMNS,
-} from "./trade-record-converter.js?v=20261026release5361";
+} from "./trade-record-converter.js?v=20261026release5362";
 import {
   cloneTradeRecordDraftRows,
   createTradeRecordDraftRows,
@@ -158,16 +159,16 @@ import {
   tradeRecordDmRequestRows,
   updateTradeRecordDraftCell,
   validateTradeRecordDraftRows,
-} from "./trade-record-grid.js?v=20261026release5361";
+} from "./trade-record-grid.js?v=20261026release5362";
 import {
   applyTradeRecordRowsToState,
   buildTradeRecordRows,
   buildTradeRecordTableText,
-} from "./trade-record-ledger.js?v=20261026release5361";
-import { initializeDatePickers } from "./date-picker.js?v=20261026release5361";
-import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261026release5361";
-import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261026release5361";
-import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261026release5361";
+} from "./trade-record-ledger.js?v=20261026release5362";
+import { initializeDatePickers } from "./date-picker.js?v=20261026release5362";
+import { initializeRealtimeQuotes } from "./realtime-quotes.js?v=20261026release5362";
+import { createResultConnectingOrb } from "./result-connecting-orb.js?v=20261026release5362";
+import { readLocalBetaPolicy, localBetaSyncText, localBetaManualHeaders } from "./local-beta-policy.js?v=20261026release5362";
 import {
   PROJECT_SCREENSHOT_BRANCHES,
   cleanProjectScreenshotBondFullName,
@@ -176,34 +177,34 @@ import {
   mergeProjectScreenshotOcrPasses,
   parseProjectScreenshotOcrText,
   selectReliableProjectScreenshotSuggestion,
-} from "./project-screenshot-ocr.js?v=20261026release5361";
+} from "./project-screenshot-ocr.js?v=20261026release5362";
 import {
   buildProjectScreenshotAnalysisTiles,
   detectProjectScreenshotKeyColumns,
   projectScreenshotLineCoverageMatches,
-} from "./project-screenshot-layout.js?v=20261026release5361";
+} from "./project-screenshot-layout.js?v=20261026release5362";
 import {
   inspectProjectScreenshotImageHeader,
   projectScreenshotCompositeBackground,
   projectScreenshotResizeDimensions,
   projectScreenshotResizeRetainsReadableWidth,
-} from "./project-screenshot-image.js?v=20261026release5361";
+} from "./project-screenshot-image.js?v=20261026release5362";
 import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261026release5361";
+} from "./payment-receipts.js?v=20261026release5362";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
-} from "./issuer-search.js?v=20261026release5361";
+} from "./issuer-search.js?v=20261026release5362";
 import {
   formatStateChangeSummary,
   statePayloadEquals,
-} from "./state-history.js?v=20261026release5361";
-import { initializeBondList } from "./bond-list-editor.js?v=20261026release5361";
-import { normalizeBondSettlementDate, settlementDateWarnings } from "./bond-settlement-calendar.js?v=20261026release5361";
+} from "./state-history.js?v=20261026release5362";
+import { initializeBondList } from "./bond-list-editor.js?v=20261026release5362";
+import { normalizeBondSettlementDate, settlementDateWarnings } from "./bond-settlement-calendar.js?v=20261026release5362";
 
 const LOCAL_BETA = readLocalBetaPolicy(location.hostname, window.__BOND_LOCAL_BETA__);
 const LOCAL_KEY = "credit-bond-process-state-v1";
@@ -951,19 +952,22 @@ function restorePaymentReceiptMatchDraft(receiptId, draft) {
   $("#paymentReceiptMatchToolbar")?.querySelector(".payment-receipt-match-controls")?.replaceWith(draft);
 }
 
+function paymentReceiptIdentityReviewHasCorrection(receipt, proposal) {
+  const next = normalizePaymentReceiptBondShortName(proposal?.name);
+  return Boolean(next && next !== normalizePaymentReceiptBondShortName(receipt.bondShortName));
+}
+
 async function requestPaymentReceiptIdentityReview(receiptId, action = "preview") {
   if (!["preview", "apply"].includes(action)) return;
   const receipt = paymentReceipts.find(item => item.id === receiptId);
   if (!receipt || receipt.identityReview?.status === "verified") return;
   const previous = paymentReceiptIdentityReviews.get(receiptId);
   if (previous?.controller) return;
-  if (action === "apply" && (!previous?.reviewId || previous.proposal?.status !== "verified")) return;
-  if (action === "preview" && previous?.proposal?.status === "verified") {
-    refreshPaymentReceiptIdentityReview(receiptId);
-    return;
-  }
+  if (action === "apply" && (!previous?.reviewId || previous.proposal?.status !== "verified"
+      || !paymentReceiptIdentityReviewHasCorrection(receipt, previous.proposal))) return;
   const controller = new AbortController();
-  const review = { ...previous, status: action === "apply" ? "applying" : "loading", error: "", controller };
+  const review = { ...previous, ...(action === "preview" ? { proposal: null, reviewId: "" } : {}),
+    status: action === "apply" ? "applying" : "loading", error: "", controller };
   paymentReceiptIdentityReviews.set(receiptId, review);
   const isCurrent = () => paymentReceiptIdentityReviews.get(receiptId) === review;
   let timedOut = false;
@@ -1024,8 +1028,9 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
   const proposal = accepted || review?.proposal;
   const busy = Boolean(review?.controller);
   const verified = proposal?.status === "verified" && proposal.name;
-  const label = accepted ? "已复核" : busy ? review.status === "applying" ? "正在采用…" : "复核中…"
-    : verified ? "复核完成" : review ? "重试复核" : "复核简称";
+  const corrected = verified && paymentReceiptIdentityReviewHasCorrection(receipt, proposal);
+  const label = accepted ? "已采用" : busy ? review.status === "applying" ? "正在采用…" : "复核中…"
+    : verified ? "重新复核" : review ? "重试复核" : "复核简称";
   const readings = proposal?.readings || {};
   const page = Number(proposal?.pageNumber);
   const reasonLabel = ({
@@ -1041,10 +1046,12 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
     image_too_large: "这一页原件超出自动复核范围，请人工核对。",
   })[proposal?.reason] || "复核信息仍需人工核对。";
   return `<div class="payment-receipt-identity-head"><strong>简称复核</strong>
-      <button class="button subtle" type="button" data-receipt-identity-preview="${escapeAttribute(receipt.id)}" ${accepted || busy || verified ? "disabled" : ""}>${label}</button></div>
+      <button class="button subtle" type="button" data-receipt-identity-preview="${escapeAttribute(receipt.id)}" ${accepted || busy ? "disabled" : ""}>${label}</button></div>
     ${proposal ? `<div class="payment-receipt-identity-result">
-      <div><span>${accepted ? "已采用" : "复核结果"}</span><strong>${escapeHtml(proposal.name || "仍需人工核对")}</strong></div>
+      <div><span>${accepted ? "已采用" : "识别建议"}</span><strong>${escapeHtml(proposal.name || "仍需人工核对")}</strong></div>
       <div><span>原识别</span><span>${escapeHtml(proposal.originalName || receipt.bondShortName || "未识别")}</span></div>
+      ${verified && !accepted ? `<p class="payment-receipt-identity-message">${corrected ? "请对照本页原件确认后采用。" : "本次结果与原识别一致，未得到更正，仍需核对原件。"}</p>` : ""}
+      ${Number.isInteger(page) && page > 0 && receipt.sourcePages?.length > 1 ? `<p class="payment-receipt-identity-message">本次仅识别原件第 ${page} 页，未核对整个分组。</p>` : ""}
       <details><summary>${Number.isInteger(page) && page > 0 ? `原件第 ${page} 页 · ` : ""}查看核验依据</summary>
         <dl><div><dt>简称字段</dt><dd>${escapeHtml(readings.nameField || "未读到")}</dd></div>
           <div><dt>缴款附言</dt><dd>${escapeHtml(readings.remittanceName || "未读到")}</dd></div>
@@ -1052,7 +1059,7 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
         ${Array.isArray(readings.uncertainties) && readings.uncertainties.length ? `<p>${escapeHtml(readings.uncertainties.slice(0, 10).join("；"))}</p>` : ""}
       </details>
       ${!verified && proposal.reason ? `<p class="payment-receipt-identity-message">${escapeHtml(reasonLabel)}</p>` : ""}
-      ${verified && !accepted && review?.reviewId ? `<button class="button primary" type="button" data-receipt-identity-apply="${escapeAttribute(receipt.id)}" ${busy ? "disabled" : ""}>采用复核简称</button>` : ""}
+      ${corrected && !accepted && review?.reviewId ? `<button class="button primary" type="button" data-receipt-identity-apply="${escapeAttribute(receipt.id)}" ${busy ? "disabled" : ""}>采用复核简称</button>` : ""}
     </div>` : ""}
     ${review?.error ? `<p class="payment-receipt-identity-error" role="status">${escapeHtml(review.error)}</p>` : ""}`;
 }

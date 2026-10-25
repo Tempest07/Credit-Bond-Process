@@ -1,6 +1,6 @@
 // Shared by the API and browser: model output is untrusted until validated.
 import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
-  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261026release5361';
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261026release5362';
 
 export const ISSUANCE_FIELDS = {
   securityCode: "债券代码", durationText: "期限", issueScale: "发行规模（亿元）",

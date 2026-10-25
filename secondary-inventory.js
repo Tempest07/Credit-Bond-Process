@@ -3,7 +3,7 @@ import {
   parseTradeRecordLine,
 } from "./trade-record-converter.js";
 import { marketDataProvenance } from './market-data-source.js';
-import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261026release5361";
+import { parseProtocolTransferQuote } from "./protocol-transfer.js?v=20261026release5362";
 import {
   resolveBondSettlementDate,
   settlementDateAfterEdit,

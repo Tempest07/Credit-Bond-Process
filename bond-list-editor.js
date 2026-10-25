@@ -1,7 +1,7 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261026release5361';
-import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261026release5361';
-import { dataProviderLabel } from './market-data-source.js?v=20261026release5361';
-import { couponMetadataComplete, couponMetadataUsable, supplementCouponMetadata } from './bond-list-metadata.js?v=20261026release5361';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261026release5362';
+import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261026release5362';
+import { dataProviderLabel } from './market-data-source.js?v=20261026release5362';
+import { couponMetadataComplete, couponMetadataUsable, supplementCouponMetadata } from './bond-list-metadata.js?v=20261026release5362';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });

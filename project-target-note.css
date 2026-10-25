@@ -55,14 +55,15 @@
 .project-target-note-label {
   grid-column: 1 / -1;
   text-align: center;
+  align-self: stretch;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
 }
 .project-target-note-text {
   min-width: 0;
-  align-self: center;
   text-align: center;
+  align-self: stretch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 13px;
@@ -108,7 +109,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  justify-self: center;
+  justify-self: start;
   width: 100%;
   max-width: 240px;
   min-width: 0;
@@ -184,6 +185,23 @@ html[data-ui="beta"] .project-target-note .project-target-note-filled:hover,
 html[data-ui="beta"] .project-target-note .project-target-note-filled:focus-visible,
 html[data-ui="beta"] .project-target-note-content { border-color: #cfcfcf; }
 html[data-ui="beta"] .project-target-note .project-target-note-save { color: #fff; border-color: #222; background: #222; }
+
+@media (min-width: 1181px) {
+  /* Shared tracks align whole note boxes; the last track includes row padding. */
+  html[data-ui="beta"] #projectList {
+    grid-template-columns: minmax(0, max-content) minmax(110px, 1fr) 400px 180px calc(96px + 16px);
+    column-gap: 24px;
+  }
+  html[data-ui="beta"] #projectList .project-ledger-item {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    padding-inline: 16px;
+  }
+  html[data-ui="beta"] #projectList .project-item-open {
+    width: max-content;
+    max-width: min(320px, 100%);
+  }
+}
 
 @media (max-width: 1180px) and (min-width: 761px) {
   html[data-ui="beta"] #projectList .project-ledger-item,

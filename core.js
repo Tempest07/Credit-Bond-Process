@@ -1,4 +1,4 @@
-import { normalizeMarketImpliedRating } from "./bond-ratings.js?v=20261026release5361";
+import { normalizeMarketImpliedRating } from "./bond-ratings.js?v=20261026release5362";
 
 export const DEFAULT_STATE = {
   version: 5,
