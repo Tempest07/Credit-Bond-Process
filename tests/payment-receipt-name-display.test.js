@@ -149,3 +149,23 @@ test("full legal titles reveal explicit year conflicts but their issuance period
   assert.match(resolve({ ...matched, bondShortName: "某某有限公司2025年非公开发行公司债券(第四期)" }).warning, /年份/);
   assert.equal(resolve({ ...matched, bondShortName: "某某有限公司2026年非公开发行公司债券(第三期)" }).title, "26吴投04");
 });
+
+test("accepted current-page transcription fixes a missing issuer character without hiding a mixed-page group", () => {
+  const resolve = createPaymentReceiptNameResolver([]);
+  const receipt = { bondShortName: "26 苏交 CP008", securityCode: "042680338", sourcePages: [9, 10, 11],
+    recognizedText: "标题 苏交缴款通知书\n债券简称26苏交CP008\n标题 乌城投缴款通知书\n债券简称26乌城投PPN001",
+    identityReview: { status: "verified", name: "26苏交通CP008", code: "042680338", pageNumber: 9,
+      readings: { nameField: "26 苏交通 CP008", remittanceName: "26 苏交通 CP008", securityCode: "042680338", uncertainties: [] } },
+  };
+  const before = JSON.stringify(receipt);
+  const result = resolve(receipt);
+  assert.equal(result.title, "26苏交通CP008");
+  assert.equal(result.source, "page-review");
+  assert.equal(result.rawName, "26 苏交 CP008");
+  assert.match(result.warning, /多个债券/);
+  assert.equal(JSON.stringify(receipt), before);
+  for (const change of [ { code: "032680566" }, { pageNumber: 10 }, { status: "proposed" },
+    { readings: { ...receipt.identityReview.readings, remittanceName: "26苏交通SCP008" } } ]) {
+    assert.notEqual(resolve({ ...receipt, identityReview: { ...receipt.identityReview, ...change } }).source, "page-review");
+  }
+});

@@ -29,6 +29,8 @@ import {
   selectPaymentReceiptMatch,
 } from "./payment-receipts.js";
 import { normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
+import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "./payment-receipt-security.js";
+import { compatibleReceiptNameCorrection, runReceiptIdentityReview } from "./payment-receipt-identity-review.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -40,7 +42,7 @@ const MAX_PDF_PAGES = 60;
 const STALE_JOB_MINUTES = 20;
 const RECONCILE_LIMIT = 50;
 const RECEIPT_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
-const PAGE_ANALYSIS_VERSION = 6;
+const PAGE_ANALYSIS_VERSION = 7;
 const SHORT_NAME_OCR_INSTRUCTIONS = "简称校对要求：bond_short_name 必须逐字读取当前页“债券简称”或“证券简称”字段，不得自行缩写；不得遗漏“租赁”“城投”等字，保留 SCP/CP/MTN/PPN 等品种、期次、A/B/AB 等字母以及“(绿色)”“(科创)”等原有属性。字段跨行时合并完整内容，可用本页缴款附言中重复出现的简称交叉核对；原件未写的内容不得补造。“债券名称”的发行全称、公司名称和 document_title 均不能代替简称，无法确认时留空。security_code 只能填写本页债券代码，不能填银行账号或金额。上一页摘要只用于判断分页边界，禁止把上一页简称或代码复制到当前页。";
 
 export default {
@@ -51,7 +53,7 @@ export default {
       return Response.json({
         status: readiness.ready ? "ok" : "not_ready",
         service: "credit-bond-payment-receipts",
-        buildVersion: "5.3.5.1",
+        buildVersion: "6.3.6",
         checks: readiness.checks,
       }, { status: readiness.ready ? 200 : 503 });
     }
@@ -748,18 +750,18 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
         const parsed = aiResult.parsed;
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length) {
           const normalized = normalizeAiPaymentReceiptFields(parsed);
-          const recognizedText = paymentReceiptKeyText(normalized);
+          const primaryRecognizedText = paymentReceiptKeyText(normalized);
           const confidence = Number(normalized.confidence);
           const validClassification = ["blank", "receipt_start", "continuation", "uncertain"].includes(normalized.classification);
           const requestedClassification = Number.isFinite(confidence) && confidence >= 0.8
             ? validClassification ? normalized.classification : "uncertain"
             : "uncertain";
-          const meaningfulText = hasMeaningfulReceiptText(recognizedText);
+          const meaningfulText = hasMeaningfulReceiptText(primaryRecognizedText);
           const sourceTitleText = normalized.document_title || normalized.recognized_text || "";
           const startSignals = meaningfulText && paymentReceiptStartSignals(sourceTitleText);
           const businessIdentityChange = comparePaymentReceiptIdentity(normalized, previousPageContext?.fields);
           const highConfidence = Number.isFinite(confidence) && confidence >= 0.8;
-          const classification = businessIdentityChange === "changed" && highConfidence
+          let classification = businessIdentityChange === "changed" && highConfidence
             ? "receipt_start"
             : businessIdentityChange === "conflict" && highConfidence
               ? "uncertain"
@@ -770,6 +772,21 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
             : requestedClassification === "receipt_start" && !meaningfulText
               ? "uncertain"
               : requestedClassification;
+          let identityReview = null;
+          const expectedCode = paymentReceiptCodeIdentity(normalized.security_code);
+          if (["receipt_start", "uncertain"].includes(normalized.classification)
+              && expectedCode && !expectedCode.invalid) {
+            identityReview = await reviewCurrentPaymentReceiptIdentity(env.AI, pageImage, normalized);
+            if (identityReview.status === "verified") {
+              normalized.bond_short_name = identityReview.name;
+              if (highConfidence && startSignals && verifiedIdentityStartsReceipt(normalized, identityReview, previousPageContext?.fields)) {
+                classification = "receipt_start";
+              }
+            } else if (identityReview.status === "conflict" || identityReview.error === true) {
+              classification = "uncertain";
+            }
+          }
+          const recognizedText = paymentReceiptKeyText(normalized);
           return {
             pageNumber,
             analysisVersion: PAGE_ANALYSIS_VERSION,
@@ -778,6 +795,14 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
             confidence: Number.isFinite(confidence) ? confidence : 0,
             boundaryEvidence: String(normalized.boundary_evidence || ""),
             recognizedText,
+            ...(identityReview ? {
+              identityReview,
+              primaryRecognition: {
+                bondShortName: String(parsed.bond_short_name || ""),
+                securityCode: String(parsed.security_code || ""),
+                recognizedText: primaryRecognizedText,
+              },
+            } : {}),
             fields: {
               paymentDate: normalized.payment_date,
               bondShortName: normalized.bond_short_name,
@@ -1122,6 +1147,51 @@ function hasMeaningfulReceiptText(value) {
 function paymentReceiptStartSignals(value) {
   const text = String(value || "").normalize("NFKC").replace(/\s+/g, "");
   return /(?:(?:配售|购买|认购)(?:确认及)?缴款通知书|配售确认书|缴款通知书)/.test(text);
+}
+
+async function reviewCurrentPaymentReceiptIdentity(ai, pageImage, primary) {
+  let review;
+  try {
+    // The independent reader receives only the current page and expected code
+    // for post-response validation, never an earlier name or a project candidate.
+    review = await runReceiptIdentityReview(ai, pageImage, primary.security_code);
+  } catch {
+    return {
+      status: "unavailable", name: "", code: "", readings: {},
+      model: RECEIPT_MODEL, reason: "review_error", error: true, applied: false,
+    };
+  }
+  if (review.status !== "verified") {
+    // Without two current-page literal readings the second pass has not
+    // corroborated this identity. Keep the primary text, but require review.
+    return { ...review, error: true, applied: false };
+  }
+  if (!compatibleReceiptNameCorrection(primary.bond_short_name, review.name)) {
+    return { ...review, status: "conflict", reason: "primary_name_conflict", applied: false };
+  }
+  return { ...review, applied: true };
+}
+
+function verifiedIdentityStartsReceipt(current, review, previous = {}) {
+  if (review.status !== "verified" || review.applied !== true) return false;
+  const currentPrepayment = canonicalFingerprintPart(current.prepayment_number);
+  const previousPrepayment = canonicalFingerprintPart(previous.prepayment_number || previous.prepaymentNumber);
+  // A repeated payment instruction is not split because its printed code drifts.
+  if (currentPrepayment && previousPrepayment && currentPrepayment === previousPrepayment) return false;
+  const currentCode = paymentReceiptCodeIdentity(current.security_code);
+  const previousCode = paymentReceiptCodeIdentity(previous.security_code || previous.securityCode);
+  if (!currentCode || currentCode.invalid || !previousCode || previousCode.invalid
+      || currentCode.body === previousCode.body || samePaymentReceiptCode(currentCode, previousCode)) return false;
+  const previousName = normalizePaymentReceiptBondShortName(previous.bond_short_name || previous.bondShortName);
+  const currentName = normalizePaymentReceiptBondShortName(review.name);
+  // Missing prior name evidence is allowed only after the current page supplies
+  // two agreeing readings, its own clear notice title and a distinct valid code.
+  if (!currentName) return false;
+  if (!previousName) return true;
+  const sameName = canonicalFingerprintPart(currentName.split("(")[0]) === canonicalFingerprintPart(previousName.split("(")[0]);
+  const sameIssuerTail = compatibleReceiptNameCorrection(previousName, currentName)
+    || compatibleReceiptNameCorrection(currentName, previousName);
+  return !sameName && !sameIssuerTail;
 }
 
 function comparePaymentReceiptIdentity(current = {}, previous = {}) {

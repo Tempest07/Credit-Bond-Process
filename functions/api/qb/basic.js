@@ -5,6 +5,7 @@ const BASIC = '/bond/basic-info/info';
 const OUTSTANDING = '/bond/basic-info/outstanding-bonds';
 const MAX_TARGETS = 20;
 const CODE = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/;
+const PRE_ISSUE_CODE = /^S\d{5,12}\.IB$/;
 
 export async function basicFallback(path, input = {}, client) {
   const route = String(path || '').replace(/^\/dm-quant-func-service\/api\/v1/, '');
@@ -61,7 +62,9 @@ export async function basicFallback(path, input = {}, client) {
   for (const issues of byName.values()) {
     for (const issue of issues) {
       const code = normalizeCode(issue.ss_sec_code);
-      if (code && codeSet.has(code) && !dimensionCodes.has(code)) output.push(mapBasicRow(null, issue, client));
+      if ((code && codeSet.has(code) && !dimensionCodes.has(code)) || isPreIssueCode(issue.ss_sec_code)) {
+        output.push(mapBasicRow(null, issue, client));
+      }
     }
   }
   return dedupe(output);
@@ -136,8 +139,11 @@ function mapBasicRow(dimension, issue, client, apiNames = null) {
       // Keep the current dimension's exact option enum, including NON. An
       // issuance-only row may still supply the same documented raw enum.
       if (target === 'qbOptionTypeCode' && result.qbOptionTypeCode) continue;
-      set(target, issue[source], source);
+      set(target, issue[source], source, target === 'securityId' ? normalizeCode : cleanText);
     }
+    // QB assigns S-prefixed catalogue identifiers before the formal code exists.
+    // Preserve that evidence without presenting it as an issued security code.
+    if (isPreIssueCode(issue.ss_sec_code)) set('qbPreIssueCode', issue.ss_sec_code, 'ss_sec_code');
     for (const [target, source] of Object.entries({
       issStartDate: 'iss_strt_dt', issEndDate: 'iss_end_dt', payDate: 'pay_dt',
       listDate: 'listing_dt', matuPayDate: 'maturity_dt',
@@ -178,6 +184,7 @@ function targetList(value, normalizer) {
 }
 
 function normalizeCode(value) { const text = cleanText(value).toUpperCase(); return CODE.test(text) ? text : ''; }
+function isPreIssueCode(value) { return PRE_ISSUE_CODE.test(cleanText(value).toUpperCase()); }
 function normalizeNameInput(value) {
   return typeof value === 'string' && value.trim().length <= 160 && !/[\r\n,，]/u.test(value) ? value.trim() : '';
 }

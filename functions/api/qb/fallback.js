@@ -152,10 +152,10 @@ function keyFor(path, row) {
 function ambiguousBasic(rows) {
   const bad = new Set(), byCode = new Map();
   for (const row of rows) {
-    const id = code(row); if (!id) continue;
+    const id = code(row) || (get(row, 'qbPreIssueCode') ? `pre:${name(row)}` : ''); if (!id) continue;
     if (!byCode.has(id)) byCode.set(id, new Map());
     const evidence = byCode.get(id);
-    for (const field of ['secShortName', 'issuerName', 'issuerFullName', 'issueStatusDesc']) {
+    for (const field of ['secShortName', 'issuerName', 'issuerFullName', 'issueStatusDesc', 'qbPreIssueCode']) {
       const value = get(row, field); if (!present(value)) continue;
       if (!evidence.has(field)) evidence.set(field, new Set());
       evidence.get(field).add(canonical(value));
@@ -171,12 +171,21 @@ export function mergeRows(path, dmRows, qbRows) {
   const pairs = { cbYtm: 'cbNptm', cbNptm: 'cbYtm', cbYte: 'cbNpte', cbNpte: 'cbYte',
     csYtm: 'csNptm', csNptm: 'csYtm', csYte: 'csNpte', csNpte: 'csYte' };
   for (const row of qbRows) {
-    if (invalid.has(code(row))) continue;
+    if (invalid.has(code(row) || (get(row, 'qbPreIssueCode') ? `pre:${name(row)}` : ''))) continue;
     const key = keyFor(path, row); if (!key) continue;
     let target = output.find(candidate => keyFor(path, candidate) === key);
     // An unrequested alternate date must not supersede any already available DM
     // observation. Keep institution, date, yield and price together.
     const relatedDm = dmRows.filter(candidate => code(row) ? code(candidate) === code(row) : name(candidate) === name(row));
+    // A pre-issue name is not a formal security identifier. Never fill one
+    // issuer's DM row with another issuer's same-name QB issuance evidence.
+    if (/basic-info\/info|primary\/data/.test(path) && !code(row)) {
+      const issuer = canonical(get(row, 'issuerName') || get(row, 'issuerFullName'));
+      if (issuer && relatedDm.some(candidate => {
+        const other = canonical(get(candidate, 'issuerName') || get(candidate, 'issuerFullName'));
+        return other && other !== issuer;
+      })) continue;
+    }
     const ratingObservation = /\/(?:company|bond)\/rating\/data$/.test(path);
     const completeRating = candidate => present(get(candidate, 'rating')) && present(get(candidate, 'ratingInstitutionShortName')) && Boolean(day(candidate));
     if (ratingObservation && !target && relatedDm.some(completeRating)) continue;

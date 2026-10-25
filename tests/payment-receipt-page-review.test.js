@@ -1,0 +1,178 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { PDFDocument } from 'pdf-lib';
+import { analyzePaymentReceiptPage } from '../payment-receipt-worker.js';
+import { groupPaymentReceiptPages } from '../payment-receipts.js';
+
+async function scan() {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([100, 100]);
+  const image = pdf.context.stream(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+    Type: 'XObject', Subtype: 'Image', Width: 2, Height: 2,
+    ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode',
+  });
+  page.node.newXObject('Image', pdf.context.register(image));
+  return pdf.save({ useObjectStreams: false });
+}
+
+const primary = (name = '26苏交CP008', code = '042680338', rest = {}) => ({
+  classification: 'receipt_start', confidence: 0.96,
+  document_title: '江苏交通控股有限公司配售确认及缴款通知书',
+  bond_short_name: name, security_code: code, payment_date: '2026-10-15',
+  amount_text: '42,000万元', ...rest,
+});
+const literal = (name = '26苏交通CP008', code = '042680338', rest = {}) => ({
+  nameField: name, remittanceName: name, securityCode: code, uncertainties: [], ...rest,
+});
+
+function stages(first, second) {
+  const requests = [];
+  return {
+    requests,
+    env: { AI: { async run(model, input) {
+      requests.push({ model, input });
+      if (requests.length === 1) return { response: first };
+      if (second instanceof Error) throw second;
+      return { response: second };
+    } } },
+  };
+}
+
+test('a current-page independent read restores a missing issuer tail and keeps primary evidence', async () => {
+  const ai = stages(primary(), literal());
+  const page = await analyzePaymentReceiptPage(ai.env, await scan(), 9, {
+    classification: 'receipt_start', fields: { bondShortName: '26上一页MTN002B', securityCode: '102683999' },
+  });
+  assert.equal(ai.requests.length, 2);
+  assert.equal(page.analysisVersion, 7);
+  assert.equal(page.analysisSource, 'workers-ai-page-image');
+  assert.equal(page.fields.bondShortName, '26苏交通CP008');
+  assert.equal(page.fields.securityCode, '042680338');
+  assert.equal(page.identityReview.status, 'verified');
+  assert.equal(page.identityReview.applied, true);
+  assert.equal(page.identityReview.readings.nameField, '26苏交通CP008');
+  assert.equal(page.primaryRecognition.bondShortName, '26苏交CP008');
+  assert.match(page.primaryRecognition.recognizedText, /债券简称 26苏交CP008/);
+  assert.match(page.recognizedText, /债券简称 26苏交通CP008/);
+  const independentPrompt = ai.requests[1].input.messages[0].content[0].text;
+  assert.doesNotMatch(independentPrompt, /26苏交CP008|26上一页MTN002B|102683999|042680338/);
+  assert.equal(ai.requests[1].input.messages[0].content[1].image_url.url,
+    ai.requests[0].input.messages[0].content[1].image_url.url);
+});
+
+test('explicit product, tranche, year, issue, code and market conflicts stay reviewable', async () => {
+  const cases = [
+    [primary(), literal('26苏交通SCP008'), '26苏交CP008'],
+    [primary('26越秀租赁MTN002A', '102683999'), literal('26越秀租赁MTN002B', '102683999'), '26越秀租赁MTN002A'],
+    [primary(), literal('25苏交通CP008'), '26苏交CP008'],
+    [primary(), literal('26苏交通CP009'), '26苏交CP008'],
+    [primary(), literal('26苏交通CP008', '042680339'), '26苏交CP008'],
+    [primary('26示例01', '246129.SH'), literal('26示例01', '246129.SZ'), '26示例01'],
+  ];
+  for (const [first, second, original] of cases) {
+    const ai = stages(first, second);
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 1);
+    assert.equal(page.classification, 'uncertain', JSON.stringify(second));
+    assert.equal(page.identityReview.status, 'conflict');
+    assert.equal(page.identityReview.applied, false);
+    assert.equal(page.fields.bondShortName, original);
+    assert.equal(page.fields.securityCode, first.security_code);
+  }
+});
+
+test('independent disagreement or inability to read never overwrites primary fields', async () => {
+  for (const second of [
+    literal('26苏交通CP008', '042680338', { remittanceName: '26苏交通SCP008' }),
+    literal('26苏交通CP008', '042680338', { uncertainties: ['简称字段模糊'] }),
+    literal('26苏交通CP008', '042680338', { remittanceName: '' }),
+    'not valid JSON',
+    new Error('private service details'),
+  ]) {
+    const ai = stages(primary(), second);
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 1);
+    assert.equal(page.classification, 'uncertain');
+    assert.equal(page.identityReview.applied, false);
+    assert.equal(page.fields.bondShortName, '26苏交CP008');
+    assert.doesNotMatch(JSON.stringify(page), /private service details/);
+  }
+});
+
+test('a response without any literal readings cannot masquerade as successful corroboration', async () => {
+  const ai = stages(primary(), primary());
+  const page = await analyzePaymentReceiptPage(ai.env, await scan(), 1);
+  assert.equal(page.identityReview.status, 'unavailable');
+  assert.equal(page.identityReview.reason, 'missing_literal_reading');
+  assert.equal(page.classification, 'uncertain');
+  assert.equal(page.fields.bondShortName, '26苏交CP008');
+});
+
+test('three distinct original bond identities form three page groups instead of polluting one receipt', async () => {
+  const pdf = await scan();
+  const inputs = [
+    [primary(), literal()],
+    [primary('乌鲁木齐城市建设投资（集团）有限公司2026年度第一期定向债务融资工具', '032680566', {
+      classification: 'uncertain', document_title: '乌鲁木齐城市建设投资（集团）有限公司配售确认及缴款通知书',
+    }), literal('26乌城投PPN001', '032680566')],
+    [primary('26闽高速MTN005', '102683994', {
+      classification: 'uncertain', document_title: '福建省高速公路集团有限公司配售确认及缴款通知书',
+    }), literal('26闽高速MTN005', '102683994')],
+  ];
+  const pages = [];
+  let previous = { classification: 'receipt_start', fields: { bondShortName: '26越秀租MTN002B', securityCode: '102683999' } };
+  for (let i = 0; i < inputs.length; i++) {
+    const ai = stages(...inputs[i]);
+    const page = await analyzePaymentReceiptPage(ai.env, pdf, i + 9, previous);
+    assert.equal(page.classification, 'receipt_start');
+    assert.equal(page.identityReview.status, 'verified');
+    pages.push(page);
+    previous = { classification: page.classification, fields: page.fields };
+  }
+  assert.deepEqual(pages.map(page => page.fields.bondShortName), ['26苏交通CP008', '26乌城投PPN001', '26闽高速MTN005']);
+  const grouped = groupPaymentReceiptPages(pages.map(page => ({
+    pageNumber: page.pageNumber, text: page.recognizedText, startsReceipt: page.classification === 'receipt_start',
+  })));
+  assert.deepEqual(grouped.groups.map(group => group.pageNumbers), [[9], [10], [11]]);
+  assert.deepEqual(grouped.uncertainPages, []);
+});
+
+test('a distinct verified current page starts after a prior page with no usable name, but requires its own notice title', async () => {
+  for (const [title, expected] of [['配售确认及缴款通知书', 'receipt_start'], ['', 'uncertain']]) {
+    const ai = stages(primary('26闽高速MTN005', '102683994', { classification: 'uncertain', document_title: title }),
+      literal('26闽高速MTN005', '102683994'));
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 11, {
+      classification: 'uncertain', fields: { securityCode: '032680566', bondShortName: '' },
+    });
+    assert.equal(page.classification, expected);
+  }
+});
+
+test('same-name code drift cannot become a new receipt even after current-page corroboration', async () => {
+  for (const [before, current] of [
+    ['26示例MTN001', '26示例MTN001'],
+    ['26示例MTN001', '26示例MTN001(绿色)'],
+    ['26苏交CP008', '26苏交通CP008'],
+  ]) {
+    const ai = stages(primary(current, '102600002'), literal(current, '102600002'));
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 2, {
+      classification: 'receipt_start', fields: { bondShortName: before, securityCode: '102600001' },
+    });
+    assert.equal(page.identityReview.status, 'verified');
+    assert.equal(page.classification, 'uncertain', current);
+  }
+});
+
+test('explicit continuation and missing or invalid codes do not trigger another paid request', async () => {
+  for (const first of [
+    primary('26示例MTN001', '102600002', { classification: 'continuation', prepayment_number: 'W2026072100001' }),
+    primary('26示例MTN001', ''),
+    primary('26示例MTN001', '6222123456789012'),
+  ]) {
+    const ai = stages(first, new Error('must not request review'));
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 2, {
+      classification: 'receipt_start', fields: { bondShortName: '26示例MTN001', securityCode: '102600001', prepaymentNumber: 'W2026072100001' },
+    });
+    assert.equal(ai.requests.length, 1);
+    assert.equal(page.identityReview, undefined);
+    if (first.classification === 'continuation') assert.equal(page.classification, 'continuation');
+  }
+});

@@ -1,5 +1,7 @@
 import { decodeWords } from "postal-mime";
 import { readStoredStateRow } from "../../state-storage.js";
+import { normalizePaymentReceiptBondShortName } from "../../payment-receipt-names.js";
+import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "../../payment-receipt-security.js";
 
 const RECEIPT_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS payment_receipt_batches (
@@ -99,6 +101,8 @@ const RECEIPT_SCHEMA_STATEMENTS = [
     ON payment_receipts(file_id, source_page_label)`,
   `CREATE INDEX IF NOT EXISTS idx_payment_receipt_matches_target
     ON payment_receipt_matches(owner_user_id, project_id, tranche_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_payment_receipt_identity_reviews
+    ON payment_receipt_events(owner_user_id, receipt_id, event_type, created_at DESC, id DESC)`,
 ];
 
 export async function ensurePaymentReceiptSchema(db) {
@@ -147,6 +151,11 @@ export async function listPaymentReceipts(db, ownerUserId, filters = {}) {
       b.processing_status AS batch_processing_status,
       b.error_message AS batch_error_message,
       f.filename AS source_filename,
+      f.sha256 AS source_file_sha256,
+      (SELECT e.detail_json FROM payment_receipt_events e
+       WHERE e.owner_user_id = r.owner_user_id AND e.receipt_id = r.id
+         AND e.event_type = 'identity_review_accepted'
+       ORDER BY e.created_at DESC, e.id DESC LIMIT 1) AS identity_review_json,
       f.blank_pages_json,
       f.processing_status AS file_processing_status,
       m.project_id,
@@ -267,6 +276,11 @@ export async function getPaymentReceipt(db, ownerUserId, receiptId) {
       b.processing_status AS batch_processing_status,
       b.error_message AS batch_error_message,
       f.filename AS source_filename,
+      f.sha256 AS source_file_sha256,
+      (SELECT e.detail_json FROM payment_receipt_events e
+       WHERE e.owner_user_id = r.owner_user_id AND e.receipt_id = r.id
+         AND e.event_type = 'identity_review_accepted'
+       ORDER BY e.created_at DESC, e.id DESC LIMIT 1) AS identity_review_json,
       f.blank_pages_json,
       f.processing_status AS file_processing_status,
       m.project_id,
@@ -836,6 +850,7 @@ export async function insertPaymentReceiptEvent(db, input) {
 }
 
 export function paymentReceiptFromRow(row = {}) {
+  const identityReview = acceptedPaymentReceiptIdentityReview(row);
   return {
     id: String(row.id || ""),
     batchId: String(row.batch_id || ""),
@@ -873,6 +888,39 @@ export function paymentReceiptFromRow(row = {}) {
     receivedAt: String(row.received_at || ""),
     createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
+    ...(identityReview ? { identityReview } : {}),
+  };
+}
+
+function acceptedPaymentReceiptIdentityReview(row) {
+  let review;
+  try { review = JSON.parse(row.identity_review_json || "null"); } catch { return null; }
+  if (!review || review.status !== "verified"
+      || !review.receiptSha256 || review.receiptSha256 !== row.sha256
+      || !review.fileSha256 || review.fileSha256 !== row.source_file_sha256
+      || review.fileId !== row.file_id) return null;
+  const pages = jsonArray(row.source_pages_json);
+  if (!Number.isSafeInteger(review.pageNumber) || review.pageNumber !== pages[0]
+      || JSON.stringify(review.sourcePages) !== JSON.stringify(pages)) return null;
+  const code = paymentReceiptCodeIdentity(review.code);
+  const originalCode = paymentReceiptCodeIdentity(row.security_code);
+  if (!code || code.invalid || (originalCode && !samePaymentReceiptCode(code, originalCode))) return null;
+  const name = normalizePaymentReceiptBondShortName(review.name);
+  const readings = review.readings || {};
+  const field = normalizePaymentReceiptBondShortName(readings.nameField);
+  const reference = normalizePaymentReceiptBondShortName(readings.remittanceName);
+  const readCode = paymentReceiptCodeIdentity(readings.securityCode);
+  if (!name || !field || !reference || !samePaymentReceiptCode(code, readCode)
+      || [field, reference].some(value => value.split("(")[0] !== name.split("(")[0])
+      || !Array.isArray(readings.uncertainties) || readings.uncertainties.length) return null;
+  const attributes = new Set((field + reference).match(/\([^()]+\)/g) || []);
+  if ((name.match(/\([^()]+\)/g) || []).some(value => !attributes.has(value))) return null;
+  return {
+    status: "verified", name, code: code.text, pageNumber: review.pageNumber,
+    model: String(review.model || ""), readings: { nameField: field, remittanceName: reference,
+      securityCode: readCode.text, uncertainties: [] },
+    originalName: String(review.originalName || ""), reviewId: String(review.reviewId || ""),
+    acceptedAt: String(review.acceptedAt || ""),
   };
 }
 

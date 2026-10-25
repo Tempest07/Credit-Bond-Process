@@ -84,6 +84,9 @@ test("the real file processor never persists an automatic match across a securit
       AI: {
         async run() {
           aiCalls += 1;
+          if (aiCalls === 2) return { response: {
+            nameField: "26测试01", remittanceName: "26测试01", securityCode, uncertainties: [],
+          } };
           return { response: {
             classification: "receipt_start",
             confidence: 0.98,
@@ -104,7 +107,7 @@ test("the real file processor never persists an automatic match across a securit
       objectKey: "attachments/file-1.pdf",
       receivedDate: "2026-10-25",
     });
-    assert.equal(aiCalls, 1, securityCode);
+    assert.equal(aiCalls, 2, securityCode);
     assert.equal(result.receiptIds.length, 1, securityCode);
     const receiptWrite = writes.find(({ sql }) => /INSERT INTO payment_receipts\s*\(/.test(sql));
     assert.ok(receiptWrite, securityCode);
@@ -214,11 +217,16 @@ test("does not finalize a batch before the email attachment pass completes", asy
 
 test("classifies and extracts one scanned receipt page through Workers AI", async () => {
   let request;
+  const requests = [];
   const pdf = await scannedPagePdf();
   const result = await analyzePaymentReceiptPage({
     AI: {
       async run(model, input) {
-        request = { model, input };
+        requests.push({ model, input });
+        request ||= { model, input };
+        if (requests.length === 2) return { response: {
+          nameField: "26灵天02", remittanceName: "26灵天02", securityCode: "283234.SH", uncertainties: [],
+        } };
         return {
           response: JSON.stringify({
             classification: "receipt_start",
@@ -246,7 +254,11 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
   assert.match(request.input.messages[0].content[0].text, /绝不能返回 blank/);
   assert.match(request.input.messages[0].content[0].text, /"classification":"receipt_start"/);
   assert.equal(result.classification, "receipt_start");
-  assert.equal(result.analysisVersion, 6);
+  assert.equal(result.analysisVersion, 7);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].input.max_tokens, 400);
+  assert.match(requests[1].input.messages[0].content[0].text, /独立读取两处/);
+  assert.equal(result.identityReview.status, "verified");
   assert.match(request.input.messages[0].content[2].text, /逐字读取当前页/);
   assert.match(request.input.messages[0].content[2].text, /禁止把上一页简称或代码复制/);
   assert.match(request.input.messages[0].content[0].text, /缴款金额（万元）【5000】/);

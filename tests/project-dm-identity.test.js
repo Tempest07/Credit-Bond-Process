@@ -20,7 +20,7 @@ function harness() {
   });
   for (const name of [
     "projectPatchFromDmLookup", "checkedDmLookupPayload", "projectDmUsableTranches",
-    "sortProjectDmTranches", "compactProjectShortNames", "projectCompactShortNameParts",
+    "sortProjectDmTranches", "compactProjectShortNames", "compactProjectDurations", "projectCompactShortNameParts",
     "compareProjectShortNameOrder", "projectShortNameSortParts", "normalizeProjectShortNameForSort",
     "projectLetterSortValue", "uniqueNonEmpty", "assignProjectDmValueWithSource", "assignProjectDmValue",
     "projectSourceFromDmIssueGroup", "normalizedProjectFieldSource", "dmProjectFullNameForProject",
@@ -31,6 +31,20 @@ function harness() {
   }
   return context;
 }
+
+test('verified themed A/B lookup restores the complete joint project name without an extra bare-name project', () => {
+  const name = '26苏元禾MTN003';
+  const context = harness();
+  const patch = context.projectPatchFromDmLookup({ ok: true, query: { shortName: name },
+    normalized: { shortName: `${name}A(科创债)`, issuerName: '苏州元禾控股股份有限公司' },
+    issueGroup: { source: 'QB', tranches: [
+      { shortName: `${name}A(科创债)`, tenor: '3Y', status: 'issued' },
+      { shortName: `${name}B(科创债)`, tenor: '5Y', status: 'issued' },
+    ] },
+  });
+  assert.equal(patch.shortName, `${name}A/B(科创债)`);
+  assert.deepEqual(Array.from(patch.shortNames), [`${name}A(科创债)`, `${name}B(科创债)`]);
+});
 
 test("DM 26鄂交05 remains 05 when a stale cloud group contains only 03/04", () => {
   const context = harness();

@@ -194,15 +194,18 @@ async function primary(input,client){
     for(const item of found){
       if(compact(item.sec_shrt_nm)!==compact(name))continue;
       if(input.issuerFullName&&compact(item.inst_nm)!==compact(input.issuerFullName))continue;
-      const issued=date(item.iss_strt_dt);if(!issued||(start&&issued<start)||issued>end||issued>client.today)continue;
-      const code=fullCode(item.ss_sec_code);if(!code)continue;
-      const row={securityId:code,secShortName:item.sec_shrt_nm,secFullName:item.sec_full_nm,issuerFullName:item.inst_nm,
+      // Issuance plans may legitimately be in the caller's future query window;
+      // this is not a valuation snapshot and must retain tomorrow's new issues.
+      const issued=date(item.iss_strt_dt);if(!issued||(start&&issued<start)||issued>end)continue;
+      const code=fullCode(item.ss_sec_code),preIssueCode=/^S\d{5,12}\.IB$/.test(compact(item.ss_sec_code))?compact(item.ss_sec_code):'';
+      if(!code&&!preIssueCode)continue;
+      const row={...(code?{securityId:code}:{qbPreIssueCode:preIssueCode}),secShortName:item.sec_shrt_nm,secFullName:item.sec_full_nm,issuerFullName:item.inst_nm,
         issueDate:issued,issueStartDate:issued,issueEndDate:date(item.iss_end_dt),payDate:date(item.pay_dt),
         listDate:date(item.listing_dt),matuPayDate:date(item.maturity_dt),bondIssueTenor:item.sec_trm,
         issueStatusDesc:item.sts,publicOfferingStatus:item.ofr_type,undeName:item.bookrunner,
         couponRate:number(item.coupon_rt),bondTypeDesc:item.bond_subtyp||item.bond_typ,
         issuerRating:item.issuer_rating,bondRating:item.bond_rating,
-        _qb:meta(client,['creditBondIssueInfo'],issued,{securityId:'ss_sec_code',secShortName:'sec_shrt_nm',
+        _qb:meta(client,['creditBondIssueInfo'],issued,{[code?'securityId':'qbPreIssueCode']:'ss_sec_code',secShortName:'sec_shrt_nm',
           secFullName:'sec_full_nm',issuerFullName:'inst_nm',issueStartDate:'iss_strt_dt',issueEndDate:'iss_end_dt',
           payDate:'pay_dt',listDate:'listing_dt',matuPayDate:'maturity_dt',bondIssueTenor:'sec_trm',
           issueStatusDesc:'sts',publicOfferingStatus:'ofr_type',undeName:'bookrunner',couponRate:'coupon_rt',

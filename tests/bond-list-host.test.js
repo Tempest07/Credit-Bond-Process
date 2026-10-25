@@ -44,6 +44,7 @@ function gateHarness({ locked = true, error = true, access = true, active = true
     $, document: { querySelector: $ }, bondListController: controller,
     currentGatewayUser: { username: "admin" }, updateAuthUi: () => {},
     paymentReceiptPreview: null, paymentReceiptInspectorSignature: "",
+    paymentReceiptIdentityReviews: new Map(),
   });
   loadFunctions(context, ["syncBondListCloudGate"]);
   return { context, main, gate, controller,
@@ -96,7 +97,7 @@ test("clearing the shared login session revokes OFR authorization before updatin
   let cleared = false;
   h.context.paymentReceiptPreview = { clear() { cleared = true; } };
   h.context.syncBondListCloudGate();
-  loadFunctions(h.context, ["clearAuthSession"]);
+  loadFunctions(h.context, ["clearPaymentReceiptIdentityReviews", "clearAuthSession"]);
   h.context.clearAuthSession();
   assert.equal(h.context.currentGatewayUser, null);
   assert.equal(cleared, true, "private PDF buffers and Blob links must be revoked at logout");

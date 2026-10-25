@@ -84,7 +84,13 @@ export async function onRequestGet(context) {
       }
       securityId = discovery.securityId;
     }
-    const basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
+    let d1State;
+    let basic = await lookupBasicInfo(dm, { shortName, securityId, fullName });
+    if (!rowsFromDm(basic.raw).length && shortName && !securityId) {
+      d1State = await readD1AppState(context.env.DB, auth.user.id);
+      const candidates = attributedShortNameCandidates(shortName, d1State);
+      if (candidates.length) basic = await lookupBasicInfo(dm, { shortName, securityId, fullName }, candidates);
+    }
     const ambiguousBonds = ambiguousLookupBonds(basic.rows, { shortName, securityId });
     if (ambiguousBonds.length) return json(withDataSources({ ok: false, requiresSelection: true,
       error: "查询对应多个不同证券代码，请选择准确债券。", suggestions: ambiguousBonds,
@@ -149,7 +155,7 @@ export async function onRequestGet(context) {
           rowCount: 0,
         };
     const windEnrichedNormalized = applyWindImpliedRating(dmEnrichedNormalized, windImpliedRating, windEnabled);
-    const d1State = await readD1AppState(context.env.DB, auth.user.id);
+    if (d1State === undefined) d1State = await readD1AppState(context.env.DB, auth.user.id);
     const issuerIdentityFallback = dmMatched
       ? null
       : lookupIssuerIdentityFallback(d1State, windEnrichedNormalized, { shortName, securityId, fullName });
@@ -285,11 +291,11 @@ async function discoverFullNameBond(dm, fullName) {
   return { securityId: "", suggestions, diagnostic: { issuerName, year, exactMatches: matches.size, errors } };
 }
 
-async function lookupBasicInfo(dm, { shortName, securityId, fullName }) {
+async function lookupBasicInfo(dm, { shortName, securityId, fullName }, candidates = null) {
   if (!shortName && !securityId) return { raw: null, rows: [] };
   const payload = securityId
     ? { securityIdList: [securityId] }
-    : { secShortNameList: basicShortNameCandidates(shortName) };
+    : { secShortNameList: candidates || basicShortNameCandidates(shortName) };
   const raw = await dm.post(BASIC_INFO_PATH, payload);
   const rows = rowsFromDm(raw);
   return { raw, rows: rows.filter((row) => primaryRowMatchesQuery(row, { shortName, securityId, fullName })) };
@@ -304,6 +310,23 @@ function basicShortNameCandidates(shortName = "") {
     if (!/^(?:.*)(?:MTN|PPN|PRN)\d{3}$/i.test(core)) return [value];
     return [value, `${core}A${label}`, `${core}B${label}`];
   }));
+}
+
+function attributedShortNameCandidates(shortName = "", state = null) {
+  // Exact-name APIs do not expand an omitted theme label. Cloud names are only
+  // search seeds: every candidate must still be returned by the selected vendor.
+  const originals = basicShortNameCandidates(shortName);
+  const cores = new Set(originals.map(normalizeLookupName));
+  if (!originals.length || originals.some(name => !/^\d{2}.+(?:MTN|PPN|PRN)\d{3}[A-Z]?$/i.test(normalizeLookupName(name)))) return [];
+  const known = (Array.isArray(state?.projects) ? state.projects : []).flatMap(project =>
+    [project?.shortName, ...(Array.isArray(project?.shortNames) ? project.shortNames : []),
+      ...(Array.isArray(project?.tranches) ? project.tranches : []).map(entry => entry?.shortName)]
+      .filter(name => typeof name === 'string').flatMap(splitCombinedShortNames))
+    .filter(name => cores.has(normalizeLookupName(name)));
+  // This verified attribute is used by the current issuance catalogue. Try
+  // it only after the ordinary exact-name request is empty, never as an identity.
+  const themed = originals.filter(name => !/[（(]/.test(name)).map(name => `${name}(科创债)`);
+  return uniqueStrings([...known, ...themed]).filter(name => !originals.includes(name)).slice(0, 12);
 }
 
 async function lookupPrimaryData(dm, { shortName, securityId, fullName, issuerName, absHintText, startDate, endDate }) {
@@ -3583,6 +3606,7 @@ function bytesToHex(bytes) {
 }
 
 export const __test__ = {
+  attributedShortNameCandidates,
   ratingDiagnostic,
   applyDmRatingDiscovery,
   dedicatedRatingMatch,

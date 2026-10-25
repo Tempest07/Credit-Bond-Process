@@ -18,8 +18,8 @@ function harness() {
     { id: 'p1', shortName: '26测试MTN001', issuerName: '甲公司', tranches: [{ id: 't1', shortName: '26测试MTN001', paymentDate: '2026-10-15', paymentCompleted: false }] },
     { id: 'p2', shortName: '26测试CP002', issuerName: '乙公司', tranches: [{ id: 't2', shortName: '26测试CP002', paymentDate: '2026-10-23', paymentCompleted: true }] },
   ] };
-  const context = vm.createContext({ state, createPaymentReceiptNameResolver, paymentReceiptNameResolverCache: null });
-  load(context, ['paymentReceiptNameResolution', 'paymentReceiptNameSourceLabel', 'renderPaymentReceiptQuickMatch', 'paymentReceiptTargetOptions', 'paymentReceiptTarget', 'renderPaymentReceiptCandidates', 'escapeHtml', 'escapeAttribute']);
+  const context = vm.createContext({ state, createPaymentReceiptNameResolver, paymentReceiptNameResolverCache: null, paymentReceiptIdentityReviews: new Map() });
+  load(context, ['paymentReceiptNameResolution', 'paymentReceiptNameSourceLabel', 'renderPaymentReceiptQuickMatch', 'renderPaymentReceiptIdentityReviewContent', 'paymentReceiptTargetOptions', 'paymentReceiptTarget', 'renderPaymentReceiptCandidates', 'escapeHtml', 'escapeAttribute']);
   return { context, state };
 }
 

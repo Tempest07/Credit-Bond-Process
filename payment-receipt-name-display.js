@@ -1,6 +1,6 @@
-import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js?v=20261025release5351r2";
+import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js?v=20261025release636";
 import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
-  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261025release5351r2';
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261025release636';
 
 const SHORT_NAME_LABEL = /(?:债\s*券|证\s*券)\s*(?:简\s*称|短\s*名)\s*[:：]?\s*/g;
 const compact = value => String(value || "").normalize("NFKC").replace(/[\s\u200b-\u200d\ufeff]/g, "").toUpperCase();
@@ -97,7 +97,7 @@ export function createPaymentReceiptNameResolver(projects = []) {
     }
   }
 
-  return function resolve(receipt = {}) {
+  function resolveOriginal(receipt = {}) {
     const rawName = String(receipt.bondShortName || "").trim();
     const code = codeIdentity(receipt.securityCode);
     const fallbackName = cleanedFallback(rawName);
@@ -149,5 +149,28 @@ export function createPaymentReceiptNameResolver(projects = []) {
       if (securities.has(code.body)) return fallbackResult("识别证券代码与项目交易市场不一致");
     }
     return fallbackResult("");
+  }
+
+  return function resolve(receipt = {}) {
+    const original = resolveOriginal(receipt);
+    const review = receipt.identityReview;
+    const name = normalizePaymentReceiptBondShortName(review?.name);
+    const code = codeIdentity(review?.code);
+    const readings = review?.readings || {};
+    const field = normalizePaymentReceiptBondShortName(readings.nameField);
+    const reference = normalizePaymentReceiptBondShortName(readings.remittanceName);
+    const originalCode = codeIdentity(receipt.securityCode);
+    if (review?.status !== "verified" || !name || !field || !reference
+        || !code || code.invalid || !sameCode(code, codeIdentity(readings.securityCode))
+        || (originalCode && !sameCode(code, originalCode))
+        || review.pageNumber !== receipt.sourcePages?.[0]
+        || [field, reference].some(value => value.split("(")[0] !== name.split("(")[0])
+        || !Array.isArray(readings.uncertainties) || readings.uncertainties.length) return original;
+    // This is a separately accepted transcription of one original page, not a
+    // rewrite of historical OCR or proof that a multi-page group is one bond.
+    const warning = original.warning.includes("多个债券")
+      ? "本页简称已复核，但原分组包含多个债券，请核对拆页与对应项目"
+      : original.warning;
+    return { ...original, title: name, source: "page-review", warning };
   };
 }
