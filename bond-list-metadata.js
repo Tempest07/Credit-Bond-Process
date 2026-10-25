@@ -1,4 +1,4 @@
-import { BOND_TYPES } from './bond-list-filter.js?v=20261025release636';
+import { BOND_TYPES } from './bond-list-filter.js?v=20261026release5361';
 
 const textPresent = value => typeof value === 'string' && Boolean(value.trim())
   && !/^(?:未知|不详|暂无|未分类|N\/?A|NULL|NONE|[-—]+)$/i.test(value.trim());

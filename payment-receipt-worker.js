@@ -53,7 +53,7 @@ export default {
       return Response.json({
         status: readiness.ready ? "ok" : "not_ready",
         service: "credit-bond-payment-receipts",
-        buildVersion: "6.3.6",
+        buildVersion: "5.3.6.1",
         checks: readiness.checks,
       }, { status: readiness.ready ? 200 : 503 });
     }

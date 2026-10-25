@@ -1,6 +1,6 @@
 {
   "name": "credit-bond-process",
-  "version": "6.3.6",
+  "version": "5.3.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,7 +23,7 @@
     "react-dom": "19.2.4",
     "thinking-orbs": "0.3.1"
   },
-  "buildVersion": "6.3.6",
+  "buildVersion": "5.3.6.1",
   "devDependencies": {
     "esbuild": "0.25.12"
   }

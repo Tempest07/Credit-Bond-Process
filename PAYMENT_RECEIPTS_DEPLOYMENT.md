@@ -43,7 +43,7 @@ R2 与项目状态分开存储，避免 PDF 被写入整份 `user_app_state` JSO
 npx wrangler d1 execute credit-bond-process --remote --file schema.sql
 ```
 
-6.3.6 的“本页简称复核”同时需要 Pages 的 Workers AI binding `AI`，以及与现有 Email Worker 一致的、已经获准的 `AI_PROCESSING_APPROVED=true`。仅配置 Email Worker 的 AI 不会使 Pages 获得此能力。保留现有 DB、R2、密钥及其他设置；未批准时保持关闭，接口会返回不可用。生产环境使用原有 Cloudflare Workers AI，不配置本地 Qwen 地址。
+5.3.6（原误标6.3.6）的“本页简称复核”同时需要 Pages 的 Workers AI binding `AI`，以及与现有 Email Worker 一致的、已经获准的 `AI_PROCESSING_APPROVED=true`。仅配置 Email Worker 的 AI 不会使 Pages 获得此能力。保留现有 DB、R2、密钥及其他设置；未批准时保持关闭，接口会返回不可用。生产环境使用原有 Cloudflare Workers AI，不配置本地 Qwen 地址。
 
 复核只追加独立审计事件，不覆盖原始 OCR、金额、日期或已有对应。部署不会启动历史识别或导入本地复核结果；新增的事件查询索引为幂等非唯一索引。
 

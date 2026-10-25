@@ -4,30 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="6.3.6">
-  <meta name="application-build-version" content="6.3.6">
-  <meta name="application-build" content="20261025release636">
-  <title>Bond Centre 6.3.6 - Tempest07</title>
+  <meta name="application-version" content="5.3.6.1">
+  <meta name="application-build-version" content="5.3.6.1">
+  <meta name="application-build" content="20261026release5361">
+  <title>Bond Centre 5.3.6.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261025release636"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261025release636">
+  <script src="./app-shell-mode.js?v=20261026release5361"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261026release5361">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261025release636" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261025release636" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261025release636" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261025release636">
-  <script src="./ui-preference.js?v=20261025release636"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261025release636">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261025release636">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261025release636">
-  <link rel="stylesheet" href="./release-notes.css?v=20261025release636">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261025release636">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261025release636">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261025release636">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261026release5361" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261026release5361" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261026release5361" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261026release5361">
+  <script src="./ui-preference.js?v=20261026release5361"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261026release5361">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261026release5361">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261026release5361">
+  <link rel="stylesheet" href="./release-notes.css?v=20261026release5361">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261026release5361">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261026release5361">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261026release5361">
 </head>
 <body>
   <div class="app-shell">
@@ -52,13 +52,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 6.3.6">v6.3.6</span>
+      <span class="header-version" aria-label="当前版本 5.3.6.1">v5.3.6.1</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 6.3.6 · 2026-10-25">v6.3.6</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.6.1 · 2026-10-26">v5.3.6.1</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1650,7 +1650,16 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
-      <div class="release-notes-version"><strong>6.3.6</strong><time datetime="2026-10-25">2026 / 10 / 25</time></div>
+      <div class="release-notes-version"><strong>5.3.6.1</strong><time datetime="2026-10-26">2026 / 10 / 26</time></div>
+      <section><h3>要素栏位置与换行</h3><ul>
+        <li>调整要素栏位置与宽度，按最新预览向右微调20像素；要素及主承销商信息放不下时自动换行。</li>
+        <li>标位继续使用固定窄列，各行保持对齐；备注居中，投标状态位于最右侧。</li>
+      </ul></section>
+      <section><h3>版本号更正</h3><ul>
+        <li>昨日发布的5.3.6功能批次曾误标为6.3.6，本次正式版本统一为5.3.6.1，原功能与历史记录保留。</li>
+        <li>仅更新布局和版本标识，现有项目、主体、缴款单、原件及对应关系不变。</li>
+      </ul></section>
+      <div class="release-notes-version"><strong>5.3.6（原误标6.3.6）</strong><time datetime="2026-10-25">2026 / 10 / 25</time></div>
       <section><h3>项目台账布局</h3><ul>
         <li>债券简称保持单行且不使用省略号；备注在项目名称与要素之间居中，投标状态和查看入口位于最右侧。</li>
         <li>要素栏统一左对齐，标位使用右侧固定窄列，各行起点一致；保留手机和平板布局。</li>
@@ -1877,10 +1886,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261025release636"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261025release636"></script>
-  <script type="module" src="./app.js?v=20261025release636"></script>
-  <script type="module" src="./todo-fluid.js?v=20261025release636"></script>
-  <script type="module" src="./release-notes.js?v=20261025release636"></script>
+  <script src="./ui-mode.js?v=20261026release5361"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261026release5361"></script>
+  <script type="module" src="./app.js?v=20261026release5361"></script>
+  <script type="module" src="./todo-fluid.js?v=20261026release5361"></script>
+  <script type="module" src="./release-notes.js?v=20261026release5361"></script>
 </body>
 </html>
