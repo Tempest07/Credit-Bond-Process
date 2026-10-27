@@ -26,7 +26,7 @@ export function createPaymentReceiptManualIdentityEdit({ container, getReceipt, 
   }
   function content(receipt) {
     const state = states.get(receipt.id), blocked = isBlocked(receipt.fileId);
-    if (!state?.editing) return `<button type="button" class="button subtle" data-manual-identity-action="edit" ${blocked ? 'disabled' : ''}>人工修改</button>`;
+    if (!state?.editing) return `<button type="button" class="button subtle" aria-label="人工修改简称" data-manual-identity-action="edit" ${blocked ? 'disabled' : ''}>修改</button>`;
     return `<span class="payment-receipt-manual-identity-editor"><input type="text" class="payment-receipt-manual-identity-input" data-manual-identity-name aria-label="债券简称" maxlength="100" autocomplete="off" value="${escape(state.name)}" ${state.saving ? 'disabled' : ''}>
       <button type="button" class="button primary" data-manual-identity-action="save" ${state.saving || blocked ? 'disabled' : ''}>${state.saving ? '保存中…' : '保存'}</button>
       <button type="button" class="button subtle" data-manual-identity-action="cancel">取消</button>

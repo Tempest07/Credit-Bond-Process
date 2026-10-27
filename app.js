@@ -12,8 +12,8 @@ import { createProjectIntakeController } from './project-intake-ai-ui.js?v=20261
 import { projectIntakeCutoff } from './project-intake-ai.js?v=20261028v540';
 import { createPaymentReceiptMatchAiController } from './payment-receipt-match-ai-ui.js?v=20261028v540';
 import { createPaymentReceiptBoundaryReview } from './payment-receipt-boundary-ui.js?v=20261028v540r2';
-import { createPaymentReceiptFileIdentityReview } from './payment-receipt-file-identity-ui.js?v=20261028v540r3';
-import { createPaymentReceiptManualIdentityEdit } from './payment-receipt-manual-identity-ui.js?v=20261028v540r2';
+import { createPaymentReceiptFileIdentityReview } from './payment-receipt-file-identity-ui.js?v=20261028v540r4';
+import { createPaymentReceiptManualIdentityEdit } from './payment-receipt-manual-identity-ui.js?v=20261028v540r4';
 import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261028v540';
 import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261028v540';
 import { initDataSourceControl } from './data-source-control.js?v=20261028v540';
@@ -1148,42 +1148,44 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
   const manualBusy = Boolean(paymentReceiptManualIdentityEdit?.isEditing(receipt.fileId));
   const verified = proposal?.status === "verified" && proposal.name;
   const corrected = verified && paymentReceiptIdentityReviewHasCorrection(receipt, proposal);
-  const label = busy ? review.status === "applying" ? "正在采用…" : "检测中…" : accepted || review ? "再检测一次" : "检测简称";
+  const label = busy ? review.status === "applying" ? "保存中…" : "检测中…" : accepted || review ? "重新检测" : "检测简称";
   const readings = proposal?.readings || {};
   const page = Number(proposal?.pageNumber);
   const reasonLabel = ({
-    ai_unavailable: "复核服务暂时不可用，请重试。",
-    invalid_response: "未取得完整复核结果，请重试。",
-    missing_literal_reading: "未读到清楚的债券简称，请对照原件核对。",
-    uncertain_reading: "原件中有无法确认的内容，请人工核对。",
-    literal_name_conflict: "简称字段与缴款附言不一致，请人工核对。",
-    security_code_conflict: "复核代码与单据原代码不一致，请人工核对。",
-    source_name_conflict: "复核简称与原识别的年份、品种或期次存在差异，请人工核对。",
-    invalid_code: "未能读到可靠的债券代码，请人工核对。",
-    image_unavailable: "暂时无法读取这一页原件，请重试。",
-    image_too_large: "这一页原件超出自动复核范围，请人工核对。",
-    source_changed: "此条单据信息已变化，请人工核对。",
-  })[proposal?.reason] || "复核信息仍需人工核对。";
+    ai_unavailable: "服务暂不可用",
+    invalid_response: "未取得完整结果",
+    missing_literal_reading: "简称未读清",
+    uncertain_reading: "原文不清晰",
+    literal_name_conflict: "两处简称不一致",
+    security_code_conflict: "债券代码不一致",
+    source_name_conflict: "债券信息有差异",
+    invalid_code: "债券代码未读清",
+    image_unavailable: "原件暂无法读取",
+    image_too_large: "原件过大，需人工核对",
+    source_changed: "单据信息已变化",
+  })[proposal?.reason] || "需人工核对";
   return `<div class="payment-receipt-identity-head"><strong>简称复核</strong><div class="payment-receipt-identity-actions">
       <button class="button subtle" type="button" data-receipt-identity-preview="${escapeAttribute(receipt.id)}" ${busy || fileBusy || manualBusy ? "disabled" : ""}>${label}</button>
-      ${paymentReceiptManualIdentityEdit?.render(receipt)||''}
-      ${paymentReceiptFileIdentityAi?.render(receipt)||''}</div></div>
+      ${paymentReceiptManualIdentityEdit?.render(receipt)||''}</div></div>
     ${proposal ? `<div class="payment-receipt-identity-result">
-      <div><span>${showingAccepted ? proposal.source==='manual'?'人工修改':'已采用' : "识别建议"}</span><strong>${escapeHtml(proposal.name || "仍需人工核对")}</strong></div>
-      ${accepted&&!showingAccepted?`<div><span>当前简称</span><strong>${escapeHtml(accepted.name)}</strong></div>`:''}
-      <div><span>原识别</span><span>${escapeHtml(proposal.originalName || receipt.bondShortName || "未识别")}</span></div>
-      ${verified && !showingAccepted ? `<p class="payment-receipt-identity-message">${corrected ? "请对照本页原件确认后采用。" : "本次结果与当前简称一致，无需更改。"}</p>` : ""}
-      ${Number.isInteger(page) && page > 0 && receipt.sourcePages?.length > 1 ? `<p class="payment-receipt-identity-message">本次仅识别原件第 ${page} 页，未核对整个分组。</p>` : ""}
-      ${proposal.source==='manual'?'<p class="payment-receipt-identity-message">人工更正已保存，原始识别记录保留。</p>':`<details><summary>${Number.isInteger(page) && page > 0 ? `原件第 ${page} 页 · ` : ""}查看核验依据</summary>
-        <dl><div><dt>简称字段</dt><dd>${escapeHtml(readings.nameField || "未读到")}</dd></div>
-          <div><dt>缴款附言</dt><dd>${escapeHtml(readings.remittanceName || "未读到")}</dd></div>
-          <div><dt>债券代码</dt><dd>${escapeHtml(readings.securityCode || proposal.code || "未读到")}</dd></div></dl>
-        ${Array.isArray(readings.uncertainties) && readings.uncertainties.length ? `<p>${escapeHtml(readings.uncertainties.slice(0, 10).join("；"))}</p>` : ""}
-      </details>`}
+      <div class="payment-receipt-identity-value">
+        <strong>${escapeHtml(proposal.name || accepted?.name || receipt.bondShortName || "简称待核对")}</strong>
+        <span class="payment-receipt-identity-badge ${showingAccepted?'is-confirmed':!verified?'is-pending':''}">${showingAccepted ? proposal.source==='manual'?'已修改':'已确认' : verified ? corrected?'待采用':'无变化' : '待核对'}</span>
+        ${corrected && !showingAccepted && review?.reviewId ? `<button class="button primary" type="button" aria-label="采用复核简称" data-receipt-identity-apply="${escapeAttribute(receipt.id)}" ${busy || fileBusy || manualBusy ? "disabled" : ""}>采用</button>` : ""}
+      </div>
       ${!verified && proposal.reason ? `<p class="payment-receipt-identity-message">${escapeHtml(reasonLabel)}</p>` : ""}
-      ${corrected && !showingAccepted && review?.reviewId ? `<button class="button primary" type="button" data-receipt-identity-apply="${escapeAttribute(receipt.id)}" ${busy || fileBusy || manualBusy ? "disabled" : ""}>采用复核简称</button>` : ""}
+      <details class="payment-receipt-identity-evidence"><summary>原文与依据${Number.isInteger(page) && page > 0 ? `<span>第 ${page} 页</span>` : ""}</summary>
+        <dl><div><dt>原识别</dt><dd>${escapeHtml(proposal.originalName || receipt.bondShortName || "未识别")}</dd></div>
+          ${accepted&&!showingAccepted?`<div><dt>当前简称</dt><dd>${escapeHtml(accepted.name)}</dd></div>`:''}
+          ${proposal.source==='manual'?'':`<div><dt>简称字段</dt><dd>${escapeHtml(readings.nameField || "未读到")}</dd></div>
+          <div><dt>缴款附言</dt><dd>${escapeHtml(readings.remittanceName || "未读到")}</dd></div>
+          <div><dt>债券代码</dt><dd>${escapeHtml(readings.securityCode || proposal.code || "未读到")}</dd></div>`}</dl>
+        ${Number.isInteger(page) && page > 0 && receipt.sourcePages?.length > 1 ? `<p>检测范围：第 ${page} 页</p>` : ""}
+        ${Array.isArray(readings.uncertainties) && readings.uncertainties.length ? `<p>${escapeHtml(readings.uncertainties.slice(0, 10).join("；"))}</p>` : ""}
+      </details>
     </div>` : ""}
-    ${review?.error ? `<p class="payment-receipt-identity-error" role="status">${escapeHtml(review.error)}</p>` : ""}`;
+    ${review?.error ? `<p class="payment-receipt-identity-error" role="status">${escapeHtml(review.error)}</p>` : ""}
+    ${paymentReceiptFileIdentityAi?.render(receipt)||''}`;
 }
 
 async function reprocessPaymentReceiptFile(fileId, button) {

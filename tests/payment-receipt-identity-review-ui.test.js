@@ -189,7 +189,7 @@ test('explicit manual save only replaces accepted identity evidence and preserve
   const manual={status:'verified',source:'manual',name:'26苏交通CP008',code:'042680338',pageNumber:9,acceptedAt:'2026-10-28',reviewId:'manual-1'};
   h.context.applyPaymentReceiptManualIdentityResult({receiptId:'r/1',payload:{receipt:{id:'r/1',identityReview:manual,amountFen:1,paymentDate:'2099-01-01'}}});
   assert.deepEqual(plain(h.context.paymentReceipts[0]),{...before,identityReview:manual});assert.equal(h.getControls('r/1'),controls);
-  assert.match(h.getPanel('r/1').innerHTML,/人工修改/);assert.doesNotMatch(h.getPanel('r/1').innerHTML,/简称字段|缴款附言/);
+  assert.match(h.getPanel('r/1').innerHTML,/已修改/);assert.doesNotMatch(h.getPanel('r/1').innerHTML,/简称字段|缴款附言/);
 });
 
 test('render and navigation never request AI; an explicit preview is single-flight and never applies', async () => {
@@ -208,11 +208,12 @@ test('render and navigation never request AI; an explicit preview is single-flig
   assert.equal(h.mutations.length, 0);
   assert.deepEqual(plain(h.context.paymentReceipts), before);
   const html = h.getPanel(first.id).innerHTML;
-  for (const text of ['26苏交通CP008', '26苏交CP008', '原件第 9 页', '26 苏交通 CP008', '042680338', '采用复核简称']) assert.ok(html.includes(text), text);
-  assert.match(html, /识别建议/);
+  for (const text of ['26苏交通CP008', '26苏交CP008', '第 9 页', '26 苏交通 CP008', '042680338', '采用复核简称']) assert.ok(html.includes(text), text);
+  assert.match(html, /待采用/);
   assert.doesNotMatch(html, /复核完成/);
-  assert.match(html, /data-receipt-identity-preview="r\/1" >再检测一次/);
-  assert.match(html, /本次仅识别原件第 9 页，未核对整个分组/);
+  assert.match(html, /data-receipt-identity-preview="r\/1" >重新检测/);
+  assert.match(html, /<details class="payment-receipt-identity-evidence"><summary>原文与依据/);
+  assert.match(html, /检测范围：第 9 页/);
 });
 
 test('a repeated unchanged reading is not a correction and can be explicitly retried', async () => {
@@ -220,7 +221,7 @@ test('a repeated unchanged reading is not a correction and can be explicitly ret
   const unchanged = proposal({ name: '26苏交CP008', originalName: '26 苏交 CP008',
     readings: { nameField: '26 苏交 CP008', remittanceName: '26 苏交 CP008', securityCode: '042680338', uncertainties: [] } });
   await ready(h, 'r/1', unchanged);
-  assert.match(h.getPanel('r/1').innerHTML, /与当前简称一致/);
+  assert.match(h.getPanel('r/1').innerHTML, /无变化/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /复核完成|data-receipt-identity-apply/);
   await h.click('r/1', 'apply');
   assert.equal(h.requests.length, 1, 'an unchanged name cannot be adopted through a stale or synthetic button');
@@ -241,7 +242,7 @@ test('spaces, case and full-width formatting do not create a spurious name corre
   const h = harness();
   h.context.paymentReceipts[0].bondShortName = '２６ 苏交 ｃｐ００８';
   await ready(h, 'r/1', proposal({ name: '26苏交CP008' }));
-  assert.match(h.getPanel('r/1').innerHTML, /与当前简称一致/);
+  assert.match(h.getPanel('r/1').innerHTML, /无变化/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
 });
 
@@ -277,7 +278,7 @@ test('adoption sends only its saved review id and preserves raw data, current co
   assert.equal(h.getControls('r/1').search.value, '正在筛选');
   assert.equal(h.getControls('r/1').candidates.open, true);
   assert.equal(JSON.stringify(h.context.state), beforeState);
-  assert.match(h.getPanel('r/1').innerHTML, /已采用/);
+  assert.match(h.getPanel('r/1').innerHTML, /已确认/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
   const rerun=h.click('r/1');
   assert.equal(h.requests.length, 3);
@@ -321,11 +322,11 @@ test('failed previews can be explicitly retried; conflicting readings can never 
   h.requests[0].resolve(response({ error: '复核服务暂时不可用。' }, 503));
   await failed;
   assert.match(h.getPanel('r/1').innerHTML, /复核服务暂时不可用/);
-  assert.match(h.getPanel('r/1').innerHTML, /再检测一次/);
+  assert.match(h.getPanel('r/1').innerHTML, /重新检测/);
   const retry = h.click('r/1');
   h.requests[1].resolve(response({ reviewId: 'conflict', proposal: proposal({ status: 'conflict', name: '', reason: 'literal_name_conflict' }) }));
   await retry;
-  assert.match(h.getPanel('r/1').innerHTML, /简称字段与缴款附言不一致/);
+  assert.match(h.getPanel('r/1').innerHTML, /两处简称不一致/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /literal_name_conflict/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
   await h.click('r/1', 'apply');
@@ -373,7 +374,7 @@ test('already accepted identity evidence is shown without another preview or AI 
   await h.click('r/1', 'apply');
   assert.equal(h.requests.length, 0);
   const html = h.context.renderPaymentReceiptIdentityReviewContent(h.context.paymentReceipts[0]);
-  assert.match(html, /已采用/);
+  assert.match(html, /已确认/);
   assert.match(html, /26苏交通CP008/);
   assert.doesNotMatch(html, /data-receipt-identity-apply/);
 });

@@ -17,12 +17,13 @@ export function createPaymentReceiptFileIdentityReview({ container, getContext, 
 
   function controls(state) {
     const busy = state?.busy;
-    let message = '';
-    if (state?.total && !state.undone) message = `已复核 ${state.completed}/${state.total} 条 · 已更新 ${state.updated} 条 · ${state.unchanged} 条保持不变 · ${state.manual} 条需人工核对`;
-    else if (busy) message = '正在读取整份文件的单据…';
-    if (state?.message) message += `${message ? '。' : ''}${state.message}`;
-    return `<button type="button" class="button subtle" data-file-identity-action="${busy ? 'cancel' : 'review'}" ${state?.mode==='undo'||!busy&&getContext()?.blocked?'disabled':''}>${busy ? state.mode==='undo'?'撤销中…':'取消复核' : '复核整份文件简称'}</button>
-      ${state?.undoFileReviewId?`<button type="button" class="button subtle" data-file-identity-action="undo" ${busy||getContext()?.blocked?'disabled':''}>撤销本次更新</button>`:''}<span class="payment-receipt-meta" role="status" aria-live="polite">${escape(message)}</span>`;
+    const complete = state?.message === '整份文件复核完成。';
+    let message = busy ? state.mode === 'undo' ? '撤销中…' : state.total ? `复核 ${state.completed}/${state.total}` : '准备中…'
+      : complete ? state.updated ? `已更新 ${state.updated} 条` : '无需更新' : state?.message || '';
+    if (complete && state.manual) message += ` · 待核对 ${state.manual} 条`;
+    return `<button type="button" class="button subtle" aria-label="${busy ? state.mode==='undo'?'正在撤销更新':'停止复核' : '复核整份文件简称'}" data-file-identity-action="${busy ? 'cancel' : 'review'}" ${busy&&state.mode==='undo'||!busy&&getContext()?.blocked?'disabled':''}>${busy ? state.mode==='undo'?'撤销中…':'停止' : '整份复核'}</button>
+      <span class="payment-receipt-file-identity-status" role="status" aria-live="polite">${escape(message)}</span>
+      ${state?.undoFileReviewId?`<button type="button" class="button subtle payment-receipt-identity-undo" aria-label="撤销本次更新" data-file-identity-action="undo" ${busy||getContext()?.blocked?'disabled':''}>撤销</button>`:''}`;
   }
   function sync(fileId = getContext()?.fileId) {
     if (active && !current(active)) cancel({ notify: false });
@@ -42,7 +43,7 @@ export function createPaymentReceiptFileIdentityReview({ container, getContext, 
   function render(receipt) {
     if (active && (active.fileId !== receipt?.fileId || !current(active))) cancel({ notify: false });
     if (!receipt?.fileId || disposed) return '';
-    return `<span class="payment-receipt-file-identity" data-file-identity="${escape(receipt.fileId)}">${controls(states.get(receipt.fileId))}</span>`;
+    return `<div class="payment-receipt-file-identity" data-file-identity="${escape(receipt.fileId)}">${controls(states.get(receipt.fileId))}</div>`;
   }
 
   async function requestJson(url, init, signal) {
@@ -127,7 +128,7 @@ export function createPaymentReceiptFileIdentityReview({ container, getContext, 
         if (proposal.reason === 'ai_unavailable') throw failure('简称复核暂时不可用，本次已暂停，请稍后继续。');
       }
       state.message = '整份文件复核完成。';
-      onNotice(`已更新 ${state.updated} 条简称，${state.manual} 条留待人工核对。`);
+      onNotice(state.manual ? `已更新 ${state.updated} 条 · 待核对 ${state.manual} 条` : state.updated ? `已更新 ${state.updated} 条简称` : '简称无变化');
     } catch (error) {
       if (current(state)) state.message = error?.name === 'AbortError' ? '已暂停，已完成的更新保留，可撤销。'
         : error?.name === 'TimeoutError' ? '复核请求超时，本次已暂停，请稍后继续。'

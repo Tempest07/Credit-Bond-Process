@@ -86,7 +86,7 @@ test('conflicts and uncertain readings remain manual while clear names update wi
   assert.deepEqual([...h.backend.accepted.keys()], ['r1']);
   assert.deepEqual(h.results.map(row => row.stage), ['apply', 'preview', 'preview']);
   assert.equal(h.requests.filter(row => action(row.init) === 'apply').length, 1);
-  assert.match(h.controller.render({ fileId: 'file' }), /2 条需人工核对/);
+  assert.match(h.controller.render({ fileId: 'file' }), /待核对 2 条/);
 });
 
 test('existing accepted names are kept and one undo restores only this run without model requests', async () => {
@@ -102,6 +102,7 @@ test('existing accepted names are kept and one undo restores only this run witho
   assert.equal(h.undos[0].payload.restoredCount, 2);
   assert.ok(h.undos[0].payload.receipts.every(row => !Object.hasOwn(row, 'identityReview')), 'restore-to-raw explicitly omits accepted evidence');
   assert.doesNotMatch(h.controller.render({ fileId: 'file' }), /data-file-identity-action="undo"/);
+  assert.doesNotMatch(h.controller.render({ fileId: 'file' }), /data-file-identity-action="review" disabled/, 'another file review remains available after undo');
 });
 
 test('undo keeps later manual changes and a no-op repeat preserves the previous undo run', async () => {
@@ -149,7 +150,7 @@ test('an apply conflict stays manual and does not prevent other clear records fr
     ? response({ error: 'changed by another editor' }, 409) : backend.handle(url, init) });
   await h.controller.review();
   assert.deepEqual([...h.backend.accepted.keys()], ['r1', 'r3']);
-  assert.equal(h.results[1].payload.proposal.status, 'conflict'); assert.match(h.controller.render({ fileId: 'file' }), /1 条需人工核对/);
+  assert.equal(h.results[1].payload.proposal.status, 'conflict'); assert.match(h.controller.render({ fileId: 'file' }), /待核对 1 条/);
 });
 
 test('cancel preserves a committed partial run for undo and ignores a late preview', async () => {
