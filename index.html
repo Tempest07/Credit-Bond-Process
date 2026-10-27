@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="5.4">
   <meta name="application-build-version" content="5.4">
-  <meta name="application-build" content="20261028v540r1">
+  <meta name="application-build" content="20261028v540r2">
   <title>Bond Centre 5.4 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="./todo-fluid.css?v=20261028v540">
   <link rel="stylesheet" href="./release-notes.css?v=20261028v540">
   <link rel="stylesheet" href="./bond-list-editor.css?v=20261028v540">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261028v540">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261028v540r2">
   <link rel="stylesheet" href="./project-target-note.css?v=20261028v540">
   <link rel="stylesheet" href="./project-ofr.css?v=20261028v540">
   <link rel="stylesheet" href="./ai-review.css?v=20261028v540">
@@ -1664,9 +1664,11 @@
       <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-10-28">2026 / 10 / 28</time></div>
       <section><h3>项目与缴款单识别</h3><ul>
         <li>修复线上缴款单“重新识别”按钮请求路径错误导致的 HTTP 405，原件及已有对应关系保护保持不变。</li>
+        <li>联合复核完成后自动填入拆页草稿，可一键撤销；仍由人工核对并保存拆页。</li>
+        <li>简称支持再检测一次、人工修改与整份文件复核，已确认更正按同原件和原页保留，修正拆页后不再回退。</li>
         <li>新增“从发行材料建项”：支持非固定格式通知及多品种，逐项展示原文依据，核对后载入草稿，再沿用原保存流程。</li>
         <li>缴款单增加智能推荐，对已有项目候选排序并展示依据；选择建议只填入对应栏，仍由人工确认。</li>
-        <li>修正拆页增加相邻 2–3 页联合复核，展示首页、续页、空白及不确定判断；采用后只填入拆页草稿。</li>
+        <li>修正拆页增加相邻 2–3 页联合复核，展示首页、续页、空白及不确定判断；明确的结果自动填入草稿，不确定结果留待人工核对。</li>
         <li>相同材料和单据建议保存至云端复用，减少重复识别；原件、历史 OCR、金额、日期及已有对应保持保护。</li>
       </ul></section>
       <section><h3>发行结果与挂卖</h3><ul>
@@ -1924,7 +1926,7 @@
   </div>
   <script src="./ui-mode.js?v=20261028v540"></script>
   <script type="module" src="./vendor/search-border-beam.js?v=20261028v540"></script>
-  <script type="module" src="./app.js?v=20261028v540r1"></script>
+  <script type="module" src="./app.js?v=20261028v540r2"></script>
   <script type="module" src="./todo-fluid.js?v=20261028v540"></script>
   <script type="module" src="./release-notes.js?v=20261028v540"></script>
 </body>

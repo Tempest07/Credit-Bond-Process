@@ -4,6 +4,8 @@ import { apiHeaders, ensureAuthSchema, json, requireUser } from "../../_auth.js"
 import {
   ensurePaymentReceiptSchema,
   readPaymentProjects,
+  acceptedPaymentReceiptIdentityReview,
+  readAcceptedPaymentReceiptReviewsForFile,
 } from "../../_payment-receipts.js";
 import {
   normalizePaymentReceiptPageGroups,
@@ -51,6 +53,7 @@ export async function onRequestPost(context) {
     const pageAnalyses = jsonArray(file.page_analysis_json);
     const projects = await readPaymentProjects(context.env.DB, auth.user.id);
     const oldReceipts = await readExistingReceipts(context.env.DB, auth.user.id, file.id);
+    const acceptedReviews = await readAcceptedPaymentReceiptReviewsForFile(context.env.DB, auth.user.id, file.id);
     const previousMatchByPages = new Map(oldReceipts.flatMap((receipt) =>
       receipt.project_id && receipt.tranche_id
         ? [[pageKey(receipt.sourcePages), receipt]]
@@ -75,6 +78,15 @@ export async function onRequestPost(context) {
       const preservedMatch = previousMatchByPages.get(pageKey(pageNumbers)) || null;
       const objectSha256 = await sha256Hex(bytes);
       const fingerprint = await sha256Hex(new TextEncoder().encode(`manual-regroup-v1|source:${file.sha256}|pages:${pageNumbers.join(",")}`));
+      const acceptedReview = acceptedReviews.find(row => row.receipt_id === receiptId) || acceptedReviews.find(row => {
+        try { const value = JSON.parse(row.detail_json); return value.fileId === file.id && value.pageNumber === pageNumbers[0]; }
+        catch { return false; }
+      });
+      const identityReview = acceptedReview ? acceptedPaymentReceiptIdentityReview({
+        owner_user_id: auth.user.id, file_id: file.id, source_file_sha256: file.sha256, sha256: fingerprint,
+        object_key: objectKey, source_pages_json: JSON.stringify(pageNumbers),
+        security_code: recognized.securityCode, bond_short_name: recognized.bondShortName, identity_review_json: acceptedReview.detail_json,
+      }) : null;
       await context.env.PAYMENT_RECEIPTS.put(objectKey, bytes, {
         httpMetadata: { contentType: "application/pdf" },
         customMetadata: { batchId: file.batch_id, fileId: file.id, sourcePages: pageLabel(pageNumbers), regroupedBy: auth.user.id },
@@ -90,6 +102,7 @@ export async function onRequestPost(context) {
         recognized,
         candidates: preservedMatch ? [] : match.candidates,
         preservedMatch,
+        identityReview,
       });
     }
 
@@ -160,6 +173,7 @@ function paymentReceiptResponseFromRegroup({ receipt, file, blankPages, fileProc
     sourceFilename: String(file.filename || ""),
     blankPages: blankPages || [],
     fileProcessingStatus,
+    fileUpdatedAt: createdAt,
     batchProcessingStatus: fileProcessingStatus,
     mimeType: "application/pdf",
     paymentDate,
@@ -187,6 +201,7 @@ function paymentReceiptResponseFromRegroup({ receipt, file, blankPages, fileProc
     receivedAt: String(file.received_at || ""),
     createdAt,
     updatedAt: createdAt,
+    ...(receipt.identityReview ? { identityReview: receipt.identityReview } : {}),
   };
 }
 

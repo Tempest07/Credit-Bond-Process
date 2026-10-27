@@ -160,6 +160,11 @@ export function createPaymentReceiptNameResolver(projects = []) {
     const field = normalizePaymentReceiptBondShortName(readings.nameField);
     const reference = normalizePaymentReceiptBondShortName(readings.remittanceName);
     const originalCode = codeIdentity(receipt.securityCode);
+    if(review?.source==='manual'&&review.status==='verified'&&name&&review.acceptedAt&&review.reviewId
+      &&review.pageNumber===receipt.sourcePages?.[0]&&(String(review.code||'').trim()===String(receipt.securityCode||'').trim()
+        ||originalCode&&!originalCode.invalid&&code&&!code.invalid&&sameCode(originalCode,code))){
+      return{...original,title:name,source:'manual-review'};
+    }
     if (review?.status !== "verified" || !name || !field || !reference
         || !code || code.invalid || !sameCode(code, codeIdentity(readings.securityCode))
         || (originalCode && !sameCode(code, originalCode))

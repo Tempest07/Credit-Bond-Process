@@ -2,6 +2,23 @@ import { decodeWords } from "postal-mime";
 import { readStoredStateRow } from "../../state-storage.js";
 import { normalizePaymentReceiptBondShortName } from "../../payment-receipt-names.js";
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "../../payment-receipt-security.js";
+import { compatibleReceiptNameCorrection, normalizeManualReceiptName } from "../../payment-receipt-identity-review.js";
+
+// Accepted image readings belong to an original page, even if manual regrouping
+// replaces the derived receipt. Keep exact receipt records first; any parent
+// evidence selected here is checked against the file hash, page set and code below.
+export const ACCEPTED_IDENTITY_REVIEW_SQL = `COALESCE(
+  (SELECT e.detail_json FROM payment_receipt_events e
+   WHERE e.owner_user_id = r.owner_user_id AND e.receipt_id = r.id
+     AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected')
+   ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1),
+  (SELECT e.detail_json FROM payment_receipt_events e
+   WHERE e.owner_user_id = r.owner_user_id AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected')
+      AND r.object_key LIKE 'receipts/manual/%' AND e.batch_id = r.batch_id
+      AND json_extract(CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.fileId') = r.file_id
+      AND json_extract(CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.pageNumber')
+        = json_extract(CASE WHEN json_valid(r.source_pages_json) THEN r.source_pages_json ELSE '[]' END, '$[0]')
+   ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1))`;
 
 const RECEIPT_SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS payment_receipt_batches (
@@ -152,10 +169,8 @@ export async function listPaymentReceipts(db, ownerUserId, filters = {}) {
       b.error_message AS batch_error_message,
       f.filename AS source_filename,
       f.sha256 AS source_file_sha256,
-      (SELECT e.detail_json FROM payment_receipt_events e
-       WHERE e.owner_user_id = r.owner_user_id AND e.receipt_id = r.id
-         AND e.event_type = 'identity_review_accepted'
-       ORDER BY e.created_at DESC, e.id DESC LIMIT 1) AS identity_review_json,
+      f.updated_at AS source_file_updated_at,
+      ${ACCEPTED_IDENTITY_REVIEW_SQL} AS identity_review_json,
       f.blank_pages_json,
       f.processing_status AS file_processing_status,
       m.project_id,
@@ -266,6 +281,17 @@ export async function listPendingPaymentReceiptBatches(db, ownerUserId, filters 
 }
 
 export async function getPaymentReceipt(db, ownerUserId, receiptId) {
+  const row = await readPaymentReceiptRow(db, ownerUserId, receiptId);
+  return row ? paymentReceiptFromRow(row) : null;
+}
+
+/** Internal mutation fence; never serialize the raw record to the browser. */
+export async function readPaymentReceiptIdentityState(db, ownerUserId, receiptId) {
+  const row = await readPaymentReceiptRow(db, ownerUserId, receiptId);
+  return { receipt: row ? paymentReceiptFromRow(row) : null, record: String(row?.identity_review_json || '') };
+}
+
+async function readPaymentReceiptRow(db, ownerUserId, receiptId) {
   const row = await db.prepare(`
     SELECT
       r.*,
@@ -277,10 +303,8 @@ export async function getPaymentReceipt(db, ownerUserId, receiptId) {
       b.error_message AS batch_error_message,
       f.filename AS source_filename,
       f.sha256 AS source_file_sha256,
-      (SELECT e.detail_json FROM payment_receipt_events e
-       WHERE e.owner_user_id = r.owner_user_id AND e.receipt_id = r.id
-         AND e.event_type = 'identity_review_accepted'
-       ORDER BY e.created_at DESC, e.id DESC LIMIT 1) AS identity_review_json,
+      f.updated_at AS source_file_updated_at,
+      ${ACCEPTED_IDENTITY_REVIEW_SQL} AS identity_review_json,
       f.blank_pages_json,
       f.processing_status AS file_processing_status,
       m.project_id,
@@ -308,7 +332,7 @@ export async function getPaymentReceipt(db, ownerUserId, receiptId) {
     LEFT JOIN payment_receipt_matches m ON m.receipt_id = r.id
     WHERE r.owner_user_id = ?1 AND r.id = ?2
   `).bind(ownerUserId, receiptId).first();
-  return row ? paymentReceiptFromRow(row) : null;
+  return row;
 }
 
 export async function findPaymentReceiptBySha(db, ownerUserId, sha256, excludeReceiptId = "") {
@@ -860,6 +884,7 @@ export function paymentReceiptFromRow(row = {}) {
     sourceFilename: String(row.source_filename || ""),
     blankPages: jsonArray(row.blank_pages_json),
     fileProcessingStatus: String(row.file_processing_status || ""),
+    fileUpdatedAt: String(row.source_file_updated_at || ""),
     batchProcessingStatus: String(row.batch_processing_status || ""),
     batchErrorMessage: String(row.batch_error_message || ""),
     mimeType: String(row.mime_type || "application/pdf"),
@@ -892,19 +917,40 @@ export function paymentReceiptFromRow(row = {}) {
   };
 }
 
-function acceptedPaymentReceiptIdentityReview(row) {
+export function acceptedPaymentReceiptIdentityReview(row) {
   let review;
   try { review = JSON.parse(row.identity_review_json || "null"); } catch { return null; }
   if (!review || review.status !== "verified"
-      || !review.receiptSha256 || review.receiptSha256 !== row.sha256
+      || !review.receiptSha256
       || !review.fileSha256 || review.fileSha256 !== row.source_file_sha256
       || review.fileId !== row.file_id) return null;
   const pages = jsonArray(row.source_pages_json);
-  if (!Number.isSafeInteger(review.pageNumber) || review.pageNumber !== pages[0]
-      || JSON.stringify(review.sourcePages) !== JSON.stringify(pages)) return null;
+  if (!Number.isSafeInteger(review.pageNumber) || review.pageNumber !== pages[0]) return null;
+  const sameReceipt = review.receiptSha256 === row.sha256
+    && JSON.stringify(review.sourcePages) === JSON.stringify(pages);
+  const regroupedReceipt = String(row.object_key || "").startsWith("receipts/manual/")
+    && typeof review.acceptedAt === "string" && Boolean(review.acceptedAt)
+    && Array.isArray(review.sourcePages) && review.sourcePages.length > 0
+    && review.sourcePages.every(page => Number.isSafeInteger(page) && page > 0)
+    && new Set(review.sourcePages).size === review.sourcePages.length
+    && review.sourcePages[0] === review.pageNumber && pages.length > 0
+    && new Set(pages).size === pages.length
+    && pages.every(page => Number.isSafeInteger(page) && review.sourcePages.includes(page));
+  if (!sameReceipt && !regroupedReceipt) return null;
   const code = paymentReceiptCodeIdentity(review.code);
   const originalCode = paymentReceiptCodeIdentity(row.security_code);
+  if (review.source === 'manual') {
+    const name = normalizeManualReceiptName(review.name);
+    const codeSnapshotMatches = String(review.expectedCode || '') === String(row.security_code || '');
+    if (!name || review.editedBy !== row.owner_user_id || !review.acceptedAt || !review.reviewId
+        || !codeSnapshotMatches || !sameReceipt && (!code || !originalCode || !samePaymentReceiptCode(code, originalCode))) return null;
+    return { source: 'manual', status: 'verified', name, code: String(review.code || ''), pageNumber: review.pageNumber,
+      originalName: String(review.originalName || ''), previousName: String(review.previousName || ''),
+      reviewId: String(review.reviewId), acceptedAt: String(review.acceptedAt) };
+  }
   if (!code || code.invalid || (originalCode && !samePaymentReceiptCode(code, originalCode))) return null;
+  if (!sameReceipt && (!originalCode || originalCode.invalid
+      || !compatibleReceiptNameCorrection(row.bond_short_name, review.name))) return null;
   const name = normalizePaymentReceiptBondShortName(review.name);
   const readings = review.readings || {};
   const field = normalizePaymentReceiptBondShortName(readings.nameField);
@@ -922,6 +968,16 @@ function acceptedPaymentReceiptIdentityReview(row) {
     originalName: String(review.originalName || ""), reviewId: String(review.reviewId || ""),
     acceptedAt: String(review.acceptedAt || ""),
   };
+}
+
+export async function readAcceptedPaymentReceiptReviewsForFile(db, ownerUserId, fileId) {
+  const result = await db.prepare(`SELECT e.receipt_id, e.detail_json
+    FROM payment_receipt_events e
+    JOIN payment_receipt_batches b ON b.id = e.batch_id AND b.owner_user_id = e.owner_user_id
+    JOIN payment_receipt_files f ON f.batch_id = b.id
+    WHERE e.owner_user_id = ?1 AND f.id = ?2 AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected')
+    ORDER BY e.created_at DESC, e.rowid DESC`).bind(ownerUserId, fileId).all();
+  return result?.results || [];
 }
 
 async function ensurePaymentReceiptFileColumn(db, columnName, definition) {

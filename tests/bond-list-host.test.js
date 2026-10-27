@@ -45,7 +45,7 @@ function gateHarness({ locked = true, error = true, access = true, active = true
     currentGatewayUser: { username: "admin" }, updateAuthUi: () => {},
     paymentReceiptPreview: null, paymentReceiptInspectorSignature: "",
     paymentReceiptIdentityReviews: new Map(),
-    paymentReceiptMatchAi:null,paymentReceiptBoundaryAi:null,projectIntakeAi:null,
+    paymentReceiptMatchAi:null,paymentReceiptBoundaryAi:null,paymentReceiptFileIdentityAi:null,paymentReceiptManualIdentityEdit:null,projectIntakeAi:null,
   });
   loadFunctions(context, ["syncBondListCloudGate"]);
   return { context, main, gate, controller,

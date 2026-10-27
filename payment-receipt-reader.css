@@ -193,7 +193,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
+.payment-receipt-identity-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-left:auto; }
+.payment-receipt-file-identity-controls { display:inline-flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.payment-receipt-file-identity-status { color:var(--receipt-reader-muted,var(--muted,#777)); font-size:13px; }
+.payment-receipt-file-identity { display:inline-flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.payment-receipt-file-identity [role="status"]:empty { display:none; }
+.payment-receipt-manual-identity-editor { display:inline-flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.payment-receipt-manual-identity-input { width:240px; max-width:100%; min-height:38px; padding:8px 12px; border:1px solid var(--receipt-reader-line,#ddd); border-radius:10px; font:inherit; background:var(--panel,#fff); }
+.payment-receipt-manual-identity-editor [role="status"]:empty { display:none; }
 .view.payment-receipt-reader-view[data-view="payment-receipts"] .payment-receipt-identity-head strong { font-weight: 500; }
 .view.payment-receipt-reader-view[data-view="payment-receipts"] .payment-receipt-identity-result { display: grid; gap: 8px; min-width: 0; }
 .view.payment-receipt-reader-view[data-view="payment-receipts"] .payment-receipt-identity-result > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }

@@ -1,9 +1,9 @@
 import { PDFDocument } from 'pdf-lib';
 import { apiHeaders, ensureAuthSchema, json, requireUser } from '../../_auth.js';
 import { isSameOriginMutation } from '../../_same-origin.js';
-import { ensurePaymentReceiptSchema, getPaymentReceipt } from '../../_payment-receipts.js';
+import { ACCEPTED_IDENTITY_REVIEW_SQL, ensurePaymentReceiptSchema, getPaymentReceipt, readPaymentReceiptIdentityState } from '../../_payment-receipts.js';
 import { extractPaymentReceiptPageImage } from '../../../../payment-receipt-worker.js';
-import { compatibleReceiptNameCorrection, runReceiptIdentityReview } from '../../../../payment-receipt-identity-review.js';
+import { compatibleReceiptNameCorrection, normalizeManualReceiptName, parseReceiptIdentityReview, runReceiptIdentityReview } from '../../../../payment-receipt-identity-review.js';
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from '../../../../payment-receipt-security.js';
 import { selectDeepSeekOcr } from '../../../../ocr-deepseek.js';
 
@@ -19,7 +19,7 @@ export async function onRequestPost(context) {
   if (!context.env.DB || !context.env.PAYMENT_RECEIPTS) return json({ error: '缴款单数据库或存储尚未配置' }, 503);
   try {
     const body = await boundedJson(context.request);
-    if (!['preview', 'apply'].includes(body.action)) throw failure(400, '不支持的简称复核操作');
+    if (!['preview', 'apply', 'manual'].includes(body.action)) throw failure(400, '不支持的简称复核操作');
     await ensureAuthSchema(context.env.DB);
     await ensurePaymentReceiptSchema(context.env.DB);
     const source = await readOwnedSource(context.env.DB, auth.user.id, String(context.params.id || ''));
@@ -27,12 +27,23 @@ export async function onRequestPost(context) {
     assertReady(source);
     const pages = sourcePages(source.source_pages_json);
     if (!pages.length) throw failure(409, '缴款单原始页码不可用，请先核对拆页');
+    if (body.action === 'manual') return await applyManualName(context, auth.user.id, source, pages, body);
     if (body.action === 'apply') return await applyReview(context, auth.user.id, source, pages, body.reviewId);
 
-    const accepted = await readAccepted(context.env.DB, auth.user.id, source.id);
-    if (accepted && proposalMatchesSource(accepted, source, pages)) {
-      const receipt = await getPaymentReceipt(context.env.DB, auth.user.id, source.id);
-      return json({ ok: true, cached: true, reviewId: accepted.reviewId, proposal: publicProposal(accepted), identityReview: publicProposal(accepted), receipt });
+    const receipt = await getPaymentReceipt(context.env.DB, auth.user.id, source.id);
+    if (receipt?.identityReview && body.force !== true) {
+      const accepted = receipt.identityReview;
+      return json({ ok: true, cached: true, reviewId: accepted.reviewId, proposal: accepted, identityReview: accepted, receipt });
+    }
+    if (body.reuse === true && body.force !== true) {
+      const reusable = await readReusableProposal(context.env.DB, auth.user.id, source, pages);
+      if (reusable) {
+        const current = await readOwnedSource(context.env.DB, auth.user.id, source.id);
+        if (!current) throw failure(404, '未找到缴款单');
+        assertReady(current);
+        if (!proposalMatchesSource(reusable, current, sourcePages(current.source_pages_json), true)) throw failure(409, '原件或识别信息已经变化，请刷新后重新复核');
+        return json({ ok: true, cached: true, reviewId: reusable.reviewId, proposal: publicProposal(reusable) });
+      }
     }
     const ai = selectAi(context);
     if (!ai) throw failure(503, '简称复核服务尚未配置');
@@ -59,7 +70,7 @@ export async function onRequestPost(context) {
     const proposal = { ...result, pageNumber: pages[0], originalName: String(source.bond_short_name || ''), reviewId,
       fileId: source.file_id, sourcePages: pages, receiptSha256: source.receipt_sha256,
       fileSha256: source.file_sha256, fileUpdatedAt: source.file_updated_at, receiptUpdatedAt: source.receipt_updated_at,
-      expectedCode: source.security_code, createdAt: now };
+      expectedCode: source.security_code, priorReviewId: receipt?.identityReview?.reviewId || '', createdAt: now };
     await insertGuardedEvent(context.env.DB, source, auth.user.id, reviewId, 'identity_review_proposed', proposal, now);
     return json({ ok: true, cached: false, reviewId, proposal: publicProposal(proposal) });
   } catch (error) {
@@ -127,10 +138,19 @@ function proposalMatchesSource(proposal, source, pages, includeVersion = false) 
     && (!includeVersion || proposal.fileUpdatedAt === source.file_updated_at && proposal.receiptUpdatedAt === source.receipt_updated_at);
 }
 
-async function readAccepted(db, owner, id) {
-  const row = await db.prepare(`SELECT detail_json FROM payment_receipt_events WHERE owner_user_id = ?1 AND receipt_id = ?2
-    AND event_type = 'identity_review_accepted' ORDER BY created_at DESC, id DESC LIMIT 1`).bind(owner, id).first();
-  try { return row ? JSON.parse(row.detail_json) : null; } catch { return null; }
+async function readReusableProposal(db, owner, source, pages) {
+  const rows = await db.prepare(`SELECT id, detail_json FROM payment_receipt_events WHERE owner_user_id = ?1 AND receipt_id = ?2
+    AND event_type = 'identity_review_proposed' ORDER BY created_at DESC, id DESC LIMIT 20`).bind(owner, source.id).all();
+  for (const row of rows.results || []) {
+    let proposal;
+    try { proposal = JSON.parse(row.detail_json); } catch { continue; }
+    if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal)) continue;
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(row.id) || !proposalMatchesSource(proposal, source, pages, true)) continue;
+    const verified = parseReceiptIdentityReview(proposal.readings, source.security_code);
+    if (verified.status !== 'verified' || verified.name !== proposal.name || !samePaymentReceiptCode(verified.code, proposal.code)) continue;
+    return { ...proposal, reviewId: row.id };
+  }
+  return null;
 }
 
 async function applyReview(context, owner, source, pages, id) {
@@ -141,20 +161,70 @@ async function applyReview(context, owner, source, pages, id) {
   let proposal;
   try { proposal = JSON.parse(row.detail_json); } catch { throw failure(409, '简称复核记录不可用，请重新复核'); }
   if (!proposalMatchesSource(proposal, source, pages, true)) throw failure(409, '原件或识别信息已经变化，请重新复核');
+  const identityState = await readPaymentReceiptIdentityState(context.env.DB, owner, source.id);
+  const prior = identityState.receipt?.identityReview;
+  if ((prior?.reviewId || '') !== id && (proposal.priorReviewId || '') !== (prior?.reviewId || '')) {
+    throw failure(409, '简称已被修改，请重新检测后再采用');
+  }
   const acceptedId = `identity-review-accepted-${id}`;
   const existing = await context.env.DB.prepare(`SELECT detail_json FROM payment_receipt_events WHERE id = ?1
     AND owner_user_id = ?2 AND receipt_id = ?3 AND event_type = 'identity_review_accepted'`).bind(acceptedId, owner, source.id).first();
   if (existing) {
-    const accepted = JSON.parse(existing.detail_json);
-    return json({ ok: true, cached: true, reviewId: id, identityReview: publicProposal(accepted), receipt: await getPaymentReceipt(context.env.DB, owner, source.id) });
+    const latest = await readPaymentReceiptIdentityState(context.env.DB, owner, source.id);
+    if (latest.record !== identityState.record && latest.receipt?.identityReview?.reviewId !== id) {
+      throw failure(409, '简称已被修改，请刷新后再核对');
+    }
+    return json({ ok: true, cached: true, reviewId: id, identityReview: latest.receipt?.identityReview, receipt: latest.receipt });
   }
-  const now = new Date().toISOString();
+  const now = new Date(Math.max(Date.now(), (Date.parse(prior?.acceptedAt || '') || 0) + 1)).toISOString();
   const accepted = { ...proposal, reviewId: id, acceptedAt: now };
-  await insertGuardedEvent(context.env.DB, source, owner, acceptedId, 'identity_review_accepted', accepted, now, true);
+  await insertGuardedEvent(context.env.DB, source, owner, acceptedId, 'identity_review_accepted', accepted, now, true, identityState.record);
   return json({ ok: true, cached: false, reviewId: id, identityReview: publicProposal(accepted), receipt: await getPaymentReceipt(context.env.DB, owner, source.id) });
 }
 
-async function insertGuardedEvent(db, source, owner, eventId, type, detail, now, ignoreExisting = false) {
+async function applyManualName(context, owner, source, pages, body) {
+  const name = normalizeManualReceiptName(body.name);
+  if (!name) throw failure(400, '请填写 1–100 字的单行债券简称，不含控制字符');
+  if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt
+      || body.expectedUpdatedAt !== source.receipt_updated_at) throw failure(409, '单据状态已变化，请刷新后再修改简称');
+  if (typeof body.expectedFileUpdatedAt !== 'string' || !body.expectedFileUpdatedAt
+      || body.expectedFileUpdatedAt !== source.file_updated_at) throw failure(409, '原件状态已变化，请刷新后再修改简称');
+  if (!source.receipt_sha256 || !source.file_sha256) throw failure(409, '原件校验信息不可用，请先核对单据');
+  const identityState = await readPaymentReceiptIdentityState(context.env.DB, owner, source.id);
+  const current = identityState.receipt;
+  if (current?.identityReview?.source === 'manual' && current.identityReview.name === name) {
+    return json({ ok: true, cached: true, reviewId: current.identityReview.reviewId, identityReview: current.identityReview, receipt: current });
+  }
+  if (body.expectedIdentityReviewId !== undefined && body.expectedIdentityReviewId !== (current?.identityReview?.reviewId || '')) {
+    throw failure(409, '简称已被修改，请刷新后再核对');
+  }
+  const prior = current?.identityReview;
+  const acceptedAt = new Date(Math.max(Date.now(), (Date.parse(prior?.acceptedAt || '') || 0) + 1)).toISOString();
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([
+    owner, source.id, source.receipt_sha256, source.file_sha256, source.receipt_updated_at, source.file_updated_at,
+    prior?.reviewId || '', name,
+  ])));
+  const id = `manual-name-${[...new Uint8Array(digest)].map(value => value.toString(16).padStart(2,'0')).join('')}`;
+  const detail = { source: 'manual', status: 'verified', name, newName: name,
+    originalName: String(source.bond_short_name || ''), previousName: prior?.name || String(source.bond_short_name || ''),
+    editedBy: owner, acceptedAt, reviewId: id, pageNumber: pages[0], sourcePages: pages,
+    fileId: source.file_id, fileSha256: source.file_sha256, fileUpdatedAt: source.file_updated_at,
+    receiptSha256: source.receipt_sha256, receiptUpdatedAt: source.receipt_updated_at,
+    code: String(source.security_code || ''), expectedCode: String(source.security_code || '') };
+  await insertGuardedEvent(context.env.DB, source, owner, id, 'identity_name_manually_corrected', detail, acceptedAt, true, identityState.record);
+  const receipt = await getPaymentReceipt(context.env.DB, owner, source.id);
+  return json({ ok: true, cached: false, reviewId: receipt?.identityReview?.reviewId || id, identityReview: receipt?.identityReview, receipt });
+}
+
+function manualMatchesSource(detail, source, pages) {
+  return detail.source === 'manual' && detail.editedBy === source.owner_user_id && Boolean(normalizeManualReceiptName(detail.name))
+    && detail.fileId === source.file_id && detail.fileSha256 === source.file_sha256
+    && detail.receiptSha256 === source.receipt_sha256 && detail.receiptUpdatedAt === source.receipt_updated_at
+    && detail.fileUpdatedAt === source.file_updated_at && JSON.stringify(detail.sourcePages) === JSON.stringify(pages)
+    && detail.pageNumber === pages[0] && detail.expectedCode === source.security_code;
+}
+
+async function insertGuardedEvent(db, source, owner, eventId, type, detail, now, ignoreExisting = false, expectedIdentityRecord = null) {
   const result = await db.prepare(`INSERT ${ignoreExisting ? 'OR IGNORE' : ''} INTO payment_receipt_events
     (id, owner_user_id, receipt_id, batch_id, event_type, detail_json, created_at)
     SELECT ?1, r.owner_user_id, r.id, r.batch_id, ?2, ?3, ?4
@@ -163,15 +233,24 @@ async function insertGuardedEvent(db, source, owner, eventId, type, detail, now,
     WHERE r.id = ?5 AND r.owner_user_id = ?6 AND b.owner_user_id = ?6 AND r.batch_id = b.id
       AND r.sha256 = ?7 AND r.source_pages_json = ?8 AND r.updated_at = ?9 AND r.security_code = ?10
       AND f.id = ?11 AND f.sha256 = ?12 AND f.updated_at = ?13
-      AND f.processing_status IN ('processed', 'review') AND b.processing_status IN ('processed', 'review')`)
+      AND f.processing_status IN ('processed', 'review') AND b.processing_status IN ('processed', 'review')
+      AND (?14 IS NULL OR COALESCE(${ACCEPTED_IDENTITY_REVIEW_SQL}, '') = ?14)`)
     .bind(eventId, type, JSON.stringify(detail), now, source.id, owner, source.receipt_sha256, source.source_pages_json,
-      source.receipt_updated_at, source.security_code, source.file_id, source.file_sha256, source.file_updated_at).run();
+      source.receipt_updated_at, source.security_code, source.file_id, source.file_sha256, source.file_updated_at, expectedIdentityRecord).run();
   if (Number(result?.meta?.changes ?? result?.changes ?? 0) > 0) return;
   if (ignoreExisting) {
     const current = await readOwnedSource(db, owner, source.id);
     const existing = await db.prepare('SELECT id FROM payment_receipt_events WHERE id = ?1 AND owner_user_id = ?2 AND receipt_id = ?3')
       .bind(eventId, owner, source.id).first();
-    if (existing && current && proposalMatchesSource(detail, current, sourcePages(current.source_pages_json), true)
+    if (expectedIdentityRecord !== null) {
+      const latest = await readPaymentReceiptIdentityState(db, owner, source.id);
+      if (latest.record !== expectedIdentityRecord && latest.receipt?.identityReview?.reviewId !== detail.reviewId) {
+        throw failure(409, '简称已被修改，请刷新后再核对');
+      }
+    }
+    if (existing && current && (detail.source === 'manual'
+        ? manualMatchesSource(detail, current, sourcePages(current.source_pages_json))
+        : proposalMatchesSource(detail, current, sourcePages(current.source_pages_json), true))
       && readyStatuses.has(current.file_processing_status) && readyStatuses.has(current.batch_processing_status)) return;
   }
   throw failure(409, '原件或处理状态已经变化，请刷新后重新复核');

@@ -6,6 +6,13 @@ export const RECEIPT_IDENTITY_REVIEW_PROMPT = '请只抄录当前图片中的债
 
 const short = (value, limit = 160) => typeof value === 'string' ? value.normalize('NFKC').trim().slice(0, limit) : '';
 
+/** A human transcription is text, not a model-verified pair of image readings. */
+export function normalizeManualReceiptName(value) {
+  if (typeof value !== 'string' || value.length > 400 || /[\p{Cc}\p{Cf}]/u.test(value)) return '';
+  const name = value.normalize('NFKC').trim();
+  return name && [...name].length <= 100 && /[\p{L}\p{N}]/u.test(name) ? name : '';
+}
+
 function reviewObject(result) {
   let value = result?.response ?? result?.result ?? result?.message?.content ?? result;
   if (typeof value === 'string') {

@@ -5,7 +5,7 @@ import { createMemoryD1 } from './helpers/d1-memory.js';
 import { ensureAuthSchema } from '../functions/api/_auth.js';
 import { ensurePaymentReceiptSchema, insertPaymentReceiptBatch, insertPaymentReceiptFile, insertPaymentReceipt, insertPaymentReceiptMatch } from '../functions/api/_payment-receipts.js';
 import { onRequestPost } from '../functions/api/payment-receipts/[id]/identity-review.js';
-import { parseReceiptIdentityReview, compatibleReceiptNameCorrection, runReceiptIdentityReview } from '../payment-receipt-identity-review.js';
+import { parseReceiptIdentityReview, compatibleReceiptNameCorrection, normalizeManualReceiptName, runReceiptIdentityReview } from '../payment-receipt-identity-review.js';
 
 const NOW = '2026-10-25T10:00:00.000Z';
 const literal = (extra = {}) => ({ nameField: '26 苏交通 CP008', remittanceName: '26苏交通CP008', securityCode: '042680338', uncertainties: [], ...extra });
@@ -86,7 +86,7 @@ async function fixture(t, overrides = {}, scanBytes = null) {
     sourcePageLabel: '2', objectKey: 'receipts/receipt.pdf', sha256: 'receipt-fingerprint', recognitionStatus: 'recognized',
     matchStatus: 'matched', bondShortName: '26苏交CP008', securityCode: '042680338', paymentDate: '2026-10-26', amountFen: 42_000_000_000,
     recognizedText: '原始识别不能覆盖', createdAt: NOW });
-  await insertPaymentReceiptMatch(DB, { id: 'match', ownerUserId: 'admin', receiptId: 'receipt', projectId: 'project', trancheId: 'tranche' });
+  await insertPaymentReceiptMatch(DB, { id: 'match', ownerUserId: 'admin', receiptId: 'receipt', projectId: 'project', trancheId: 'tranche', createdAt: NOW });
   const calls = [];
   const env = { DB, AI_PROCESSING_APPROVED: 'true', AI: { async run(model, input) { calls.push({ model, input }); return literal(); } },
     PAYMENT_RECEIPTS: { async get(key) { assert.equal(key, 'attachments/source.pdf'); return { size: bytes.length, async arrayBuffer() { return bytes; } }; } }, ...overrides };
@@ -272,4 +272,144 @@ test('DeepSeek OCR authentication and throttling errors remain safe and never fa
     assert.equal(h.DB.sql.prepare('SELECT COUNT(*) n FROM payment_receipt_events').get().n, 0);
     t.mock.restoreAll();
   }
+});
+
+test('manual names allow explicit human product corrections while rejecting unsafe or empty input', () => {
+  assert.equal(normalizeManualReceiptName('  26苏交通ＳＣＰ００８（人工核对）  '), '26苏交通SCP008(人工核对)');
+  assert.equal(normalizeManualReceiptName('苏交通测试券'), '苏交通测试券');
+  for (const value of ['', '   ', 'x'.repeat(101), '26测试\nCP001', '\u200b26测试CP001', '26测试\u0000CP001', '<>', null, {}]) {
+    assert.equal(normalizeManualReceiptName(value), '', String(value));
+  }
+});
+
+const manualBody = (name = '26苏交通SCP008', extra = {}) => ({ action: 'manual', name,
+  expectedUpdatedAt: NOW, expectedFileUpdatedAt: NOW, expectedIdentityReviewId: '', ...extra });
+
+test('manual correction is separate audited evidence, idempotent, and never calls AI or rewrites business fields', async t => {
+  const h = await fixture(t), before = h.state();
+  h.env.PAYMENT_RECEIPTS.get = async () => { throw Error('manual edits do not read or upload PDF bytes'); };
+  const result = await h.request(manualBody()); assert.equal(result.status, 200);
+  const payload = await result.json();
+  assert.equal(payload.identityReview.source, 'manual');
+  assert.equal(payload.identityReview.name, '26苏交通SCP008');
+  assert.equal(payload.identityReview.readings, undefined, 'manual input cannot fabricate visual evidence');
+  assert.equal(payload.receipt.bondShortName, '26苏交CP008');
+  assert.equal(payload.receipt.fileUpdatedAt, NOW);
+  assert.deepEqual(h.state(), before);
+  assert.equal(h.calls.length, 0);
+  const row = h.DB.sql.prepare("SELECT * FROM payment_receipt_events WHERE event_type='identity_name_manually_corrected'").get();
+  const detail = JSON.parse(row.detail_json);
+  assert.equal(detail.previousName, '26苏交CP008'); assert.equal(detail.newName, '26苏交通SCP008');
+  assert.equal(detail.editedBy, 'admin'); assert.equal(detail.pageNumber, 2);
+  assert.equal(detail.receiptSha256, 'receipt-fingerprint'); assert.ok(detail.fileSha256);
+  assert.equal(detail.expectedCode, '042680338'); assert.equal(detail.readings, undefined);
+  const repeat = await h.request(manualBody()); assert.equal(repeat.status, 200);
+  assert.equal((await repeat.json()).cached, true);
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) n FROM payment_receipt_events WHERE event_type='identity_name_manually_corrected'").get().n, 1);
+  const second = await h.request(manualBody('苏交通测试券', { expectedIdentityReviewId: payload.reviewId }));
+  assert.equal(second.status, 200); const next = await second.json();
+  assert.equal(next.identityReview.name, '苏交通测试券');
+  assert.equal(next.identityReview.previousName, '26苏交通SCP008');
+  assert.deepEqual(h.state(), before);
+});
+
+test('manual correction requires current receipt, file and optional prior identity versions', async t => {
+  for (const change of [{ expectedUpdatedAt: '' }, { expectedUpdatedAt: 'old' }, { expectedFileUpdatedAt: '' },
+    { expectedFileUpdatedAt: 'old' }, { expectedIdentityReviewId: 'stale' }]) {
+    const h = await fixture(t);
+    assert.equal((await h.request(manualBody('26测试CP001', change))).status, 409, JSON.stringify(change));
+    assert.equal(h.DB.sql.prepare('SELECT COUNT(*) n FROM payment_receipt_events').get().n, 0);
+  }
+  const h = await fixture(t);
+  assert.equal((await h.request(manualBody('26测试\nCP001'))).status, 400);
+  assert.equal((await h.request(manualBody(), { headers: { Origin: 'https://evil.example' } })).status, 403);
+  assert.equal((await h.request(manualBody(), { id: 'not-owned' })).status, 404);
+  h.DB.sql.prepare("UPDATE payment_receipts SET owner_user_id='another-owner'").run();
+  assert.equal((await h.request(manualBody())).status, 404);
+  assert.equal(h.calls.length, 0);
+});
+
+test('manual event insertion fences a processing or source race instead of writing against old data', async t => {
+  for (const mutation of ["UPDATE payment_receipt_files SET updated_at='changed'", "UPDATE payment_receipts SET updated_at='changed'",
+    "UPDATE payment_receipt_files SET processing_status='regrouping'", "UPDATE payment_receipts SET security_code='042680339'"]) {
+    const h = await fixture(t), prepare = h.DB.prepare;
+    let changed = false;
+    const wrap = (sql, statement) => ({ ...statement, bind(...values) { return wrap(sql, statement.bind(...values)); },
+      async run() { if (!changed && /INSERT OR IGNORE INTO payment_receipt_events/.test(sql)) { changed = true; h.DB.sql.exec(mutation); } return statement.run(); } });
+    h.DB.prepare = sql => wrap(sql, prepare(sql));
+    assert.equal((await h.request(manualBody())).status, 409, mutation);
+    assert.equal(h.DB.sql.prepare('SELECT COUNT(*) n FROM payment_receipt_events').get().n, 0);
+  }
+});
+
+test('explicit force preview re-detects an adopted name but leaves the accepted identity untouched', async t => {
+  const h = await fixture(t);
+  const saved = await (await h.request(manualBody())).json();
+  const before = h.state();
+  const cached = await (await h.request({ action: 'preview', reuse: true })).json();
+  assert.equal(cached.cached, true); assert.equal(cached.identityReview.source, 'manual'); assert.equal(h.calls.length, 0);
+  const forced = await h.request({ action: 'preview', force: true, reuse: true });
+  assert.equal(forced.status, 200); const suggestion = await forced.json();
+  assert.equal(suggestion.cached, false); assert.equal(suggestion.proposal.name, '26苏交通CP008');
+  assert.equal(suggestion.identityReview, undefined); assert.equal(h.calls.length, 1);
+  const current = await (await h.request({ action: 'preview' })).json();
+  assert.equal(current.identityReview.reviewId, saved.identityReview.reviewId);
+  assert.equal(current.identityReview.name, '26苏交通SCP008');
+  assert.deepEqual(h.state(), before);
+});
+
+function pauseNextIdentityEvent(h, eventType) {
+  let reached, release;
+  const entered = new Promise(resolve => { reached = resolve; }), released = new Promise(resolve => { release = resolve; });
+  const prepare = h.DB.prepare; let paused = false;
+  const wrap = (sql, statement, bindings = []) => ({ ...statement,
+    bind(...values) { return wrap(sql, statement.bind(...values), values); },
+    async run() {
+      if (!paused && /INSERT OR IGNORE INTO payment_receipt_events/.test(sql) && bindings[1] === eventType) {
+        paused = true; reached(); await released;
+      }
+      return statement.run();
+    } });
+  h.DB.prepare = sql => wrap(sql, prepare(sql));
+  return { entered, release: () => release() };
+}
+
+test('the manual event CAS rejects a different edit committed between reading and inserting', async t => {
+  const h = await fixture(t), before = h.state(), gate = pauseNextIdentityEvent(h, 'identity_name_manually_corrected');
+  const oldRequest = h.request(manualBody('26较早人工简称'));
+  await gate.entered;
+  const newer = await h.request(manualBody('26较新人工简称')); assert.equal(newer.status, 200);
+  gate.release(); assert.equal((await oldRequest).status, 409);
+  const current = await (await h.request()).json(); assert.equal(current.identityReview.name, '26较新人工简称');
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) n FROM payment_receipt_events WHERE event_type='identity_name_manually_corrected'").get().n, 1);
+  assert.deepEqual(h.state(), before);
+});
+
+test('simultaneous retries of the same manual edit create exactly one audit record', async t => {
+  const h = await fixture(t), gate = pauseNextIdentityEvent(h, 'identity_name_manually_corrected');
+  const first = h.request(manualBody()); await gate.entered;
+  assert.equal((await h.request(manualBody())).status, 200); gate.release();
+  assert.equal((await first).status, 200);
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) n FROM payment_receipt_events WHERE event_type='identity_name_manually_corrected'").get().n, 1);
+});
+
+test('an old AI proposal cannot replace a later manual correction; a fresh explicit recheck can be adopted', async t => {
+  const h = await fixture(t), preview = await (await h.request()).json(), before = h.state();
+  const manual = await (await h.request(manualBody())).json();
+  assert.equal((await h.request({ action: 'apply', reviewId: preview.reviewId })).status, 409);
+  const forced = await (await h.request({ action: 'preview', force: true })).json();
+  const applied = await h.request({ action: 'apply', reviewId: forced.reviewId }); assert.equal(applied.status, 200);
+  assert.equal((await applied.json()).identityReview.name, '26苏交通CP008');
+  assert.notEqual((await (await h.request()).json()).identityReview.reviewId, manual.identityReview.reviewId);
+  assert.deepEqual(h.state(), before);
+});
+
+test('an AI adoption paused before INSERT cannot overwrite a concurrently committed manual correction', async t => {
+  const h = await fixture(t), preview = await (await h.request()).json();
+  const gate = pauseNextIdentityEvent(h, 'identity_review_accepted');
+  const oldApply = h.request({ action: 'apply', reviewId: preview.reviewId }); await gate.entered;
+  assert.equal((await h.request(manualBody())).status, 200); gate.release();
+  assert.equal((await oldApply).status, 409);
+  assert.equal((await (await h.request()).json()).identityReview.source, 'manual');
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) n FROM payment_receipt_events WHERE event_type='identity_review_accepted'").get().n, 0);
 });

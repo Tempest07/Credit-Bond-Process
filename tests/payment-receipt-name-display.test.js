@@ -169,3 +169,14 @@ test("accepted current-page transcription fixes a missing issuer character witho
     assert.notEqual(resolve({ ...receipt, identityReview: { ...receipt.identityReview, ...change } }).source, "page-review");
   }
 });
+
+test('a separately saved manual name needs no invented visual readings and remains bound to its page and code', () => {
+  const resolve=createPaymentReceiptNameResolver([]);
+  const receipt={bondShortName:'26苏交CP008',securityCode:'042680338',sourcePages:[9],
+    identityReview:{status:'verified',source:'manual',name:'26苏交通CP008',code:'042680338',pageNumber:9,acceptedAt:'2026-10-28',reviewId:'manual-1'}};
+  assert.equal(resolve(receipt).title,'26苏交通CP008');assert.equal(resolve(receipt).source,'manual-review');
+  assert.equal(receipt.identityReview.readings,undefined);
+  for(const change of [{code:'032680566'},{pageNumber:10},{acceptedAt:''},{reviewId:''},{status:'proposed'}]){
+    assert.notEqual(resolve({...receipt,identityReview:{...receipt.identityReview,...change}}).source,'manual-review');
+  }
+});

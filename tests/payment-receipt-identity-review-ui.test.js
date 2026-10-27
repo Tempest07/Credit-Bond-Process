@@ -65,7 +65,7 @@ function harness() {
     setTimeout(fn, ms) { const timer = setTimeout(fn, ms); timer.unref(); return timer; }, clearTimeout,
     paymentReceiptIdentityReviews: new Map(), selectedPaymentReceiptEntryKey: 'receipt:r/1',
     paymentReceipts: [
-      { id: 'r/1', bondShortName: '26苏交CP008', recognizedText: '旧原文保留', securityCode: '042680338', sourcePages: [9, 10, 11], amountFen: 42000000000, paymentDate: '2026-10-15', projectId: '', trancheId: '' },
+      { id: 'r/1', fileId: 'file-1', bondShortName: '26苏交CP008', recognizedText: '旧原文保留', securityCode: '042680338', sourcePages: [9, 10, 11], amountFen: 42000000000, paymentDate: '2026-10-15', projectId: '', trancheId: '' },
       { id: 'r2', bondShortName: '26另一只MTN001', recognizedText: '另一页原文', amountFen: 123, paymentDate: '2026-10-26' },
     ],
     state: { projects: [{ id: 'p1', status: '待缴款', paymentCompleted: false }] },
@@ -87,11 +87,11 @@ function harness() {
     currentGatewayUser: { username: 'admin' }, paymentReceiptInspectorSignature: 'private',
     paymentReceiptNameResolverCache: { private: true },
     paymentReceiptPreview: { clear() { clearedPreviews++; } }, bondListController: null, projectOfrActions: null,
-    paymentReceiptMatchAi:null,paymentReceiptBoundaryAi:null,projectIntakeAi:null,
+    paymentReceiptMatchAi:null,paymentReceiptBoundaryAi:null,paymentReceiptFileIdentityAi:null,paymentReceiptManualIdentityEdit:null,projectIntakeAi:null,
     syncBondListCloudGate() {}, updateAuthUi() {},
   });
   load(context, ['escapeHtml', 'escapeAttribute', 'clearPaymentReceiptIdentityReviews',
-    'refreshPaymentReceiptIdentityReview', 'capturePaymentReceiptMatchDraft', 'restorePaymentReceiptMatchDraft',
+    'refreshPaymentReceiptIdentityReview', 'capturePaymentReceiptMatchDraft', 'restorePaymentReceiptMatchDraft', 'applyPaymentReceiptFileIdentityResult', 'applyPaymentReceiptManualIdentityResult',
     'paymentReceiptIdentityReviewHasCorrection', 'requestPaymentReceiptIdentityReview', 'renderPaymentReceiptIdentityReviewContent',
     'handlePaymentReceiptArchiveClick', 'clearAuthSession']);
   const click = (id, action = 'preview') => context.handlePaymentReceiptArchiveClick({ target: {
@@ -106,17 +106,72 @@ async function ready(h, id = 'r/1', value = proposal()) {
   await pending;
 }
 
+test('whole-file results only store suggestions and preserve existing accepted identities', () => {
+  const h=harness(),before=plain(h.context.paymentReceipts);
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'file-1',receiptId:'r/1',payload:{reviewId:'batch-review',proposal:proposal()}});
+  assert.equal(h.context.paymentReceiptIdentityReviews.get('r/1').reviewId,'batch-review');
+  assert.deepEqual(plain(h.context.paymentReceipts),before);assert.equal(h.mutations.length,0);
+  h.context.paymentReceipts[0].identityReview=proposal({name:'26已确认CP008'});
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'file-1',receiptId:'r/1',payload:{reviewId:'other',proposal:proposal()}});
+  assert.equal(h.context.paymentReceipts[0].identityReview.name,'26已确认CP008');
+  assert.equal(h.context.paymentReceiptIdentityReviews.get('r/1').reviewId,'batch-review');
+});
+
+test('whole-file accepted cache merges identity alone and ignores other files and active single reviews', () => {
+  const h=harness(),original=plain(h.context.paymentReceipts[0]),controls=h.getControls('r/1');
+  controls.search.value='未保存的对应搜索';
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'wrong',receiptId:'r/1',payload:{reviewId:'bad',proposal:proposal()}});
+  assert.equal(h.context.paymentReceiptIdentityReviews.size,0);
+  h.context.paymentReceiptIdentityReviews.set('r/1',{controller:new AbortController()});
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'file-1',receiptId:'r/1',payload:{reviewId:'late',proposal:proposal()}});
+  assert.equal(h.context.paymentReceiptIdentityReviews.get('r/1').reviewId,undefined);
+  h.context.paymentReceiptIdentityReviews.clear();
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'file-1',receiptId:'r/1',payload:{reviewId:'accepted',proposal:proposal(),
+    receipt:{id:'r/1',identityReview:proposal(),amountFen:1,paymentDate:'2099-01-01',projectId:'incorrect'}}});
+  assert.deepEqual(plain(h.context.paymentReceipts[0]),{...original,identityReview:proposal()});
+  assert.equal(h.getControls('r/1'),controls);assert.equal(controls.search.value,'未保存的对应搜索');
+});
+
+test('single-receipt AI cannot start during a whole-file review', async () => {
+  const h=harness();h.context.paymentReceiptFileIdentityAi={isBusy:()=>true};
+  await h.context.requestPaymentReceiptIdentityReview('r/1');assert.equal(h.requests.length,0);
+});
+
+test('file source fences discard late batch suggestions and expired suggestions from filtered receipts', () => {
+  const h=harness();h.context.paymentReceipts[0].fileUpdatedAt='v2';
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'file-1',fileUpdatedAt:'v1',receiptId:'r/1',payload:{reviewId:'old',proposal:proposal()}});
+  assert.equal(h.context.paymentReceiptIdentityReviews.size,0);
+  h.context.paymentReceiptIdentityReviews.set('r/1',{fileId:'file-1',fileUpdatedAt:'v1',status:'ready',proposal:proposal()});
+  h.context.renderPaymentReceiptIdentityReviewContent(h.context.paymentReceipts[0]);assert.equal(h.context.paymentReceiptIdentityReviews.size,0);
+});
+
+test('an accepted name can be explicitly rechecked without replacing it until adoption', async () => {
+  const h=harness();h.context.paymentReceipts[0].identityReview=proposal();
+  const pending=h.click('r/1');assert.equal(JSON.parse(h.requests[0].options.body).force,true);
+  h.requests[0].resolve(response({reviewId:'new-check',proposal:proposal({name:'26苏交通CP008(绿色)'})}));await pending;
+  assert.equal(h.context.paymentReceipts[0].identityReview.name,'26苏交通CP008');assert.equal(h.mutations.length,0);
+  assert.match(h.getPanel('r/1').innerHTML,/当前简称/);assert.match(h.getPanel('r/1').innerHTML,/采用复核简称/);
+});
+
+test('explicit manual save only replaces accepted identity evidence and preserves raw business fields', () => {
+  const h=harness(),before=plain(h.context.paymentReceipts[0]),controls=h.getControls('r/1');
+  const manual={status:'verified',source:'manual',name:'26苏交通CP008',code:'042680338',pageNumber:9,acceptedAt:'2026-10-28',reviewId:'manual-1'};
+  h.context.applyPaymentReceiptManualIdentityResult({receiptId:'r/1',payload:{receipt:{id:'r/1',identityReview:manual,amountFen:1,paymentDate:'2099-01-01'}}});
+  assert.deepEqual(plain(h.context.paymentReceipts[0]),{...before,identityReview:manual});assert.equal(h.getControls('r/1'),controls);
+  assert.match(h.getPanel('r/1').innerHTML,/人工修改/);assert.doesNotMatch(h.getPanel('r/1').innerHTML,/简称字段|缴款附言/);
+});
+
 test('render and navigation never request AI; an explicit preview is single-flight and never applies', async () => {
   const h = harness(), before = plain(h.context.paymentReceipts);
   const first = h.context.paymentReceipts[0];
-  assert.match(h.context.renderPaymentReceiptIdentityReviewContent(first), /复核简称/);
+  assert.match(h.context.renderPaymentReceiptIdentityReviewContent(first), /检测简称/);
   assert.equal(h.requests.length, 0);
   const pending = h.click(first.id);
-  assert.match(h.getPanel(first.id).innerHTML, /复核中…/);
+  assert.match(h.getPanel(first.id).innerHTML, /检测中…/);
   await h.click(first.id);
   assert.equal(h.requests.length, 1);
   assert.equal(h.requests[0].url, './api/payment-receipts/r%2F1/identity-review');
-  assert.deepEqual(JSON.parse(h.requests[0].options.body), { action: 'preview' });
+  assert.deepEqual(JSON.parse(h.requests[0].options.body), { action: 'preview', force:true });
   h.requests[0].resolve(response({ reviewId: 'preview-one', proposal: proposal() }));
   await pending;
   assert.equal(h.mutations.length, 0);
@@ -125,7 +180,7 @@ test('render and navigation never request AI; an explicit preview is single-flig
   for (const text of ['26苏交通CP008', '26苏交CP008', '原件第 9 页', '26 苏交通 CP008', '042680338', '采用复核简称']) assert.ok(html.includes(text), text);
   assert.match(html, /识别建议/);
   assert.doesNotMatch(html, /复核完成/);
-  assert.match(html, /data-receipt-identity-preview="r\/1" >重新复核/);
+  assert.match(html, /data-receipt-identity-preview="r\/1" >再检测一次/);
   assert.match(html, /本次仅识别原件第 9 页，未核对整个分组/);
 });
 
@@ -134,7 +189,7 @@ test('a repeated unchanged reading is not a correction and can be explicitly ret
   const unchanged = proposal({ name: '26苏交CP008', originalName: '26 苏交 CP008',
     readings: { nameField: '26 苏交 CP008', remittanceName: '26 苏交 CP008', securityCode: '042680338', uncertainties: [] } });
   await ready(h, 'r/1', unchanged);
-  assert.match(h.getPanel('r/1').innerHTML, /未得到更正，仍需核对原件/);
+  assert.match(h.getPanel('r/1').innerHTML, /与当前简称一致/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /复核完成|data-receipt-identity-apply/);
   await h.click('r/1', 'apply');
   assert.equal(h.requests.length, 1, 'an unchanged name cannot be adopted through a stale or synthetic button');
@@ -155,7 +210,7 @@ test('spaces, case and full-width formatting do not create a spurious name corre
   const h = harness();
   h.context.paymentReceipts[0].bondShortName = '２６ 苏交 ｃｐ００８';
   await ready(h, 'r/1', proposal({ name: '26苏交CP008' }));
-  assert.match(h.getPanel('r/1').innerHTML, /未得到更正/);
+  assert.match(h.getPanel('r/1').innerHTML, /与当前简称一致/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
 });
 
@@ -193,8 +248,10 @@ test('adoption sends only its saved review id and preserves raw data, current co
   assert.equal(JSON.stringify(h.context.state), beforeState);
   assert.match(h.getPanel('r/1').innerHTML, /已采用/);
   assert.doesNotMatch(h.getPanel('r/1').innerHTML, /data-receipt-identity-apply/);
-  await h.click('r/1');
-  assert.equal(h.requests.length, 2);
+  const rerun=h.click('r/1');
+  assert.equal(h.requests.length, 3);
+  h.requests[2].resolve(response({reviewId:'rerun',proposal:proposal()}));await rerun;
+  assert.equal(h.context.paymentReceipts[0].identityReview.name,'26苏交通CP008');
 });
 
 test('late previews remain associated with their own receipt and are reusable when returning', async () => {
@@ -233,7 +290,7 @@ test('failed previews can be explicitly retried; conflicting readings can never 
   h.requests[0].resolve(response({ error: '复核服务暂时不可用。' }, 503));
   await failed;
   assert.match(h.getPanel('r/1').innerHTML, /复核服务暂时不可用/);
-  assert.match(h.getPanel('r/1').innerHTML, /重试复核/);
+  assert.match(h.getPanel('r/1').innerHTML, /再检测一次/);
   const retry = h.click('r/1');
   h.requests[1].resolve(response({ reviewId: 'conflict', proposal: proposal({ status: 'conflict', name: '', reason: 'literal_name_conflict' }) }));
   await retry;
@@ -281,7 +338,7 @@ test('logout aborts in-flight work, clears private proposals and ignores late re
 test('already accepted identity evidence is shown without another preview or AI call', async () => {
   const h = harness();
   h.context.paymentReceipts[0].identityReview = proposal();
-  await h.click('r/1');
+  h.context.renderPaymentReceiptIdentityReviewContent(h.context.paymentReceipts[0]);
   await h.click('r/1', 'apply');
   assert.equal(h.requests.length, 0);
   const html = h.context.renderPaymentReceiptIdentityReviewContent(h.context.paymentReceipts[0]);
