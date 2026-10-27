@@ -1,6 +1,6 @@
 import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261028v540';
 import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261028v540';
-import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261028v540r2';
+import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261028v540r3';
 import { normalizePaymentReceiptBondShortName } from './payment-receipt-names.js?v=20261028v540';
 import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261028v540';
 import { createOpinionFieldLocator } from './opinion-field-locator.js?v=20261028v540';
@@ -12,7 +12,7 @@ import { createProjectIntakeController } from './project-intake-ai-ui.js?v=20261
 import { projectIntakeCutoff } from './project-intake-ai.js?v=20261028v540';
 import { createPaymentReceiptMatchAiController } from './payment-receipt-match-ai-ui.js?v=20261028v540';
 import { createPaymentReceiptBoundaryReview } from './payment-receipt-boundary-ui.js?v=20261028v540r2';
-import { createPaymentReceiptFileIdentityReview } from './payment-receipt-file-identity-ui.js?v=20261028v540r2';
+import { createPaymentReceiptFileIdentityReview } from './payment-receipt-file-identity-ui.js?v=20261028v540r3';
 import { createPaymentReceiptManualIdentityEdit } from './payment-receipt-manual-identity-ui.js?v=20261028v540r2';
 import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261028v540';
 import { dataProviderLabel, dataSourceModeLabel, isMarketDataSource } from './market-data-source.js?v=20261028v540';
@@ -780,7 +780,7 @@ function bindPaymentReceipts() {
     getContext(){const receipt=paymentReceipts.find(item=>selectedPaymentReceiptEntryKey===`receipt:${item.id}`);return{fileId:receipt?.fileId||'',receiptId:receipt?.id||'',fileUpdatedAt:receipt?.fileUpdatedAt||'',
       blocked:Boolean(paymentReceiptManualIdentityEdit?.isEditing(receipt?.fileId)||[...paymentReceiptIdentityReviews.entries()].some(([id,review])=>review.controller&&paymentReceipts.find(item=>item.id===id)?.fileId===receipt?.fileId))};},
     onStateChange(){const receipt=paymentReceipts.find(item=>selectedPaymentReceiptEntryKey===`receipt:${item.id}`);if(receipt)refreshPaymentReceiptIdentityReview(receipt.id);},
-    onResult:applyPaymentReceiptFileIdentityResult,onNotice:showToast});
+    onResult:applyPaymentReceiptFileIdentityResult,onUndo:applyPaymentReceiptFileIdentityUndo,onNotice:showToast});
   paymentReceiptManualIdentityEdit=createPaymentReceiptManualIdentityEdit({container:$('#paymentReceiptMatchToolbar'),getHeaders:authHeaders,
     getReceipt:id=>paymentReceipts.find(item=>item.id===id),
     isBlocked:fileId=>Boolean(paymentReceiptFileIdentityAi?.isBusy(fileId)||[...paymentReceiptIdentityReviews.entries()].some(([id,review])=>review.controller&&paymentReceipts.find(item=>item.id===id)?.fileId===fileId)),
@@ -989,19 +989,43 @@ function clearPaymentReceiptIdentityReviews() {
   paymentReceiptIdentityReviews.clear();
 }
 
-function applyPaymentReceiptFileIdentityResult({fileId,fileUpdatedAt,receiptId,payload}) {
+function applyPaymentReceiptFileIdentityResult({fileId,fileUpdatedAt,receiptId,payload,stage='preview'}) {
   const current=paymentReceipts.find(item=>item.id===receiptId);
-  if(current&&(current.fileId!==fileId||current.fileUpdatedAt&&fileUpdatedAt&&current.fileUpdatedAt!==fileUpdatedAt)||current?.identityReview?.status==='verified')return;
+  if(current&&(current.fileId!==fileId||current.fileUpdatedAt&&fileUpdatedAt&&current.fileUpdatedAt!==fileUpdatedAt))return;
   if(paymentReceiptIdentityReviews.get(receiptId)?.controller)return;
   const proposal=payload.proposal||payload.identityReview||payload.receipt?.identityReview;
   if(!['verified','unavailable','conflict'].includes(proposal?.status))return;
-  paymentReceiptIdentityReviews.set(receiptId,{status:'ready',fileId,fileUpdatedAt:fileUpdatedAt||current?.fileUpdatedAt||'',priorIdentityReviewId:current?.identityReview?.reviewId||'',reviewId:payload.reviewId||'',proposal,error:'',controller:null});
-  if(current&&payload.receipt?.id===receiptId&&payload.receipt.identityReview?.status==='verified'){
+  const adopted=payload.receipt?.id===receiptId&&payload.receipt.identityReview?.status==='verified';
+  if(current?.identityReview?.status==='verified'&&!['apply','retained'].includes(stage))return;
+  if(current?.identityReview?.acceptedAt&&adopted&&Date.parse(current.identityReview.acceptedAt)>Date.parse(payload.receipt.identityReview.acceptedAt))return;
+  paymentReceiptIdentityReviews.set(receiptId,{status:adopted?'applied':'ready',fileId,fileUpdatedAt:fileUpdatedAt||current?.fileUpdatedAt||'',priorIdentityReviewId:current?.identityReview?.reviewId||'',reviewId:payload.reviewId||'',proposal,error:'',controller:null});
+  if(current&&adopted){
     const draft=capturePaymentReceiptMatchDraft(receiptId);
     applyLocalPaymentReceiptMutation({receipts:[{...current,identityReview:payload.receipt.identityReview}]});
     restorePaymentReceiptMatchDraft(receiptId,draft);
   }
   refreshPaymentReceiptIdentityReview(receiptId);
+}
+
+function applyPaymentReceiptFileIdentityUndo({fileId,payload}) {
+  const selected=paymentReceipts.find(item=>selectedPaymentReceiptEntryKey===`receipt:${item.id}`);
+  const draft=selected?capturePaymentReceiptMatchDraft(selected.id):null;
+  const receipts=[];
+  for(const restored of payload.receipts||[]){
+    const current=paymentReceipts.find(item=>item.id===restored.id);
+    if(current&&current.fileId!==fileId)continue;
+    if(current?.fileUpdatedAt&&restored.fileUpdatedAt&&current.fileUpdatedAt!==restored.fileUpdatedAt)continue;
+    if(current?.identityReview?.source==='manual'&&(!restored.identityReview
+      ||Date.parse(current.identityReview.acceptedAt)>Date.parse(restored.identityReview.acceptedAt)))continue;
+    if(!current&&paymentReceiptIdentityReviews.get(restored.id)?.fileId&&paymentReceiptIdentityReviews.get(restored.id).fileId!==fileId)continue;
+    paymentReceiptIdentityReviews.delete(restored.id);
+    if(!current)continue;
+    const updated={...current};delete updated.identityReview;
+    if(restored.identityReview)updated.identityReview=restored.identityReview;
+    receipts.push(updated);
+  }
+  if(receipts.length)applyLocalPaymentReceiptMutation({receipts});
+  if(selected){restorePaymentReceiptMatchDraft(selected.id,draft);refreshPaymentReceiptIdentityReview(selected.id);}
 }
 
 function applyPaymentReceiptManualIdentityResult({receiptId,payload}) {
@@ -1130,7 +1154,7 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
   const reasonLabel = ({
     ai_unavailable: "复核服务暂时不可用，请重试。",
     invalid_response: "未取得完整复核结果，请重试。",
-    missing_literal_reading: "未能同时读到简称字段与缴款附言，请对照原件核对。",
+    missing_literal_reading: "未读到清楚的债券简称，请对照原件核对。",
     uncertain_reading: "原件中有无法确认的内容，请人工核对。",
     literal_name_conflict: "简称字段与缴款附言不一致，请人工核对。",
     security_code_conflict: "复核代码与单据原代码不一致，请人工核对。",
@@ -1138,6 +1162,7 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
     invalid_code: "未能读到可靠的债券代码，请人工核对。",
     image_unavailable: "暂时无法读取这一页原件，请重试。",
     image_too_large: "这一页原件超出自动复核范围，请人工核对。",
+    source_changed: "此条单据信息已变化，请人工核对。",
   })[proposal?.reason] || "复核信息仍需人工核对。";
   return `<div class="payment-receipt-identity-head"><strong>简称复核</strong><div class="payment-receipt-identity-actions">
       <button class="button subtle" type="button" data-receipt-identity-preview="${escapeAttribute(receipt.id)}" ${busy || fileBusy || manualBusy ? "disabled" : ""}>${label}</button>
@@ -1581,7 +1606,7 @@ function paymentReceiptNameResolution(receipt) {
 }
 
 function paymentReceiptNameSourceLabel(source) {
-  return ({ "matched-project": "已对应品种", "security-code": "债券代码校对", "page-review": "本页双重核验", "manual-review":"人工修改",recognized: "原件识别", unavailable: "简称待核对" })[source] || "原件识别";
+  return ({ "matched-project": "已对应品种", "security-code": "债券代码校对", "page-review": "原页复核", "manual-review":"人工修改",recognized: "原件识别", unavailable: "简称待核对" })[source] || "原件识别";
 }
 
 function paymentReceiptEntryTitle(entry) {

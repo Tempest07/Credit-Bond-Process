@@ -44,13 +44,14 @@ test('regroup inheritance rejects other pages, added pages, different files, cod
     { security_code: '' }, { security_code: '032680566' },
     { security_code: '042680338.SZ', identity_review_json: JSON.stringify({ ...accepted(), code: '042680338.IB',
       readings: { ...accepted().readings, securityCode: '042680338.IB' } }) },
-    { bond_short_name: '26苏交通SCP008' },
     ...[{ acceptedAt: '' }, { status: 'proposed' }, { sourcePages: [2,2,4] }, { pageNumber: 3 },
       { readings: { ...accepted().readings, remittanceName: '26苏交通SCP008' } },
       { readings: { ...accepted().readings, uncertainties: ['不确定'] } }]
       .map(change => ({ identity_review_json: JSON.stringify({ ...accepted(), ...change }) })),
   ];
   for (const change of changes) assert.equal(acceptedPaymentReceiptIdentityReview(inheritedRow(change)), null, JSON.stringify(change));
+  assert.equal(acceptedPaymentReceiptIdentityReview(inheritedRow({bond_short_name:'26苏交通SCP008'})).name,'26苏交通CP008',
+    'the old OCR product is not a veto against confirmed same-page, same-code evidence');
 });
 
 async function fixture(t) {

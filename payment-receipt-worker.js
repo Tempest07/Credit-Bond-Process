@@ -30,7 +30,7 @@ import {
 } from "./payment-receipts.js";
 import { normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "./payment-receipt-security.js";
-import { compatibleReceiptNameCorrection, runReceiptIdentityReview } from "./payment-receipt-identity-review.js";
+import { runReceiptIdentityReview } from "./payment-receipt-identity-review.js";
 import { selectDeepSeekOcr } from "./ocr-deepseek.js";
 
 const DEFAULT_OWNER = "admin";
@@ -1170,14 +1170,29 @@ async function reviewCurrentPaymentReceiptIdentity(ai, pageImage, primary) {
     };
   }
   if (review.status !== "verified") {
-    // Without two current-page literal readings the second pass has not
-    // corroborated this identity. Keep the primary text, but require review.
+    // The independent current-page reader must provide a clear literal name
+    // and a matching code. Keep the primary text when that evidence is absent.
     return { ...review, error: true, applied: false };
   }
-  if (!compatibleReceiptNameCorrection(primary.bond_short_name, review.name)) {
-    return { ...review, status: "conflict", reason: "primary_name_conflict", applied: false };
-  }
   return { ...review, applied: true };
+}
+
+function conventionalReceiptPageIdentity(name) {
+  const match = name.split("(")[0].match(/^(\d{2})(.+?)(ABCP|SCP|MTN|PPN|ABN|CP|CD)(\d{1,5})([A-Z/]{0,5})$/);
+  return match ? { year: match[1], issuer: match[2], product: match[3], issue: match[4], letters: match[5] } : null;
+}
+
+// Compare adjacent pages, not an earlier OCR answer against a fresh reading.
+// Only the same series and an issuer missing one or two trailing characters
+// are safe name variants when the printed codes disagree between pages.
+function sameReceiptPageNameVariant(leftName, rightName) {
+  if (leftName.split("(")[0] === rightName.split("(")[0]) return true;
+  const left = conventionalReceiptPageIdentity(leftName), right = conventionalReceiptPageIdentity(rightName);
+  if (!left || !right || ["year", "product", "issue", "letters"].some(key => left[key] !== right[key])) return false;
+  const [shorter, longer] = left.issuer.length <= right.issuer.length
+    ? [left.issuer, right.issuer] : [right.issuer, left.issuer];
+  return shorter.length >= 2 && longer.startsWith(shorter)
+    && longer.length - shorter.length >= 1 && longer.length - shorter.length <= 2;
 }
 
 function verifiedIdentityStartsReceipt(current, review, previous = {}) {
@@ -1193,13 +1208,10 @@ function verifiedIdentityStartsReceipt(current, review, previous = {}) {
   const previousName = normalizePaymentReceiptBondShortName(previous.bond_short_name || previous.bondShortName);
   const currentName = normalizePaymentReceiptBondShortName(review.name);
   // Missing prior name evidence is allowed only after the current page supplies
-  // two agreeing readings, its own clear notice title and a distinct valid code.
+  // a clear literal reading, its own notice title and a distinct valid code.
   if (!currentName) return false;
   if (!previousName) return true;
-  const sameName = canonicalFingerprintPart(currentName.split("(")[0]) === canonicalFingerprintPart(previousName.split("(")[0]);
-  const sameIssuerTail = compatibleReceiptNameCorrection(previousName, currentName)
-    || compatibleReceiptNameCorrection(currentName, previousName);
-  return !sameName && !sameIssuerTail;
+  return !sameReceiptPageNameVariant(previousName, currentName);
 }
 
 function comparePaymentReceiptIdentity(current = {}, previous = {}) {

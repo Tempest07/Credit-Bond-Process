@@ -26,19 +26,35 @@ test('CP/SCP, tranche letters, year, code and market conflicts cannot be guessed
   for (const expected of ['042680339', '042680338.SZ', 'F042680338']) {
     assert.equal(parseReceiptIdentityReview(literal({ securityCode: '042680338.IB' }), expected).status, 'conflict', expected);
   }
-  for (const data of [literal({ nameField: '' }), literal({ remittanceName: '' }), literal({ securityCode: '871010177599000105' }),
+  for (const data of [literal({ nameField: '', remittanceName: '' }), literal({ nameField: '无法读取的印字' }), literal({ securityCode: '871010177599000105' }),
     literal({ uncertainties: ['有两张缴款单'] }), { ...literal(), uncertainties: undefined }]) {
     assert.equal(parseReceiptIdentityReview(data, '042680338').status, 'unavailable');
   }
 });
 
-test('a verified correction permits issuer tail completion but never another complete identity', () => {
+test('fresh current-page readings can correct earlier OCR identity errors', () => {
   assert.equal(compatibleReceiptNameCorrection('26苏交CP008', '26苏交通CP008'), true);
   assert.equal(compatibleReceiptNameCorrection('某某公司2026年公开发行债券', '26苏交通CP008'), true);
   assert.equal(compatibleReceiptNameCorrection('26苏交通CP008', '26苏交通CP008(绿色)'), true);
   for (const target of ['26苏交通SCP008', '26苏交通CP009', '25苏交通CP008', '26苏交通CP008A', '26中交航CP008']) {
-    assert.equal(compatibleReceiptNameCorrection('26苏交CP008', target), false, target);
+    assert.equal(compatibleReceiptNameCorrection('26苏交CP008', target), true, target);
   }
+  assert.equal(compatibleReceiptNameCorrection('福建高速MTN005', '26闽高速MTN005'), true);
+  assert.equal(compatibleReceiptNameCorrection('26九川通SCP003(支持养老产业)', '26九州通SCP003(支持养老产业)'), true);
+  assert.equal(compatibleReceiptNameCorrection('26苏交CP008', ''), false);
+  assert.equal(compatibleReceiptNameCorrection('26苏交CP008', '只是公司全称有限公司'), false);
+});
+
+test('one clearly visible name is sufficient when the other field is absent', () => {
+  for (const reading of [literal({ nameField: '' }), literal({ remittanceName: '' })]) {
+    const result = parseReceiptIdentityReview(reading, '042680338');
+    assert.equal(result.status, 'verified'); assert.equal(result.name, '26苏交通CP008');
+  }
+  const fujian = parseReceiptIdentityReview({ nameField: '26 闽高速 MTN005', remittanceName: '', securityCode: '102683994', uncertainties: [] }, '102683994');
+  assert.equal(fujian.status, 'verified'); assert.equal(fujian.name, '26闽高速MTN005');
+  assert.equal(parseReceiptIdentityReview({ ...literal(), remittanceName: '', uncertainties: ['另一处印字看不清'] }).status, 'unavailable');
+  assert.equal(parseReceiptIdentityReview({ ...literal(), remittanceName: '无法读取的印字' }).status, 'unavailable');
+  assert.equal(parseReceiptIdentityReview({ ...literal(), remittanceName: '26苏交通SCP008' }).status, 'conflict');
 });
 
 test('review sends current image only with bounded output and no automatic retry', async () => {
@@ -158,16 +174,16 @@ test('stale or conflicting proposals cannot apply, and raw original bytes are ch
   assert.equal((await h.request()).status, 409);
 });
 
-test('two agreeing AI readings cannot silently replace an explicitly conflicting stored identity', async t => {
+test('clear same-code image readings may correct wrong OCR years, products and issuer names', async t => {
   for (const bond_short_name of ['26苏交SCP008', '26苏交CP009', '25苏交CP008', '26苏交CP008A', '26苏通交CP008']) {
     const h = await fixture(t);
     h.DB.sql.prepare('UPDATE payment_receipts SET bond_short_name=?').run(bond_short_name);
     const response = await h.request();
     assert.equal(response.status, 200);
     const preview = await response.json();
-    assert.equal(preview.proposal.status, 'conflict', bond_short_name);
-    assert.equal(preview.proposal.reason, 'source_name_conflict', bond_short_name);
-    assert.equal((await h.request({ action: 'apply', reviewId: preview.reviewId })).status, 409);
+    assert.equal(preview.proposal.status, 'verified', bond_short_name);
+    assert.equal(preview.proposal.name, '26苏交通CP008');
+    assert.equal((await h.request({ action: 'apply', reviewId: preview.reviewId })).status, 200);
     assert.equal(h.DB.sql.prepare('SELECT bond_short_name FROM payment_receipts').get().bond_short_name, bond_short_name);
   }
 });
@@ -240,7 +256,7 @@ test('explicit DeepSeek OCR uses only its dedicated key ahead of the legacy bind
   const body = JSON.parse(calls[0].input.body);
   assert.equal(body.model, 'deepseek-flash');
   assert.equal(body.max_tokens, 400);
-  assert.match(body.messages[0].content[0].text, /独立读取两处/);
+  assert.match(body.messages[0].content[0].text, /两处都存在时分别读取/);
   assert.deepEqual(h.state(), before);
   assert.equal((await h.request({ action: 'apply', reviewId: preview.reviewId })).status, 200);
   assert.deepEqual(h.state(), before);

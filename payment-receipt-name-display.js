@@ -1,6 +1,7 @@
 import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js?v=20261028v540";
 import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
   paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261028v540';
+import { parseReceiptIdentityReview } from './payment-receipt-identity-review.js?v=20261028v540r3';
 
 const SHORT_NAME_LABEL = /(?:债\s*券|证\s*券)\s*(?:简\s*称|短\s*名)\s*[:：]?\s*/g;
 const compact = value => String(value || "").normalize("NFKC").replace(/[\s\u200b-\u200d\ufeff]/g, "").toUpperCase();
@@ -157,25 +158,21 @@ export function createPaymentReceiptNameResolver(projects = []) {
     const name = normalizePaymentReceiptBondShortName(review?.name);
     const code = codeIdentity(review?.code);
     const readings = review?.readings || {};
-    const field = normalizePaymentReceiptBondShortName(readings.nameField);
-    const reference = normalizePaymentReceiptBondShortName(readings.remittanceName);
     const originalCode = codeIdentity(receipt.securityCode);
+    const correctedWarning = () => original.warning.includes('多个债券')
+      ? '本页简称已复核，但原分组包含多个债券，请核对拆页与对应项目'
+      : resolveOriginal({ ...receipt, bondShortName: name, recognizedText: '' }).warning;
     if(review?.source==='manual'&&review.status==='verified'&&name&&review.acceptedAt&&review.reviewId
       &&review.pageNumber===receipt.sourcePages?.[0]&&(String(review.code||'').trim()===String(receipt.securityCode||'').trim()
         ||originalCode&&!originalCode.invalid&&code&&!code.invalid&&sameCode(originalCode,code))){
-      return{...original,title:name,source:'manual-review'};
+      return{...original,title:name,source:'manual-review',warning:correctedWarning()};
     }
-    if (review?.status !== "verified" || !name || !field || !reference
-        || !code || code.invalid || !sameCode(code, codeIdentity(readings.securityCode))
-        || (originalCode && !sameCode(code, originalCode))
-        || review.pageNumber !== receipt.sourcePages?.[0]
-        || [field, reference].some(value => value.split("(")[0] !== name.split("(")[0])
-        || !Array.isArray(readings.uncertainties) || readings.uncertainties.length) return original;
+    const parsed = parseReceiptIdentityReview(readings, receipt.securityCode);
+    if (review?.status !== "verified" || !name || parsed.status !== 'verified' || parsed.name !== name
+        || !code || code.invalid || !sameCode(code, codeIdentity(parsed.code))
+        || review.pageNumber !== receipt.sourcePages?.[0]) return original;
     // This is a separately accepted transcription of one original page, not a
     // rewrite of historical OCR or proof that a multi-page group is one bond.
-    const warning = original.warning.includes("多个债券")
-      ? "本页简称已复核，但原分组包含多个债券，请核对拆页与对应项目"
-      : original.warning;
-    return { ...original, title: name, source: "page-review", warning };
+    return { ...original, title: name, source: "page-review", warning: correctedWarning() };
   };
 }

@@ -180,3 +180,30 @@ test('a separately saved manual name needs no invented visual readings and remai
     assert.notEqual(resolve({...receipt,identityReview:{...receipt.identityReview,...change}}).source,'manual-review');
   }
 });
+
+test('accepted image names display with one clear field and are not limited by earlier OCR abbreviations', () => {
+  const resolve = createPaymentReceiptNameResolver([]);
+  for (const [raw, name, code] of [['福建高速MTN005', '26闽高速MTN005', '102683994'],
+    ['26九川通SCP003(支持养老产业)', '26九州通SCP003(支持养老产业)', '012682438']]) {
+    const receipt = { bondShortName: raw, recognizedText: `债券简称${raw}`, securityCode: code, sourcePages: [11],
+      identityReview: { status: 'verified', name, code, pageNumber: 11,
+        readings: { nameField: name, remittanceName: '', securityCode: code, uncertainties: [] } } };
+    const result = resolve(receipt);
+    assert.equal(result.title, name); assert.equal(result.source, 'page-review'); assert.equal(result.rawName, raw);
+    assert.equal(result.warning, '');
+    assert.notEqual(resolve({ ...receipt, identityReview: { ...receipt.identityReview,
+      readings: { ...receipt.identityReview.readings, remittanceName: '26另一MTN001' } } }).source, 'page-review');
+  }
+});
+
+test('accepted vision removes an earlier OCR name conflict but retains a real correspondence conflict', () => {
+  const { resolve, matched } = fixture('26测试MTN001', '102680001');
+  const evidence = { status: 'verified', name: '26测试MTN001', code: '102680001', pageNumber: 1,
+    readings: { nameField: '26测试MTN001', remittanceName: '', securityCode: '102680001', uncertainties: [] } };
+  const receipt = { ...matched, bondShortName: '25测试SCP009', recognizedText: '债券简称25测试SCP009', sourcePages: [1], identityReview: evidence };
+  assert.match(resolve({ ...receipt, identityReview: undefined }).warning, /年份|品种|期次/);
+  assert.equal(resolve(receipt).title, '26测试MTN001'); assert.equal(resolve(receipt).warning, '');
+  const wrong = { ...receipt, identityReview: { ...evidence, name: '26另一MTN001',
+    readings: { ...evidence.readings, nameField: '26另一MTN001' } } };
+  assert.match(resolve(wrong).warning, /发行人/);
+});

@@ -2,7 +2,7 @@ import { decodeWords } from "postal-mime";
 import { readStoredStateRow } from "../../state-storage.js";
 import { normalizePaymentReceiptBondShortName } from "../../payment-receipt-names.js";
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "../../payment-receipt-security.js";
-import { compatibleReceiptNameCorrection, normalizeManualReceiptName } from "../../payment-receipt-identity-review.js";
+import { normalizeManualReceiptName, parseReceiptIdentityReview } from "../../payment-receipt-identity-review.js";
 
 // Accepted image readings belong to an original page, even if manual regrouping
 // replaces the derived receipt. Keep exact receipt records first; any parent
@@ -10,10 +10,10 @@ import { compatibleReceiptNameCorrection, normalizeManualReceiptName } from "../
 export const ACCEPTED_IDENTITY_REVIEW_SQL = `COALESCE(
   (SELECT e.detail_json FROM payment_receipt_events e
    WHERE e.owner_user_id = r.owner_user_id AND e.receipt_id = r.id
-     AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected')
+     AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected', 'identity_review_restored')
    ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1),
   (SELECT e.detail_json FROM payment_receipt_events e
-   WHERE e.owner_user_id = r.owner_user_id AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected')
+   WHERE e.owner_user_id = r.owner_user_id AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected', 'identity_review_restored')
       AND r.object_key LIKE 'receipts/manual/%' AND e.batch_id = r.batch_id
       AND json_extract(CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.fileId') = r.file_id
       AND json_extract(CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.pageNumber')
@@ -949,22 +949,13 @@ export function acceptedPaymentReceiptIdentityReview(row) {
       reviewId: String(review.reviewId), acceptedAt: String(review.acceptedAt) };
   }
   if (!code || code.invalid || (originalCode && !samePaymentReceiptCode(code, originalCode))) return null;
-  if (!sameReceipt && (!originalCode || originalCode.invalid
-      || !compatibleReceiptNameCorrection(row.bond_short_name, review.name))) return null;
+  if (!sameReceipt && (!originalCode || originalCode.invalid)) return null;
+  const verified = parseReceiptIdentityReview(review.readings, row.security_code);
   const name = normalizePaymentReceiptBondShortName(review.name);
-  const readings = review.readings || {};
-  const field = normalizePaymentReceiptBondShortName(readings.nameField);
-  const reference = normalizePaymentReceiptBondShortName(readings.remittanceName);
-  const readCode = paymentReceiptCodeIdentity(readings.securityCode);
-  if (!name || !field || !reference || !samePaymentReceiptCode(code, readCode)
-      || [field, reference].some(value => value.split("(")[0] !== name.split("(")[0])
-      || !Array.isArray(readings.uncertainties) || readings.uncertainties.length) return null;
-  const attributes = new Set((field + reference).match(/\([^()]+\)/g) || []);
-  if ((name.match(/\([^()]+\)/g) || []).some(value => !attributes.has(value))) return null;
+  if (verified.status !== 'verified' || verified.name !== name || !samePaymentReceiptCode(code, paymentReceiptCodeIdentity(verified.code))) return null;
   return {
     status: "verified", name, code: code.text, pageNumber: review.pageNumber,
-    model: String(review.model || ""), readings: { nameField: field, remittanceName: reference,
-      securityCode: readCode.text, uncertainties: [] },
+    model: String(review.model || ""), readings: verified.readings,
     originalName: String(review.originalName || ""), reviewId: String(review.reviewId || ""),
     acceptedAt: String(review.acceptedAt || ""),
   };
@@ -975,7 +966,7 @@ export async function readAcceptedPaymentReceiptReviewsForFile(db, ownerUserId, 
     FROM payment_receipt_events e
     JOIN payment_receipt_batches b ON b.id = e.batch_id AND b.owner_user_id = e.owner_user_id
     JOIN payment_receipt_files f ON f.batch_id = b.id
-    WHERE e.owner_user_id = ?1 AND f.id = ?2 AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected')
+    WHERE e.owner_user_id = ?1 AND f.id = ?2 AND e.event_type IN ('identity_review_accepted', 'identity_name_manually_corrected', 'identity_review_restored')
     ORDER BY e.created_at DESC, e.rowid DESC`).bind(ownerUserId, fileId).all();
   return result?.results || [];
 }

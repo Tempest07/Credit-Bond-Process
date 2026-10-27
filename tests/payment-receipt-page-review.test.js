@@ -60,12 +60,28 @@ test('a current-page independent read restores a missing issuer tail and keeps p
     ai.requests[0].input.messages[0].content[1].image_url.url);
 });
 
-test('explicit product, tranche, year, issue, code and market conflicts stay reviewable', async () => {
+test('clear same-code literal readings correct earlier OCR products, tranches, years, issues and issuer typos', async () => {
+  for (const [first, second] of [
+    [primary(), literal('26苏交通SCP008')],
+    [primary('26越秀租赁MTN002A', '102683999'), literal('26越秀租赁MTN002B', '102683999')],
+    [primary(), literal('25苏交通CP008')],
+    [primary(), literal('26苏交通CP009')],
+    [primary('26九川通SCP003', '012682438'), literal('26九州通SCP003(支持养老产业)', '012682438')],
+    [primary('福建高速MTN005', '102683994'), literal('26闽高速MTN005', '102683994')],
+  ]) {
+    const ai = stages(first, second);
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 1);
+    assert.equal(page.classification, 'receipt_start', JSON.stringify(second));
+    assert.equal(page.identityReview.status, 'verified');
+    assert.equal(page.identityReview.applied, true);
+    assert.equal(page.fields.bondShortName, second.nameField);
+    assert.equal(page.primaryRecognition.bondShortName, first.bond_short_name);
+    assert.equal(page.fields.securityCode, first.security_code);
+  }
+});
+
+test('a conflicting security code or market stays reviewable', async () => {
   const cases = [
-    [primary(), literal('26苏交通SCP008'), '26苏交CP008'],
-    [primary('26越秀租赁MTN002A', '102683999'), literal('26越秀租赁MTN002B', '102683999'), '26越秀租赁MTN002A'],
-    [primary(), literal('25苏交通CP008'), '26苏交CP008'],
-    [primary(), literal('26苏交通CP009'), '26苏交CP008'],
     [primary(), literal('26苏交通CP008', '042680339'), '26苏交CP008'],
     [primary('26示例01', '246129.SH'), literal('26示例01', '246129.SZ'), '26示例01'],
   ];
@@ -84,7 +100,7 @@ test('independent disagreement or inability to read never overwrites primary fie
   for (const second of [
     literal('26苏交通CP008', '042680338', { remittanceName: '26苏交通SCP008' }),
     literal('26苏交通CP008', '042680338', { uncertainties: ['简称字段模糊'] }),
-    literal('26苏交通CP008', '042680338', { remittanceName: '' }),
+    literal('', '042680338', { remittanceName: '' }),
     'not valid JSON',
     new Error('private service details'),
   ]) {
@@ -94,6 +110,18 @@ test('independent disagreement or inability to read never overwrites primary fie
     assert.equal(page.identityReview.applied, false);
     assert.equal(page.fields.bondShortName, '26苏交CP008');
     assert.doesNotMatch(JSON.stringify(page), /private service details/);
+  }
+});
+
+test('one clearly printed literal name is enough when the other field is absent', async () => {
+  for (const second of [literal('26苏交通CP008', '042680338', { remittanceName: '' }),
+    literal('', '042680338', { remittanceName: '26苏交通CP008' })]) {
+    const ai = stages(primary(), second);
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 1);
+    assert.equal(page.classification, 'receipt_start');
+    assert.equal(page.identityReview.status, 'verified');
+    assert.equal(page.identityReview.applied, true);
+    assert.equal(page.fields.bondShortName, '26苏交通CP008');
   }
 });
 
@@ -151,6 +179,8 @@ test('same-name code drift cannot become a new receipt even after current-page c
     ['26示例MTN001', '26示例MTN001'],
     ['26示例MTN001', '26示例MTN001(绿色)'],
     ['26苏交CP008', '26苏交通CP008'],
+    ['26苏交CP008', '26苏交通控CP008'],
+    ['26苏交通控CP008', '26苏交CP008'],
   ]) {
     const ai = stages(primary(current, '102600002'), literal(current, '102600002'));
     const page = await analyzePaymentReceiptPage(ai.env, await scan(), 2, {
@@ -158,6 +188,22 @@ test('same-name code drift cannot become a new receipt even after current-page c
     });
     assert.equal(page.identityReview.status, 'verified');
     assert.equal(page.classification, 'uncertain', current);
+  }
+});
+
+test('distinct same-series issuers and explicit year or tranche changes do not become same-page name variants', async () => {
+  for (const [before, current] of [
+    ['26示例MTN001', '26另一家MTN001'],
+    ['25示例MTN001', '26示例MTN001'],
+    ['26示例MTN001A', '26示例MTN001B'],
+    ['26苏交CP008', '26苏交通控股CP008'],
+  ]) {
+    const ai = stages(primary(current, '102600002', { classification: 'uncertain' }), literal(current, '102600002'));
+    const page = await analyzePaymentReceiptPage(ai.env, await scan(), 2, {
+      classification: 'receipt_start', fields: { bondShortName: before, securityCode: '102600001' },
+    });
+    assert.equal(page.identityReview.status, 'verified');
+    assert.equal(page.classification, 'receipt_start', `${before} -> ${current}`);
   }
 });
 

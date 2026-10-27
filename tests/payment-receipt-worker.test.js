@@ -257,7 +257,7 @@ test("classifies and extracts one scanned receipt page through Workers AI", asyn
   assert.equal(result.analysisVersion, 7);
   assert.equal(requests.length, 2);
   assert.equal(requests[1].input.max_tokens, 400);
-  assert.match(requests[1].input.messages[0].content[0].text, /独立读取两处/);
+  assert.match(requests[1].input.messages[0].content[0].text, /两处都存在时分别读取/);
   assert.equal(result.identityReview.status, "verified");
   assert.match(request.input.messages[0].content[2].text, /逐字读取当前页/);
   assert.match(request.input.messages[0].content[2].text, /禁止把上一页简称或代码复制/);

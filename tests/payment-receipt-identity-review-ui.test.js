@@ -91,7 +91,7 @@ function harness() {
     syncBondListCloudGate() {}, updateAuthUi() {},
   });
   load(context, ['escapeHtml', 'escapeAttribute', 'clearPaymentReceiptIdentityReviews',
-    'refreshPaymentReceiptIdentityReview', 'capturePaymentReceiptMatchDraft', 'restorePaymentReceiptMatchDraft', 'applyPaymentReceiptFileIdentityResult', 'applyPaymentReceiptManualIdentityResult',
+    'refreshPaymentReceiptIdentityReview', 'capturePaymentReceiptMatchDraft', 'restorePaymentReceiptMatchDraft', 'applyPaymentReceiptFileIdentityResult', 'applyPaymentReceiptFileIdentityUndo', 'applyPaymentReceiptManualIdentityResult',
     'paymentReceiptIdentityReviewHasCorrection', 'requestPaymentReceiptIdentityReview', 'renderPaymentReceiptIdentityReviewContent',
     'handlePaymentReceiptArchiveClick', 'clearAuthSession']);
   const click = (id, action = 'preview') => context.handlePaymentReceiptArchiveClick({ target: {
@@ -135,6 +135,37 @@ test('whole-file accepted cache merges identity alone and ignores other files an
 test('single-receipt AI cannot start during a whole-file review', async () => {
   const h=harness();h.context.paymentReceiptFileIdentityAi={isBusy:()=>true};
   await h.context.requestPaymentReceiptIdentityReview('r/1');assert.equal(h.requests.length,0);
+});
+
+test('automatic file adoption updates identity immediately and undo can remove it without touching raw data', () => {
+  const h=harness(),before=plain(h.context.paymentReceipts[0]),controls=h.getControls('r/1');
+  controls.search.value='未保存的对应选择';
+  h.context.applyPaymentReceiptFileIdentityResult({fileId:'file-1',receiptId:'r/1',stage:'apply',payload:{changed:true,receipt:{id:'r/1',identityReview:proposal(),amountFen:1}}});
+  assert.deepEqual(plain(h.context.paymentReceipts[0]),{...before,identityReview:proposal()});
+  assert.equal(h.context.paymentReceiptIdentityReviews.get('r/1').status,'applied');
+  h.context.applyPaymentReceiptFileIdentityUndo({fileId:'file-1',payload:{receipts:[{id:'r/1'}],restoredCount:1,skippedCount:0}});
+  assert.deepEqual(plain(h.context.paymentReceipts[0]),before);assert.equal(h.context.paymentReceiptIdentityReviews.has('r/1'),false);
+  assert.equal(h.getControls('r/1'),controls);assert.equal(controls.search.value,'未保存的对应选择');assert.equal(h.requests.length,0);
+});
+
+test('file undo displays a later manual name returned for skipped rows and leaves other files untouched', () => {
+  const h=harness(),before=plain(h.context.paymentReceipts[0]);
+  h.context.paymentReceipts[0].identityReview=proposal();
+  const manual={...proposal(),source:'manual',name:'26人工新简称CP008'};
+  h.context.paymentReceiptIdentityReviews.set('r2',{fileId:'other',proposal:proposal()});
+  h.context.applyPaymentReceiptFileIdentityUndo({fileId:'file-1',payload:{receipts:[{id:'r/1',identityReview:manual},{id:'r2'}],restoredCount:0,skippedCount:1}});
+  assert.deepEqual(plain(h.context.paymentReceipts[0]),{...before,identityReview:manual});
+  assert.equal(h.context.paymentReceiptIdentityReviews.has('r2'),true);
+});
+
+test('late undo responses never clear a newer local manual name or a new file version', () => {
+  const h=harness();
+  h.context.paymentReceipts[0].identityReview={...proposal(),source:'manual',name:'26人工较新简称CP008',acceptedAt:'2026-10-28T03:00:00Z'};
+  h.context.applyPaymentReceiptFileIdentityUndo({fileId:'file-1',payload:{receipts:[{id:'r/1'}]}});
+  assert.equal(h.context.paymentReceipts[0].identityReview.name,'26人工较新简称CP008');
+  h.context.paymentReceipts[0].identityReview=proposal();h.context.paymentReceipts[0].fileUpdatedAt='v2';
+  h.context.applyPaymentReceiptFileIdentityUndo({fileId:'file-1',payload:{receipts:[{id:'r/1',fileUpdatedAt:'v1'}]}});
+  assert.equal(h.context.paymentReceipts[0].identityReview.name,'26苏交通CP008');
 });
 
 test('file source fences discard late batch suggestions and expired suggestions from filtered receipts', () => {
