@@ -1111,7 +1111,7 @@ async function reprocessPaymentReceiptFile(fileId, button) {
   if (!fileId) return;
   button.disabled = true;
   try {
-    const response = await fetch(`/api/payment-receipt-files/${encodeURIComponent(fileId)}/reprocess`, {
+    const response = await fetch(`./api/payment-receipt-files/${encodeURIComponent(fileId)}/reprocess`, {
       method: "POST",
       credentials: "same-origin",
       headers: authHeaders(),
