@@ -1,0 +1,14 @@
+.payment-boundary-review { display:grid; gap:12px; border-top:1px solid var(--line,#e5e5e5); padding-top:18px; margin-top:18px; }
+.payment-boundary-review h3 { margin:0; font-size:16px; }
+.payment-boundary-review-controls { display:flex; align-items:end; flex-wrap:wrap; gap:10px; }
+.payment-boundary-review-controls label { display:grid; gap:5px; font-size:13px; }
+.payment-boundary-review-controls input, .payment-boundary-review-controls select { width:86px; min-height:38px; padding:7px 10px; font:inherit; border:1px solid var(--line,#ddd); border-radius:10px; background:var(--panel,#fff); }
+.payment-boundary-review [data-boundary-status]:empty { display:none; }
+.payment-boundary-review [data-boundary-status] { margin:0; font-size:13px; line-height:1.6; color:var(--muted,#777); }
+.payment-boundary-review-page { padding:12px; margin-bottom:10px; border:1px solid var(--line,#e5e5e5); border-radius:12px; font-size:13px; }
+.payment-boundary-review-page header { display:flex; justify-content:space-between; gap:10px; }
+.payment-boundary-review-page header span { color:var(--muted,#777); }
+.payment-boundary-review-page p { margin:8px 0; line-height:1.6; }
+.payment-boundary-review-page blockquote { margin:10px 0; padding-left:10px; border-left:2px solid #bdd4c5; line-height:1.6; white-space:pre-wrap; }
+.payment-boundary-review-page pre { white-space:pre-wrap; word-break:break-word; font:inherit; line-height:1.6; }
+.payment-boundary-review-page.uncertain { border-color:#e7cfab; background:#fffaf2; }

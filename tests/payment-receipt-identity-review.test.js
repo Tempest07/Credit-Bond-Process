@@ -60,7 +60,7 @@ test('review sends current image only with bounded output and no automatic retry
     { mimeType: 'image/png', bytes: new Uint8Array([1, 2]).buffer }, '042680338')).status, 'verified');
 });
 
-async function fixture(t, overrides = {}) {
+async function fixture(t, overrides = {}, scanBytes = null) {
   const DB = createMemoryD1();
   t.after(() => DB.sql.close());
   const prepare = DB.prepare;
@@ -73,7 +73,7 @@ async function fixture(t, overrides = {}) {
   const pdf = await PDFDocument.create();
   for (let index = 0; index < 2; index++) {
     const page = pdf.addPage([100, 100]);
-    const stream = pdf.context.stream(new Uint8Array([0xff, 0xd8, 1 + index, 0xff, 0xd9]), {
+    const stream = pdf.context.stream(scanBytes || new Uint8Array([0xff, 0xd8, 1 + index, 0xff, 0xd9]), {
       Type: 'XObject', Subtype: 'Image', Width: 2, Height: 2, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode',
     });
     page.node.newXObject('Scan', pdf.context.register(stream));
@@ -214,4 +214,62 @@ test('the explicit local adapter uses bounded Qwen context and never follows rem
   h.env.CF_PAGES_BRANCH = 'main';
   assert.equal((await h.request()).status, 503);
   assert.equal(calls.length, 1);
+});
+
+const deepseekScan = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0, 2, 0, 2, 3, 1, 17, 0, 2, 17, 0, 3, 17, 0, 0xff, 0xd9]);
+const ocrKey = 'ocr-only-test-key-123456789';
+
+test('explicit DeepSeek OCR uses only its dedicated key ahead of the legacy binding and preserves apply guards', async t => {
+  const h = await fixture(t, { OCR_AI_PROVIDER: 'deepseek', DEEPSEEK_OCR_API_KEY: ocrKey,
+    DEEPSEEK_API_KEY: 'issuance-only-test-key-123456789' }, deepseekScan);
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, input) => {
+    calls.push({ url: String(url), input });
+    return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(literal()) } }] });
+  });
+  const before = h.state();
+  const response = await h.request();
+  assert.equal(response.status, 200);
+  const preview = await response.json();
+  assert.equal(preview.proposal.model, 'deepseek-flash');
+  assert.equal(preview.proposal.status, 'verified');
+  assert.equal(h.calls.length, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.deepseek.com/chat/completions');
+  assert.equal(calls[0].input.headers.Authorization, `Bearer ${ocrKey}`);
+  const body = JSON.parse(calls[0].input.body);
+  assert.equal(body.model, 'deepseek-flash');
+  assert.equal(body.max_tokens, 400);
+  assert.match(body.messages[0].content[0].text, /独立读取两处/);
+  assert.deepEqual(h.state(), before);
+  assert.equal((await h.request({ action: 'apply', reviewId: preview.reviewId })).status, 200);
+  assert.deepEqual(h.state(), before);
+});
+
+test('explicit DeepSeek OCR fails closed when its key or remote-processing approval is missing', async t => {
+  for (const overrides of [
+    { OCR_AI_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'issuance-key-cannot-be-used-12345' },
+    { OCR_AI_PROVIDER: 'deepseek', DEEPSEEK_OCR_API_KEY: ocrKey, AI_PROCESSING_APPROVED: 'false' },
+  ]) {
+    const h = await fixture(t, overrides, deepseekScan);
+    const response = await h.request();
+    assert.equal(response.status, 503);
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.DB.sql.prepare('SELECT COUNT(*) n FROM payment_receipt_events').get().n, 0);
+  }
+});
+
+test('DeepSeek OCR authentication and throttling errors remain safe and never fall back or retry', async t => {
+  for (const status of [401, 429]) {
+    const h = await fixture(t, { OCR_AI_PROVIDER: 'deepseek', DEEPSEEK_OCR_API_KEY: ocrKey }, deepseekScan);
+    let requests = 0;
+    t.mock.method(globalThis, 'fetch', async () => { requests++; return new Response('private-vendor-details', { status }); });
+    const response = await h.request();
+    assert.equal(response.status, status === 429 ? 429 : 503);
+    assert.doesNotMatch(JSON.stringify(await response.json()), /private-vendor-details|ocr-only-test-key/);
+    assert.equal(requests, 1);
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.DB.sql.prepare('SELECT COUNT(*) n FROM payment_receipt_events').get().n, 0);
+    t.mock.restoreAll();
+  }
 });

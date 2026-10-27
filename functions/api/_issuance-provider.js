@@ -1,5 +1,6 @@
 import { ISSUANCE_MODEL, issuanceModelInput, issuanceRepairInput, readIssuanceModelOutput } from "./_issuance-model.js";
 import { validateSemanticResult } from "../../issuance-recognition.js";
+import { recognizeIssuanceWithDeepseek } from "./_issuance-deepseek.js";
 
 export const LOCAL_ISSUANCE_MODEL = "gpt-oss:20b";
 export const LOCAL_ISSUANCE_PROMPT_REVISION = "local-20b-20260904-1";
@@ -7,6 +8,14 @@ export const DEFAULT_LOCAL_ISSUANCE_TIMEOUT_MS = 45000;
 export const DEFAULT_CLOUD_ISSUANCE_TIMEOUT_MS = 90000;
 
 export async function recognizeIssuanceWithProviders(request, env, options = {}) {
+  const provider = env?.ISSUANCE_AI_PROVIDER || "legacy";
+  if (provider === "deepseek") return recognizeIssuanceWithDeepseek(request, env, options);
+  if (provider !== "legacy") {
+    throw Object.assign(new Error("识别服务配置无效，请检查 ISSUANCE_AI_PROVIDER；本次未改动项目。"), {
+      code: "ISSUANCE_PROVIDER_CONFIG", status: 503,
+      publicMessage: "识别服务配置无效，请检查 ISSUANCE_AI_PROVIDER；本次未改动项目。",
+    });
+  }
   const fetchImpl = options.fetchImpl || fetch;
   const parentSignal = options.signal;
   let fallbackReason = null;

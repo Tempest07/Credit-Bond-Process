@@ -3,6 +3,31 @@
   min-width: 0;
 }
 
+.bond-list-project-offer-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 1px solid #dcecdf;
+  border-radius: 12px;
+  color: #356344;
+  background: #f1f8f2;
+  font-size: 14px;
+}
+.bond-list-project-offer-notice[hidden] { display: none; }
+.bond-list-project-offer-notice > span { flex: 1; }
+.bond-list-project-offer-notice .button { min-height: 32px; padding: 5px 12px; }
+.bond-list-results-table tbody tr.bond-list-project-offer-new {
+  background: #eff8f1;
+  box-shadow: inset 3px 0 #76a884;
+}
+@keyframes bond-list-project-offer-arrive {
+  from { background: #deefdf; }
+  to { background: #eff8f1; }
+}
+
 .main.cloud-locked.bond-list-available .view.active[data-view="bond-list"] {
   display: block !important;
 }
@@ -401,6 +426,15 @@ html[data-ui="beta"] .main.cloud-locked.bond-list-available > .topbar > div:firs
 }
 .bond-list-results-table tbody tr.bond-list-quote-warning td {
   background: color-mix(in srgb, var(--quote-accent) var(--quote-row-weight, 4%), var(--panel));
+}
+.bond-list-results-table tbody tr.bond-list-project-offer-new td {
+  background: #eff8f1;
+  animation: bond-list-project-offer-arrive 6s ease-out;
+  animation-delay: var(--project-offer-animation-delay, 0ms);
+}
+.bond-list-results-table tbody tr.bond-list-project-offer-new td:first-child { box-shadow: inset 3px 0 #76a884; }
+@media (prefers-reduced-motion: reduce) {
+  .bond-list-results-table tbody tr.bond-list-project-offer-new td { animation: none; }
 }
 
 .bond-list-results-table tbody tr:last-child td {

@@ -41,10 +41,11 @@ function gateHarness({ locked = true, error = true, access = true, active = true
     throw new Error(`Unexpected cloud-gate selector: ${selector}`);
   };
   const context = vm.createContext({
-    $, document: { querySelector: $ }, bondListController: controller,
+    $, document: { querySelector: $ }, bondListController: controller, projectOfrActions: null,
     currentGatewayUser: { username: "admin" }, updateAuthUi: () => {},
     paymentReceiptPreview: null, paymentReceiptInspectorSignature: "",
     paymentReceiptIdentityReviews: new Map(),
+    paymentReceiptMatchAi:null,paymentReceiptBoundaryAi:null,projectIntakeAi:null,
   });
   loadFunctions(context, ["syncBondListCloudGate"]);
   return { context, main, gate, controller,

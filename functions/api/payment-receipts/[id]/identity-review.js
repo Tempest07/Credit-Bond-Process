@@ -5,6 +5,7 @@ import { ensurePaymentReceiptSchema, getPaymentReceipt } from '../../_payment-re
 import { extractPaymentReceiptPageImage } from '../../../../payment-receipt-worker.js';
 import { compatibleReceiptNameCorrection, runReceiptIdentityReview } from '../../../../payment-receipt-identity-review.js';
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from '../../../../payment-receipt-security.js';
+import { selectDeepSeekOcr } from '../../../../ocr-deepseek.js';
 
 const MAX_BODY_BYTES = 4096;
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -177,6 +178,13 @@ async function insertGuardedEvent(db, source, owner, eventId, type, detail, now,
 }
 
 function selectAi(context) {
+  const deepseek = selectDeepSeekOcr(context.env, { fetchImpl: context.fetchImpl, signal: context.request.signal });
+  if (deepseek) {
+    if (String(context.env.AI_PROCESSING_APPROVED).trim().toLowerCase() !== 'true') {
+      throw failure(503, '缴款单远端识别尚未启用');
+    }
+    return deepseek;
+  }
   if (typeof context.env.AI?.run === 'function' && String(context.env.AI_PROCESSING_APPROVED).trim().toLowerCase() === 'true') return context.env.AI;
   const host = new URL(context.request.url).hostname;
   if (!['localhost', '127.0.0.1', '[::1]'].includes(host) || context.env.CF_PAGES_BRANCH !== 'local') return null;

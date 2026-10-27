@@ -8,7 +8,7 @@ const html = await readFile(new URL('../index.html',import.meta.url),'utf8');
 function harness({refresh=async()=>({total:2,failed:0}),empty=false}={}) {
   const button={disabled:false,textContent:'刷新缴款债券代码'},toasts=[],calls=[];
   const state={projects:[{id:'original',prepaymentNumber:'W202610230001'}]};
-  const context=vm.createContext({state,cloudAvailable:true,document:{hidden:false},
+  const context=vm.createContext({state,LOCAL_BETA:false,cloudAvailable:true,document:{hidden:false},
     $:()=>button,showToast:message=>toasts.push(message),
     getPaymentTodos:()=>empty?[]:[{project:{shortName:'26测试MTN001'},tranche:{}},{project:{shortName:'整期项目'},tranche:{shortName:'26测试MTN002B'}}],
     paymentTodoCodes:{refresh:names=>{calls.push(names);return refresh(names);},ensure:names=>calls.push(names)},

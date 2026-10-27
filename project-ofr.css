@@ -1,0 +1,16 @@
+.project-ofr-actions { display: grid; gap: 12px; margin-top: 14px; }
+.project-ofr-actions[hidden] { display: none; }
+.project-ofr-item { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line, #e5e5e5); border-radius: 12px; background: var(--panel, #fff); }
+.project-ofr-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.project-ofr-identity { display: grid; gap: 5px; min-width: 0; }
+.project-ofr-identity strong { font-size: 14px; overflow-wrap: anywhere; }
+.project-ofr-price { color: #39724d; font-size: 14px; }
+.project-ofr-actions .button { flex-shrink: 0; }
+.project-ofr-confirm { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line, #e5e5e5); }
+.project-ofr-confirm label { display: grid; gap: 6px; font-size: 13px; }
+.project-ofr-confirm input, .project-ofr-confirm select { width: 100%; min-height: 40px; font: inherit; padding: 8px 10px; border: 1px solid var(--line, #ddd); border-radius: 8px; }
+.project-ofr-confirm-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.project-ofr-message { margin: 0; font-size: 13px; color: #8c5a17; line-height: 1.6; }
+html[data-ui="beta"] .project-ofr-item { border-color: #e5e5e5; background: #fff; box-shadow: none; }
+html[data-ui="beta"] .project-ofr-item .button { font-size: 13px; }
+@media(max-width: 600px) { .project-ofr-heading { align-items: flex-start; flex-direction: column; } }

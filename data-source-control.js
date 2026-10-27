@@ -1,4 +1,4 @@
-import { renderDataSourceLabels } from './market-data-source.js?v=20261026release5362';
+import { renderDataSourceLabels } from './market-data-source.js?v=20261028v540';
 
 const COOKIE_NAME = 'bond_centre_data_source';
 const MODES = new Set(['auto', 'dm', 'qb']);

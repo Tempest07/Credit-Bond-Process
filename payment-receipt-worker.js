@@ -31,6 +31,7 @@ import {
 import { normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "./payment-receipt-security.js";
 import { compatibleReceiptNameCorrection, runReceiptIdentityReview } from "./payment-receipt-identity-review.js";
+import { selectDeepSeekOcr } from "./ocr-deepseek.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -53,7 +54,7 @@ export default {
       return Response.json({
         status: readiness.ready ? "ok" : "not_ready",
         service: "credit-bond-payment-receipts",
-        buildVersion: "5.3.6.2",
+        buildVersion: "5.4",
         checks: readiness.checks,
       }, { status: readiness.ready ? 200 : 503 });
     }
@@ -433,7 +434,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
   if (String(env.AI_PROCESSING_APPROVED || "").trim().toLowerCase() !== "true") {
     throw new Error("Workers AI processing is not approved");
   }
-  if (!env.AI) throw new Error("Workers AI binding AI is required");
+  if (!selectPaymentReceiptAi(env)) throw new Error("OCR service is required");
   validateBindings(env);
   if (!await beginFileProcessing(env.DB, job.fileId)) {
     return { status: "already_handled", fileId: job.fileId, batchId: job.batchId };
@@ -718,9 +719,11 @@ function canonicalFingerprintPart(value) {
 }
 
 export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, previousPageContext = null) {
+  const ai = selectPaymentReceiptAi(env);
+  const model = typeof ai?.model === "string" ? ai.model : RECEIPT_MODEL;
   let pageImage = null;
   let primaryError = "";
-  if (env.AI) {
+  if (ai) {
     try {
       pageImage = await extractPaymentReceiptPageImage(pageBytes);
       const imageData = pageImage
@@ -746,7 +749,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
           max_tokens: 600,
           stream: false,
         };
-        const aiResult = await runPaymentReceiptAiWithRetry(env.AI, aiInput, pageNumber);
+        const aiResult = await runPaymentReceiptAiWithRetry(ai, aiInput, pageNumber);
         const parsed = aiResult.parsed;
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length) {
           const normalized = normalizeAiPaymentReceiptFields(parsed);
@@ -776,7 +779,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
           const expectedCode = paymentReceiptCodeIdentity(normalized.security_code);
           if (["receipt_start", "uncertain"].includes(normalized.classification)
               && expectedCode && !expectedCode.invalid) {
-            identityReview = await reviewCurrentPaymentReceiptIdentity(env.AI, pageImage, normalized);
+            identityReview = await reviewCurrentPaymentReceiptIdentity(ai, pageImage, normalized);
             if (identityReview.status === "verified") {
               normalized.bond_short_name = identityReview.name;
               if (highConfidence && startSignals && verifiedIdentityStartsReceipt(normalized, identityReview, previousPageContext?.fields)) {
@@ -790,7 +793,8 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
           return {
             pageNumber,
             analysisVersion: PAGE_ANALYSIS_VERSION,
-            analysisSource: "workers-ai-page-image",
+            analysisSource: ai.provider === "deepseek" ? "deepseek-page-image" : "workers-ai-page-image",
+            model,
             classification,
             confidence: Number.isFinite(confidence) ? confidence : 0,
             boundaryEvidence: String(normalized.boundary_evidence || ""),
@@ -822,6 +826,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
         primaryError = "The extracted page image exceeds the AI input limit";
       }
     } catch (error) {
+      if (error?.nonRetryable === true || error?.retryable === false) throw error;
       primaryError = error?.message || String(error);
       console.warn(JSON.stringify({
         event: "payment_receipt_ai_page_fallback",
@@ -831,7 +836,9 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
     }
   }
 
-  const fallbackResult = await extractPdfTextFallback(env, pageBytes, pageNumber);
+  // An explicit OCR provider must not send the same document to the legacy AI
+  // binding after a failure or an unsupported PDF image.
+  const fallbackResult = await extractPdfTextFallback({ ...env, AI: ai }, pageBytes, pageNumber);
   const recognizedText = hasMeaningfulReceiptText(fallbackResult.text) ? fallbackResult.text : "";
   const safelyBlank = fallbackResult.status === "ok" && !fallbackResult.text.trim() && !pageImage;
   const fallback = classifyPaymentReceiptPage({
@@ -1155,10 +1162,11 @@ async function reviewCurrentPaymentReceiptIdentity(ai, pageImage, primary) {
     // The independent reader receives only the current page and expected code
     // for post-response validation, never an earlier name or a project candidate.
     review = await runReceiptIdentityReview(ai, pageImage, primary.security_code);
-  } catch {
+  } catch (error) {
+    if (error?.nonRetryable === true || error?.retryable === false) throw error;
     return {
       status: "unavailable", name: "", code: "", readings: {},
-      model: RECEIPT_MODEL, reason: "review_error", error: true, applied: false,
+      model: typeof ai?.model === "string" ? ai.model : RECEIPT_MODEL, reason: "review_error", error: true, applied: false,
     };
   }
   if (review.status !== "verified") {
@@ -1466,14 +1474,20 @@ function validateBindings(env, options = {}) {
   if (options.queueRequired && !env.RECEIPT_QUEUE) throw new Error("Queue binding RECEIPT_QUEUE is required");
 }
 
+function selectPaymentReceiptAi(env) {
+  return selectDeepSeekOcr(env) || env.AI;
+}
+
 export function paymentReceiptWorkerReadiness(env = {}) {
   const allowedSenders = String(env.ALLOWED_SENDERS || "").trim();
   const expectedRecipient = String(env.EXPECTED_RECIPIENT || "").trim();
+  let aiReady = false;
+  try { aiReady = Boolean(selectPaymentReceiptAi(env)); } catch { /* Missing explicit provider configuration is not ready. */ }
   const checks = {
     d1: Boolean(env.DB),
     r2: Boolean(env.PAYMENT_RECEIPTS),
     queue: Boolean(env.RECEIPT_QUEUE),
-    ai: Boolean(env.AI),
+    ai: aiReady,
     aiProcessingApproved: String(env.AI_PROCESSING_APPROVED || "").trim().toLowerCase() === "true",
     allowedSenders: configuredSendersValid(allowedSenders),
     expectedRecipient: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(expectedRecipient)
@@ -1536,7 +1550,7 @@ async function runPaymentReceiptAiWithRetry(ai, input, pageNumber) {
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const response = await ai.run(RECEIPT_MODEL, input);
+      const response = await ai.run(typeof ai.model === "string" ? ai.model : RECEIPT_MODEL, input);
       const parsed = parseAiJson(response);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length) {
         return { parsed, error: "" };
@@ -1545,6 +1559,7 @@ async function runPaymentReceiptAiWithRetry(ai, input, pageNumber) {
       const content = response?.choices?.[0]?.message?.content ?? response?.response ?? response?.result?.answer ?? "";
       lastError = `Workers AI did not return valid structured JSON (finish=${finishReason}, chars=${String(content || "").length})`;
     } catch (error) {
+      if (error?.nonRetryable === true || error?.retryable === false) throw error;
       lastError = error?.message || String(error);
     }
     if (attempt < 2) {

@@ -86,7 +86,8 @@ function harness() {
     },
     currentGatewayUser: { username: 'admin' }, paymentReceiptInspectorSignature: 'private',
     paymentReceiptNameResolverCache: { private: true },
-    paymentReceiptPreview: { clear() { clearedPreviews++; } }, bondListController: null,
+    paymentReceiptPreview: { clear() { clearedPreviews++; } }, bondListController: null, projectOfrActions: null,
+    paymentReceiptMatchAi:null,paymentReceiptBoundaryAi:null,projectIntakeAi:null,
     syncBondListCloudGate() {}, updateAuthUi() {},
   });
   load(context, ['escapeHtml', 'escapeAttribute', 'clearPaymentReceiptIdentityReviews',

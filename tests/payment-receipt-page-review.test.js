@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PDFDocument } from 'pdf-lib';
-import { analyzePaymentReceiptPage } from '../payment-receipt-worker.js';
+import { analyzePaymentReceiptPage, paymentReceiptWorkerReadiness, processPaymentReceiptFile } from '../payment-receipt-worker.js';
 import { groupPaymentReceiptPages } from '../payment-receipts.js';
 
 async function scan() {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([100, 100]);
-  const image = pdf.context.stream(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+  const image = pdf.context.stream(new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0, 2, 0, 2, 3, 1, 17, 0, 2, 17, 0, 3, 17, 0, 0xff, 0xd9]), {
     Type: 'XObject', Subtype: 'Image', Width: 2, Height: 2,
     ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: 'DCTDecode',
   });
@@ -175,4 +175,76 @@ test('explicit continuation and missing or invalid codes do not trigger another 
     assert.equal(page.identityReview, undefined);
     if (first.classification === 'continuation') assert.equal(page.classification, 'continuation');
   }
+});
+
+const deepseekEnv = { OCR_AI_PROVIDER: 'deepseek', DEEPSEEK_OCR_API_KEY: 'ocr-only-test-key-123456789', AI_PROCESSING_APPROVED: 'true' };
+
+test('DeepSeek handles page extraction and independent identity review with its actual model metadata', async t => {
+  const requests = [];
+  let legacyCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url, input) => {
+    requests.push({ url: String(url), input });
+    const output = requests.length === 1 ? primary() : literal();
+    return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(output) } }] });
+  });
+  const page = await analyzePaymentReceiptPage({ ...deepseekEnv, AI: {
+    async run() { legacyCalls++; throw Error('legacy must not run'); },
+    async toMarkdown() { legacyCalls++; throw Error('legacy fallback must not run'); },
+  } }, await scan(), 9);
+  assert.equal(requests.length, 2);
+  assert.equal(legacyCalls, 0);
+  assert.equal(page.model, 'deepseek-flash');
+  assert.equal(page.analysisSource, 'deepseek-page-image');
+  assert.equal(page.identityReview.model, 'deepseek-flash');
+  assert.equal(page.identityReview.status, 'verified');
+  assert.equal(page.fields.bondShortName, '26苏交通CP008');
+  assert.equal(page.primaryRecognition.bondShortName, '26苏交CP008');
+  for (const request of requests) {
+    assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
+    assert.equal(request.input.headers.Authorization, `Bearer ${deepseekEnv.DEEPSEEK_OCR_API_KEY}`);
+    assert.equal(JSON.parse(request.input.body).model, 'deepseek-flash');
+  }
+});
+
+test('DeepSeek authentication and throttling fail fast in either OCR pass without a legacy call', async t => {
+  const pdf = await scan();
+  for (const failAt of [1, 2]) for (const status of [401, 429]) {
+    let requests = 0, legacyCalls = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+      requests++;
+      return requests === failAt ? new Response('private-vendor-details', { status })
+        : Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(primary()) } }] });
+    });
+    await assert.rejects(() => analyzePaymentReceiptPage({ ...deepseekEnv, AI: {
+      async run() { legacyCalls++; }, async toMarkdown() { legacyCalls++; },
+    } }, pdf, 9), error => error.nonRetryable === true && error.httpStatus === (status === 429 ? 429 : 503)
+      && !error.message.includes('private-vendor-details'));
+    assert.equal(requests, failAt);
+    assert.equal(legacyCalls, 0);
+    t.mock.restoreAll();
+  }
+});
+
+test('DeepSeek does not hand unsupported PDF pages to the legacy text service', async () => {
+  const pdf = await PDFDocument.create(); pdf.addPage([100, 100]);
+  let legacyCalls = 0;
+  const page = await analyzePaymentReceiptPage({ ...deepseekEnv, AI: {
+    async run() { legacyCalls++; }, async toMarkdown() { legacyCalls++; },
+  } }, await pdf.save(), 1);
+  assert.equal(page.classification, 'uncertain');
+  assert.equal(page.analysisSource, 'unavailable');
+  assert.equal(legacyCalls, 0);
+});
+
+test('explicit OCR configuration is checked before file processing writes or legacy service selection', async () => {
+  let accesses = 0;
+  await assert.rejects(() => processPaymentReceiptFile({ OCR_AI_PROVIDER: 'deepseek', AI_PROCESSING_APPROVED: 'true',
+    DEEPSEEK_API_KEY: 'issuance-only-key-123456789', AI: { async run() { accesses++; } },
+    DB: { prepare() { accesses++; throw Error('must not write'); } },
+  }), error => error.code === 'DEEPSEEK_OCR_CONFIG' && error.httpStatus === 503);
+  assert.equal(accesses, 0);
+  const bindings = { ...deepseekEnv, DB: {}, PAYMENT_RECEIPTS: {}, RECEIPT_QUEUE: {},
+    ALLOWED_SENDERS: 'sender@example.com', EXPECTED_RECIPIENT: 'receipts@example.com' };
+  assert.equal(paymentReceiptWorkerReadiness(bindings).ready, true);
+  assert.equal(paymentReceiptWorkerReadiness({ ...bindings, DEEPSEEK_OCR_API_KEY: undefined, AI: {} }).ready, false);
 });

@@ -1,13 +1,14 @@
-import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261026release5362';
-import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261026release5362';
-import { dataProviderLabel } from './market-data-source.js?v=20261026release5362';
-import { couponMetadataComplete, couponMetadataUsable, supplementCouponMetadata } from './bond-list-metadata.js?v=20261026release5362';
+import { BOND_TYPES, quoteRows, filterQuotes, quoteOutput } from './bond-list-filter.js?v=20261028v540';
+import { compareQuoteToValuation, quoteWarningEmphasis, LOW_QUOTE_WARNING_BP } from './bond-list-comparison.js?v=20261028v540';
+import { dataProviderLabel } from './market-data-source.js?v=20261028v540';
+import { couponMetadataComplete, couponMetadataUsable, supplementCouponMetadata } from './bond-list-metadata.js?v=20261028v540';
+import { sameProjectOfrRow } from './project-ofr.js?v=20261028v540';
 
 const codePattern = /^\d{6,12}\.(?:IB|SH|SZ|BJ)$/i;
 const couponFormatter = new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6, useGrouping: false });
 const spreadFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2, useGrouping: false });
 
-export function initializeBondList({ onToast, onAccessChange, getDataSourceMode = () => 'auto' } = {}) {
+export function initializeBondList({ onToast, onAccessChange, getDataSourceMode = () => 'auto', projectOffers = false } = {}) {
   const root = document.querySelector('.view[data-view="bond-list"]');
   if (!root) return { setActive: async () => {}, flushSave: async () => true, hasPendingChanges: () => false, hasAccess: () => false, clearAccess: () => {}, resume: () => {}, resetDataSource: () => {} };
   const $ = id => root.querySelector('#bondList-' + id);
@@ -33,6 +34,28 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
   const typeInputs = new Map();
   const filters = { types: [], side: 'all', couponOp: 'any', couponMin: '', couponMax: '', missing: 'all' };
   let selectedText = 'OFR/BID', selectedCount = 0, filterActive = false, mode = 'results';
+  let offerGeneration = 0, offerController = null, offerHighlightTimer = null;
+  let offerReadError = false, offerAckError = false, offerOnly = false, offerAckPromise = null;
+  let offerAddTail = Promise.resolve();
+  const entryOffers = new Map(), displayedOffers = new Set(), acknowledgedOffers = new Set(), pendingOfferAcks = new Set();
+  const awaitingOfferDisplay = new Set();
+  let offerScrollTarget = '';
+  const highlightUntil = new Map(), offerAdds = new Map();
+  let offerNotice, offerNoticeText, offerViewButton, offerRetryButton;
+  if (projectOffers) {
+    offerNotice = document.createElement('div'); offerNotice.className = 'bond-list-project-offer-notice'; offerNotice.hidden = true;
+    offerNotice.setAttribute('role', 'status'); offerNotice.setAttribute('aria-live', 'polite');
+    offerNoticeText = document.createElement('span');
+    offerViewButton = document.createElement('button'); offerViewButton.type = 'button'; offerViewButton.className = 'button subtle';
+    offerRetryButton = document.createElement('button'); offerRetryButton.type = 'button'; offerRetryButton.className = 'button subtle'; offerRetryButton.textContent = '重试提示';
+    offerNotice.append(offerNoticeText, offerViewButton, offerRetryButton);
+    root.insertBefore(offerNotice, $('notice'));
+    offerViewButton.addEventListener('click', () => { offerOnly = !offerOnly; setMode('results'); renderResults(); });
+    offerRetryButton.addEventListener('click', () => {
+      if (offerReadError) void loadProjectOfferHighlights(offerGeneration);
+      else void acknowledgeProjectOffers();
+    });
+  }
 
   const requestMode = () => {
     const value = getDataSourceMode();
@@ -45,6 +68,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
   function setAccess(value) {
     if (access === value) return;
     access = value;
+    if (!value && projectOffers) clearProjectOfferPresentation(true);
     onAccessChange?.();
   }
 
@@ -87,6 +111,8 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       const error = new Error(result.error || '请求失败');
       error.status = response.status;
       error.code = result.code;
+      error.requiredFields = result.requiredFields;
+      error.branches = result.branches;
       const seconds = Number(result.retryAfter ?? response.headers.get('Retry-After'));
       if (Number.isFinite(seconds) && seconds > 0 && seconds <= 86400) error.retryAfter = Math.ceil(seconds);
       throw error;
@@ -112,9 +138,131 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     return [...new Set(sections.flatMap(section => section.text.split('\n').map(lineInfo)
       .filter(line => line?.coded).map(line => line.code)))];
   }
+  function clearProjectOfferPresentation(all = false) {
+    offerGeneration++;
+    offerController?.abort(); offerController = null;
+    clearTimeout(offerHighlightTimer); offerHighlightTimer = null;
+    // A route change before the display frame must not consume an unseen row.
+    for (const id of awaitingOfferDisplay) displayedOffers.delete(id);
+    awaitingOfferDisplay.clear(); offerScrollTarget = '';
+    entryOffers.clear(); highlightUntil.clear(); offerOnly = false;
+    offerReadError = false; offerAckError = false;
+    if (all) {
+      displayedOffers.clear(); acknowledgedOffers.clear(); pendingOfferAcks.clear();
+      offerAckPromise = null; offerAdds.clear(); offerAddTail = Promise.resolve();
+    }
+    if (offerNotice) offerNotice.hidden = true;
+  }
+  function renderProjectOfferNotice(visibleQuotes = []) {
+    if (!offerNotice) return;
+    const count = entryOffers.size;
+    offerNotice.hidden = !active || (!count && !offerReadError && !offerAckError);
+    if (offerNotice.hidden) return;
+    const hidden = [...entryOffers.values()].filter(transfer => mode !== 'results' || !visibleQuotes.some(row => sameProjectOfrRow(transfer, row))).length;
+    offerNoticeText.textContent = count ? `新增挂卖 ${count} 只${hidden ? ` · ${hidden} 只未显示` : ''}${offerAckError ? ' · 提示状态待保存' : ''}`
+      : offerReadError ? '新增挂卖提示暂未读取，清单仍可正常使用。' : '新增提示状态待保存。';
+    offerViewButton.hidden = !count;
+    offerViewButton.textContent = offerOnly ? '返回原筛选' : hidden ? '查看新增' : '只看新增';
+    offerRetryButton.hidden = !offerReadError && !offerAckError;
+  }
+  async function acknowledgeProjectOffers() {
+    if (offerAckPromise || !pendingOfferAcks.size || !projectOffers) return offerAckPromise;
+    const accessToken = accessVersion;
+    const promise = (async () => {
+      try {
+        while (pendingOfferAcks.size && accessToken === accessVersion) {
+          const ids = [...pendingOfferAcks].slice(0, 50);
+          await api('project-offers', { action: 'seen', ids });
+          if (accessToken !== accessVersion) return;
+          for (const id of ids) { acknowledgedOffers.add(id); pendingOfferAcks.delete(id); }
+        }
+        offerAckError = false;
+      } catch {
+        if (accessToken === accessVersion) offerAckError = true;
+      } finally {
+        if (offerAckPromise === promise) offerAckPromise = null;
+        if (accessToken === accessVersion) renderProjectOfferNotice(quoteRows(sections, couponResults).filter(row =>
+          offerOnly ? [...entryOffers.values()].some(transfer => sameProjectOfrRow(transfer, row)) : filterQuotes([row], filters).rows.length));
+      }
+    })();
+    offerAckPromise = promise;
+    return promise;
+  }
+  async function loadProjectOfferHighlights(generation) {
+    if (!projectOffers || !active || !loaded || generation !== offerGeneration) return;
+    offerController?.abort(); const controller = new AbortController(); offerController = controller;
+    const accessToken = accessVersion;
+    try {
+      const payload = await api('project-offers', undefined, controller.signal);
+      if (controller.signal.aborted || generation !== offerGeneration || accessToken !== accessVersion || !active) return;
+      entryOffers.clear();
+      for (const transfer of Array.isArray(payload.transfers) ? payload.transfers : []) {
+        if (typeof transfer?.id === 'string' && transfer.present !== false && !transfer.seenAt && !acknowledgedOffers.has(transfer.id)) entryOffers.set(transfer.id, transfer);
+      }
+      offerReadError = false; renderResults();
+      // A prior acknowledgement may have failed after the user saw the row.
+      if (pendingOfferAcks.size) void acknowledgeProjectOffers();
+    } catch {
+      if (!controller.signal.aborted && generation === offerGeneration && accessToken === accessVersion && active) {
+        offerReadError = true; renderProjectOfferNotice();
+      }
+    } finally { if (offerController === controller) offerController = null; }
+  }
+  function showProjectOfferHighlights(quotes, nodes) {
+    if (!projectOffers || !active || !access || !loaded || loading || document.hidden || mode !== 'results') { renderProjectOfferNotice(quotes); return; }
+    const now = Date.now();
+    for (let index = 0; index < quotes.length; index++) {
+      const transfers = [...entryOffers.values()].filter(transfer => sameProjectOfrRow(transfer, quotes[index]));
+      for (const transfer of transfers) {
+        if (!displayedOffers.has(transfer.id)) {
+          displayedOffers.add(transfer.id); awaitingOfferDisplay.add(transfer.id);
+          highlightUntil.set(transfer.id, now + 6000); offerScrollTarget ||= transfer.id;
+        }
+      }
+      nodes[index].dataset.projectOfferIds = JSON.stringify(transfers.map(transfer => transfer.id));
+      const highlighted = transfers.some(transfer => (highlightUntil.get(transfer.id) || 0) > now);
+      nodes[index].classList.toggle('bond-list-project-offer-new', highlighted);
+      if (highlighted) {
+        nodes[index].setAttribute('aria-label', `${quotes[index].name}，新增挂卖`);
+        const deadline = Math.min(...transfers.map(transfer => highlightUntil.get(transfer.id) || 0).filter(until => until > now));
+        nodes[index].style.setProperty('--project-offer-animation-delay', `${Math.min(0, deadline - now - 6000)}ms`);
+      }
+    }
+    clearTimeout(offerHighlightTimer);
+    const deadlines = [...highlightUntil.values()].filter(value => value > now);
+    if (deadlines.length) offerHighlightTimer = setTimeout(() => {
+      for (const [id, until] of highlightUntil) if (until <= Date.now()) highlightUntil.delete(id);
+      if (active) renderResults();
+    }, Math.min(...deadlines) - now);
+    renderProjectOfferNotice(quotes);
+    if (offerScrollTarget) {
+      const generation = offerGeneration;
+      requestAnimationFrame(() => {
+        if (!active || document.hidden || generation !== offerGeneration || mode !== 'results' || !offerScrollTarget) return;
+        // Resolve the live row at display time: metadata can replace every row
+        // between renderResults() and this frame. Never scroll a detached node.
+        const current = [...$('results-body').children].map(node => {
+          let ids = []; try { ids = JSON.parse(node.dataset.projectOfferIds || '[]'); } catch {}
+          return { node, ids };
+        });
+        const target = current.find(item => item.ids.includes(offerScrollTarget))
+          || current.find(item => item.ids.some(id => awaitingOfferDisplay.has(id)));
+        if (!target || target.node.isConnected === false) return;
+        target.node.scrollIntoView?.({ behavior: 'auto', block: 'center' });
+        offerScrollTarget = '';
+        const shown = new Set(current.flatMap(item => item.ids));
+        for (const id of awaitingOfferDisplay) {
+          if (shown.has(id)) pendingOfferAcks.add(id);
+          else { displayedOffers.delete(id); highlightUntil.delete(id); }
+        }
+        awaitingOfferDisplay.clear();
+        void acknowledgeProjectOffers();
+      });
+    }
+  }
   function renderResults() {
     const all = quoteRows(sections, couponResults, (code, result) => zeroCouponConfirmations.has(zeroCouponKey(code, result)));
-    const result = filterQuotes(all, filters);
+    const result = offerOnly ? { rows: all.filter(row => [...entryOffers.values()].some(transfer => sameProjectOfrRow(transfer, row))), error: '', active: true } : filterQuotes(all, filters);
     selectedText = quoteOutput(result.rows); selectedCount = result.rows.length; filterActive = result.active;
     const pending = all.filter(row => row.code && (!couponResults.has(row.code) || couponPending.has(row.code) || couponResults.get(row.code)?.status === 'loading')).length;
     const missingCoupon = all.filter(row => couponResults.get(row.code)?.status === 'missing').length;
@@ -129,7 +277,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     const valuationMissing = all.filter(row => valuationResults.get(row.code)?.status === 'missing').length;
     const valuationAccessDenied = all.some(row => valuationResults.get(row.code)?.reason === 'dm_valuation_access_denied');
     const retained = all.filter(row => couponResults.get(row.code)?.refreshFailed || valuationResults.get(row.code)?.refreshFailed).length;
-    const needsMetadata = filters.types.length > 0 || filters.couponOp !== 'any' || ['coupon', 'type'].includes(filters.missing);
+    const needsMetadata = !offerOnly && (filters.types.length > 0 || filters.couponOp !== 'any' || ['coupon', 'type'].includes(filters.missing));
     const waiting = needsMetadata && pending > 0 && active && access && !flushing;
     const unresolved = result.rows.filter(row => !row.code).length;
     const branches = new Set(result.rows.map(row => row.sectionIndex)).size;
@@ -142,6 +290,7 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       : [unconfirmedZero ? unconfirmedZero + ' 条票面为 0，待人工确认' : '', retained ? retained + ' 条刷新未完成，保留上次资料' : '', failed ? failed + ' 条查询失败' : '', incomplete ? incomplete + ' 条未完成' : '', missingCoupon ? '票面缺失 ' + missingCoupon : '', missingType ? '品种未知 ' + missingType : '', unknownSide ? '方向未识别 ' + unknownSide : '', valuationAccessDenied ? '估值接口权限待核对' : valuationWaiting && access ? '估值读取中 ' + valuationWaiting : valuationMissing ? '估值缺失 ' + valuationMissing : ''].filter(Boolean).join(' · ');
     $('filter-error').textContent = result.error; $('filter-error').hidden = !result.error;
     $('results-body').replaceChildren();
+    const renderedRows = [];
     for (const quote of result.rows) {
       const row = document.createElement('tr'); row.dataset.sectionIndex = String(quote.sectionIndex); row.dataset.lineIndex = String(quote.lineIndex);
       const valuation = valuationResults.get(quote.code);
@@ -239,7 +388,9 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       }
       cell('分行').textContent = quote.branch;
       $('results-body').append(row);
+      renderedRows.push(row);
     }
+    showProjectOfferHighlights(result.rows, renderedRows);
     $('results-empty').hidden = selectedCount > 0;
     $('results-empty').textContent = result.error ? '请调整筛选条件' : all.length ? '暂无符合条件的报价' : '暂无报价';
     $('preview').textContent = selectedText; $('result-preview').textContent = selectedText;
@@ -661,6 +812,8 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
       $(name + '-panel').hidden = mode !== name;
     }
     if (mode === 'editor' && loaded) requestAnimationFrame(fitEditors);
+    if (mode === 'editor' && loaded) renderProjectOfferNotice();
+    if (mode === 'results' && loaded) renderResults();
   }
   function readFilters() {
     filters.types = BOND_TYPES.filter(type => typeInputs.get(type).checked);
@@ -737,6 +890,9 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
   document.addEventListener('bond-ui-change', () => {
     if (active && loaded) requestAnimationFrame(fitEditors);
   });
+  document.addEventListener('visibilitychange', () => {
+    if (projectOffers && active && loaded && !document.hidden) renderResults();
+  });
   // Initial DM results can arrive before the host's database gate reveals this view.
   // Refit when the editor becomes visible or its column width changes.
   if (typeof ResizeObserver === 'function') {
@@ -750,6 +906,43 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     observer.observe(root);
   }
 
+  async function flushSave() {
+    flushing = true;
+    stopCoupons();
+    renderResults();
+    clearTimeout(saveTimer);
+    clearTimeout(lookupTimer);
+    if (loading) await loading;
+    if (lookupPromise) { lookupAbort?.abort(); await lookupPromise; }
+    do { if (!await save()) return false; } while (dirty);
+    return true;
+  }
+  function resume() { flushing = false; resetMetadataAttempts(); renderResults(); scheduleLookup(); scheduleCoupons(); }
+  async function addProjectOffer(options) {
+    if (!projectOffers) throw new Error('此页面暂不支持项目挂卖。');
+    const key = JSON.stringify([options?.projectId, options?.trancheId]);
+    if (offerAdds.has(key)) return offerAdds.get(key);
+    const accessToken = accessVersion;
+    const promise = offerAddTail.catch(() => {}).then(async () => {
+      const wasFlushing = flushing;
+      try {
+        if (accessToken !== accessVersion) throw new Error('登录状态已变化，请重新操作。');
+        if (!await flushSave()) throw new Error('清单还有未保存的修改，请先处理保存状态后重试。');
+        if (accessToken !== accessVersion) throw new Error('登录状态已变化，请重新操作。');
+        const result = await api('project-offers', { ...options, action: 'add' });
+        // Refresh the cached copy before it can be edited again. load() refuses
+        // to overwrite an edit made while the append request was in flight.
+        if (loaded && accessToken === accessVersion) await load({ refresh: true });
+        return result;
+      } finally {
+        if (offerAdds.get(key) === promise) offerAdds.delete(key);
+        if (!wasFlushing && accessToken === accessVersion) resume();
+      }
+    });
+    offerAddTail = promise.catch(() => {});
+    offerAdds.set(key, promise);
+    return promise;
+  }
   return {
     resetDataSource() {
       clearMetadataLimitNotice();
@@ -763,28 +956,22 @@ export function initializeBondList({ onToast, onAccessChange, getDataSourceMode 
     async setActive(nextActive) {
       const entering = Boolean(nextActive) && !active;
       active = Boolean(nextActive);
-      if (!active) { clearTimeout(lookupTimer); lookupAbort?.abort(); stopCoupons(); return; }
+      if (!active) { clearTimeout(lookupTimer); lookupAbort?.abort(); stopCoupons(); clearProjectOfferPresentation(); return; }
+      if (entering) { clearProjectOfferPresentation(); }
+      const generation = offerGeneration;
       if (entering) resetMetadataAttempts();
       await load({ refresh: entering && !flushing });
       if (loaded && active) { fitEditors(); scheduleLookup(); scheduleCoupons(); }
+      if (entering && loaded && active && generation === offerGeneration) await loadProjectOfferHighlights(generation);
     },
-    async flushSave() {
-      flushing = true;
-      stopCoupons();
-      renderResults();
-      clearTimeout(saveTimer);
-      // A pending DM response may insert codes, so finish/cancel it before the final save.
-      clearTimeout(lookupTimer);
-      if (loading) await loading;
-      if (lookupPromise) { lookupAbort?.abort(); await lookupPromise; }
-      do { if (!await save()) return false; } while (dirty);
-      return true;
-    },
+    flushSave,
+    addProjectOffer,
+    async getProjectOffers() { return projectOffers ? api('project-offers') : { transfers: [], branches: [] }; },
     // Only resume after an attempted logout has stopped; no lookup may add codes
     // between the last confirmed save and the logout request.
-    resume() { flushing = false; resetMetadataAttempts(); renderResults(); scheduleLookup(); scheduleCoupons(); },
+    resume,
     hasAccess() { return access; },
-    clearAccess() { accessVersion++; zeroCouponConfirmations.clear(); setAccess(false); stopCoupons(true); renderResults(); },
+    clearAccess() { accessVersion++; clearProjectOfferPresentation(true); zeroCouponConfirmations.clear(); setAccess(false); stopCoupons(true); renderResults(); },
     hasPendingChanges() { return dirty || Boolean(savePromise); }
   };
 }

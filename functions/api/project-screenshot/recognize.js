@@ -1,6 +1,7 @@
 import { requireUser, json } from "../_auth.js";
 import { localProviderConfig } from "../_issuance-provider.js";
-import { MAX_VISION_IMAGE_BYTES, PROJECT_VISION_MODEL, PROJECT_VISION_REVISION, validateVisionImage, validateVisionOutput } from "../../../project-screenshot-vision.js";
+import { selectDeepSeekOcr } from '../../../ocr-deepseek.js';
+import { MAX_VISION_IMAGE_BYTES, PROJECT_VISION_MODEL, PROJECT_VISION_REVISION, PROJECT_VISION_PROMPT, validateVisionImage, validateVisionOutput } from "../../../project-screenshot-vision.js";
 
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
@@ -15,6 +16,20 @@ export async function onRequestPost(context) {
     validateVisionImage(bytes, mimeType);
   } catch (error) { return json({ error: error.message }, error.status || 400); }
   try {
+    const ocr = selectDeepSeekOcr(context.env, { fetchImpl: context.fetchImpl, signal: context.request.signal });
+    if (ocr) {
+      const started = Date.now();
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const result = await ocr.run(ocr.model, { max_tokens: 4096, messages: [
+        { role: 'system', content: PROJECT_VISION_PROMPT },
+        { role: 'user', content: [{ type: 'text', text: '请逐行转录这张项目表，返回 JSON。' },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${btoa(binary)}` } }] },
+      ] });
+      const output = validateVisionOutput(JSON.parse(result.response));
+      return json({ ...output, model: ocr.model, provider: ocr.provider,
+        promptRevision: PROJECT_VISION_REVISION, elapsedMs: Date.now() - started });
+    }
     // Reuse the authenticated local AI gateway and Access credentials already used for issuance.
     const local = localProviderConfig(context.env);
     if (!local) return json({ error: "本地视觉服务尚未启用。" }, 503);
@@ -38,6 +53,7 @@ export async function onRequestPost(context) {
     const output = validateVisionOutput(result);
     return json({ ...output, model: result.model, promptRevision: result.promptRevision, elapsedMs: Date.now() - started });
   } catch (error) {
+    if (error?.code?.startsWith('DEEPSEEK_OCR_')) return json({ error: error.publicMessage, code: error.code }, error.httpStatus);
     const timeout = ["AbortError", "TimeoutError"].includes(error?.name);
     return json({ error: timeout ? "图片识别超时，请裁剪或分段后重试。" : "本地视觉服务暂时不可用，请稍后重试。" }, timeout ? 504 : 503);
   }

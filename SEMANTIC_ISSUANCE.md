@@ -53,6 +53,18 @@ node tools/eval-issuance-recognition.mjs
 
 也可在脚本后指定一个或多个 case ID。样例包括 4 个历史故障与 8 个独立合成样例，覆盖倒序、同期限共享字段、全部回拨、取消、中文数字/万元、缺最终利率、不明日期和提示词注入。
 
+### 5.4：DeepSeek 官方结果识别与建项
+
+`ISSUANCE_AI_PROVIDER=deepseek` 时，发行结果识别 API 直连 `https://api.deepseek.com/chat/completions`。第一把 `DEEPSEEK_API_KEY` 经用户授权用于发行结果识别及项目材料语义录入；第二把 `DEEPSEEK_OCR_API_KEY` 用于 OCR、缴款候选推荐及联合拆页，不能互相回退或用于估值、行情等其他业务。发行结果只发送通知原文与候选券名；项目材料只发送本次粘贴原文。原文证据、品种归属、单位、日期校验和人工确认写入仍保持。
+
+默认 `DEEPSEEK_MODEL=deepseek-flash`，显式关闭 thinking，使用 JSON object 输出，并在提示中提供原有 schema。正常只调用一次；格式或语义校验失败最多按原通知补正一次，两次共用 `ISSUANCE_DEEPSEEK_TIMEOUT_MS`（默认 45000ms）。鉴权、余额、限流、连接等 HTTP 错误不立即重试，也不静默转给旧识别源。返回安全错误代码与必要的上游 HTTP 状态，不输出密钥或上游正文。
+
+在本地运行目录的私有 `.dev.vars.deepseek` 保存 `DEEPSEEK_API_KEY` 后，运行 `node tools/prepare-local-issuance-ai.mjs --runtime <运行目录>`。启动准备仅请求官方 `/models` 核验鉴权及模型可用性；通过后才更新私有 `.dev.vars` 中的识别服务配置，不在启动时消耗推理调用。空密钥且未显式选择 DeepSeek 时继续使用旧链。明确设置 `ISSUANCE_AI_PROVIDER=legacy` 可回切，旧网关及 Cloudflare 配置保留。模型文档：[官方调用方法](https://api-docs.deepseek.com/)、[JSON 输出](https://api-docs.deepseek.com/guides/json_mode/)、[思考模式控制](https://api-docs.deepseek.com/guides/thinking_mode/)。
+
+Windows 新 beta 运行目录还可读取 `%LOCALAPPDATA%/BondCentreBeta/secrets/issuance-deepseek.env` 中的识别专用凭据；其优先级低于运行目录自己的配置。不写入全局通用密钥环境变量，也不供其他业务调用。
+
+多品种通知末尾未点名单个品种的“明天缴款”“明日配售缴款”等说明，在通知覆盖全部当前品种、没有未知券或专属归属标记、且缴款日期没有冲突时，可按共同缴款安排核验。只用于缴款日期，不扩大票息、规模或起息日的归属。明确的品种专属日期优先保留；相对日必须有通知日期才能换算。
+
 ### 本机 gpt-oss-20b 隔离验收
 
 本机可使用 Ollama 和 `gpt-oss:20b` 复用生产提示词、JSON Schema、原文证据校验及最多一次校正，并附加版本化的本地 20b 复核提醒。该入口只允许访问 `localhost`，拒绝 Ollama Cloud 和其他模型；不会修改 Pages Function、Cloudflare AI binding、Production 或 Preview 配置。
@@ -87,6 +99,8 @@ npm run serve:issuance:local
 ```
 
 本地 Pages 开发环境可在已被 `.gitignore` 忽略的 `.dev.vars` 中设置以下值；Bearer token 必须与网关进程一致：
+
+本地 beta 启动前必须完成该配置。`npm run prepare:local` 会复用现有 `LOCAL_ISSUANCE_AI_TOKEN`，鉴权检查本机网关后配置私有 `.dev.vars`，并在本地 Wrangler 配置中加入 Cloudflare `AI` 兜底绑定。独立 beta 运行目录可使用 `node tools/prepare-local-issuance-ai.mjs --runtime <运行目录>`；其启动脚本应先运行此检查。该准备步骤不生成或更改网关密钥，不改生产配置及数据库。
 
 ```dotenv
 ISSUANCE_LOCAL_AI_ENABLED=true

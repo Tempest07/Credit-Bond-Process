@@ -1,6 +1,6 @@
 // Shared by the API and browser: model output is untrusted until validated.
 import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
-  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261026release5362';
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261028v540';
 
 export const ISSUANCE_FIELDS = {
   securityCode: "债券代码", durationText: "期限", issueScale: "发行规模（亿元）",
@@ -54,6 +54,7 @@ export function validateSemanticResult(request, result) {
   let needsModelRepair = false;
   if (!result || !Array.isArray(result.items) || result.items.length > 10) throw new Error("模型返回的结构不完整，请重新识别。");
   const shared = Array.isArray(result.sharedEvidence) ? result.sharedEvidence.filter((quote) => typeof quote === "string" && hasQuote(request.text, quote)) : [];
+  const paymentFooter = commonPaymentFooter(request);
   const used = new Set();
   for (const extracted of result.items) {
     const name = typeof extracted.shortName === "string" ? extracted.shortName : "";
@@ -119,7 +120,8 @@ export function validateSemanticResult(request, result) {
       if (typeof cell.raw !== "string" || typeof cell.evidence !== "string" || cell.raw.length > 100 || cell.evidence.length > 2000
         || !hasValueQuote(cell.evidence, cell.raw) || !hasQuote(request.text, cell.evidence)
         || evidenceContexts(request.text, cell.evidence).some(identityConflict)
-        || (!hasQuote(source, cell.evidence) && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(cell.evidence, target, request.tranches, request.text)))) {
+        || (!hasQuote(source, cell.evidence) && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(cell.evidence, target, request.tranches, request.text))
+          && !(field === "paymentDate" && isPaymentFooterEvidence(cell.evidence, paymentFooter, request.noticeDate)))) {
         needsModelRepair = true;
         errors.push(`${prefix}${label}的摘录与原文不符，未采用（值“${String(cell?.raw || "").slice(0, 60)}”；依据“${String(cell?.evidence || "").slice(0, 120)}”）。`); continue;
       }
@@ -148,7 +150,7 @@ export function validateSemanticResult(request, result) {
       const inferredPayment = explicitPaymentDateFromEvidence(
         [source, ...shared.filter((quote) => isSharedFor(quote, target, request.tranches, request.text)), ...scopedNoticeEvidence],
         request.noticeDate,
-      );
+      ) || paymentFooter;
       if (inferredPayment?.error) {
         errors.push(`${prefix}缴款日期：${inferredPayment.error}`);
         item.paymentDate = "";
@@ -263,15 +265,72 @@ function isSharedFor(quote, target, tranches, notice = quote) {
   });
 }
 
-function explicitPaymentDateFromEvidence(sources, noticeDate) {
+// Only payment dates can use an unlabelled closing arrangement. Other fields
+// still require the explicit ownership rules in isSharedFor.
+function commonPaymentFooter({ text, tranches, noticeDate }) {
+  if (tranches.length < 2 || otherBondNames(text, tranches)) return null;
+  const notice = nameKey(text);
+  let lastIdentityEnd = 0;
+  for (const tranche of tranches) {
+    const name = nameKey(tranche.shortName);
+    const named = [...notice.matchAll(new RegExp(`${escapePattern(name)}(?![A-Z0-9])`, "g"))];
+    const code = codeKey(tranche.securityCode);
+    const identified = named.length ? named : code
+      ? [...notice.matchAll(new RegExp(`(?<!\\d)${escapePattern(code)}(?!\\d)`, "g"))] : [];
+    if (!identified.length) return null;
+    lastIdentityEnd = Math.max(lastIdentityEnd, ...identified.map(match => match.index + match[0].length));
+  }
+  // A loose code or private owner label after the last variety can turn what
+  // looks like a footer into a statement belonging to only that variety.
+  const privateScope = /本品种|该品种|此品种|仅|只适用|分别|依次|长端|短端|品种[一二三四五六七八九十0-9A-Z]|[A-Z]品种/;
+  const tail = notice.slice(lastIdentityEnd);
+  if (privateScope.test(tail) || tranches.some(tranche => {
+    const alias = trancheAlias(tranche, tranches);
+    return alias && new RegExp(`(?<![A-Z0-9])${alias}(?![A-Z0-9])`).test(tail);
+  })) return null;
+  for (const identity of sourceCodes(text)) {
+    if (identity.invalid) return null;
+    const contexts = evidenceContexts(text, identity.text);
+    if (!contexts.length || contexts.some(context => tranches.filter(tranche => referencesTranche(context, tranche, tranches)).length !== 1)) return null;
+  }
+  const contexts = String(text).match(/[^\r\n。；;！？!?]+[。；;！？!?]?/g) || [];
+  const closing = contexts.filter(context => {
+    if (!/缴款|缴付|付款|到账/.test(context) || privateScope.test(context)
+      || sourceCodes(context).length || tranches.some(tranche => referencesTranche(context, tranche, tranches))) return false;
+    return notice.lastIndexOf(nameKey(context)) >= lastIdentityEnd;
+  });
+  if (!closing.length) return null;
+  const closingDates = closing.map(context => ({ context,
+    parsed: explicitPaymentDateFromEvidence([context], noticeDate, { includeAbsolute: true, strict: true }) }));
+  const unresolved = closingDates.find(item => item.parsed?.error);
+  if (unresolved) return unresolved.parsed;
+  if (!closingDates.some(item => item.parsed?.date)) return null;
+  const complete = explicitPaymentDateFromEvidence([text], noticeDate, { includeAbsolute: true, strict: true });
+  // A conflicting date elsewhere vetoes sharing; it must not invalidate an
+  // already verified private date belonging to a particular variety.
+  if (!complete || complete.error) return null;
+  const eligible = closingDates.filter(item => item.parsed?.date === complete.date).map(item => item.context);
+  if (!eligible.length) return null;
+  return { date: complete.date, contexts: eligible, evidence: eligible[0].trim() };
+}
+
+function isPaymentFooterEvidence(quote, footer, noticeDate) {
+  return Boolean(footer && !footer.error && footer.contexts.some(context => hasQuote(context, quote))
+    && explicitPaymentDateFromEvidence([quote], noticeDate, { includeAbsolute: true, strict: true })?.date === footer.date);
+}
+
+function explicitPaymentDateFromEvidence(sources, noticeDate, { includeAbsolute = false, strict = false } = {}) {
   const relative = relativeDatePattern;
+  const payment = "(?:配售)?(?:缴款|缴付|付款|到账)";
   const combinedPatterns = [
-    new RegExp(`(${combinedDatePattern})(?:为|是|进行|安排)?(?:缴款|缴付|付款|到账)`, "g"),
-    new RegExp(`(?:缴款|缴付|付款|到账)(?:日期|时间|日)?(?:为|是|安排在|定于)?(${combinedDatePattern})`, "g"),
+    new RegExp(`(${combinedDatePattern})(?:为|是|进行|安排)?${payment}`, "g"),
+    new RegExp(`${payment}(?:日期|时间|日)?(?:为|是|安排在|定于)?(${combinedDatePattern})`, "g"),
   ];
   const patterns = [
-    new RegExp(`(${relative})(?:为|是|进行|安排)?(?:缴款|缴付|付款|到账)`, "g"),
-    new RegExp(`(?:缴款|缴付|付款|到账)(?:日|日期|时间)?(?:为|是|安排在|定于)?(${relative})`, "g"),
+    new RegExp(`(${relative})(?:为|是|进行|安排)?${payment}`, "g"),
+    new RegExp(`${payment}(?:日|日期|时间)?(?:为|是|安排在|定于)?(${relative})`, "g"),
+    ...(includeAbsolute ? [new RegExp(`(${explicitDatePattern})(?:为|是|进行|安排)?${payment}`, "g"),
+      new RegExp(`${payment}(?:日期|时间|日)?(?:为|是|安排在|定于|于)?[：:]?(${explicitDatePattern})`, "g")] : []),
   ];
   const matches = [];
   for (const source of [...new Set(sources.filter(Boolean))]) {
@@ -285,10 +344,10 @@ function explicitPaymentDateFromEvidence(sources, noticeDate) {
     }
     for (const pattern of patterns) {
       pattern.lastIndex = 0;
-      for (const match of source.matchAll(pattern)) {
+      for (const match of (includeAbsolute ? compact(source) : source).matchAll(pattern)) {
         try {
           matches.push({ date: resolveNoticeDate(match[1], noticeDate), evidence: match[0] });
-        } catch { /* Keep the model field empty when the phrase cannot be anchored safely. */ }
+        } catch (error) { if (strict) return { error: error.message }; }
       }
     }
   }

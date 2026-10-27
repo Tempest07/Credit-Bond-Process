@@ -1,6 +1,6 @@
-import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js?v=20261026release5362";
+import { extractPaymentReceiptBondShortName, normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js?v=20261028v540";
 import { paymentReceiptCodeIdentity as codeIdentity, samePaymentReceiptCode as sameCode,
-  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261026release5362';
+  paymentReceiptSourceCodes as sourceCodes } from './payment-receipt-security.js?v=20261028v540';
 
 const SHORT_NAME_LABEL = /(?:债\s*券|证\s*券)\s*(?:简\s*称|短\s*名)\s*[:：]?\s*/g;
 const compact = value => String(value || "").normalize("NFKC").replace(/[\s\u200b-\u200d\ufeff]/g, "").toUpperCase();

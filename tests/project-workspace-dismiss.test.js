@@ -104,6 +104,50 @@ test("workspace tools retain their normal inside and outside click behavior", ()
   assert.deepEqual(effects, []);
 });
 
+test("dragging from project content to the outside does not dismiss or save the project", () => {
+  for (const origin of [{ inside: true },
+    { closest: selector => selector.includes('[role="dialog"]') ? {} : null },
+    { closest: selector => selector.includes('#issuanceQueuePanel') ? {} : null }]) {
+    const { context, effects, workspace, listeners } = harness();
+    context.bindWorkspaceChrome();
+    const emit = (type, event) => listeners.filter(item => item.type === type && item.capture).forEach(item => item.handler(event));
+    emit("pointerdown", { target: origin });
+    // Browser click targets the common ancestor when the two endpoints differ.
+    emit("click", { detail: 1, target: { closest: () => null } });
+    assert.equal(workspace.dataset.open, "true");
+    assert.deepEqual(effects, []);
+    assert.equal(context.projectAutoSaveTimer, 7);
+    // The next intentional outside click still dismisses and flushes edits.
+    emit("pointerdown", { target: { closest: () => null } });
+    emit("click", { detail: 1, target: { closest: () => null } });
+    assert.equal(workspace.dataset.open, "false");
+    assert.ok(effects.some(([type]) => type === "save"));
+  }
+});
+
+test("cancelled and keyboard gestures cannot retain a stale inside-pointer exemption", () => {
+  for (const cancel of [false, true]) {
+    const { context, effects, workspace, listeners } = harness();
+    context.bindWorkspaceChrome();
+    const emit = (type, event) => listeners.filter(item => item.type === type && item.capture).forEach(item => item.handler(event));
+    emit("pointerdown", { target: { inside: true } });
+    if (cancel) emit("pointercancel", {});
+    emit("click", { detail: cancel ? 1 : 0, target: { closest: () => null } });
+    assert.equal(workspace.dataset.open, "false");
+    assert.ok(effects.some(([type]) => type === "save"));
+  }
+});
+
+test("a fresh outside press after a drag without a click still dismisses the project", () => {
+  const { context, workspace, listeners } = harness();
+  context.bindWorkspaceChrome();
+  const emit = (type, event) => listeners.filter(item => item.type === type && item.capture).forEach(item => item.handler(event));
+  emit("pointerdown", { target: { inside: true } });
+  emit("pointerdown", { target: { closest: () => null } });
+  emit("click", { detail: 1, target: { closest: () => null } });
+  assert.equal(workspace.dataset.open, "false");
+});
+
 test("explicit close also flushes drafts; unchanged projects do not get redundant saves", () => {
   const changed = harness();
   changed.context.closeLedgerProjectDetail();

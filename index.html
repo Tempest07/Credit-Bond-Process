@@ -4,30 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.3.6.2">
-  <meta name="application-build-version" content="5.3.6.2">
-  <meta name="application-build" content="20261026release5362">
-  <title>Bond Centre 5.3.6.2 - Tempest07</title>
+  <meta name="application-version" content="5.4">
+  <meta name="application-build-version" content="5.4">
+  <meta name="application-build" content="20261028v540">
+  <title>Bond Centre 5.4 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=20260907">
   <meta name="description" content="管理信用债项目、流程意见、投标、中标结果与缴款提醒">
-  <script src="./app-shell-mode.js?v=20261026release5362"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261026release5362">
+  <script src="./app-shell-mode.js?v=20261028v540"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261028v540">
   <!-- Keep these parser-blocking until ui-preference.js selects the first-paint UI. -->
-  <link rel="stylesheet" href="./workspace-design.css?v=20261026release5362" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-sections.css?v=20261026release5362" data-ui-beta media="all">
-  <link rel="stylesheet" href="./workspace-motion.css?v=20261026release5362" data-ui-beta media="all">
-  <link rel="stylesheet" href="./ui-mode.css?v=20261026release5362">
-  <script src="./ui-preference.js?v=20261026release5362"></script>
-  <link rel="stylesheet" href="./valuation-assistant.css?v=20261026release5362">
-  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261026release5362">
-  <link rel="stylesheet" href="./todo-fluid.css?v=20261026release5362">
-  <link rel="stylesheet" href="./release-notes.css?v=20261026release5362">
-  <link rel="stylesheet" href="./bond-list-editor.css?v=20261026release5362">
-  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261026release5362">
-  <link rel="stylesheet" href="./project-target-note.css?v=20261026release5362">
+  <link rel="stylesheet" href="./workspace-design.css?v=20261028v540" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-sections.css?v=20261028v540" data-ui-beta media="all">
+  <link rel="stylesheet" href="./workspace-motion.css?v=20261028v540" data-ui-beta media="all">
+  <link rel="stylesheet" href="./ui-mode.css?v=20261028v540">
+  <script src="./ui-preference.js?v=20261028v540"></script>
+  <link rel="stylesheet" href="./valuation-assistant.css?v=20261028v540">
+  <link rel="stylesheet" href="./issuance-queue-panel.css?v=20261028v540">
+  <link rel="stylesheet" href="./todo-fluid.css?v=20261028v540">
+  <link rel="stylesheet" href="./release-notes.css?v=20261028v540">
+  <link rel="stylesheet" href="./bond-list-editor.css?v=20261028v540">
+  <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261028v540">
+  <link rel="stylesheet" href="./project-target-note.css?v=20261028v540">
+  <link rel="stylesheet" href="./project-ofr.css?v=20261028v540">
+  <link rel="stylesheet" href="./ai-review.css?v=20261028v540">
+  <link rel="stylesheet" href="./payment-receipt-boundary-ui.css?v=20261028v540">
 </head>
 <body>
   <div class="app-shell">
@@ -52,13 +55,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.3.6.2">v5.3.6.2</span>
+      <span class="header-version" aria-label="当前版本 5.4">v5.4</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.3.6.2 · 2026-10-26">v5.3.6.2</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4 · 2026-10-28">v5.4</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -189,6 +192,12 @@
             <div id="experimentalValuationAssist" hidden></div>
             <div class="project-dm-assist" id="projectDmAssist" hidden></div>
             <textarea id="briefInput" hidden></textarea>
+            <details class="project-intake-entry" id="projectIntakeAi">
+              <summary>从发行材料建项</summary>
+              <label>项目材料<textarea data-intake-material maxlength="18000" placeholder="粘贴发行通知或项目简表，可包含多个品种"></textarea></label>
+              <button type="button" class="button subtle" data-intake-recognize>识别材料</button>
+              <div data-intake-results aria-live="polite"></div>
+            </details>
 
             <div class="warning-box" id="warningBox" hidden>
               <strong>提交前需要确认</strong>
@@ -612,6 +621,7 @@
                     <button class="button subtle" id="copyResultSummaryButton" type="button">复制中标汇报</button>
                   </div>
                   <textarea id="projectResultSummary" class="result-summary result-summary-output" rows="6" readonly></textarea>
+                  <section id="projectOfrActions" class="project-ofr-actions" aria-label="中标品种加入OFR" hidden></section>
                 </section>
               </div>
 
@@ -1574,6 +1584,7 @@
         <div class="payment-receipt-regroup-pages" id="paymentReceiptRegroupPages" aria-live="polite"></div>
         <aside class="payment-receipt-regroup-controls">
           <a class="button subtle" id="paymentReceiptRegroupSource" href="#" target="_blank" rel="noopener">对照原始 PDF</a>
+          <div id="paymentReceiptBoundaryAi"></div>
           <label>单据页组<input id="paymentReceiptRegroupGroups" type="text" autocomplete="off" placeholder="例如：1-2; 3-5"></label>
           <small>每个分号代表一个项目；同一项目的首页、续页和附件写在同一组。</small>
           <label>空白页<input id="paymentReceiptRegroupBlankPages" type="text" autocomplete="off" placeholder="例如：6,8"></label>
@@ -1650,6 +1661,19 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-10-28">2026 / 10 / 28</time></div>
+      <section><h3>项目与缴款单识别</h3><ul>
+        <li>新增“从发行材料建项”：支持非固定格式通知及多品种，逐项展示原文依据，核对后载入草稿，再沿用原保存流程。</li>
+        <li>缴款单增加智能推荐，对已有项目候选排序并展示依据；选择建议只填入对应栏，仍由人工确认。</li>
+        <li>修正拆页增加相邻 2–3 页联合复核，展示首页、续页、空白及不确定判断；采用后只填入拆页草稿。</li>
+        <li>相同材料和单据建议保存至云端复用，减少重复识别；原件、历史 OCR、金额、日期及已有对应保持保护。</li>
+      </ul></section>
+      <section><h3>发行结果与挂卖</h3><ul>
+        <li>发行结果和缴款单图像识别接入独立凭据，改善简称、跨页项目边界及票面利率措辞的识别。</li>
+        <li>修复多品种通知共同尾句的缴款日期归属，保留专属日期和原文校验。</li>
+        <li>已确认中标的品种可一键加入 OFR 挂卖名单，采用建项时原始估值减 5BP；首次进入清单提供一次性高亮。</li>
+        <li>修复项目明细内拖选后移出面板导致误关闭的问题。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.3.6.2</strong><time datetime="2026-10-26">2026 / 10 / 26</time></div>
       <section><h3>备注箱体对齐</h3><ul>
         <li>项目台账各行的备注与箱体作为整体统一左边缘，标题仍相对于自己的箱体居中，保留箱体内文字及上下居中。</li>
@@ -1897,10 +1921,10 @@
     <span id="uiBetaLabel">UI Beta</span>
     <button class="ui-beta-switch" id="uiBetaToggle" type="button" role="switch" aria-checked="false" aria-labelledby="uiBetaLabel" title="开启新版网页 UI"></button>
   </div>
-  <script src="./ui-mode.js?v=20261026release5362"></script>
-  <script type="module" src="./vendor/search-border-beam.js?v=20261026release5362"></script>
-  <script type="module" src="./app.js?v=20261026release5362"></script>
-  <script type="module" src="./todo-fluid.js?v=20261026release5362"></script>
-  <script type="module" src="./release-notes.js?v=20261026release5362"></script>
+  <script src="./ui-mode.js?v=20261028v540"></script>
+  <script type="module" src="./vendor/search-border-beam.js?v=20261028v540"></script>
+  <script type="module" src="./app.js?v=20261028v540"></script>
+  <script type="module" src="./todo-fluid.js?v=20261028v540"></script>
+  <script type="module" src="./release-notes.js?v=20261028v540"></script>
 </body>
 </html>

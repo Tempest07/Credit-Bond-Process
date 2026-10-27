@@ -4,7 +4,7 @@ import {
   normalizeGuaranteeInfo,
   normalizeRatingAgency,
   parseUnderwriterNames,
-} from "./core.js?v=20261026release5362";
+} from "./core.js?v=20261028v540";
 
 const PROJECT_STATUSES = new Set([
   "未投标",
@@ -39,7 +39,11 @@ export const FTP_TENORS = [
 
 export function createProjectRecord(project, issuer, generated, input = {}) {
   const now = new Date().toISOString();
-  const tranches = buildTranches(project);
+  const tranches = buildTranches(project).map(tranche => ({
+    ...tranche,
+    initialMarketValuation: tranche.marketValuation,
+    initialMarketValuationAt: now,
+  }));
   const cutoff = input.cutoffAt
     ? {
         cutoffAt: input.cutoffAt,
@@ -912,6 +916,10 @@ function normalizeTranche(input = {}) {
     inquiryHigh: numberOrNull(input.inquiryHigh),
     suggestedRatio: numberOrNull(input.suggestedRatio),
     marketValuation: numberOrNull(input.marketValuation),
+    ...(Object.prototype.hasOwnProperty.call(input, "initialMarketValuation") ? {
+      initialMarketValuation: numberOrNull(input.initialMarketValuation),
+      initialMarketValuationAt: String(input.initialMarketValuationAt || "").trim(),
+    } : {}),
     bidAction: BID_ACTIONS.has(input.bidAction) ? input.bidAction : "",
     bidLevels,
     bidRate: numberOrNull(primaryBid.bidRate),

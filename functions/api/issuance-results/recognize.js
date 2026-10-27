@@ -25,6 +25,14 @@ export async function onRequestPost(context) {
     console.warn(JSON.stringify({ event: "issuance_recognition_failed", name: error?.name || "Error", code: error?.code || "UNKNOWN", elapsedMs: Date.now() - started }));
     const known = /^(识别超时|模型)/.test(error?.message || "");
     const unavailable = error?.code === "NO_CLOUD_FALLBACK";
+    const routed = /^(DEEPSEEK_|ISSUANCE_PROVIDER_CONFIG$)/.test(error?.code || "") && typeof error.publicMessage === "string";
+    if (routed) {
+      const status = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : 502;
+      const retryAfter = Number.isInteger(error.retryAfter) && error.retryAfter > 0 && error.retryAfter <= 86400 ? error.retryAfter : null;
+      return json({ error: error.publicMessage, code: error.code,
+        ...(Number.isInteger(error.upstreamStatus) && error.upstreamStatus >= 100 && error.upstreamStatus <= 599 ? { upstreamStatus: error.upstreamStatus } : {}),
+        ...(retryAfter ? { retryAfter } : {}) }, status, retryAfter ? { 'Retry-After': String(retryAfter) } : {});
+    }
     return json({ error: known || unavailable ? error.message : "语义识别暂时不可用，请稍后重试；本次未改动项目。" }, unavailable ? 503 : error?.code === "CLOUD_TIMEOUT" ? 504 : 502);
   } finally {
     requestSignal?.removeEventListener("abort", onAbort);

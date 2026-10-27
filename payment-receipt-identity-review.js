@@ -86,5 +86,8 @@ export async function runReceiptIdentityReview(ai, pageImage, expectedCode = '')
       temperature: 0, max_tokens: 400, stream: false,
     });
     return { ...parseReceiptIdentityReview(result, expectedCode), model };
-  } catch { return missing('ai_unavailable'); }
+  } catch (error) {
+    if (error?.nonRetryable === true || error?.retryable === false) throw error;
+    return missing('ai_unavailable');
+  }
 }
