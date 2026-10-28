@@ -564,7 +564,7 @@ test("auto-matches a standard bond short name with a conservative issuer abbrevi
   assert.equal(projects[0].tranches[0].paymentCompleted, true);
 });
 
-test("does not treat a different issuer stem as a short-name abbreviation", () => {
+test("archives a clearly different issuer stem instead of suggesting an unrelated same-amount project", () => {
   const result = selectPaymentReceiptMatch({
     paymentDate: "2026-07-21",
     amountFen: 18_000_000_000,
@@ -582,10 +582,10 @@ test("does not treat a different issuer stem as a short-name abbreviation", () =
     }],
   }]);
 
-  assert.equal(result.status, "review");
+  assert.equal(result.status, "unmatched");
   assert.equal(result.projectId, "");
   assert.equal(result.trancheId, "");
-  assert.equal(result.candidates[0].signals.shortName, false);
+  assert.deepEqual(result.candidates, []);
 });
 
 test("requires corroboration before auto-matching an abbreviated short name", () => {

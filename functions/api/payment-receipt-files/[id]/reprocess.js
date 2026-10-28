@@ -1,6 +1,7 @@
 import { apiHeaders, ensureAuthSchema, json, requireUser } from "../../_auth.js";
 import { ensurePaymentReceiptSchema } from "../../_payment-receipts.js";
 import { isSameOriginMutation } from "../../_same-origin.js";
+import { dispatchRequestedPaymentReceiptFiles } from "../../_payment-receipt-rebuild.js";
 
 export async function onRequestPost(context) {
   const auth = await requireUser(context);
@@ -12,8 +13,8 @@ export async function onRequestPost(context) {
     await ensureAuthSchema(context.env.DB);
     await ensurePaymentReceiptSchema(context.env.DB);
     const file = await context.env.DB.prepare(`
-      SELECT f.id, f.batch_id, f.processing_status, f.updated_at,
-             b.processing_status AS batch_status
+      SELECT f.id, f.batch_id, f.processing_status, f.updated_at, f.object_key, f.filename,
+             b.processing_status AS batch_status, b.received_date, b.message_id
       FROM payment_receipt_files f
       JOIN payment_receipt_batches b ON b.id = f.batch_id
       WHERE b.owner_user_id = ?1 AND f.id = ?2
@@ -61,6 +62,8 @@ export async function onRequestPost(context) {
       WHERE id = ?2
       `).bind(now, file.batch_id),
     ]);
+    const dispatch=dispatchRequestedPaymentReceiptFiles(context.env,auth.user.id,[file],now);
+    if(typeof context.waitUntil==='function') context.waitUntil(dispatch); else await dispatch;
     return json({ ok: true, fileId: file.id, processingStatus: "reprocess_requested", correspondenceReset: true }, 202);
   } catch (error) {
     if (/NOT NULL constraint failed: payment_receipt_events\.owner_user_id/i.test(error.message||"")) {

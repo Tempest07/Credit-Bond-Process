@@ -211,6 +211,11 @@ export async function listPendingPaymentReceiptFiles(db, ownerUserId, filters = 
   const where = [
     "b.owner_user_id = ?",
     "NOT EXISTS (SELECT 1 FROM payment_receipts r WHERE r.file_id = f.id)",
+    `NOT EXISTS (SELECT 1 FROM payment_receipt_events e, json_each(
+      CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.receipts') deleted
+      WHERE e.owner_user_id = b.owner_user_id AND e.event_type = 'receipts_batch_deleted'
+        AND json_extract(deleted.value, '$.fileId') = f.id
+        AND f.processing_status IN ('processed', 'review'))`,
   ];
   const values = [ownerUserId];
   if (["error", "review"].includes(filters.status)) {
@@ -342,7 +347,11 @@ export async function findPaymentReceiptBySha(db, ownerUserId, sha256, excludeRe
     WHERE owner_user_id = ?1 AND sha256 = ?2
       AND match_status <> 'duplicate'
       AND (?3 = '' OR id <> ?3)
-    ORDER BY created_at ASC
+      AND error_message NOT IN ('正在重新识别','已申请重新识别，等待后台任务')
+      AND (NOT EXISTS (SELECT 1 FROM payment_receipts current WHERE current.id=?3 AND current.owner_user_id=?1)
+        OR created_at < (SELECT current.created_at FROM payment_receipts current WHERE current.id=?3 AND current.owner_user_id=?1)
+        OR (created_at = (SELECT current.created_at FROM payment_receipts current WHERE current.id=?3 AND current.owner_user_id=?1) AND id < ?3))
+    ORDER BY created_at ASC, id ASC
     LIMIT 1
   `).bind(ownerUserId, sha256, excludeReceiptId).first();
   return row ? {

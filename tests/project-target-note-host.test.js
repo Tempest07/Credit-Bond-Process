@@ -31,7 +31,7 @@ test("manual target notes survive normalization, state validation and a JSON rel
 
 test("re-recognition updates project facts while retaining the manually entered target note", () => {
   const existing = normalizeProjectRecord({
-    id: "p1", shortName: "26测试MTN001", targetQuoteNote: "5000 万，1.8%", notes: "原资料",
+    id: "p1", shortName: "26测试MTN001", targetQuoteNote: "5000 万，1.8%", notes: "原资料", paymentReceiptRequired: false,
   });
   const context = vm.createContext({
     createProjectRecord, normalizeProjectRecord,
@@ -44,6 +44,7 @@ test("re-recognition updates project facts while retaining the manually entered 
   assert.equal(updated.issueScale, 8);
   assert.equal(updated.targetQuoteNote, existing.targetQuoteNote);
   assert.equal(updated.notes, existing.notes);
+  assert.equal(updated.paymentReceiptRequired, false);
 });
 
 function saveHarness() {

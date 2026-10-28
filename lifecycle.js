@@ -82,6 +82,7 @@ export function createProjectRecord(project, issuer, generated, input = {}) {
     notes: input.notes || "",
     targetQuoteNote: input.targetQuoteNote ?? "",
     syndicateJoined: input.syndicateJoined,
+    paymentReceiptRequired: input.paymentReceiptRequired,
     tranches,
     resultAdvertisement: "",
     comprehensivePricing: false,
@@ -148,6 +149,7 @@ export function normalizeProjectRecord(input = {}) {
   };
   // Keep this optional so loading legacy projects does not invent participation.
   if (typeof input.syndicateJoined === "boolean") normalized.syndicateJoined = input.syndicateJoined;
+  if (typeof input.paymentReceiptRequired === "boolean") normalized.paymentReceiptRequired = input.paymentReceiptRequired;
   if (normalized.instrumentType) {
     normalized.shortName = compactSelectedAbsShortNames(normalized.absInfo.tranches, normalized.shortName);
   }

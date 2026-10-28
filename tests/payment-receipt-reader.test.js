@@ -25,13 +25,13 @@ test("reader entries preserve group order and distinguish IDs shared by differen
   assert.deepEqual(paymentReceiptReaderEntries(), []);
 });
 
-test("review excludes only matched receipts and keeps pending originals and batches", () => {
+test("review shows unresolved recognition and correspondence, while other archived receipts remain in all", () => {
   const receipts = ["matched", "review", "unmatched", "duplicate", "error", undefined]
     .map((matchStatus, index) => ({ id: String(index), matchStatus }));
   const files = [{ id: "original", matchStatus: "matched" }];
   const batches = [{ id: "batch", matchStatus: "matched" }];
   assert.deepEqual(paymentReceiptReaderEntries(receipts, files, batches, "review").map(entry => entry.key), [
-    "receipt:1", "receipt:2", "receipt:3", "receipt:4", "receipt:5", "file:original", "batch:batch",
+    "receipt:1", "receipt:4", "file:original", "batch:batch",
   ]);
   assert.equal(paymentReceiptReaderEntries(receipts, files, batches, "all").length, 8);
 });

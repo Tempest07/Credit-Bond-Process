@@ -34,6 +34,8 @@ import { normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js
 import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "./payment-receipt-security.js";
 import { runReceiptIdentityReview } from "./payment-receipt-identity-review.js";
 import { selectDeepSeekOcr } from "./ocr-deepseek.js";
+import { requestPaymentReceiptRebuild } from "./functions/api/_payment-receipt-rebuild.js";
+import { finalizePaymentReceiptRebuild,finalizePendingPaymentReceiptRebuilds } from "./payment-receipt-rebuild-finalize.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -46,7 +48,7 @@ const STALE_JOB_MINUTES = 20;
 const RECONCILE_LIMIT = 50;
 const RECEIPT_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
 const PAGE_ANALYSIS_VERSION = 7;
-const SHORT_NAME_OCR_INSTRUCTIONS = "简称校对要求：bond_short_name 必须逐字读取当前页“债券简称”或“证券简称”字段，不得自行缩写；不得遗漏“租赁”“城投”等字，保留 SCP/CP/MTN/PPN 等品种、期次、A/B/AB 等字母以及“(绿色)”“(科创)”等原有属性。字段跨行时合并完整内容，可用本页缴款附言中重复出现的简称交叉核对；原件未写的内容不得补造。“债券名称”的发行全称、公司名称和 document_title 均不能代替简称，无法确认时留空。security_code 只能填写本页债券代码，不能填银行账号或金额。上一页摘要只用于判断分页边界，禁止把上一页简称或代码复制到当前页。";
+const SHORT_NAME_OCR_INSTRUCTIONS = "简称校对要求：bond_short_name 必须逐字读取当前页“债券简称”或“证券简称”字段，不得自行缩写；不得遗漏“租赁”“城投”等字，保留 SCP/CP/MTN/PPN 等品种、期次、A/B/AB 等字母以及“(绿色)”“(科创)”等原有属性。字段跨行时合并完整内容，可用本页缴款附言中重复出现的简称交叉核对；原件未写的内容不得补造。“债券名称”的发行全称、公司名称和 document_title 均不能代替简称，无法确认时留空。security_code 只能填写本页债券代码，不能填银行账号或金额。上一页摘要只用于判断分页边界，禁止把上一页简称或代码复制到当前页。另外在同一 JSON 中返回 remittance_name（缴款附言里的债券简称，原件没有就留空）、coupon_rate（本页票面利率，保留百分号）、allotted_amount_text（本页获配量及单位，无法确认留空）。两处简称都能读到时分别逐字读取，不能直接互相复制。";
 
 export default {
   async fetch(request, env) {
@@ -235,6 +237,20 @@ export async function receivePaymentReceiptEmail(message, env) {
 }
 
 export async function processPaymentReceiptQueueJob(env, job = {}) {
+  if (job.kind === 'library-rebuild') {
+    const ownerUserId = String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER);
+    if (job.ownerUserId !== ownerUserId || !/^[a-f0-9-]{36}$/i.test(String(job.requestId || ''))) {
+      throw permanentReceiptError('整库识别任务参数无效');
+    }
+    if (String(env.AI_PROCESSING_APPROVED || '').trim().toLowerCase()!=='true' || !selectPaymentReceiptAi(env)) {
+      throw permanentReceiptError('OCR 服务尚未就绪');
+    }
+    validateBindings(env,{queueRequired:true});await ensurePaymentReceiptSchema(env.DB);
+    const result=await requestPaymentReceiptRebuild(env,ownerUserId,
+      Array.isArray(job.fileIds) ? {fileIds:job.fileIds} : {all:true},{requestId:job.requestId});
+    console.log(JSON.stringify({event:'payment_receipt_library_rebuild',rebuildId:result.rebuild?.id,totalFiles:result.rebuild?.totalFiles,reused:result.reused}));
+    return result;
+  }
   return job.kind === "email"
     ? processPaymentReceiptEmail(env, job)
     : processPaymentReceiptFile(env, job);
@@ -329,6 +345,7 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
   if (summary.emailJobs || summary.fileJobs || summary.releasedRegroups || summary.failures) {
     console.log(JSON.stringify({ event: "payment_receipt_reconciled", cutoff, ...summary }));
   }
+  await finalizePendingPaymentReceiptRebuilds(env).catch(error=>console.warn(JSON.stringify({event:'payment_receipt_rebuild_finalize_retry',error:String(error?.message || error)})));
   return summary;
 }
 
@@ -458,13 +475,24 @@ export async function processPaymentReceiptFile(env, job = {}) {
   if (sourcePdf.getPageCount() > MAX_PDF_PAGES) {
     throw permanentReceiptError(`PDF 共 ${sourcePdf.getPageCount()} 页，超过 ${MAX_PDF_PAGES} 页自动处理上限`);
   }
-  let pageAnalyses = job.forceReanalyze === true
-    ? null
-    : reusablePageAnalysis(storedFile?.pageAnalysis, sourcePdf.getPageCount());
-  if (!pageAnalyses) {
-    pageAnalyses = [];
-    let previousPageContext = null;
-    for (let pageIndex = 0; pageIndex < sourcePdf.getPageCount(); pageIndex += 1) {
+  const previousProgress = storedFile?.grouping?.processing || {};
+  const fullReanalysis = job.forceReanalyze === true || Boolean(previousProgress.requestedAt);
+  const progress = {
+    rebuildId: job.rebuildId || previousProgress.rebuildId || '',
+    requestedAt: previousProgress.requestedAt || (fullReanalysis ? new Date().toISOString() : ''),
+    sourceSha256,
+    totalPages: sourcePdf.getPageCount(),
+  };
+  const checkpoint = reusablePaymentReceiptPageCheckpoint(storedFile?.pageAnalysis, previousProgress, sourceSha256, sourcePdf.getPageCount());
+  let pageAnalyses = checkpoint || (fullReanalysis ? null : reusablePageAnalysis(storedFile?.pageAnalysis, sourcePdf.getPageCount()));
+  if (!pageAnalyses || pageAnalyses.length < sourcePdf.getPageCount()) {
+    pageAnalyses ||= [];
+    await updatePaymentReceiptFile(env.DB,job.fileId,{pageCount:sourcePdf.getPageCount(),pageAnalysis:pageAnalyses,
+      grouping:{processing:{...progress,stage:'reading',completedPages:pageAnalyses.length}},processingStatus:'processing'});
+    const lastPage = pageAnalyses.at(-1);
+    let previousPageContext = lastPage ? {classification:lastPage.classification,
+      recognizedText:String(lastPage.recognizedText || '').slice(0,1200),fields:lastPage.fields || {}} : null;
+    for (let pageIndex = pageAnalyses.length; pageIndex < sourcePdf.getPageCount(); pageIndex += 1) {
       const pageBytes = await copyPdfPages(sourcePdf, [pageIndex]);
       const analysis = await analyzePaymentReceiptPage(env, pageBytes, pageIndex + 1, previousPageContext);
       pageAnalyses.push(analysis);
@@ -473,6 +501,10 @@ export async function processPaymentReceiptFile(env, job = {}) {
         recognizedText: String(analysis.recognizedText || "").slice(0, 1200),
         fields: analysis.fields || {},
       };
+      // Persist each completed page, both for honest live progress and to avoid
+      // paying for the same successful pages again after a transient failure.
+      await updatePaymentReceiptFile(env.DB,job.fileId,{pageCount:sourcePdf.getPageCount(),pageAnalysis:pageAnalyses,
+        grouping:{processing:{...progress,stage:'reading',completedPages:pageAnalyses.length}},processingStatus:'processing'});
     }
   }
 
@@ -494,12 +526,13 @@ export async function processPaymentReceiptFile(env, job = {}) {
       groups: grouped.groups.map((group) => ({ pageNumbers: group.pageNumbers, pageLabel: group.pageLabel })),
       blankPages: grouped.blankPages,
       uncertainPages: grouped.uncertainPages,
+      processing: {...progress,stage:'matching',completedPages:pageAnalyses.length},
     },
     processingStatus: "processing",
     errorMessage: "",
   });
   const projects = await readPaymentProjects(env.DB, job.ownerUserId);
-  const existingFileReceipts = job.forceReanalyze === true
+  const existingFileReceipts = fullReanalysis
     ? await listPaymentReceiptsForFile(env.DB, job.ownerUserId, job.fileId)
     : [];
   const createdReceiptIds = [];
@@ -508,8 +541,13 @@ export async function processPaymentReceiptFile(env, job = {}) {
     const groupBytes = await copyPdfPages(sourcePdf, group.pageNumbers.map((value) => value - 1));
     const groupObjectSha256 = await sha256Hex(groupBytes);
     const receiptKeyHash = await sha256Hex(new TextEncoder().encode(`${job.fileId}:${group.pageNumbers.join(",")}`));
-    const receiptId = `receipt-${receiptKeyHash.slice(0, 32)}`;
-    const objectKey = `receipts/${job.receivedDate.replaceAll("-", "/")}/${receiptId}.pdf`;
+    // Manual regrouping uses different receipt IDs. Reuse a row for exactly the
+    // same source pages, otherwise its unique file/page key blocks a full rerun.
+    const samePagesReceipt = existingFileReceipts.find(receipt=>Array.isArray(receipt.sourcePages)
+      && receipt.sourcePages.length===group.pageNumbers.length
+      && receipt.sourcePages.every((page,index)=>Number(page)===group.pageNumbers[index]));
+    const receiptId = samePagesReceipt?.id || `receipt-${receiptKeyHash.slice(0, 32)}`;
+    const objectKey = samePagesReceipt?.objectKey || `receipts/${job.receivedDate.replaceAll("-", "/")}/${receiptId}.pdf`;
     const groupPageAnalyses = group.pageNumbers.map((pageNumber) => pageAnalyses[pageNumber - 1]);
     const firstFields = groupPageAnalyses.find((item) => item.classification === "receipt_start")?.fields || {};
     const recognized = recognizePaymentReceiptText(
@@ -519,7 +557,11 @@ export async function processPaymentReceiptFile(env, job = {}) {
     const match = selectPaymentReceiptMatch(recognized, projects);
     const hasUncertainPage = groupPageAnalyses.some((item) => item.classification === "uncertain");
     const hasGroupReceiptStart = groupPageAnalyses.some(isTrustedReceiptStart);
-    const requiresReview = hasUncertainPage || !hasGroupReceiptStart || job.messageIdConflict === true;
+    const recognizedCode = paymentReceiptCodeIdentity(recognized.securityCode);
+    const missingIdentity = !recognized.bondShortName && (!recognizedCode || recognizedCode.invalid) && !recognized.prepaymentNumber;
+    const missingArchiveDate = !recognized.paymentDate && match.status !== 'matched';
+    const requiresReview = hasUncertainPage || !hasGroupReceiptStart || missingIdentity || missingArchiveDate || job.messageIdConflict === true;
+    if(requiresReview)fileNeedsReview=true;
     const receiptFingerprint = await sha256Hex(new TextEncoder().encode(
       paymentReceiptFingerprintMaterial(recognized, sourceSha256, group.pageNumbers),
     ));
@@ -527,7 +569,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
     const duplicateOf = await findPaymentReceiptBySha(env.DB, job.ownerUserId, receiptFingerprint, receiptId);
     const effectiveMatchStatus = duplicateOf
       ? "duplicate"
-      : requiresReview && match.status === "matched"
+      : requiresReview
         ? "review"
         : match.status;
     const receiptError = duplicateOf
@@ -538,6 +580,10 @@ export async function processPaymentReceiptFile(env, job = {}) {
         ? "未能可靠识别这组单据的首页，请人工复核拆页边界"
         : hasUncertainPage
         ? "部分页面未能可靠识别，请复核单据边界"
+        : missingIdentity
+        ? "尚未识别出债券简称或业务代码，请核对原件"
+        : missingArchiveDate
+        ? "尚未识别出缴款日期，请核对原件"
         : "";
 
     if (existingReceipt) {
@@ -642,6 +688,10 @@ export async function processPaymentReceiptFile(env, job = {}) {
   await updatePaymentReceiptFile(env.DB, job.fileId, {
     pageCount: sourcePdf.getPageCount(),
     blankPages: grouped.blankPages,
+    grouping: {version:PAGE_ANALYSIS_VERSION,
+      groups:grouped.groups.map(group=>({pageNumbers:group.pageNumbers,pageLabel:group.pageLabel})),
+      blankPages:grouped.blankPages,uncertainPages:grouped.uncertainPages,
+      processing:{...progress,stage:'complete',completedPages:pageAnalyses.length}},
     processingStatus: fileNeedsReview ? "review" : "processed",
     errorMessage: job.messageIdConflict
       ? "Message-ID 与既有邮件相同但内容不同，请人工复核"
@@ -653,7 +703,10 @@ export async function processPaymentReceiptFile(env, job = {}) {
       ? `第 ${grouped.uncertainPages.join("、")} 页未能可靠识别`
       : "",
   });
-  await finalizeBatchStatus(env.DB, job.batchId);
+  // Receipt extraction is already durably complete here. A failed aggregate
+  // refresh must not turn the file back into an OCR retry and repeat paid work.
+  await finalizeBatchStatus(env.DB, job.batchId).catch(error=>console.warn(JSON.stringify({event:'payment_receipt_batch_finalize_retry',batchId:job.batchId,error:String(error?.message || error)})));
+  await finalizePaymentReceiptRebuild(env,job.ownerUserId,progress.rebuildId).catch(error=>console.warn(JSON.stringify({event:'payment_receipt_rebuild_finalize_retry',rebuildId:progress.rebuildId,error:String(error?.message || error)})));
   return {
     status: fileNeedsReview ? "review" : "processed",
     receiptIds: createdReceiptIds,
@@ -710,6 +763,15 @@ function reusablePageAnalysis(value, pageCount) {
     : null;
 }
 
+export function reusablePaymentReceiptPageCheckpoint(value, progress = {}, sourceSha256 = '', pageCount = 0) {
+  if (!['reading','matching'].includes(progress.stage) || progress.sourceSha256 !== sourceSha256
+      || !Array.isArray(value) || value.length > pageCount || Number(progress.completedPages) !== value.length) return null;
+  if (!value.every((item,index)=>Number(item?.pageNumber)===index+1
+      && Number(item?.analysisVersion)===PAGE_ANALYSIS_VERSION
+      && ['blank','receipt_start','continuation','uncertain'].includes(item?.classification))) return null;
+  return [...value];
+}
+
 function isTrustedReceiptStart(analysis = {}) {
   return analysis.classification === "receipt_start"
     && Number(analysis.analysisVersion) === PAGE_ANALYSIS_VERSION
@@ -748,7 +810,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
             ],
           }],
           temperature: 0,
-          max_tokens: 600,
+          max_tokens: ai.provider === 'deepseek' ? 1200 : 600,
           stream: false,
         };
         const aiResult = await runPaymentReceiptAiWithRetry(ai, aiInput, pageNumber);
@@ -780,7 +842,8 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
           let identityReview = null;
           const expectedCode = paymentReceiptCodeIdentity(normalized.security_code);
           if (["receipt_start", "uncertain"].includes(normalized.classification)
-              && expectedCode && !expectedCode.invalid) {
+              && expectedCode && !expectedCode.invalid
+              && !paymentReceiptPrimaryIsClear(ai.provider,normalized,previousPageContext?.fields)) {
             identityReview = await reviewCurrentPaymentReceiptIdentity(ai, pageImage, normalized);
             if (identityReview.status === "verified") {
               normalized.bond_short_name = identityReview.name;
@@ -815,6 +878,8 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
               securityCode: normalized.security_code,
               prepaymentNumber: normalized.prepayment_number,
               payerName: normalized.payer_name,
+              couponRate: normalized.coupon_rate,
+              allottedAmountText: normalized.allotted_amount_text,
               payeeName: "",
               bankReference: "",
               amountText: normalized.amount_text,
@@ -1187,8 +1252,11 @@ function verifiedIdentityStartsReceipt(current, review, previous = {}) {
   if (currentPrepayment && previousPrepayment && currentPrepayment === previousPrepayment) return false;
   const currentCode = paymentReceiptCodeIdentity(current.security_code);
   const previousCode = paymentReceiptCodeIdentity(previous.security_code || previous.securityCode);
-  if (!currentCode || currentCode.invalid || !previousCode || previousCode.invalid
-      || currentCode.body === previousCode.body || samePaymentReceiptCode(currentCode, previousCode)) return false;
+  if (!currentCode || currentCode.invalid) return false;
+  // A clear notice at the beginning of a document does not need a preceding
+  // bond identity before it can count as a new receipt.
+  if (!previousCode || previousCode.invalid) return Boolean(normalizePaymentReceiptBondShortName(review.name));
+  if (currentCode.body === previousCode.body || samePaymentReceiptCode(currentCode, previousCode)) return false;
   const previousName = normalizePaymentReceiptBondShortName(previous.bond_short_name || previous.bondShortName);
   const currentName = normalizePaymentReceiptBondShortName(review.name);
   // Missing prior name evidence is allowed only after the current page supplies
@@ -1206,6 +1274,8 @@ function paymentReceiptKeyText(parsed = {}) {
     parsed.payment_date ? `缴款日期 ${parsed.payment_date}` : "",
     parsed.amount_text ? `缴款金额 ${parsed.amount_text}` : "",
     parsed.payer_name ? `付款人 ${parsed.payer_name}` : "",
+    parsed.coupon_rate ? `票面利率 ${parsed.coupon_rate}` : "",
+    parsed.allotted_amount_text ? `获配量 ${parsed.allotted_amount_text}` : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -1248,7 +1318,22 @@ function normalizeAiPaymentReceiptFields(parsed = {}) {
   normalized.amount_text = stripPaymentReceiptFieldLabel(parsed.amount_text);
   normalized.payer_name = stripPaymentReceiptFieldLabel(parsed.payer_name);
   normalized.document_title = stripPaymentReceiptFieldLabel(parsed.document_title);
+  normalized.remittance_name = normalizePaymentReceiptBondShortName(stripPaymentReceiptFieldLabel(parsed.remittance_name));
+  normalized.coupon_rate = stripPaymentReceiptFieldLabel(parsed.coupon_rate);
+  normalized.allotted_amount_text = stripPaymentReceiptFieldLabel(parsed.allotted_amount_text);
   return normalized;
+}
+
+/** Clear current-page DeepSeek readings need one call, not a compulsory reread. */
+export function paymentReceiptPrimaryIsClear(provider, fields = {}, previous = {}) {
+  if (provider !== 'deepseek' || fields.classification !== 'receipt_start'
+      || !paymentReceiptStartSignals(fields.document_title) || !normalizePaymentReceiptBondShortName(fields.bond_short_name)) return false;
+  const code = paymentReceiptCodeIdentity(fields.security_code);
+  if (!code || code.invalid || comparePaymentReceiptIdentity(fields,previous)==='conflict') return false;
+  const confidence = Number(fields.confidence);
+  if (fields.remittance_name) return confidence >= .9
+    && normalizePaymentReceiptBondShortName(fields.remittance_name) === normalizePaymentReceiptBondShortName(fields.bond_short_name);
+  return confidence >= .9;
 }
 
 function stripPaymentReceiptFieldLabel(value) {
@@ -1387,6 +1472,11 @@ export async function finalizeBatchStatus(db, batchId) {
 
 async function recordProcessingFailure(env, job, error) {
   const message = String(error?.message || error || "缴款单处理失败").slice(0, 1000);
+  if (job.kind==='library-rebuild') {
+    await insertPaymentReceiptEvent(env.DB,{id:crypto.randomUUID(),ownerUserId:String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER),
+      eventType:'library_rebuild_failed',detail:{requestId:String(job.requestId || ''),error:message}});
+    return;
+  }
   const isEmailJob = job.kind === "email";
   if (!isEmailJob && job.fileId) {
     await updatePaymentReceiptFile(env.DB, job.fileId, {
@@ -1409,6 +1499,11 @@ async function recordProcessingFailure(env, job, error) {
 
 export async function recordDeadLetterFailure(env, job = {}) {
   const message = "队列重试次数已用尽，任务进入死信队列并等待人工处理";
+  if(job.kind==='library-rebuild'){
+    await insertPaymentReceiptEvent(env.DB,{id:crypto.randomUUID(),ownerUserId:String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER),
+      eventType:'library_rebuild_dead_lettered',detail:{requestId:String(job.requestId || ''),error:message}});
+    return true;
+  }
   const isEmailJob = job.kind === "email";
   let result;
   if (isEmailJob) {

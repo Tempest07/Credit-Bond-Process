@@ -1,4 +1,6 @@
 import { ensureAuthSchema, json, requireUser } from "../_auth.js";
+import { deletePaymentReceiptSelection } from "../_payment-receipt-deletion.js";
+import { isSameOriginMutation } from "../_same-origin.js";
 import {
   assignPaymentReceipt,
   deleteDuplicatePaymentReceipt,
@@ -66,6 +68,11 @@ export async function onRequestDelete(context) {
     const receipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     if (!receipt) return json({ error: "未找到缴款单" }, 404);
     const action = new URL(context.request.url).searchParams.get("action") || "unlink";
+    if (action === "delete") {
+      if (!isSameOriginMutation(context.request)) return json({ error: "请求来源不受信任" }, 403);
+      const deleted = await deletePaymentReceiptSelection(context.env.DB, auth.user.id, [receiptId]);
+      return json({ ok: true, deleted: true, receiptId, ...deleted });
+    }
     if (action === "delete-duplicate") {
       if (receipt.matchStatus !== "duplicate") return json({ error: "只有重复单据才能删除" }, 409);
       if (!context.env.PAYMENT_RECEIPTS) return json({ error: "Cloudflare R2 binding PAYMENT_RECEIPTS 尚未配置" }, 503);
@@ -99,6 +106,6 @@ export async function onRequestDelete(context) {
     const updatedReceipt = await getPaymentReceipt(context.env.DB, auth.user.id, receiptId);
     return json({ ok: true, receiptId, receipt: updatedReceipt });
   } catch (error) {
-    return json({ error: error.message || "解除缴款单对应失败" }, error.code === "receipt_processing_conflict" ? 409 : 500);
+    return json({ error: error.message || "解除缴款单对应失败" }, error.status || (error.code === "receipt_processing_conflict" ? 409 : 500));
   }
 }

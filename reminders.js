@@ -1,4 +1,4 @@
-import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20261028v540";
+import { normalizeProjectRecord, trancheNeedsPayment } from "./lifecycle.js?v=20261028v540r8";
 import { protocolTransferTodos } from "./protocol-transfer.js?v=20261028v540";
 
 const BID_PENDING_STATUSES = new Set(["未投标", "待投标"]);

@@ -1,6 +1,6 @@
 export function paymentReceiptReaderEntries(receipts = [], files = [], batches = [], view = "all") {
   return [
-    ...receipts.filter(receipt => view !== "review" || receipt.matchStatus !== "matched")
+    ...receipts.filter(receipt => view !== "review" || ["review", "error"].includes(receipt.matchStatus))
       .map(value => ({ key: `receipt:${value.id}`, kind: "receipt", value })),
     ...files.map(value => ({ key: `file:${value.id}`, kind: "file", value })),
     ...batches.map(value => ({ key: `batch:${value.id}`, kind: "batch", value })),

@@ -329,8 +329,10 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
   const identifierCandidates = allCandidates.filter(candidate => !candidate.securityCodeConflict
     && (candidate.signals.prepaymentNumber || candidate.signals.securityCode));
   const candidatePool = identifierCandidates.length ? identifierCandidates : datedCandidates;
+  const reliableIdentity = hasReliableReceiptIdentity(receipt);
   const candidates = candidatePool
-    .filter((candidate) => candidate.score > 0)
+    .filter((candidate) => candidate.score > 0 && (!reliableIdentity || candidate.signals.shortName
+      || candidate.signals.prepaymentNumber || candidate.signals.securityCode || candidate.signals.issuerName))
     .sort(compareCandidates);
 
   if (!candidates.length) {
@@ -351,6 +353,7 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
   const exactBusinessMatch = best.signals.shortName
     && (best.signals.amount
       || (best.signals.date && best.signals.issuerName)
+      || (best.signals.date && best.completeShortName)
       || datedCandidates.length === 1);
   const abbreviationCorroborated = !best.signals.abbreviatedShortName
     || best.signals.amount
@@ -476,6 +479,7 @@ function normalizePaymentReceiptPageList(values, pageCount, label) {
 }
 
 function paymentReceiptExpectedForTranche(project = {}, tranche = {}) {
+  if (project.paymentReceiptRequired === false) return false;
   if (tranche.resultStatus === "未中标" && !tranche.paymentCompleted) return false;
   const won = tranche.resultStatus === "中标"
     || positiveFiniteNumber(tranche.winningAmountWan)
@@ -520,6 +524,13 @@ function normalizeReceipt(input = {}) {
   };
 }
 
+function hasReliableReceiptIdentity(receipt) {
+  const codes = receipt.securityCodes;
+  const reference = codes.find(code => code.market) || codes[0];
+  if (codes.some(code => code.invalid || !samePaymentReceiptCode(code, reference))) return false;
+  return Boolean(cleanBondShortName(receipt.bondShortName) || codes.length);
+}
+
 function positiveFiniteNumber(value) {
   const number = finiteNumber(value);
   return Number.isFinite(number) && number > 0;
@@ -536,6 +547,8 @@ function scoreCandidate(receipt, candidate) {
     bondShortNamesLikelySame(receipt.bondShortName, candidate.shortName)
       || bondShortNamesLikelySame(receipt.bondShortName, candidate.projectShortName)
   );
+  const receiptName = cleanBondShortName(receipt.bondShortName);
+  const completeShortName = Boolean(receiptName && receiptName === cleanBondShortName(candidate.shortName));
   const signals = {
     date: Boolean(receipt.paymentDate && receipt.paymentDate === candidate.paymentDate),
     prepaymentNumber: Boolean(candidate.prepaymentNumber
@@ -550,9 +563,10 @@ function scoreCandidate(receipt, candidate) {
     + (signals.prepaymentNumber ? 120 : 0)
     + (signals.securityCode ? 90 : 0)
     + (signals.shortName ? 65 : 0)
+    + (completeShortName ? 20 : 0)
     + (signals.amount ? 45 : 0)
     + (signals.issuerName ? 15 : 0);
-  return { ...candidate, score, signals, securityCodeConflict };
+  return { ...candidate, score, signals, securityCodeConflict, completeShortName };
 }
 
 function amountsMatch(amountFen, winningAmountWan) {

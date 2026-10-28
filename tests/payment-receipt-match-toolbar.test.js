@@ -86,7 +86,7 @@ test('original preview has its own matching controls and unchanged refreshes pre
   };
   Object.assign(context, {
     paymentReceiptsLoading: false, paymentReceiptsError: '', paymentReceiptInspectorSignature: '', paymentReceiptDetailTab: 'original',
-    paymentReceiptReaderPreview: () => ({ url: './api/file' }), paymentReceiptEmailUrl: () => './email',
+    paymentReceiptReaderPreview: () => ({ url: './api/file' }), paymentReceiptEmailUrl: () => './email', paymentReceiptFileUrl: () => './file',
     setPaymentReceiptDetailTab: tab => assert.equal(tab, 'original'),
   });
   load(context, ['renderPaymentReceiptInspector', 'paymentReceiptEntryTitle', 'paymentReceiptStatusBadge', 'paymentReceiptStatusLabel']);

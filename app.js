@@ -1,5 +1,6 @@
 import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261028v540';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261028v540';
+import { createPaymentReceiptWorkspace } from './payment-receipt-workspace-ui.js?v=20261028v540r8';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261028v540r8';
 import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261028v540r3';
 import { normalizePaymentReceiptBondShortName } from './payment-receipt-names.js?v=20261028v540';
 import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261028v540';
@@ -82,7 +83,7 @@ import {
   trancheNeedsPayment,
   updateProjectCutoff,
   upsertProject,
-} from "./lifecycle.js?v=20261028v540";
+} from "./lifecycle.js?v=20261028v540r8";
 import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261028v540";
 import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261028v540";
 import {
@@ -123,7 +124,7 @@ import {
   buildUnifiedReminders,
   markDailyMailSent,
   normalizeReminderState,
-} from "./reminders.js?v=20261028v540";
+} from "./reminders.js?v=20261028v540r8";
 import {
   applySecondaryPendingDraftRows,
   applyCodeMappingText,
@@ -200,8 +201,9 @@ import {
   applyPaymentReceiptArchiveMutation,
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
+  buildPaymentReceiptCoverage,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261028v540r6";
+} from "./payment-receipts.js?v=20261028v540r8";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
@@ -380,6 +382,7 @@ let paymentReceiptMatchAi = null;
 let paymentReceiptBoundaryAi = null;
 let paymentReceiptFileIdentityAi = null;
 let paymentReceiptManualIdentityEdit = null;
+let paymentReceiptWorkspace = null;
 let projectIntakeAi = null;
 let paymentReceiptExplorerTree = buildPaymentReceiptOriginalFileTree();
 let paymentReceiptExplorerLevel = "root";
@@ -761,6 +764,26 @@ function bindReminders() {
 }
 
 function bindPaymentReceipts() {
+  paymentReceiptWorkspace = createPaymentReceiptWorkspace({ root: $('.payment-receipt-reader-view'),
+    getReceipts: () => paymentReceipts,
+    getVisibleReceipts: () => paymentReceiptReaderEntries(paymentReceipts, [], [], paymentReceiptIndexView).map(entry => entry.value),
+    getSelectedReceipt: () => selectedPaymentReceiptEntry()?.kind === 'receipt' ? selectedPaymentReceiptEntry().value : null,
+    getHeaders: authHeaders, onMutation: applyLocalPaymentReceiptMutation,
+    onRefresh: () => paymentReceiptsLoading ? undefined : loadPaymentReceipts({ silent: true }), onToast: showToast });
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-receipt-required]');
+    if (!button) return;
+    const current = state.projects.find(item => item.id === button.dataset.receiptRequired);
+    if (!current) return;
+    state = upsertProject(state, { ...current, paymentReceiptRequired: current.paymentReceiptRequired === false });
+    persistState();
+    const matches = [...paymentReceiptCoverage.targets.filter(target => target.covered), ...paymentReceipts,
+      ...[...projectPaymentReceiptCache.values()].flat()].filter(item => item.covered || item.matchStatus === 'matched');
+    paymentReceiptCoverage = buildPaymentReceiptCoverage(state.projects, matches, { date: $('#paymentReceiptDateFilter')?.value || '' });
+    refreshVisibleProjectReceiptPanels();
+    renderPaymentReceiptCoverage();
+    showToast(current.paymentReceiptRequired === false ? '已恢复缴款单要求。' : '已设为无需缴款单。');
+  });
   paymentReceiptMatchAi=createPaymentReceiptMatchAiController({container:$('#paymentReceiptMatchToolbar'),getHeaders:authHeaders,
     getReceipt:id=>paymentReceipts.find(receipt=>receipt.id===id),
     onNotice:showToast,onSelectCandidate({receiptId,projectId,trancheId,expectedUpdatedAt}){
@@ -809,6 +832,7 @@ function bindPaymentReceipts() {
   });
   $("#paymentReceiptMatchToolbar")?.addEventListener("click", handlePaymentReceiptArchiveClick);
   $("#paymentReceiptFieldsPane")?.addEventListener("click", handlePaymentReceiptArchiveClick);
+  $("#paymentReceiptDetailActions")?.addEventListener("click", handlePaymentReceiptArchiveClick);
   $("#paymentReceiptFieldsPane")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-receipt-regroup]");
     if (button?.dataset.receiptRegroup) void openPaymentReceiptRegroup(button.dataset.receiptRegroup, button);
@@ -1190,7 +1214,17 @@ function renderPaymentReceiptIdentityReviewContent(receipt) {
 
 async function reprocessPaymentReceiptFile(fileId, button) {
   if (!fileId) return;
+  if (typeof paymentReceiptWorkspace !== 'undefined' && paymentReceiptWorkspace) {
+    button.disabled = true;
+    button.textContent = '正在提交…';
+    button.setAttribute?.('aria-busy', 'true');
+    try { await paymentReceiptWorkspace.rebuildFiles([fileId]); }
+    finally { button.disabled = false; button.textContent = '重新识别'; button.setAttribute?.('aria-busy', 'false'); }
+    return;
+  }
   button.disabled = true;
+  button.textContent = '正在提交…';
+  button.setAttribute?.('aria-busy', 'true');
   try {
     const response = await fetch(`./api/payment-receipt-files/${encodeURIComponent(fileId)}/reprocess`, {
       method: "POST",
@@ -1219,9 +1253,13 @@ async function reprocessPaymentReceiptFile(fileId, button) {
       : file);
     renderPaymentReceiptArchive();
     showToast("已申请重新识别整份 PDF，完成后自动重新对应。");
+    if (typeof paymentReceiptWorkspace !== 'undefined') void paymentReceiptWorkspace?.refreshJob();
   } catch (error) {
     button.disabled = false;
+    button.textContent = '重新识别';
     showToast(`重新识别失败：${error.message || "请稍后重试"}`);
+  } finally {
+    button.setAttribute?.('aria-busy', 'false');
   }
 }
 
@@ -1280,6 +1318,10 @@ async function unlinkPaymentReceipt(receiptId, button) {
 }
 
 async function deleteDuplicatePaymentReceipt(receiptId, button) {
+  if (typeof paymentReceiptWorkspace !== 'undefined' && paymentReceiptWorkspace) {
+    await paymentReceiptWorkspace.deleteReceipts([receiptId]);
+    return;
+  }
   const confirmed = window.confirm("确定删除这张重复缴款单吗？被判定为原件的缴款单不会删除，项目缴款状态也不会改变。");
   if (!confirmed) return;
   button.disabled = true;
@@ -1371,7 +1413,16 @@ async function loadPaymentReceipts(options = {}) {
 
   const archiveLoad = (async () => {
     try {
-      const archive = await fetchPaymentReceiptArchivePages({ date, status, signal: controller.signal });
+      const archive = await fetchPaymentReceiptArchivePages({ date, status, signal: controller.signal,
+        onPage: (partial) => {
+          if (!isCurrent() || mutations.length) return;
+          paymentReceipts = retainCurrent
+            ? applyPaymentReceiptArchiveMutation(paymentReceipts, { receipts: partial.receipts }, { date, status })
+            : partial.receipts;
+          paymentReceiptPendingFiles = partial.pendingFiles;
+          paymentReceiptPendingBatches = partial.pendingBatches;
+          renderPaymentReceiptArchive();
+        } });
       if (!isCurrent()) return;
       let receipts = archive.receipts;
       let pendingFiles = archive.pendingFiles;
@@ -1422,7 +1473,7 @@ async function loadPaymentReceipts(options = {}) {
   }
 }
 
-async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal } = {}) {
+async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal, onPage } = {}) {
   const receipts = [];
   const pendingFiles = [];
   const pendingBatches = [];
@@ -1465,6 +1516,7 @@ async function fetchPaymentReceiptArchivePages({ date = "", status = "", signal 
     receipts.push(...unseen);
     pendingFiles.push(...unseenFiles);
     pendingBatches.push(...unseenBatches);
+    onPage?.({ receipts: [...receipts], pendingFiles: [...pendingFiles], pendingBatches: [...pendingBatches] });
     if (Math.max(page.length, filePage.length, batchPage.length) < 500) break;
     if (!unseen.length && !unseenFiles.length && !unseenBatches.length) throw new Error("缴款单分页未推进，请刷新后重试");
   }
@@ -1539,14 +1591,16 @@ function renderPaymentReceiptArchive() {
   const summary = $("#paymentReceiptSummary");
   const refreshButton = $("#paymentReceiptRefreshButton");
   if (!archive || !summary) return;
-  if (refreshButton) refreshButton.disabled = paymentReceiptsLoading;
+  if (refreshButton) { refreshButton.disabled = paymentReceiptsLoading; refreshButton.setAttribute?.('aria-busy', String(paymentReceiptsLoading)); refreshButton.textContent = paymentReceiptsLoading ? `正在读取${paymentReceipts.length ? ` ${paymentReceipts.length} 张` : ''}…` : '刷新'; }
 
   const matched = paymentReceipts.filter((receipt) => receipt.matchStatus === "matched").length;
-  const review = paymentReceipts.length - matched;
+  const review = paymentReceipts.filter(receipt => ['review', 'error'].includes(receipt.matchStatus)).length;
+  const archived = paymentReceipts.filter(receipt => receipt.matchStatus === 'unmatched').length;
   summary.innerHTML = `
     <span><strong>${paymentReceipts.length}</strong> 张单据</span>
     <span><strong>${matched}</strong> 已对应</span>
     <span><strong>${review}</strong> 待核对</span>
+    ${archived ? `<span><strong>${archived}</strong> 已归档</span>` : ''}
     ${paymentReceiptPendingFiles.length ? `<span><strong>${paymentReceiptPendingFiles.length}</strong> 个附件仍在处理或失败</span>` : ""}
     ${paymentReceiptPendingBatches.length ? `<span><strong>${paymentReceiptPendingBatches.length}</strong> 封邮件未提取到附件</span>` : ""}
   `;
@@ -1565,6 +1619,7 @@ function renderPaymentReceiptArchive() {
   archive.setAttribute("aria-labelledby", paymentReceiptIndexView === "review" ? "receiptIndexReview" : "receiptIndexAll");
   $("#paymentReceiptCoveragePanel").hidden = paymentReceiptIndexView !== "coverage";
   renderPaymentReceiptInspector(entries.find((entry) => entry.key === selectedPaymentReceiptEntryKey));
+  if (typeof paymentReceiptWorkspace !== 'undefined') paymentReceiptWorkspace?.render();
 
   if (paymentReceiptsLoading && !entries.length) {
     archive.innerHTML = '<div class="empty payment-receipt-empty">正在读取邮箱识别结果……</div>';
@@ -1593,6 +1648,7 @@ function renderPaymentReceiptArchive() {
       </div>
     </section>
   `).join("");
+  if (typeof paymentReceiptWorkspace !== 'undefined') paymentReceiptWorkspace?.render();
 }
 
 function paymentReceiptNameResolution(receipt) {
@@ -1631,13 +1687,13 @@ function renderPaymentReceiptIndexItem(entry) {
   const source = entry.kind === "receipt"
     ? [value.sourceFilename, value.sourcePageLabel ? `原件第 ${value.sourcePageLabel} 页` : ""].filter(Boolean).join(" · ")
     : entry.kind === "file" ? "待处理附件" : "邮件 · 暂无 PDF";
-  return `<button type="button" class="payment-receipt-index-item ${entry.key === selectedPaymentReceiptEntryKey ? "active" : ""}"
+  return `<div class="payment-receipt-index-row">${entry.kind === 'receipt' ? `<label class="payment-receipt-select"><input type="checkbox" data-receipt-select="${escapeAttribute(value.id)}" aria-label="选择 ${escapeAttribute(name?.title || value.bondShortName || '单据')}"></label>` : ''}<button type="button" class="payment-receipt-index-item ${entry.key === selectedPaymentReceiptEntryKey ? "active" : ""}"
     data-receipt-entry="${escapeAttribute(entry.key)}" aria-pressed="${entry.key === selectedPaymentReceiptEntryKey}">
     <strong title="${escapeAttribute(name ? `${paymentReceiptNameSourceLabel(name.source)}${name.rawName ? ` · 原识别：${name.rawName}` : ""}` : paymentReceiptEntryTitle(entry))}">${escapeHtml(name?.title || paymentReceiptEntryTitle(entry))}</strong>${badge}
     ${name?.warning && name.title !== "简称待核对" ? `<span class="payment-receipt-name-warning-label">${name.source === "page-review" && name.warning.includes("拆页") ? "拆页待核对" : "简称待核对"}</span>` : ""}
     <span class="payment-receipt-index-meta">${meta.filter(Boolean).map((part) => `<span>${escapeHtml(part)}</span>`).join("")}</span>
     <span class="payment-receipt-index-kind">${escapeHtml(source)}</span>
-  </button>`;
+  </button></div>`;
 }
 
 function selectedPaymentReceiptEntry() {
@@ -1668,7 +1724,7 @@ function renderPaymentReceiptInspector(entry) {
   $("#receiptTabOriginal").disabled = Boolean(entry && !preview);
   const emailUrl = !entry ? "" : entry.kind === "receipt" ? paymentReceiptEmailUrl(entry.value.id)
     : entry.kind === "file" ? paymentReceiptPendingEmailUrl(entry.value.id) : paymentReceiptPendingBatchEmailUrl(entry.value.id);
-  $("#paymentReceiptDetailActions").innerHTML = entry ? `<a class="text-button" href="${emailUrl}">原始邮件</a>` : "";
+  $("#paymentReceiptDetailActions").innerHTML = entry ? `${entry.kind === 'receipt' ? `<a class="button subtle" href="${paymentReceiptFileUrl(entry.value.id)}?download=1" download>下载单张</a><button class="button subtle danger-button" type="button" data-receipt-delete="${escapeAttribute(entry.value.id)}">删除</button>` : ''}<a class="text-button" href="${emailUrl}">原始邮件</a>` : "";
   setPaymentReceiptDetailTab(paymentReceiptDetailTab);
 }
 
@@ -1749,6 +1805,7 @@ function renderPaymentReceiptCoverage() {
       </div>
       <span class="payment-receipt-coverage-state">${escapeHtml(target.covered ? "已有对应单据" : target.paymentCompleted ? "已人工确认缴款，但缺单" : "未缴款，且缺单")}</span>
       <button class="button subtle" type="button" data-receipt-coverage-project="${escapeAttribute(target.projectId)}">查看项目</button>
+      <button class="button subtle" type="button" data-receipt-required="${escapeAttribute(target.projectId)}">无需缴款单</button>
     </article>
   `).join("");
 }
@@ -1843,12 +1900,13 @@ function renderPaymentReceiptCard(receipt) {
       </div>
       <div class="payment-receipt-file-actions">
         <a class="button subtle payment-receipt-open" href="${paymentReceiptFileUrl(receipt.id)}" target="_blank" rel="noopener">拆分单据</a>
+        <a class="button subtle" href="${paymentReceiptFileUrl(receipt.id)}?download=1" download>下载单张</a>
         <a class="button subtle" href="${paymentReceiptSourceUrl(receipt.id)}" target="_blank" rel="noopener">原始 PDF</a>
         ${["review", "unmatched", "error"].includes(receipt.matchStatus) && ["processed", "review", "error"].includes(receipt.fileProcessingStatus) ? `<button class="button subtle" type="button" data-receipt-reprocess="${escapeAttribute(receipt.fileId)}">重新识别</button>` : ""}
         <button class="button subtle" type="button" data-receipt-regroup="${escapeAttribute(receipt.fileId)}">修正拆页</button>
         <a class="text-button" href="${paymentReceiptEmailUrl(receipt.id)}">原始邮件</a>
         ${receipt.matchStatus === "duplicate" && receipt.duplicateOfReceiptId ? `<button class="button subtle" type="button" data-receipt-original="${escapeAttribute(receipt.duplicateOfReceiptId)}">查看原始记录</button>` : ""}
-        ${receipt.matchStatus === "duplicate" ? `<button class="button subtle danger-button" type="button" data-receipt-delete="${escapeAttribute(receipt.id)}">删除重复单据</button>` : ""}
+        <button class="button subtle danger-button" type="button" data-receipt-delete="${escapeAttribute(receipt.id)}">删除单据</button>
       </div>
     </article>
   `;
@@ -1953,7 +2011,7 @@ function paymentReceiptStatusLabel(status) {
   return ({
     matched: "已对应项目",
     review: "待人工确认",
-    unmatched: "未对应",
+    unmatched: "已归档",
     duplicate: "重复单据",
     error: "识别失败",
   })[status] || "处理中";
@@ -2377,6 +2435,9 @@ function renderTranchePaymentReceipts(projectId, tranche) {
 
 function renderTranchePaymentReceiptContent(projectId, trancheId) {
   const receipts = receiptsForTranche(projectId, trancheId);
+  const project = state.projects.find(item => item.id === projectId);
+  const waived = project?.paymentReceiptRequired === false;
+  const requirement = `<button class="button subtle receipt-requirement-toggle" type="button" data-receipt-required="${escapeAttribute(projectId)}" aria-pressed="${waived}">${waived ? '恢复缴款单要求' : '无需缴款单'}</button>`;
   if (projectPaymentReceiptLoads.has(projectId) && !projectPaymentReceiptCache.has(projectId)) {
     return '<div class="tranche-payment-receipt-empty"><strong>缴款单</strong><span>正在读取对应单据……</span></div>';
   }
@@ -2384,16 +2445,16 @@ function renderTranchePaymentReceiptContent(projectId, trancheId) {
     return `<div class="tranche-payment-receipt-empty error"><strong>缴款单读取失败</strong><span>${escapeHtml(projectPaymentReceiptErrors.get(projectId))}</span></div>`;
   }
   if (!receipts.length) {
-    return '<div class="tranche-payment-receipt-empty"><strong>缴款单</strong><span>尚未收到或尚未对应</span></div>';
+    return `<div class="tranche-payment-receipt-empty"><strong>缴款单</strong><span>${waived ? '本项目无需缴款单' : '尚未收到或尚未对应'}</span>${requirement}</div>`;
   }
   return `
-    <div class="tranche-payment-receipt-head"><strong>缴款单</strong><span>${receipts.length} 张已对应</span></div>
+    <div class="tranche-payment-receipt-head"><strong>缴款单</strong><span>${receipts.length} 张已对应${waived ? ' · 无需收单' : ''}</span>${requirement}</div>
     <div class="tranche-payment-receipt-list">
       ${receipts.map((receipt) => `
-        <a href="${paymentReceiptFileUrl(receipt.id)}" target="_blank" rel="noopener">
+        <div class="tranche-payment-receipt-row"><a href="${paymentReceiptFileUrl(receipt.id)}" target="_blank" rel="noopener">
           <span>${escapeHtml(receipt.paymentDate || receipt.archiveDate || "缴款日期待识别")} · ${escapeHtml(receipt.sourcePageLabel ? `原附件第 ${receipt.sourcePageLabel} 页` : receipt.sourceFilename || "PDF")}</span>
           <strong>查看缴款单</strong>
-        </a>
+        </a><a class="button subtle" href="${paymentReceiptFileUrl(receipt.id)}?download=1" download>下载单张</a></div>
       `).join("")}
     </div>
   `;
@@ -2736,7 +2797,7 @@ function switchView(viewName, options = {}) {
   syncBondListCloudGate();
   if (button) $("#pageTitle").textContent = (isUiBeta() && button.dataset.viewLabel) || button.textContent.trim();
   if (viewName === "reminders") renderUnifiedReminders();
-  if (viewName === "payment-receipts") renderPaymentReceiptArchive();
+  if (viewName === "payment-receipts") { renderPaymentReceiptArchive(); void paymentReceiptWorkspace?.refreshJob(); }
   else paymentReceiptPreview?.hide?.();
   if (viewName === "secondary-trading") switchSecondaryWorkspacePanel("protocol");
   if (viewName === "ledger") syncLedgerMobilePane();
@@ -5482,6 +5543,7 @@ function buildLedgerProjectRecord(projectValue, issuer, generated, existing = nu
         notes: existing.notes,
         targetQuoteNote: existing.targetQuoteNote,
         syndicateJoined: existing.syndicateJoined,
+        paymentReceiptRequired: existing.paymentReceiptRequired,
         resultAdvertisement: existing.resultAdvertisement,
         resultConfirmed: existing.resultConfirmed,
         bidSubmissions: existing.bidSubmissions,
@@ -14999,6 +15061,7 @@ function setCurrentUser(user) {
 }
 
 function clearAuthSession() {
+  if (typeof paymentReceiptWorkspace !== 'undefined') paymentReceiptWorkspace?.reset();
   projectIntakeAi?.reset();
   paymentReceiptMatchAi?.clear();
   paymentReceiptBoundaryAi?.reset();

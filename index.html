@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6fb">
   <meta name="application-version" content="5.4">
   <meta name="application-build-version" content="5.4">
-  <meta name="application-build" content="20261028v540r7">
+  <meta name="application-build" content="20261028v540r8">
   <title>Bond Centre 5.4 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="./release-notes.css?v=20261028v540">
   <link rel="stylesheet" href="./bond-list-editor.css?v=20261028v540">
   <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261028v540r4">
+  <link rel="stylesheet" href="./payment-receipt-workspace-ui.css?v=20261028v540r8">
   <link rel="stylesheet" href="./project-target-note.css?v=20261028v540r5">
   <link rel="stylesheet" href="./project-ofr.css?v=20261028v540">
   <link rel="stylesheet" href="./ai-review.css?v=20261028v540">
@@ -1349,7 +1350,7 @@
                   <option value="">全部状态</option>
                   <option value="matched">已对应项目</option>
                   <option value="review">待人工确认</option>
-                  <option value="unmatched">未对应</option>
+                  <option value="unmatched">已归档</option>
                   <option value="duplicate">重复单据</option>
                   <option value="error">识别失败</option>
                 </select>
@@ -1360,17 +1361,29 @@
               </div>
               <div class="payment-receipt-page-actions">
                 <button class="button" id="paymentReceiptExplorerButton" type="button">打开文件管理器</button>
-                <button class="button primary" id="paymentReceiptRefreshButton" type="button">刷新邮箱识别结果</button>
+                <button class="button" data-receipt-rebuild-all type="button">重新整理全部</button>
+                <button class="button primary" id="paymentReceiptRefreshButton" type="button">刷新</button>
               </div>
           </div>
+          <section class="payment-receipt-job" data-receipt-job role="status" aria-live="polite" hidden>
+            <div><strong data-receipt-job-title></strong><span data-receipt-job-detail></span></div>
+            <progress data-receipt-job-progress max="100" value="0" aria-label="缴款单整理进度"></progress>
+          </section>
           <div class="payment-receipt-reader-grid">
             <aside class="panel payment-receipt-index-panel" aria-labelledby="paymentReceiptIndexTitle">
-              <div class="panel-head"><h2 id="paymentReceiptIndexTitle">单据清单</h2></div>
+              <div class="panel-head"><h2 id="paymentReceiptIndexTitle">单据清单</h2><button class="button subtle" data-receipt-manage type="button" aria-pressed="false">批量管理</button></div>
               <div class="payment-receipt-summary" id="paymentReceiptSummary" aria-live="polite"></div>
               <div class="payment-receipt-index-tabs" role="tablist" aria-label="单据清单视图">
                 <button class="button subtle active" id="receiptIndexAll" type="button" role="tab" data-receipt-index-view="all" aria-selected="true" aria-controls="paymentReceiptArchive">全部</button>
                 <button class="button subtle" id="receiptIndexReview" type="button" role="tab" data-receipt-index-view="review" aria-selected="false" aria-controls="paymentReceiptArchive">待核对</button>
                 <button class="button subtle" id="receiptIndexCoverage" type="button" role="tab" data-receipt-index-view="coverage" aria-selected="false" aria-controls="paymentReceiptCoveragePanel">应收对账</button>
+              </div>
+              <div class="payment-receipt-selection-bar" data-receipt-selection-bar hidden>
+                <strong data-receipt-selection-count>已选 0 张</strong>
+                <button class="button subtle" data-receipt-select-visible type="button">全选当前</button>
+                <button class="button subtle" data-receipt-select-file type="button">选择本文件</button>
+                <button class="button subtle" data-receipt-clear-selection type="button">清空</button>
+                <button class="button danger-button" data-receipt-delete-selected type="button" disabled>删除所选</button>
               </div>
               <div class="payment-receipt-archive" id="paymentReceiptArchive" role="tabpanel" aria-labelledby="receiptIndexAll" aria-live="polite"></div>
               <section class="payment-receipt-coverage-panel" id="paymentReceiptCoveragePanel" role="tabpanel" aria-labelledby="receiptIndexCoverage" hidden>
@@ -1385,9 +1398,9 @@
                 <button class="button subtle" id="receiptTabFields" type="button" role="tab" data-receipt-detail-tab="fields" aria-selected="false" aria-controls="paymentReceiptFieldsPane">识别信息</button>
               </div>
               <div id="paymentReceiptMatchToolbar" class="payment-receipt-match-toolbar" role="region" aria-label="缴款单项目对应" hidden></div>
+              <div id="paymentReceiptDetailActions" class="payment-receipt-detail-actions" hidden></div>
               <div id="paymentReceiptOriginalPane" role="tabpanel" aria-labelledby="receiptTabOriginal"><div id="paymentReceiptPdfPreview"></div></div>
               <div id="paymentReceiptFieldsPane" role="tabpanel" aria-labelledby="receiptTabFields" hidden></div>
-              <div id="paymentReceiptDetailActions" class="payment-receipt-detail-actions" hidden></div>
             </section>
           </div>
           <div class="payment-receipt-reader-note"><span>按缴款日期归档</span><span>缴款状态仍由人工确认</span></div>
@@ -1661,7 +1674,14 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
-      <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-10-28">2026 / 10 / 28</time></div>
+      <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-10-29">2026 / 10 / 29</time></div>
+      <section><h3>缴款单整理与归档</h3><ul>
+        <li>整库后台重新整理：识别、拆页、归档、自动对应，逐文件逐页显示进度。</li>
+        <li>单张缴款单可在预览和项目明细中直接下载。</li>
+        <li>增加“无需缴款单”，可随时恢复要求。</li>
+        <li>支持自由多选、整份文件选择和批量删除，非重复单据同样可删除。</li>
+        <li>清晰页面一次识别；列表分批显示，提交和预览立即反馈。</li>
+      </ul></section>
       <section><h3>项目与缴款单识别</h3><ul>
         <li>修复线上缴款单“重新识别”按钮请求路径错误导致的 HTTP 405，原件及已有对应关系保护保持不变。</li>
         <li>联合复核完成后自动填入拆页草稿，可一键撤销；仍由人工核对并保存拆页。</li>
@@ -1931,7 +1951,7 @@
   </div>
   <script src="./ui-mode.js?v=20261028v540"></script>
   <script type="module" src="./vendor/search-border-beam.js?v=20261028v540"></script>
-  <script type="module" src="./app.js?v=20261028v540r7"></script>
+  <script type="module" src="./app.js?v=20261028v540r8"></script>
   <script type="module" src="./todo-fluid.js?v=20261028v540"></script>
   <script type="module" src="./release-notes.js?v=20261028v540"></script>
 </body>

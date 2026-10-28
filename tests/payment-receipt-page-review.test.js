@@ -271,12 +271,12 @@ test('explicit continuation and missing or invalid codes do not trigger another 
 
 const deepseekEnv = { OCR_AI_PROVIDER: 'deepseek', DEEPSEEK_OCR_API_KEY: 'ocr-only-test-key-123456789', AI_PROCESSING_APPROVED: 'true' };
 
-test('DeepSeek handles page extraction and independent identity review with its actual model metadata', async t => {
+test('DeepSeek handles lower-confidence page extraction and independent identity review with its actual model metadata', async t => {
   const requests = [];
   let legacyCalls = 0;
   t.mock.method(globalThis, 'fetch', async (url, input) => {
     requests.push({ url: String(url), input });
-    const output = requests.length === 1 ? primary() : literal();
+    const output = requests.length === 1 ? primary('26苏交CP008','042680338',{confidence:.89}) : literal();
     return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(output) } }] });
   });
   const page = await analyzePaymentReceiptPage({ ...deepseekEnv, AI: {
@@ -305,7 +305,7 @@ test('DeepSeek authentication and throttling fail fast in either OCR pass withou
     t.mock.method(globalThis, 'fetch', async () => {
       requests++;
       return requests === failAt ? new Response('private-vendor-details', { status })
-        : Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(primary()) } }] });
+        : Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(primary('26苏交CP008','042680338',{confidence:.89})) } }] });
     });
     await assert.rejects(() => analyzePaymentReceiptPage({ ...deepseekEnv, AI: {
       async run() { legacyCalls++; }, async toMarkdown() { legacyCalls++; },

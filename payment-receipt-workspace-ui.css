@@ -1,0 +1,26 @@
+.payment-receipt-job { display: flex; align-items: center; gap: 24px; padding: 18px 22px; margin: 0 0 20px; border: 1px solid #e8e8e8; border-radius: 16px; background: #fafafa; }
+.payment-receipt-job[hidden], .payment-receipt-selection-bar[hidden] { display: none; }
+.payment-receipt-job > div { display: grid; flex: 1; gap: 6px; min-width: 0; }
+.payment-receipt-job strong { font-size: 14px; font-weight: 600; }
+.payment-receipt-job span { color: #777; font-size: 13px; overflow-wrap: anywhere; }
+.payment-receipt-job progress { width: min(30%, 260px); height: 6px; accent-color: #333; border: 0; border-radius: 6px; }
+.payment-receipt-job progress::-webkit-progress-bar { background: #e9e9e9; border-radius: 6px; }
+.payment-receipt-job progress::-webkit-progress-value { background: #333; border-radius: 6px; transition: width .3s; }
+.payment-receipt-job.is-running strong::before, .payment-receipt-pdf[data-state="loading"] .payment-receipt-pdf-status::before, .payment-receipt-reader-view button[aria-busy="true"]::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -2px; animation: receipt-spin .85s linear infinite; }
+@keyframes receipt-spin { to { transform: rotate(360deg); } }
+.payment-receipt-reader-view .payment-receipt-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 14px; padding: 10px; border-radius: 12px; background: #f6f6f6; }
+.payment-receipt-selection-bar strong { width: 100%; font-size: 12px; padding: 3px 6px 6px; }
+.payment-receipt-reader-view .payment-receipt-selection-bar button { padding: 7px 9px; min-height: 32px; font-size: 12px; }
+.payment-receipt-index-row { display: flex; align-items: center; min-width: 0; gap: 6px; }
+.payment-receipt-index-row > .payment-receipt-index-item { flex: 1; }
+.payment-receipt-select { display: none; margin: 0; padding: 8px 0 8px 5px; cursor: pointer; }
+.is-receipt-selecting .payment-receipt-select { display: block; }
+.payment-receipt-reader-view .payment-receipt-select input { width: 17px; height: 17px; min-height: 0; margin: 0; accent-color: #171717; cursor: pointer; }
+.tranche-payment-receipt-row { display: flex; align-items: center; gap: 10px; }
+.tranche-payment-receipt-row > a:first-child { flex: 1; }
+.tranche-payment-receipt-row > a:last-child { flex: none; white-space: nowrap; }
+.tranche-payment-receipt-head { flex-wrap: wrap; gap: 8px; }
+.receipt-requirement-toggle { margin-left: auto; font-size: 12px; }
+.tranche-payment-receipt-empty .receipt-requirement-toggle { margin-left: 0; justify-self: start; }
+@media (prefers-reduced-motion: reduce) { .payment-receipt-job.is-running strong::before, .payment-receipt-pdf[data-state="loading"] .payment-receipt-pdf-status::before, .payment-receipt-reader-view button[aria-busy="true"]::before { animation: none; } }
+@media (max-width: 640px) { .payment-receipt-job { flex-direction: column; align-items: stretch; gap: 12px; } .payment-receipt-job progress { width: 100%; } .tranche-payment-receipt-row { flex-wrap: wrap; } }
