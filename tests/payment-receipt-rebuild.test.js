@@ -148,6 +148,29 @@ test('trusted queue rebuild requests remain idempotent even after the first run 
   await assert.rejects(processPaymentReceiptQueueJob(env,{...job,requestId:''}),/参数无效/);
 });
 
+test('targeted internal repairs reuse proven same-source pages while normal rebuilds still read every page',async t=>{
+  for(const mode of ['targeted','normal','changed-source','legacy-version'])await t.test(mode,async t=>{
+    const h=await fixture(t),pdf=await PDFDocument.create();
+    for(let i=0;i<2;i++){
+      const page=pdf.addPage([100,100]),image=pdf.context.stream(new Uint8Array([255,216,255,217]),{Type:'XObject',Subtype:'Image',Width:2,Height:2,ColorSpace:'DeviceRGB',BitsPerComponent:8,Filter:'DCTDecode'});
+      page.node.newXObject('Scan',pdf.context.register(image));
+    }
+    const bytes=await pdf.save({useObjectStreams:false}),sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+    const first={pageNumber:1,analysisVersion:mode==='legacy-version'?6:7,analysisSource:'deepseek-page-image',classification:'receipt_start',confidence:.99,
+      recognizedText:'标题 配售确认及缴款通知书\n债券简称 26测试MTN001\n债券代码 102699001\n缴款日期 2026-10-29\n缴款金额 1000万元',
+      fields:{bondShortName:'26测试MTN001',securityCode:'102699001',paymentDate:'2026-10-29',amountText:'1000万元'}};
+    h.DB.sql.prepare("UPDATE payment_receipt_files SET sha256=?,byte_size=?,page_analysis_json=? WHERE id='a'").run(sha,bytes.length,JSON.stringify([first,{pageNumber:2,analysisVersion:7,analysisSource:'unavailable',classification:'uncertain',confidence:0}]));
+    await requestPaymentReceiptRebuild(h.env,'admin',{fileIds:['a'],reuseRecognizedPages:true},mode==='normal'?null:{reuseRecognizedPages:true});
+    if(mode==='changed-source')h.DB.sql.prepare("UPDATE payment_receipt_files SET grouping_json=json_set(grouping_json,'$.processing.cacheSourceSha256','old-sha') WHERE id='a'").run();
+    const objects=new Map([['a.pdf',bytes]]);let calls=0;
+    const env={...h.env,AI_PROCESSING_APPROVED:'true',PAYMENT_RECEIPTS:{async get(key){const value=objects.get(key);return value?{arrayBuffer:async()=>value}:null;},async put(key,value){objects.set(key,value);},async delete(key){objects.delete(key);}},AI:{async run(){calls++;return{response:calls%2?{classification:'receipt_start',confidence:.99,document_title:'配售确认及缴款通知书',bond_short_name:'26测试MTN002',security_code:'102699002',payment_date:'2026-10-29',amount_text:'1000万元'}:{nameField:'26测试MTN002',remittanceName:'26测试MTN002',securityCode:'102699002',uncertainties:[]}};}}};
+    await processPaymentReceiptFile(env,h.jobs[0]);assert.equal(calls,mode==='targeted'?2:4);
+    const current=h.DB.sql.prepare("SELECT grouping_json,page_analysis_json FROM payment_receipt_files WHERE id='a'").get();
+    assert.equal(JSON.parse(current.page_analysis_json).length,2);assert.equal(JSON.parse(current.grouping_json).recognizedPageCache,undefined);
+    if(mode==='targeted')assert.equal(JSON.parse(current.page_analysis_json)[0].fields.bondShortName,'26测试MTN001');
+  });
+});
+
 test('a forwarded request ID cannot restart an existing run after its original job finishes',async t=>{
   const h=await fixture(t),first=await requestPaymentReceiptRebuild(h.env,'admin',{all:true}),requestId=crypto.randomUUID();
   const forwarded=await requestPaymentReceiptRebuild(h.env,'admin',{all:true},{requestId});assert.equal(forwarded.rebuild.id,first.rebuild.id);

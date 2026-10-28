@@ -44,6 +44,11 @@ export function paymentReceiptNativeFields(text=''){
     if(name)fields.bondShortName=name;
     const identity=paymentReceiptCodeIdentity(code?.[1]);if(identity&&!identity.invalid)fields.securityCode=code[1];
   }
+  const inline=normalized.match(/债券简称\s*[:：]?\s*([^\n,，;；]{1,100})[,，;；]\s*(?:债券|证券)?代码\s*[:：]?\s*(\d{6,9}(?:\.[A-Z]{2})?)/iu);
+  if(inline){
+    const name=normalizePaymentReceiptBondShortName(inline[1]),code=paymentReceiptCodeIdentity(inline[2]);
+    if(name&&code&&!code.invalid){fields.bondShortName=name;fields.securityCode=inline[2];}
+  }
   const recognized=recognizePaymentReceiptText(normalized,fields);
   return{...fields,paymentDate:recognized.paymentDate,amountFen:recognized.amountFen,
     bondShortName:recognized.bondShortName,securityCode:recognized.securityCode,prepaymentNumber:recognized.prepaymentNumber,
@@ -53,6 +58,13 @@ export function paymentReceiptNativeFields(text=''){
 export function paymentReceiptNativePageAnalysis(native,pageNumber,previous={}){
   if(native?.status!=='ok'||!native.text)return null;
   const classified=classifyPaymentReceiptPage({pageNumber,text:native.text}),fields=native.fields||{};
+  const code=paymentReceiptCodeIdentity(fields.securityCode);
+  const stampOnly=/(?:本页无正文|(?:盖章|签章|签字|签署)页)/.test(native.text.replace(/\s/g,''))
+    && !fields.bondShortName && (!code||code.invalid) && !fields.prepaymentNumber && fields.amountFen==null;
+  if(stampOnly && ['receipt_start','continuation'].includes(previous?.classification)){
+    return{pageNumber,analysisVersion:7,analysisSource:'pdf-text-layer',classification:'continuation',confidence:.98,
+      boundaryEvidence:'原生 PDF 明确标注本页无正文或盖章续页',recognizedText:native.text,fields};
+  }
   const change=comparePaymentReceiptIdentity(fields,previous?.fields||{});
   const startsReceipt=classified.startsReceipt || change==='changed';
   const classification=change==='conflict'?'uncertain':startsReceipt?'receipt_start':

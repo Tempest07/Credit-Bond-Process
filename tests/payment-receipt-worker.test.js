@@ -550,6 +550,29 @@ test("decodes a FlateDecode-wrapped independent JPEG scan", async () => {
   assert.deepEqual([...extracted.bytes], [...jpegBytes]);
 });
 
+test("decodes packed CCITT Group 4 scans locally and preserves the PDF black/white polarity", async () => {
+  // Synthetic 8x4 one-bit scan, generated once with TIFF Group 4; no document data.
+  for(const blackIs1 of [true,false]){
+    const document=await PDFDocument.create(),page=document.addPage([8,4]);
+    const image=document.context.stream(new Uint8Array([38,162,202,31,30,0,32,2]),{
+      Type:'XObject',Subtype:'Image',Width:8,Height:4,ColorSpace:'DeviceGray',BitsPerComponent:1,
+      Filter:'CCITTFaxDecode',DecodeParms:{K:-1,Columns:8,Rows:4,BlackIs1:blackIs1}});
+    page.node.newXObject('Fax',document.context.register(image));
+    const extracted=await extractPaymentReceiptPageImage(await document.save({useObjectStreams:false}));
+    assert.equal(extracted.source,'ccitt-packed-scan');assert.equal(extracted.width,8);assert.equal(extracted.height,4);
+    const view=new DataView(extracted.bytes.buffer,extracted.bytes.byteOffset,extracted.bytes.byteLength);
+    assert.deepEqual([...inflateSync(extracted.bytes.slice(41,41+view.getUint32(33)))],blackIs1?[0,255,0,191,0,255,0,255]:[0,0,0,64,0,0,0,0]);
+  }
+});
+
+test("large CCITT scans are bounded before bitmap decoding rather than becoming an empty page", async () => {
+  const document=await PDFDocument.create(),page=document.addPage([100,100]);
+  const image=document.context.stream(new Uint8Array([0]),{Type:'XObject',Subtype:'Image',Width:6000,Height:4000,
+    ColorSpace:'DeviceGray',BitsPerComponent:1,Filter:'CCITTFaxDecode',DecodeParms:{K:-1,Columns:6000,Rows:4000}});
+  page.node.newXObject('Fax',document.context.register(image));
+  assert.equal(await extractPaymentReceiptPageImage(await document.save({useObjectStreams:false})),null);
+});
+
 test("encodes and physically rotates a one-bit JBIG2 bitmap into PNG", async () => {
   const png = await encodeMonochromePng(new Uint8Array([0xa0, 0x40]), 3, 2, 270, false);
   assert.equal(png.width, 2);

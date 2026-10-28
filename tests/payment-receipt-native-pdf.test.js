@@ -31,6 +31,21 @@ test('native allocation tables keep their literal bond and paid amount rather th
   const fields=paymentReceiptNativeFields(text);assert.equal(fields.bondShortName,'26测试08');assert.equal(fields.securityCode,'245694.SH');assert.equal(fields.amountFen,30000000000);
 });
 
+test('native inline short name and generic code labels stay separate',()=>{
+  const fields=paymentReceiptNativeFields('配售确认及缴款通知书\n债券简称 26 鄂基 K3，代码：283404\n缴款日期 2026年08月13日\n应缴款金额 6000万元');
+  assert.equal(fields.bondShortName,'26鄂基K3');assert.equal(fields.securityCode,'283404');
+  assert.equal(fields.paymentDate,'2026-08-13');assert.equal(fields.amountFen,6000000000);
+});
+
+test('an explicit native signature attachment is a continuation even when it quotes the notice title',()=>{
+  const text='本页无正文，为《示例公司配售确认及缴款通知书》之盖章页\n簿记管理人盖章\n2026年08月13日';
+  const native={status:'ok',text,fields:paymentReceiptNativeFields(text)},prior={classification:'receipt_start',fields:{bondShortName:'26测试01',securityCode:'245733'}};
+  assert.equal(paymentReceiptNativePageAnalysis(native,2,prior).classification,'continuation');
+  assert.equal(paymentReceiptNativePageAnalysis(native,1).classification,'uncertain');
+  const complete={status:'ok',text:lines.join('\n')+'\n本页以下无正文',fields:paymentReceiptNativeFields(lines.join('\n'))};
+  assert.equal(paymentReceiptNativePageAnalysis(complete,1).classification,'receipt_start');
+});
+
 test('a real text-only Chinese PDF is extracted locally through its Unicode mapping',async()=>{
   const result=await extractPaymentReceiptNativeText(await nativePdf(lines));
   assert.equal(result.status,'ok');assert.match(result.text,/公司债券简称/);assert.equal(result.fields.bondShortName,'26测试01');assert.equal(result.fields.securityCode,'245733');

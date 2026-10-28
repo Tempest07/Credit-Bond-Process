@@ -40,9 +40,10 @@ export async function requestPaymentReceiptRebuild(env, ownerUserId, input = {},
   if (!ready.length) throw Object.assign(new Error(skippedFiles ? '文件正在处理中，请稍后查看' : '暂无可重新识别的 PDF'), { status: 409 });
 
   const now = new Date().toISOString(), rebuildId = requestId || crypto.randomUUID();
+  const reuseRecognizedPages=execution?.reuseRecognizedPages===true;
   const snapshots = JSON.stringify(ready.map(file => ({ fileId: file.id, updatedAt: file.updated_at, status: file.processing_status })));
   const targetIds = JSON.stringify(ready.map(file => file.id));
-  const detail = JSON.stringify({ fileIds: ready.map(file => file.id), skippedFiles, requestedAt: now });
+  const detail = JSON.stringify({ fileIds: ready.map(file => file.id), skippedFiles, requestedAt: now, reuseRecognizedPages });
   // The NOT NULL guard makes a raced file claim roll back every unlink and status
   // update. All old correspondences are recorded inside the same transaction.
   await env.DB.batch([
@@ -65,8 +66,10 @@ export async function requestPaymentReceiptRebuild(env, ownerUserId, input = {},
     env.DB.prepare(`UPDATE payment_receipt_files SET processing_status='reprocess_requested',
       error_message='等待重新识别',updated_at=?1,
       grouping_json=json_set(CASE WHEN json_valid(grouping_json) THEN grouping_json ELSE '{}' END,
-        '$.processing',json_object('rebuildId',?2,'requestedAt',?1,'stage','queued','completedPages',0,'totalPages',COALESCE(page_count,0)))
-      WHERE id IN (SELECT value FROM json_each(?3))`).bind(now,rebuildId,targetIds),
+        '$.recognizedPageCache',json(CASE WHEN ?4 THEN page_analysis_json ELSE '[]' END),
+        '$.processing',json_object('rebuildId',?2,'requestedAt',?1,'stage','queued','completedPages',0,'totalPages',COALESCE(page_count,0),
+          'reuseRecognizedPages',json(CASE WHEN ?4 THEN 'true' ELSE 'false' END),'cacheSourceSha256',sha256))
+      WHERE id IN (SELECT value FROM json_each(?3))`).bind(now,rebuildId,targetIds,reuseRecognizedPages?1:0),
     env.DB.prepare(`DELETE FROM payment_receipt_matches WHERE owner_user_id=?1 AND receipt_id IN
       (SELECT id FROM payment_receipts WHERE owner_user_id=?1 AND file_id IN (SELECT value FROM json_each(?2)))`)
       .bind(ownerUserId,targetIds),
@@ -79,7 +82,7 @@ export async function requestPaymentReceiptRebuild(env, ownerUserId, input = {},
 
   // Queues are the durable execution path. Without a Pages producer binding the
   // existing scheduled reconciler picks up the exact same persisted requests.
-  const dispatch = dispatchRequestedPaymentReceiptFiles(env,ownerUserId,ready,now,rebuildId);
+  const dispatch = dispatchRequestedPaymentReceiptFiles(env,ownerUserId,ready.map(file=>({...file,reuseRecognizedPages})),now,rebuildId);
   if (typeof execution?.waitUntil==='function') execution.waitUntil(dispatch);
   else await dispatch;
   return { rebuild: await readPaymentReceiptRebuild(env.DB,ownerUserId,rebuildId), reused:false };
@@ -98,7 +101,7 @@ export async function dispatchRequestedPaymentReceiptFiles(env, ownerUserId, fil
     const group = pending.slice(offset,offset+100);
     const messages = group.map(file=>({body:{kind:'file',ownerUserId,batchId:file.batch_id,fileId:file.id,
       objectKey:file.object_key,filename:file.filename,receivedDate:file.received_date,
-      forceReanalyze:true,rebuildId,messageIdConflict:String(file.message_id || '').includes('#sha256:')}}));
+      forceReanalyze:true,rebuildId,reuseRecognizedPages:file.reuseRecognizedPages===true,messageIdConflict:String(file.message_id || '').includes('#sha256:')}}));
     try {
       if (typeof env.RECEIPT_QUEUE.sendBatch==='function') await env.RECEIPT_QUEUE.sendBatch(messages);
       else await Promise.all(messages.map(message=>env.RECEIPT_QUEUE.send(message.body)));

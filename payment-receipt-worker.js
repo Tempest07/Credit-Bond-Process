@@ -39,6 +39,7 @@ import { finalizePaymentReceiptRebuild,finalizePendingPaymentReceiptRebuilds } f
 import { extractPaymentReceiptNativeText,paymentReceiptNativePageAnalysis } from "./payment-receipt-native-pdf.js";
 import { preparePaymentReceiptOcrImage } from "./payment-receipt-ocr-image.js";
 import { splitBondNames } from "./bond-identity.js";
+import { extractPaymentReceiptFlateImage } from "./payment-receipt-flate-image.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -250,7 +251,7 @@ export async function processPaymentReceiptQueueJob(env, job = {}) {
     }
     validateBindings(env,{queueRequired:true});await ensurePaymentReceiptSchema(env.DB);
     const result=await requestPaymentReceiptRebuild(env,ownerUserId,
-      Array.isArray(job.fileIds) ? {fileIds:job.fileIds} : {all:true},{requestId:job.requestId});
+      Array.isArray(job.fileIds) ? {fileIds:job.fileIds} : {all:true},{requestId:job.requestId,reuseRecognizedPages:job.reuseRecognizedPages===true});
     console.log(JSON.stringify({event:'payment_receipt_library_rebuild',rebuildId:result.rebuild?.id,totalFiles:result.rebuild?.totalFiles,reused:result.reused}));
     return result;
   }
@@ -479,25 +480,35 @@ export async function processPaymentReceiptFile(env, job = {}) {
     throw permanentReceiptError(`PDF 共 ${sourcePdf.getPageCount()} 页，超过 ${MAX_PDF_PAGES} 页自动处理上限`);
   }
   const previousProgress = storedFile?.grouping?.processing || {};
+  const reuseRecognizedPages=(job.reuseRecognizedPages===true || previousProgress.reuseRecognizedPages===true && ['queued','reading','matching'].includes(previousProgress.stage))
+    && previousProgress.cacheSourceSha256===sourceSha256;
+  const recognizedPageCache=reuseRecognizedPages&&Array.isArray(storedFile?.grouping?.recognizedPageCache)?storedFile.grouping.recognizedPageCache:[];
+  const cacheGrouping=recognizedPageCache.length?{recognizedPageCache}:{};
   const fullReanalysis = job.forceReanalyze === true || Boolean(previousProgress.requestedAt);
   const progress = {
     rebuildId: job.rebuildId || previousProgress.rebuildId || '',
     requestedAt: previousProgress.requestedAt || (fullReanalysis ? new Date().toISOString() : ''),
     sourceSha256,
     totalPages: sourcePdf.getPageCount(),
+    reuseRecognizedPages,cacheSourceSha256:sourceSha256,
   };
   const checkpoint = reusablePaymentReceiptPageCheckpoint(storedFile?.pageAnalysis, previousProgress, sourceSha256, sourcePdf.getPageCount());
   let pageAnalyses = checkpoint || (fullReanalysis ? null : reusablePageAnalysis(storedFile?.pageAnalysis, sourcePdf.getPageCount()));
   if (!pageAnalyses || pageAnalyses.length < sourcePdf.getPageCount()) {
     pageAnalyses ||= [];
     await updatePaymentReceiptFile(env.DB,job.fileId,{pageCount:sourcePdf.getPageCount(),pageAnalysis:pageAnalyses,
-      grouping:{processing:{...progress,stage:'reading',completedPages:pageAnalyses.length}},processingStatus:'processing'});
+      grouping:{...cacheGrouping,processing:{...progress,stage:'reading',completedPages:pageAnalyses.length}},processingStatus:'processing'});
     const lastPage = pageAnalyses.at(-1);
     let previousPageContext = lastPage ? {classification:lastPage.classification,
       recognizedText:String(lastPage.recognizedText || '').slice(0,1200),fields:lastPage.fields || {}} : null;
     for (let pageIndex = pageAnalyses.length; pageIndex < sourcePdf.getPageCount(); pageIndex += 1) {
       const pageBytes = await copyPdfPages(sourcePdf, [pageIndex]);
-      const analysis = await analyzePaymentReceiptPage(env, pageBytes, pageIndex + 1, previousPageContext);
+      const cached=recognizedPageCache.find(page=>page?.pageNumber===pageIndex+1 && page.analysisVersion===PAGE_ANALYSIS_VERSION
+        && ['deepseek-page-image','pdf-text-layer'].includes(page.analysisSource)
+        && ['blank','receipt_start','continuation'].includes(page.classification) && Number(page.confidence)>=.8
+        && (page.classification!=='receipt_start' || normalizePaymentReceiptBondShortName(page.fields?.bondShortName)
+          || (paymentReceiptCodeIdentity(page.fields?.securityCode)&&!paymentReceiptCodeIdentity(page.fields?.securityCode).invalid) || page.fields?.prepaymentNumber));
+      const analysis = cached || await analyzePaymentReceiptPage(env, pageBytes, pageIndex + 1, previousPageContext);
       pageAnalyses.push(analysis);
       previousPageContext = {
         classification: analysis.classification,
@@ -507,7 +518,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
       // Persist each completed page, both for honest live progress and to avoid
       // paying for the same successful pages again after a transient failure.
       await updatePaymentReceiptFile(env.DB,job.fileId,{pageCount:sourcePdf.getPageCount(),pageAnalysis:pageAnalyses,
-        grouping:{processing:{...progress,stage:'reading',completedPages:pageAnalyses.length}},processingStatus:'processing'});
+        grouping:{...cacheGrouping,processing:{...progress,stage:'reading',completedPages:pageAnalyses.length}},processingStatus:'processing'});
     }
   }
 
@@ -814,7 +825,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
                 type: "image_url",
                 image_url: { url: imageData, detail: "high" },
               },
-              { type: "text", text: SHORT_NAME_OCR_INSTRUCTIONS },
+              { type: "text", text: SHORT_NAME_OCR_INSTRUCTIONS + ' 空白页判断：纸纹、扫描噪点、装订边和极淡的镜像背面透印不属于正面业务内容，可判 blank；清楚可辨的正面业务文字、盖章内容和真实表格不得判 blank。blank 时所有业务字段留空，不能从上一页复制信息。' },
             ],
           }],
           temperature: 0,
@@ -975,11 +986,19 @@ export async function extractPaymentReceiptPageImage(pageBytes) {
     }
   }
   const jpeg = images.jpegs.sort(comparePageImageCandidates)[0];
-  return jpeg ? { mimeType: "image/jpeg", rotation, source: "jpeg-xobject", ...jpeg } : null;
+  if(jpeg)return { mimeType: "image/jpeg", rotation, source: "jpeg-xobject", ...jpeg };
+  const fax=images.faxes.sort(comparePageImageCandidates)[0];
+  if(fax && fax.width*fax.height<=18000000){
+    try{
+      const packed=await decodePaymentReceiptFax(fax),png=await encodeMonochromePng(packed,fax.width,fax.height,rotation,false);
+      return{mimeType:'image/png',bytes:png.bytes,width:png.width,height:png.height,rotation:0,source:'ccitt-packed-scan'};
+    }catch(error){console.warn(JSON.stringify({event:'payment_receipt_fax_decode_failed',error:String(error?.message||error)}));}
+  }
+  return extractPaymentReceiptFlateImage(bytes,rotation);
 }
 
 async function findPageImageXObjects(context, xObjects, visited) {
-  const result = { masks: [], jpegs: [] };
+  const result = { masks: [], jpegs: [], faxes: [] };
   if (!xObjects) return result;
   for (const [, ref] of xObjects.entries()) {
     const refKey = String(ref);
@@ -1016,6 +1035,15 @@ async function findPageImageXObjects(context, xObjects, visited) {
             result.jpegs.push({ bytes: imageBytes, width, height, area: width * height });
           }
         }
+        if(!hasMask && pdfFilterNames(stream.dict.get(PDFName.of('Filter'))).join(',')==='/CCITTFaxDecode' && width*height<=18000000){
+          const rawParams=stream.dict.get(PDFName.of('DecodeParms'));
+          const params=rawParams?context.lookup(rawParams instanceof PDFArray?rawParams.asArray()[0]:rawParams):null;
+          const value=name=>params instanceof PDFDict?params.get(PDFName.of(name)):undefined;
+          result.faxes.push({bytes:stream.contents,width,height,area:width*height,
+            options:{K:Number(String(value('K')||0)),EndOfLine:readPdfBoolean(value('EndOfLine')),
+              EncodedByteAlign:readPdfBoolean(value('EncodedByteAlign')),BlackIs1:readPdfBoolean(value('BlackIs1')),
+              Columns:Number(String(value('Columns')||width)),Rows:Number(String(value('Rows')||height))}});
+        }
       }
     } else if (subtype === "/Form") {
       const nestedResources = stream.dict.lookupMaybe(PDFName.of("Resources"), PDFDict);
@@ -1023,6 +1051,7 @@ async function findPageImageXObjects(context, xObjects, visited) {
       const nested = await findPageImageXObjects(context, nestedXObjects, visited);
       result.masks.push(...nested.masks);
       result.jpegs.push(...nested.jpegs);
+      result.faxes.push(...nested.faxes);
     }
   }
   return result;
@@ -1089,6 +1118,19 @@ async function decodeJbig2Mask(mask) {
     if (globalsPointer) module._free(globalsPointer);
     if (imagePointer) module._free(imagePointer);
   }
+}
+
+async function decodePaymentReceiptFax(image){
+  const module=await createJbig2({print(){},printErr(){}}),options=image.options||{};
+  let pointer=0;
+  try{
+    pointer=module._malloc(image.bytes.length);module.writeArrayToMemory(image.bytes,pointer);
+    module._ccitt_decode(pointer,image.bytes.length,image.width,image.height,options.K||0,options.EndOfLine?1:0,
+      options.EncodedByteAlign?1:0,options.BlackIs1?1:0,options.Columns||image.width,options.Rows||image.height);
+    const length=Math.ceil(image.width/8)*image.height;
+    if(!module.imageData || module.errorMessages || module.imageData.length<length)throw Error('Fax scan decoding did not return complete pixels');
+    return new Uint8Array(module.imageData).slice(0,length);
+  }finally{if(pointer)module._free(pointer);}
 }
 
 export async function encodeMonochromePng(packed, sourceWidth, sourceHeight, rotation = 0, blackIs1 = false) {
