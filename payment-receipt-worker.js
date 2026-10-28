@@ -36,6 +36,9 @@ import { runReceiptIdentityReview } from "./payment-receipt-identity-review.js";
 import { selectDeepSeekOcr } from "./ocr-deepseek.js";
 import { requestPaymentReceiptRebuild } from "./functions/api/_payment-receipt-rebuild.js";
 import { finalizePaymentReceiptRebuild,finalizePendingPaymentReceiptRebuilds } from "./payment-receipt-rebuild-finalize.js";
+import { extractPaymentReceiptNativeText,paymentReceiptNativePageAnalysis } from "./payment-receipt-native-pdf.js";
+import { preparePaymentReceiptOcrImage } from "./payment-receipt-ocr-image.js";
+import { splitBondNames } from "./bond-identity.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -790,6 +793,11 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
   if (ai) {
     try {
       pageImage = await extractPaymentReceiptPageImage(pageBytes);
+      pageImage = await preparePaymentReceiptOcrImage(env,pageImage);
+      if(!pageImage){
+        const native=paymentReceiptNativePageAnalysis(await extractPaymentReceiptNativeText(pageBytes),pageNumber,previousPageContext);
+        if(native)return native;
+      }
       const imageData = pageImage
         ? `data:${pageImage.mimeType};base64,${arrayBufferToBase64(pageImage.bytes)}`
         : "";
@@ -850,7 +858,8 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
               if (highConfidence && startSignals && verifiedIdentityStartsReceipt(normalized, identityReview, previousPageContext?.fields)) {
                 classification = "receipt_start";
               }
-            } else if (identityReview.status === "conflict" || identityReview.error === true) {
+            } else if ((identityReview.status === "conflict" || identityReview.error === true)
+                && !trustedStructuredReceiptBoundary(ai.provider,normalized,identityReview)) {
               classification = "uncertain";
             }
           }
@@ -880,6 +889,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
               payerName: normalized.payer_name,
               couponRate: normalized.coupon_rate,
               allottedAmountText: normalized.allotted_amount_text,
+              instrumentName: normalized.instrument_name || '',
               payeeName: "",
               bankReference: "",
               amountText: normalized.amount_text,
@@ -1276,6 +1286,7 @@ function paymentReceiptKeyText(parsed = {}) {
     parsed.payer_name ? `付款人 ${parsed.payer_name}` : "",
     parsed.coupon_rate ? `票面利率 ${parsed.coupon_rate}` : "",
     parsed.allotted_amount_text ? `获配量 ${parsed.allotted_amount_text}` : "",
+    parsed.instrument_name ? `专项计划名称 ${parsed.instrument_name}` : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -1312,6 +1323,7 @@ function normalizeAiPaymentReceiptFields(parsed = {}) {
   }
 
   normalized.bond_short_name = normalizePaymentReceiptBondShortName(bondShortName);
+  normalized.instrument_name = !normalized.bond_short_name && /专项计划|资产支持/.test(rawShortName) ? rawShortName.slice(0,160) : '';
   normalized.security_code = numericSecurityCode;
   normalized.prepayment_number = prepaymentNumber;
   normalized.payment_date = stripPaymentReceiptFieldLabel(parsed.payment_date);
@@ -1332,8 +1344,35 @@ export function paymentReceiptPrimaryIsClear(provider, fields = {}, previous = {
   if (!code || code.invalid || comparePaymentReceiptIdentity(fields,previous)==='conflict') return false;
   const confidence = Number(fields.confidence);
   if (fields.remittance_name) return confidence >= .9
-    && normalizePaymentReceiptBondShortName(fields.remittance_name) === normalizePaymentReceiptBondShortName(fields.bond_short_name);
+    && paymentReceiptRemittanceIncludesName(fields.bond_short_name,fields.remittance_name);
   return confidence >= .9;
+}
+
+/** A shared payment memo such as 26广城05/06 includes the single table tranche. */
+export function paymentReceiptRemittanceIncludesName(name,value){
+  const current=normalizePaymentReceiptBondShortName(name);
+  const memo=normalizePaymentReceiptBondShortName(String(value||'').replace(/(?:认购|申购|缴款)(?:资金|款项|款)?\s*$/u,''));
+  if(!current || !memo)return false;
+  if(current===memo)return true;
+  return memo.includes('/') && splitBondNames(memo).some(part=>normalizePaymentReceiptBondShortName(part)?.split('(')[0]===current.split('(')[0]);
+}
+
+function trustedStructuredReceiptBoundary(provider,fields,review){
+  if(provider!=='deepseek' || fields.classification!=='receipt_start' || Number(fields.confidence)<.9
+      || !paymentReceiptStartSignals(fields.document_title) || review.reason==='security_code_conflict')return false;
+  const expected=paymentReceiptCodeIdentity(fields.security_code),actual=paymentReceiptCodeIdentity(review.readings?.securityCode);
+  if(!expected || expected.invalid || !actual || actual.invalid || !samePaymentReceiptCode(expected,actual))return false;
+  const literal=String(review.readings?.nameField || '').normalize('NFKC').trim();
+  if(normalizePaymentReceiptBondShortName(literal)===fields.bond_short_name
+      && paymentReceiptRemittanceIncludesName(literal,review.readings?.remittanceName))return true;
+  // ABS plan/class names need not fit the conventional two-digit-year bond
+  // abbreviation grammar. Keep the literal label separately; the code and a
+  // clear notice title still establish a reliable first-page boundary.
+  if(!fields.bond_short_name && literal && /专项计划|资产支持/.test(literal)
+      && review.reason==='missing_literal_reading'){
+    fields.instrument_name=literal.slice(0,160);return true;
+  }
+  return false;
 }
 
 function stripPaymentReceiptFieldLabel(value) {
