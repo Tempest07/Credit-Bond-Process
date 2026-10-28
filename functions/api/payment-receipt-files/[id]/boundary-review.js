@@ -68,7 +68,7 @@ export async function onRequestPost(context){
       if(!image)throw fail(422,`第 ${pageNumber} 页暂不能提取完整图像，请对照原件人工修正`);
       images.push({...image,pageNumber});
     }
-    const proposal=await runBoundaryReview(ai,images,Number(file.page_count));
+    const proposal=await runBoundaryReview(ai,images,Number(file.page_count),Array.isArray(analyses)?analyses:[]);
     if(context.request.signal?.aborted)throw fail(499,'联合复核已取消');
     const completed={...detail,status:'complete',proposal};
     const saved=await context.env.DB.prepare(`UPDATE payment_receipt_events SET detail_json=?1 WHERE id=?2 AND owner_user_id=?3

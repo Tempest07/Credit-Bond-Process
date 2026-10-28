@@ -24,8 +24,10 @@ import {
 } from "./functions/api/_payment-receipts.js";
 import {
   classifyPaymentReceiptPage,
+  comparePaymentReceiptIdentity,
   groupPaymentReceiptPages,
   recognizePaymentReceiptText,
+  sameReceiptPageNameVariant,
   selectPaymentReceiptMatch,
 } from "./payment-receipts.js";
 import { normalizePaymentReceiptBondShortName } from "./payment-receipt-names.js";
@@ -1177,24 +1179,6 @@ async function reviewCurrentPaymentReceiptIdentity(ai, pageImage, primary) {
   return { ...review, applied: true };
 }
 
-function conventionalReceiptPageIdentity(name) {
-  const match = name.split("(")[0].match(/^(\d{2})(.+?)(ABCP|SCP|MTN|PPN|ABN|CP|CD)(\d{1,5})([A-Z/]{0,5})$/);
-  return match ? { year: match[1], issuer: match[2], product: match[3], issue: match[4], letters: match[5] } : null;
-}
-
-// Compare adjacent pages, not an earlier OCR answer against a fresh reading.
-// Only the same series and an issuer missing one or two trailing characters
-// are safe name variants when the printed codes disagree between pages.
-function sameReceiptPageNameVariant(leftName, rightName) {
-  if (leftName.split("(")[0] === rightName.split("(")[0]) return true;
-  const left = conventionalReceiptPageIdentity(leftName), right = conventionalReceiptPageIdentity(rightName);
-  if (!left || !right || ["year", "product", "issue", "letters"].some(key => left[key] !== right[key])) return false;
-  const [shorter, longer] = left.issuer.length <= right.issuer.length
-    ? [left.issuer, right.issuer] : [right.issuer, left.issuer];
-  return shorter.length >= 2 && longer.startsWith(shorter)
-    && longer.length - shorter.length >= 1 && longer.length - shorter.length <= 2;
-}
-
 function verifiedIdentityStartsReceipt(current, review, previous = {}) {
   if (review.status !== "verified" || review.applied !== true) return false;
   const currentPrepayment = canonicalFingerprintPart(current.prepayment_number);
@@ -1212,20 +1196,6 @@ function verifiedIdentityStartsReceipt(current, review, previous = {}) {
   if (!currentName) return false;
   if (!previousName) return true;
   return !sameReceiptPageNameVariant(previousName, currentName);
-}
-
-function comparePaymentReceiptIdentity(current = {}, previous = {}) {
-  const currentPrepayment = String(current.prepayment_number || current.prepaymentNumber || "").normalize("NFKC").replace(/\s+/g, "").toUpperCase();
-  const previousPrepayment = String(previous.prepayment_number || previous.prepaymentNumber || "").normalize("NFKC").replace(/\s+/g, "").toUpperCase();
-  if (currentPrepayment && previousPrepayment) return currentPrepayment === previousPrepayment ? "same" : "changed";
-  const currentCode = String(current.security_code || current.securityCode || "").normalize("NFKC").replace(/\s+/g, "").toUpperCase();
-  const previousCode = String(previous.security_code || previous.securityCode || "").normalize("NFKC").replace(/\s+/g, "").toUpperCase();
-  if (!currentCode || !previousCode || currentCode === previousCode) return currentCode && previousCode ? "same" : "unknown";
-  const currentBond = String(current.bond_short_name || current.bondShortName || "").normalize("NFKC").toUpperCase().replace(/[\s·•:：,，.。()（）\[\]【】_-]+/g, "");
-  const previousBond = String(previous.bond_short_name || previous.bondShortName || "").normalize("NFKC").toUpperCase().replace(/[\s·•:：,，.。()（）\[\]【】_-]+/g, "");
-  const currentSeries = currentBond.match(/(?:SCP|MTN|PPN|CP)\d{3}(?:BC)?/)?.[0] || "";
-  const previousSeries = previousBond.match(/(?:SCP|MTN|PPN|CP)\d{3}(?:BC)?/)?.[0] || "";
-  return currentSeries && previousSeries && currentSeries !== previousSeries ? "changed" : "conflict";
 }
 
 function paymentReceiptKeyText(parsed = {}) {

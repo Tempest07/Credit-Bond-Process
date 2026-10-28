@@ -45,9 +45,33 @@ test('selection changes retain unrelated group boundaries and a newly blank firs
   const blankStart=row(3,'blank',{recognizedText:'',textEvidence:'',visualReason:'无业务内容'});
   assert.deepEqual(mergeBoundaryReviewDraft({groups:[[1,2],[3,4],[5,6]],blankPages:[]},proposal([row(2,'continuation'),blankStart]),6),{groups:[[1,2],[4],[5,6]],blankPages:[3]});
 });
-test('uncertain proposals or already interleaved manual groups cannot overwrite a draft',()=>{
-  assert.throws(()=>mergeBoundaryReviewDraft({groups:[[1,2,3,4,5,6]],blankPages:[]},proposal([row(2),row(3,'uncertain')]),6),/不确定/);
+test('clear boundaries apply while uncertain boundaries and unrelated manual groups stay unchanged',()=>{
+  assert.deepEqual(mergeBoundaryReviewDraft({groups:[[1,2,3,4,5,6]],blankPages:[]},proposal([row(2),row(3,'uncertain')]),6),{groups:[[1],[2,3,4,5,6]],blankPages:[]});
+  assert.throws(()=>mergeBoundaryReviewDraft({groups:[[1,2,3,4,5,6]],blankPages:[]},proposal([row(2,'uncertain'),row(3,'uncertain')]),6),/不确定/);
   assert.throws(()=>mergeBoundaryReviewDraft({groups:[[1,4],[2,3],[5,6]],blankPages:[]},proposal([row(2),row(3)]),6),/交错/);
+});
+
+const notice=(pageNumber,name,code,extra={})=>row(pageNumber,'uncertain',{confidence:.9,
+  recognizedText:`标题 ${name.includes('河北')?'河北高速公路集团有限公司':'杭州市国有资本投资运营有限公司'}2026年度第五期中期票据配售确认及缴款通知书\n债券简称 ${name}\n债券代码 ${code}\n缴款日期 2026年08月13日\n缴款金额 ${pageNumber===7?'11,000':'6,000'}.0000万元`,...extra});
+
+test('different issuers sharing MTN005 are independent notices and split pages 7 and 8',()=>{
+  const result=proposal([notice(7,'26河北高速MTN005','102683037'),notice(8,'26杭州国资MTN005(科创债)','102683058'),row(9,'uncertain')],9);
+  assert.deepEqual(result.pages.map(page=>page.classification),['receipt_start','receipt_start','uncertain']);
+  assert.equal(result.canApply,false);assert.equal(result.hasApplicableBoundaries,true);
+  const before={groups:[[1],[2],[3],[4],[5],[6],[7,8],[9]],blankPages:[]};
+  assert.deepEqual(mergeBoundaryReviewDraft(before,result,9),{groups:[[1],[2],[3],[4],[5],[6],[7],[8],[9]],blankPages:[]});
+});
+
+test('a code drift for the same bond or actual unreadable identity does not become another receipt',()=>{
+  const first=notice(7,'26河北高速MTN005','102683037');
+  for(const second of [notice(8,'26河北高速MTN005','102683058'),notice(8,'26杭州国资MTN005','102683058',{uncertainties:['债券代码看不清']}),notice(8,'26杭州国资MTN005','102683058',{confidence:.6})]){
+    assert.equal(proposal([first,second],9).pages[1].classification,'uncertain');
+  }
+});
+
+test('a continuation after an uncertain page cannot erase its existing manual boundary',()=>{
+  const draft={groups:[[1,2],[3],[4,5],[6]],blankPages:[]};
+  assert.deepEqual(mergeBoundaryReviewDraft(draft,proposal([row(2,'uncertain'),row(3,'continuation'),row(4)]),6),draft);
 });
 test('joint review sends only bounded inline images and original page labels in one model call',async()=>{
   let calls=0;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PDFDocument } from 'pdf-lib';
 import { analyzePaymentReceiptPage, paymentReceiptWorkerReadiness, processPaymentReceiptFile } from '../payment-receipt-worker.js';
-import { groupPaymentReceiptPages } from '../payment-receipts.js';
+import { comparePaymentReceiptIdentity, groupPaymentReceiptPages } from '../payment-receipts.js';
 
 async function scan() {
   const pdf = await PDFDocument.create();
@@ -37,6 +37,52 @@ function stages(first, second) {
     } } },
   };
 }
+
+test('adjacent identities distinguish issuers and tranches even when the product and issue number match', () => {
+  const previous = { bondShortName: '26河北高速MTN005', securityCode: '102683037', amountText: '11,000万元' };
+  assert.equal(comparePaymentReceiptIdentity({ bond_short_name: '26杭州国资MTN005(科创债)', security_code: '102683058', amount_text: '6,000万元' }, previous), 'changed');
+  assert.equal(comparePaymentReceiptIdentity({ bondShortName: '26示例MTN005B', securityCode: '102600002' },
+    { bondShortName: '26示例MTN005A', securityCode: '102600001' }), 'changed');
+  assert.equal(comparePaymentReceiptIdentity({ bondShortName: '26示例MTN005', securityCode: '102600001.IB', amountText: '6,000万元' },
+    { bondShortName: '26示例MTN005', securityCode: '102600001', amountText: '11,000万元' }), 'same');
+});
+
+test('code drift, shortened issuer tails and shared prepayment references do not create new boundaries', () => {
+  for (const [before, after] of [['26苏交MTN005', '26苏交通MTN005'], ['26示例MTN005', '26示例MTN005(科创债)']]) {
+    assert.equal(comparePaymentReceiptIdentity({ bondShortName: after, securityCode: '102600002' },
+      { bondShortName: before, securityCode: '102600001' }), 'conflict');
+  }
+  assert.equal(comparePaymentReceiptIdentity({ bondShortName: '26另一家01', securityCode: '246129.SZ' },
+    { bondShortName: '26示例01', securityCode: '246129.SH' }), 'conflict');
+  const before = { bondShortName: '26河北高速MTN005', securityCode: '102683037', prepaymentNumber: 'W2026081300001' };
+  assert.equal(comparePaymentReceiptIdentity({ bondShortName: '26杭州国资MTN005', securityCode: '102683058', prepayment_number: 'W2026081300001' }, before), 'same');
+  assert.equal(comparePaymentReceiptIdentity({ ...before, prepayment_number: 'W2026081300002', prepaymentNumber: '' }, before), 'changed');
+  assert.equal(comparePaymentReceiptIdentity({ bondShortName: '26杭州国资MTN005', securityCode: '6222123456789012' }, before), 'unknown');
+  assert.equal(comparePaymentReceiptIdentity({ amountText: '6,000万元' }, { amountText: '11,000万元' }), 'unknown');
+});
+
+test('different issuers with MTN005 and distinct codes split page 8 from page 7 despite a continuation label', async () => {
+  const ai = stages(primary('26杭州国资MTN005(科创债)', '102683058', {
+    classification: 'continuation', confidence: .9,
+    document_title: '杭州市国有资本投资运营有限公司2026年度第五期科技创新债券配售确认及缴款通知书',
+    amount_text: '6,000.0000万元', payment_date: '2026-08-13',
+  }), new Error('No additional paid identity review is needed for an explicit continuation response'));
+  const page = await analyzePaymentReceiptPage(ai.env, await scan(), 8, {
+    classification: 'receipt_start', fields: {
+      bondShortName: '26河北高速MTN005', securityCode: '102683037', amountText: '11,000.0000万元',
+    },
+  });
+  assert.equal(page.classification, 'receipt_start');
+  assert.equal(ai.requests.length, 1);
+  assert.equal(page.fields.securityCode, '102683058');
+  assert.equal(page.fields.paymentDate, '2026-08-13');
+  assert.equal(page.fields.amountText, '6,000.0000万元');
+  const grouped = groupPaymentReceiptPages([
+    { pageNumber: 7, text: '债券简称 26河北高速MTN005', startsReceipt: true },
+    { pageNumber: 8, text: page.recognizedText, startsReceipt: page.classification === 'receipt_start' },
+  ]);
+  assert.deepEqual(grouped.groups.map(group => group.pageNumbers), [[7], [8]]);
+});
 
 test('a current-page independent read restores a missing issuer tail and keeps primary evidence', async () => {
   const ai = stages(primary(), literal());

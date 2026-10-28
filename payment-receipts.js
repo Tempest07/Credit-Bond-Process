@@ -237,6 +237,44 @@ export function recognizePaymentReceiptText(rawText = "", fallback = {}) {
   };
 }
 
+function conventionalReceiptPageIdentity(name) {
+  const match = name.split("(")[0].match(/^(\d{2})(.+?)(ABCP|SCP|MTN|PPN|ABN|CP|CD)(\d{1,5})([A-Z/]{0,5})$/);
+  return match ? { year: match[1], issuer: match[2], product: match[3], issue: match[4], letters: match[5] } : null;
+}
+
+/** Formatting or a one/two-character missing issuer tail is not a new bond. */
+export function sameReceiptPageNameVariant(leftName, rightName) {
+  const leftText = normalizePaymentReceiptBondShortName(leftName);
+  const rightText = normalizePaymentReceiptBondShortName(rightName);
+  if (!leftText || !rightText) return false;
+  if (leftText.split("(")[0] === rightText.split("(")[0]) return true;
+  const left = conventionalReceiptPageIdentity(leftText), right = conventionalReceiptPageIdentity(rightText);
+  if (!left || !right || ["year", "product", "issue", "letters"].some(key => left[key] !== right[key])) return false;
+  const [shorter, longer] = left.issuer.length <= right.issuer.length
+    ? [left.issuer, right.issuer] : [right.issuer, left.issuer];
+  return shorter.length >= 2 && longer.startsWith(shorter)
+    && longer.length - shorter.length >= 1 && longer.length - shorter.length <= 2;
+}
+
+/** Compare complete bond identities; an issue suffix such as MTN005 is not globally unique. */
+export function comparePaymentReceiptIdentity(current = {}, previous = {}) {
+  const prepayment = value => String(value || "").normalize("NFKC").replace(/\s+/g, "").toUpperCase();
+  const currentPrepayment = prepayment(current.prepayment_number || current.prepaymentNumber);
+  const previousPrepayment = prepayment(previous.prepayment_number || previous.prepaymentNumber);
+  if (currentPrepayment && previousPrepayment) return currentPrepayment === previousPrepayment ? "same" : "changed";
+  const currentCode = paymentReceiptCodeIdentity(current.security_code || current.securityCode);
+  const previousCode = paymentReceiptCodeIdentity(previous.security_code || previous.securityCode);
+  if (!currentCode || currentCode.invalid || !previousCode || previousCode.invalid) return "unknown";
+  if (samePaymentReceiptCode(currentCode, previousCode)) return "same";
+  // A market suffix disagreement or a likely OCR name variant is a conflict,
+  // while distinct codes and complete distinct names identify a separate bond.
+  if (currentCode.body === previousCode.body) return "conflict";
+  const currentName = normalizePaymentReceiptBondShortName(current.bond_short_name || current.bondShortName);
+  const previousName = normalizePaymentReceiptBondShortName(previous.bond_short_name || previous.bondShortName);
+  if (!currentName || !previousName || sameReceiptPageNameVariant(currentName, previousName)) return "conflict";
+  return "changed";
+}
+
 export function groupPaymentReceiptPages(pageInputs = []) {
   const groups = [];
   const blankPages = [];

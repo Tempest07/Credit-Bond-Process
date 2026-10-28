@@ -1,4 +1,4 @@
-import { boundaryReviewPages, parseBoundaryReview, mergeBoundaryReviewDraft, PAYMENT_RECEIPT_BOUNDARY_LABELS } from './payment-receipt-boundary-review.js';
+import { boundaryReviewPages, parseBoundaryReview, mergeBoundaryReviewDraft, PAYMENT_RECEIPT_BOUNDARY_LABELS } from './payment-receipt-boundary-review.js?v=20261028v540r6';
 
 const escape = value => String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 export function createPaymentReceiptBoundaryReview({container,getContext,getDraft,onApply,getHeaders=()=>({}),onToast=()=>{},fetchImpl=fetch}){
@@ -51,7 +51,7 @@ export function createPaymentReceiptBoundaryReview({container,getContext,getDraf
       boundaryReviewPages(result?.pageNumbers,Number(data.file.pageCount));
       if(JSON.stringify(result.pageNumbers)!==JSON.stringify(pages))throw new Error('建议页码与本次选择不符，请重新复核');
       proposal={...result,...parseBoundaryReview({pages:result.pages},pages,Number(data.file.pageCount)),fileId:snapshot.fileId,fileUpdatedAt:snapshot.updatedAt};renderProposal();
-      if(proposal.canApply)apply();
+      if(proposal.hasApplicableBoundaries)apply();
       else status('部分页面仍不确定，未更改拆页草稿，请对照原件手工修正。');
     }catch(error){if(matches(snapshot,token)&&error?.name!=='AbortError')status(error.message||'联合复核失败，请稍后重试');}
     finally{if(matches(snapshot,token)){controller=null;setBusy(false);}}
@@ -62,10 +62,12 @@ export function createPaymentReceiptBoundaryReview({container,getContext,getDraf
     try{
       // Read the latest draft: edits made while review was pending must survive.
       const before=copyDraft(getDraft()),merged=mergeBoundaryReviewDraft(before,proposal,Number(data.file.pageCount));
-      if(sameDraft(before,merged)){status('复核完成，当前拆页草稿已与结果一致，无需调整。');return;}
+      const uncertain=proposal.pages.filter(row=>row.classification==='uncertain').map(row=>row.pageNumber);
+      const remaining=uncertain.length?`第 ${uncertain.join('、')} 页待核对。`:'';
+      if(sameDraft(before,merged)){status(remaining||'当前拆页无需调整。');return;}
       onApply(copyDraft(merged));
       undoEntry={before,after:copyDraft(merged),fileId:proposal.fileId,updatedAt:proposal.fileUpdatedAt};syncUndo();
-      status('已自动填入拆页草稿，可撤销；尚未保存。');onToast('已更新拆页草稿，可撤销。');
+      status(`已更新拆页草稿，可撤销。${remaining}`);onToast('已更新拆页草稿，可撤销。');
     }
     catch(error){status(error.message||'当前草稿无法采用建议，请人工核对');}
   }

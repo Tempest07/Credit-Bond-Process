@@ -63,6 +63,14 @@ test('cached no-op reviews retain the original undo snapshot',async()=>{
   assert.deepEqual(h.getDraft(),{groups:[[1,2,3,4]],blankPages:[]});
 });
 
+test('a clear split applies even with an uncertain neighbor and remains undoable',async()=>{
+  const h=fixture({fetchImpl:async()=>response(payload({proposal:{pageNumbers:[1,2],pages:rows().map(row=>row.pageNumber===1?{...row,classification:'uncertain'}:row),canApply:false}}))});
+  await h.emit('click','[data-boundary-review]');
+  assert.deepEqual(h.getDraft(),{groups:[[1],[2,3,4]],blankPages:[]});
+  assert.match(h.elements.get('[data-boundary-status]').textContent,/第 1 页待核对/);
+  await h.emit('click','[data-boundary-undo]');assert.deepEqual(h.getDraft(),{groups:[[1,2,3,4]],blankPages:[]});
+});
+
 test('pending review merges into the latest manual draft and undo restores that draft',async()=>{
   let resolve;const pending=new Promise(yes=>resolve=yes),h=fixture({fetchImpl:()=>pending});
   await h.emit('click','[data-boundary-review]');h.setDraft({groups:[[1,2],[3],[4]],blankPages:[]});

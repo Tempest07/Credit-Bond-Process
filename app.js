@@ -11,7 +11,7 @@ import { createProjectOfrActions } from './project-ofr-ui.js?v=20261028v540';
 import { createProjectIntakeController } from './project-intake-ai-ui.js?v=20261028v540';
 import { projectIntakeCutoff } from './project-intake-ai.js?v=20261028v540';
 import { createPaymentReceiptMatchAiController } from './payment-receipt-match-ai-ui.js?v=20261028v540';
-import { createPaymentReceiptBoundaryReview } from './payment-receipt-boundary-ui.js?v=20261028v540r2';
+import { createPaymentReceiptBoundaryReview } from './payment-receipt-boundary-ui.js?v=20261028v540r6';
 import { createPaymentReceiptFileIdentityReview } from './payment-receipt-file-identity-ui.js?v=20261028v540r4';
 import { createPaymentReceiptManualIdentityEdit } from './payment-receipt-manual-identity-ui.js?v=20261028v540r4';
 import { createPaymentTodoCodes } from './payment-todo-codes.js?v=20261028v540';
@@ -201,7 +201,7 @@ import {
   applyPaymentReceiptCoverageMutation,
   buildPaymentReceiptOriginalFileTree,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261028v540";
+} from "./payment-receipts.js?v=20261028v540r6";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
