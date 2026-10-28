@@ -14,8 +14,7 @@
   font: inherit;
   cursor: pointer;
   transform: none;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  overflow: visible;
 }
 #projectList .project-item-head { min-width: max-content; }
 #projectList .project-item-head strong {
@@ -25,6 +24,7 @@
   white-space: nowrap;
 }
 #projectList .project-item-primary { contain: inline-size; }
+#projectList .project-item-schedule { flex-shrink: 0; overflow: visible; white-space: nowrap; }
 #projectList .project-item-issuer { max-width: 100%; }
 #projectList .project-ledger-side {
   display: flex;
@@ -189,7 +189,7 @@ html[data-ui="beta"] .project-target-note .project-target-note-save { color: #ff
 @media (min-width: 1181px) {
   /* Shared tracks align whole note boxes; the last track includes row padding. */
   html[data-ui="beta"] #projectList {
-    grid-template-columns: minmax(0, max-content) minmax(110px, 1fr) 400px 180px calc(96px + 16px);
+    grid-template-columns: max-content minmax(110px, 1fr) minmax(240px, 400px) 180px calc(96px + 16px);
     column-gap: 24px;
   }
   html[data-ui="beta"] #projectList .project-ledger-item {
@@ -199,7 +199,7 @@ html[data-ui="beta"] .project-target-note .project-target-note-save { color: #ff
   }
   html[data-ui="beta"] #projectList .project-item-open {
     width: max-content;
-    max-width: min(320px, 100%);
+    max-width: none;
   }
 }
 
@@ -209,7 +209,7 @@ html[data-ui="beta"] .project-target-note .project-target-note-save { color: #ff
     grid-template-columns: minmax(0, 1fr) minmax(145px, .3fr);
     gap: 8px 20px;
   }
-  html[data-ui="beta"] #projectList .project-item-open { grid-column: 1; grid-row: 1; overflow-x: auto; }
+  html[data-ui="beta"] #projectList .project-item-open { grid-column: 1; grid-row: 1; }
   html[data-ui="beta"] #projectList .project-item-primary { contain: inline-size; max-width: none; }
   html[data-ui="beta"] #projectList .project-target-note { grid-column: 2; grid-row: 2; }
   html[data-ui="beta"] #projectList .project-item-facts { grid-column: 1; grid-row: 2; }
@@ -220,7 +220,6 @@ html[data-ui="beta"] .project-target-note .project-target-note-save { color: #ff
 @media (max-width: 760px) {
   html[data-ui="beta"] #projectList .project-ledger-item,
   html[data-ui="beta"] #projectList .project-ledger-item:has(.project-bid-summary) { grid-template-columns: minmax(0, 1fr); }
-  html[data-ui="beta"] #projectList .project-item-open { overflow-x: auto; }
   html[data-ui="beta"] #projectList .project-item-primary { contain: inline-size; max-width: none; }
   html[data-ui="beta"] #projectList .project-item-open,
   html[data-ui="beta"] #projectList .project-target-note,
