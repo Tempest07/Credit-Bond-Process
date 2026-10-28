@@ -1204,6 +1204,7 @@ async function reprocessPaymentReceiptFile(fileId, button) {
       removedReceiptIds: affected.map((receipt) => receipt.id),
       receipts: affected.map((receipt) => ({
         ...receipt,
+        ...(payload.correspondenceReset ? {matchStatus:"review",projectId:"",trancheId:"",matchSource:"",matchScore:0,matchReason:"",candidates:[]} : {}),
         fileProcessingStatus: payload.processingStatus || "reprocess_requested",
         batchProcessingStatus: "processing",
         errorMessage: "已申请重新识别，等待后台任务",
@@ -1217,7 +1218,7 @@ async function reprocessPaymentReceiptFile(fileId, button) {
         }
       : file);
     renderPaymentReceiptArchive();
-    showToast("已申请重新识别；原始 PDF 保留不变，后台会自动更新识别和对应结果。");
+    showToast("已申请重新识别整份 PDF，完成后自动重新对应。");
   } catch (error) {
     button.disabled = false;
     showToast(`重新识别失败：${error.message || "请稍后重试"}`);

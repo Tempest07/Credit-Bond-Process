@@ -174,7 +174,7 @@ test("queues an unmatched receipt file for a forced recognition refresh", async 
   const response = await onPendingReceiptReprocessPost({
     env: { DB },
     params: { id: "file-review" },
-    request: new Request("http://127.0.0.1:8788/api/payment-receipt-files/file-review/reprocess", { method: "POST" }),
+    request: new Request("http://127.0.0.1:8788/api/payment-receipt-files/file-review/reprocess", { method: "POST", headers:{Origin:"http://127.0.0.1:8788"} }),
   });
   const payload = await response.json();
   assert.equal(response.status, 202);
@@ -1154,6 +1154,7 @@ function createReceiptReprocessDb() {
               id: "file-review",
               batch_id: "batch-review",
               processing_status: "review",
+              batch_status: "review",
               updated_at: "2026-09-20T01:00:00.000Z",
               matched_count: 0,
             } : null;
@@ -1163,7 +1164,7 @@ function createReceiptReprocessDb() {
       };
     },
     async batch(statements) {
-      return statements.map(() => ({ meta: { changes: 1 } }));
+      return Promise.all(statements.map(statement => statement.run()));
     },
   };
 }

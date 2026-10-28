@@ -13,7 +13,8 @@ function harness(base, { conflict = false } = {}) {
   const fileId = 'file one/part';
   const requests = [], notices = [], mutations = [];
   let renders = 0;
-  const receipt = { id: 'receipt-1', fileId, bondShortName: '26测试MTN001', amountYuan: 30000000 };
+  const receipt = { id: 'receipt-1', fileId, bondShortName: '26测试MTN001', amountYuan: 30000000,
+    matchStatus:'matched',projectId:'old-project',trancheId:'old-tranche',matchSource:'manual',matchScore:100,matchReason:'人工对应',candidates:[{projectId:'old-project'}] };
   const other = { id: 'receipt-other', fileId: 'other-file' };
   const context = vm.createContext({
     paymentReceipts: [receipt, other],
@@ -24,8 +25,8 @@ function harness(base, { conflict = false } = {}) {
       requests.push({ url, options });
       const expected = new URL(`./api/payment-receipt-files/${encodeURIComponent(fileId)}/reprocess`, base);
       if (url.href !== expected.href) return { ok: false, status: 405, json: async () => ({}) };
-      if (conflict) return { ok: false, status: 409, json: async () => ({ error: '已有人工确认的项目对应' }) };
-      return { ok: true, status: 202, json: async () => ({ processingStatus: 'reprocess_requested' }) };
+      if (conflict) return { ok: false, status: 409, json: async () => ({ error: '该 PDF 正在处理' }) };
+      return { ok: true, status: 202, json: async () => ({ processingStatus: 'reprocess_requested',correspondenceReset:true }) };
     },
     applyLocalPaymentReceiptMutation: value => mutations.push(value),
     renderPaymentReceiptArchive: () => { renders++; },
@@ -48,6 +49,12 @@ for (const base of ['https://tempest07.com/bond-centre/', 'http://127.0.0.1:8838
     assert.equal(h.mutations[0].receipts.length, 1);
     assert.equal(h.mutations[0].receipts[0].bondShortName, h.receipt.bondShortName);
     assert.equal(h.mutations[0].receipts[0].amountYuan, h.receipt.amountYuan);
+    assert.equal(h.mutations[0].receipts[0].matchStatus,'review');
+    assert.equal(h.mutations[0].receipts[0].projectId,'');
+    assert.equal(h.mutations[0].receipts[0].trancheId,'');
+    assert.equal(h.mutations[0].receipts[0].matchSource,'');
+    assert.equal(h.mutations[0].receipts[0].candidates.length,0);
+    assert.deepEqual(Array.from(h.mutations[0].removedReceiptIds),['receipt-1']);
     assert.equal(h.context.paymentReceiptPendingFiles[0].filename, 'original.pdf');
     assert.equal(h.context.paymentReceiptPendingFiles[1].processingStatus, undefined);
     assert.ok(h.notices[0].startsWith('已申请重新识别'));
@@ -62,5 +69,5 @@ test('a rejected reprocess retains local receipt data and allows retry', async (
   assert.equal(h.renders, 0);
   assert.equal(button.disabled, false);
   assert.equal(h.context.paymentReceiptPendingFiles[0].processingStatus, undefined);
-  assert.match(h.notices[0], /已有人工确认的项目对应/);
+  assert.match(h.notices[0], /正在处理/);
 });
