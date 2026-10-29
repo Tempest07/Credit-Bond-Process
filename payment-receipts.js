@@ -670,6 +670,8 @@ function normalizeReceiptPage(input = {}) {
     ? "uncertain"
     : requestedClassification === "blank" || explicitBlank || (visualBlank && !hasUsefulText)
     ? "blank"
+    : requestedClassification === "continuation"
+    ? "content"
     : !hasUsefulText && !Number.isFinite(inkRatio)
       ? "uncertain"
       : "content";

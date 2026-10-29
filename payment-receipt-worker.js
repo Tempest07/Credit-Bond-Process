@@ -546,7 +546,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
   const grouped = groupPaymentReceiptPages(pageAnalyses.map((page) => ({
     pageNumber: page.pageNumber,
     text: page.recognizedText,
-    classification: page.classification === "uncertain" ? "uncertain" : "",
+    classification: page.classification,
     isBlank: page.classification === "blank",
     startsReceipt: page.classification === "receipt_start",
   })));

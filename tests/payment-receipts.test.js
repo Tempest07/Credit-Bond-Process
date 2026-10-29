@@ -25,6 +25,15 @@ test('an OCR code coinciding with another bond cannot override three contradicto
   assert.equal(selectPaymentReceiptMatch({...receipt,bondShortName:'26越新G1'},projects).status,'matched');
 });
 
+test('a visually confirmed seal continuation needs no repeated business text, while an unreadable page remains uncertain', () => {
+  const start = {pageNumber:1,text:'债券简称 26粤海水务01 债券代码524962.SZ',startsReceipt:true};
+  const sealed = groupPaymentReceiptPages([start,{pageNumber:2,text:'',classification:'continuation',startsReceipt:false}]);
+  assert.deepEqual(sealed.groups.map(group=>group.pageNumbers),[[1,2]]);
+  assert.deepEqual(sealed.uncertainPages,[]);
+  const unknown = groupPaymentReceiptPages([start,{pageNumber:2,text:'',classification:'uncertain',startsReceipt:false}]);
+  assert.deepEqual(unknown.uncertainPages,[2]);
+});
+
 test("updates a receipt action locally while honoring the active archive filters", () => {
   const before = [
     { id: "receipt-1", fileId: "file-1", paymentDate: "2026-07-21", matchStatus: "review", createdAt: "2026-07-21T10:00:00Z" },
