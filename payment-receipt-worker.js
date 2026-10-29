@@ -250,7 +250,12 @@ export async function processPaymentReceiptQueueJob(env, job = {}) {
     }
     validateBindings(env);
     await ensurePaymentReceiptSchema(env.DB);
-    return applyReviewedPaymentReceiptCorrections(env, job, { fingerprintMaterial: paymentReceiptFingerprintMaterial });
+    try {
+      return await applyReviewedPaymentReceiptCorrections(env, job, { fingerprintMaterial: paymentReceiptFingerprintMaterial });
+    } catch (error) {
+      if (error.nonRetryable === true || error.retryable === false) error.permanent = true;
+      throw error;
+    }
   }
   if (job.kind === 'library-rebuild') {
     const ownerUserId = String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER);
@@ -1583,6 +1588,11 @@ export async function finalizeBatchStatus(db, batchId) {
 
 async function recordProcessingFailure(env, job, error) {
   const message = String(error?.message || error || "缴款单处理失败").slice(0, 1000);
+  if (job.kind === 'reviewed-receipt-corrections') {
+    await insertPaymentReceiptEvent(env.DB, {id:crypto.randomUUID(), ownerUserId:String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER),
+      eventType:'reviewed_receipt_corrections_failed', detail:{requestId:String(job.requestId || ''), error:message, permanent:error?.permanent === true}});
+    return;
+  }
   if (job.kind==='library-rebuild') {
     await insertPaymentReceiptEvent(env.DB,{id:crypto.randomUUID(),ownerUserId:String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER),
       eventType:'library_rebuild_failed',detail:{requestId:String(job.requestId || ''),error:message}});
@@ -1610,6 +1620,11 @@ async function recordProcessingFailure(env, job, error) {
 
 export async function recordDeadLetterFailure(env, job = {}) {
   const message = "队列重试次数已用尽，任务进入死信队列并等待人工处理";
+  if (job.kind === 'reviewed-receipt-corrections') {
+    await insertPaymentReceiptEvent(env.DB, {id:crypto.randomUUID(), ownerUserId:String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER),
+      eventType:'reviewed_receipt_corrections_dead_lettered', detail:{requestId:String(job.requestId || ''), error:message}});
+    return true;
+  }
   if(job.kind==='library-rebuild'){
     await insertPaymentReceiptEvent(env.DB,{id:crypto.randomUUID(),ownerUserId:String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER),
       eventType:'library_rebuild_dead_lettered',detail:{requestId:String(job.requestId || ''),error:message}});

@@ -10,6 +10,9 @@ const hash=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',
 const parse=value=>{try{return JSON.parse(value);}catch{return null;}};
 const MATCH_COLUMNS=['id','owner_user_id','receipt_id','project_id','tranche_id','match_source','match_score','match_reason','created_at','updated_at'];
 const sameMatch=(left,right)=>left&&right&&MATCH_COLUMNS.every(column=>Object.hasOwn(left,column)&&left[column]===right[column]);
+// D1 limits expression depth to 100. A balanced conjunction keeps the exact
+// snapshot predicates without the depth of a long left-associative AND chain.
+function allSql(terms){if(terms.length===1)return terms[0];const middle=Math.floor(terms.length/2);return`(${allSql(terms.slice(0,middle))} AND ${allSql(terms.slice(middle))})`;}
 
 /** Sign the exact reviewed project/tranche; neither is modified by this operation. */
 export async function reviewedPaymentReceiptTargetSignature(project,tranche){
@@ -89,13 +92,13 @@ export async function applyReviewedPaymentReceiptCorrections(env,job,{fingerprin
     AND (SELECT COUNT(*) FROM json_each(?4) snapshot JOIN payment_receipts r ON r.id=json_extract(snapshot.value,'$.id')
       JOIN payment_receipt_files f ON f.id=r.file_id JOIN payment_receipt_batches b ON b.id=f.batch_id
       WHERE r.owner_user_id=?1 AND r.file_id=json_extract(snapshot.value,'$.file_id') AND r.updated_at=json_extract(snapshot.value,'$.updated_at')
-      AND ${columns.map(column=>`r.${column} IS json_extract(snapshot.value,'$.${column}')`).join(' AND ')}
+      AND ${allSql(columns.map(column=>`r.${column} IS json_extract(snapshot.value,'$.${column}')`))}
       AND f.sha256=json_extract(snapshot.value,'$.file_sha256') AND f.byte_size=json_extract(snapshot.value,'$.file_bytes')
       AND f.object_key=json_extract(snapshot.value,'$.file_object_key') AND f.updated_at=json_extract(snapshot.value,'$.file_updated_at')
       AND f.processing_status IN ('processed','review') AND b.owner_user_id=?1 AND b.processing_status IN ('processed','review')
       AND ((json_extract(snapshot.value,'$.expectedMatch.id') IS NULL AND NOT EXISTS(SELECT 1 FROM payment_receipt_matches WHERE receipt_id=r.id))
         OR EXISTS(SELECT 1 FROM payment_receipt_matches old_match WHERE old_match.receipt_id=r.id AND old_match.match_source='auto'
-          AND ${MATCH_COLUMNS.map(column=>`old_match.${column} IS json_extract(snapshot.value,'$.expectedMatch.${column}')`).join(' AND ')}))
+          AND ${allSql(MATCH_COLUMNS.map(column=>`old_match.${column} IS json_extract(snapshot.value,'$.expectedMatch.${column}')`))}))
       AND (json_extract(snapshot.value,'$.targetProjectId')='' OR NOT EXISTS(SELECT 1 FROM payment_receipt_matches
         WHERE owner_user_id=?1 AND project_id=json_extract(snapshot.value,'$.targetProjectId') AND tranche_id=json_extract(snapshot.value,'$.targetTrancheId')
           AND id IS NOT json_extract(snapshot.value,'$.expectedMatch.id'))))=json_array_length(?4)`;
