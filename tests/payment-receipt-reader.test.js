@@ -4,7 +4,25 @@ import {
   paymentReceiptReaderEntries,
   paymentReceiptReaderSelection,
   paymentReceiptReaderPreview,
+  paymentReceiptPageLabel,
+  paymentReceiptAmountDifference,
 } from "../payment-receipt-reader.js";
+
+test('logical allocations display only their physical PDF pages', () => {
+  assert.equal(paymentReceiptPageLabel({sourcePageLabel: '3#245774.SH'}), '3');
+  assert.equal(paymentReceiptPageLabel('3#245775.SH'), '3');
+  assert.equal(paymentReceiptPageLabel({sourcePageLabel: '9-11'}), '9-11');
+  assert.equal(paymentReceiptPageLabel({}), '');
+});
+
+test('actual receipt amounts are compared without changing a project or treating missing amounts as zero', () => {
+  const receipt = {amountFen: 4_000_000_000}, tranche = {winningAmountWan: 5000};
+  assert.deepEqual(paymentReceiptAmountDifference(receipt, tranche), {receiptFen:4_000_000_000, projectFen:5_000_000_000});
+  assert.deepEqual(tranche, {winningAmountWan:5000});
+  assert.equal(paymentReceiptAmountDifference(receipt, {winningAmountWan:4000}), null);
+  assert.equal(paymentReceiptAmountDifference({}, tranche), null);
+  assert.equal(paymentReceiptAmountDifference(receipt, {}), null);
+});
 
 test("reader entries preserve group order and distinguish IDs shared by different kinds", () => {
   const receipts = [{ id: "same" }, { id: "receipt-2" }];

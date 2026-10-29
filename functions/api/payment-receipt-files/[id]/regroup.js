@@ -9,9 +9,10 @@ import {
 } from "../../_payment-receipts.js";
 import {
   normalizePaymentReceiptPageGroups,
-  recognizePaymentReceiptText,
   selectPaymentReceiptMatch,
 } from "../../../../payment-receipts.js";
+import { expandPaymentReceiptAllocationGroup } from "../../../../payment-receipt-allocations.js";
+import { paymentReceiptCodeIdentity, samePaymentReceiptCode } from "../../../../payment-receipt-security.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -56,7 +57,7 @@ export async function onRequestPost(context) {
     const acceptedReviews = await readAcceptedPaymentReceiptReviewsForFile(context.env.DB, auth.user.id, file.id);
     const previousMatchByPages = new Map(oldReceipts.flatMap((receipt) =>
       receipt.project_id && receipt.tranche_id
-        ? [[pageKey(receipt.sourcePages), receipt]]
+        ? [[logicalPageKey(receipt.sourcePages, receipt.source_page_label), receipt]]
         : [],
     ));
     const manualVersion = new Date().toISOString().replace(/[-:.TZ]/g, "");
@@ -65,28 +66,32 @@ export async function onRequestPost(context) {
 
     for (const pageNumbers of normalized.groups) {
       const bytes = await copyPdfPages(sourcePdf, pageNumbers);
-      const idHash = await sha256Hex(new TextEncoder().encode(`${file.id}:${pageNumbers.join(",")}`));
+      const logicalGroups = expandPaymentReceiptAllocationGroup({ pageNumbers, pageLabel: pageLabel(pageNumbers) }, pageAnalyses);
+      for (const logical of logicalGroups) {
+      const allocationSuffix = logical.allocationKey ? `|allocation:${logical.allocationKey}` : "";
+      const idHash = await sha256Hex(new TextEncoder().encode(`${file.id}:${pageNumbers.join(",")}${logical.allocationKey ? ':' + logical.allocationKey : ''}`));
       const receiptId = `receipt-${idHash.slice(0, 32)}`;
       const objectKey = `receipts/manual/${file.received_date.replaceAll("-", "/")}/${file.id}/${manualVersion}-${receiptId}.pdf`;
-      const analyses = pageNumbers.map((pageNumber) => pageAnalyses.find((item) => Number(item?.pageNumber) === pageNumber) || {});
-      const firstFields = analyses.find((item) => item.classification === "receipt_start")?.fields || analyses[0]?.fields || {};
-      const recognized = recognizePaymentReceiptText(
-        analyses.map((item) => item.recognizedText).filter(Boolean).join("\n\n"),
-        firstFields,
-      );
+      const recognized = logical.recognized;
       const match = selectPaymentReceiptMatch(recognized, projects);
-      const preservedMatch = previousMatchByPages.get(pageKey(pageNumbers)) || null;
+      let preservedMatch = previousMatchByPages.get(logicalPageKey(pageNumbers, logical.pageLabel)) || null;
+      if (logical.allocation && preservedMatch && !samePaymentReceiptCode(paymentReceiptCodeIdentity(recognized.securityCode), paymentReceiptCodeIdentity(preservedMatch.security_code))) preservedMatch = null;
       const objectSha256 = await sha256Hex(bytes);
-      const fingerprint = await sha256Hex(new TextEncoder().encode(`manual-regroup-v1|source:${file.sha256}|pages:${pageNumbers.join(",")}`));
-      const acceptedReview = acceptedReviews.find(row => row.receipt_id === receiptId) || acceptedReviews.find(row => {
+      const fingerprint = await sha256Hex(new TextEncoder().encode(`manual-regroup-v1|source:${file.sha256}|pages:${pageNumbers.join(",")}${allocationSuffix}`));
+      const exactReview = acceptedReviews.find(row => row.receipt_id === receiptId);
+      const reviewCandidates = exactReview ? [exactReview] : acceptedReviews.filter(row => {
         try { const value = JSON.parse(row.detail_json); return value.fileId === file.id && value.pageNumber === pageNumbers[0]; }
         catch { return false; }
       });
-      const identityReview = acceptedReview ? acceptedPaymentReceiptIdentityReview({
+      let identityReview = null, inheritedReview = null;
+      for (const candidate of reviewCandidates) {
+        identityReview = acceptedPaymentReceiptIdentityReview({
         owner_user_id: auth.user.id, file_id: file.id, source_file_sha256: file.sha256, sha256: fingerprint,
         object_key: objectKey, source_pages_json: JSON.stringify(pageNumbers),
-        security_code: recognized.securityCode, bond_short_name: recognized.bondShortName, identity_review_json: acceptedReview.detail_json,
-      }) : null;
+        security_code: recognized.securityCode, bond_short_name: recognized.bondShortName, identity_review_json: candidate.detail_json,
+        });
+        if (identityReview) { inheritedReview = JSON.parse(candidate.detail_json); break; }
+      }
       await context.env.PAYMENT_RECEIPTS.put(objectKey, bytes, {
         httpMetadata: { contentType: "application/pdf" },
         customMetadata: { batchId: file.batch_id, fileId: file.id, sourcePages: pageLabel(pageNumbers), regroupedBy: auth.user.id },
@@ -96,14 +101,17 @@ export async function onRequestPost(context) {
       newReceipts.push({
         id: receiptId,
         pageNumbers,
-        pageLabel: pageLabel(pageNumbers),
+        pageLabel: logical.pageLabel,
         objectKey,
         fingerprint,
         recognized,
         candidates: preservedMatch ? [] : match.candidates,
         preservedMatch,
         identityReview,
+        inheritedReview: logical.allocation && inheritedReview ? { ...inheritedReview, receiptSha256: fingerprint,
+          fileSha256: file.sha256, fileId: file.id, sourcePages: pageNumbers, pageNumber: pageNumbers[0] } : null,
       });
+      }
     }
 
     await replaceReceiptRows(context.env.DB, {
@@ -207,7 +215,7 @@ function paymentReceiptResponseFromRegroup({ receipt, file, blankPages, fileProc
 
 async function readExistingReceipts(db, ownerUserId, fileId) {
   const result = await db.prepare(`
-    SELECT r.id, r.object_key, r.source_pages_json, m.project_id, m.tranche_id,
+    SELECT r.id, r.object_key, r.source_pages_json, r.source_page_label, r.security_code, m.project_id, m.tranche_id,
            m.match_source, m.match_score, m.match_reason
     FROM payment_receipts r
     LEFT JOIN payment_receipt_matches m ON m.receipt_id = r.id
@@ -317,12 +325,16 @@ async function replaceReceiptRows(db, input) {
         preserved.match_reason || "拆页未变，保留原对应", input.createdAt,
       ));
     }
+    if (receipt.inheritedReview) statements.push(db.prepare(`INSERT INTO payment_receipt_events
+      (id,owner_user_id,receipt_id,batch_id,event_type,detail_json,created_at)
+      VALUES (?1,?2,?3,?4,'identity_review_restored',?5,?6)`).bind(crypto.randomUUID(),input.ownerUserId,receipt.id,
+        input.file.batch_id,JSON.stringify(receipt.inheritedReview),input.createdAt));
   }
   const hasUnmatched = input.receipts.some((receipt) => !receipt.preservedMatch);
   const grouping = {
     version: 2,
     source: "manual",
-    groups: input.receipts.map((receipt) => ({ pageNumbers: receipt.pageNumbers, pageLabel: receipt.pageLabel })),
+    groups: input.normalized.groups.map((pageNumbers) => ({ pageNumbers, pageLabel: pageLabel(pageNumbers) })),
     blankPages: input.normalized.blankPages,
     uncertainPages: [],
     correctedAt: input.createdAt,
@@ -441,6 +453,11 @@ function pageLabel(pageNumbers) {
 
 function pageKey(pageNumbers) {
   return jsonPageNumbers(pageNumbers).join(",");
+}
+
+function logicalPageKey(pageNumbers, label = "") {
+  const suffix = String(label).includes("#") ? "#" + String(label).split("#").slice(1).join("#") : "";
+  return pageKey(pageNumbers) + suffix;
 }
 
 function jsonArray(value) {

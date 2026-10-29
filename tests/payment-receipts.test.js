@@ -13,6 +13,18 @@ import {
   selectPaymentReceiptMatch,
 } from "../payment-receipts.js";
 
+test('an OCR code coinciding with another bond cannot override three contradictory business fields', () => {
+  const projects = [{id:'yuexin',shortName:'26越新G1',tranches:[{id:'g1',shortName:'26越新G1',
+    securityCode:'524963.SZ',paymentDate:'2026-07-24',winningAmountWan:4000}]}];
+  const receipt = {bondShortName:'26越租G2',securityCode:'524963.SZ',paymentDate:'2026-08-05',amountFen:1_000_000_000};
+  const result = selectPaymentReceiptMatch(receipt, projects);
+  assert.equal(result.status,'review');
+  assert.equal(result.projectId,'');
+  assert.equal(result.candidates[0].businessIdentityConflict,true);
+  assert.match(result.reason,/简称、缴款日期和金额/);
+  assert.equal(selectPaymentReceiptMatch({...receipt,bondShortName:'26越新G1'},projects).status,'matched');
+});
+
 test("updates a receipt action locally while honoring the active archive filters", () => {
   const before = [
     { id: "receipt-1", fileId: "file-1", paymentDate: "2026-07-21", matchStatus: "review", createdAt: "2026-07-21T10:00:00Z" },

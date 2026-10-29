@@ -40,6 +40,8 @@ import { extractPaymentReceiptNativeText,paymentReceiptNativePageAnalysis } from
 import { preparePaymentReceiptOcrImage } from "./payment-receipt-ocr-image.js";
 import { splitBondNames } from "./bond-identity.js";
 import { extractPaymentReceiptFlateImage } from "./payment-receipt-flate-image.js";
+import { applyReviewedPaymentReceiptCorrections } from "./payment-receipt-reviewed-corrections.js";
+import { readPaymentReceiptAllocations, expandPaymentReceiptAllocationGroup } from "./payment-receipt-allocations.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -53,6 +55,7 @@ const RECONCILE_LIMIT = 50;
 const RECEIPT_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
 const PAGE_ANALYSIS_VERSION = 7;
 const SHORT_NAME_OCR_INSTRUCTIONS = "简称校对要求：bond_short_name 必须逐字读取当前页“债券简称”或“证券简称”字段，不得自行缩写；不得遗漏“租赁”“城投”等字，保留 SCP/CP/MTN/PPN 等品种、期次、A/B/AB 等字母以及“(绿色)”“(科创)”等原有属性。字段跨行时合并完整内容，可用本页缴款附言中重复出现的简称交叉核对；原件未写的内容不得补造。“债券名称”的发行全称、公司名称和 document_title 均不能代替简称，无法确认时留空。security_code 只能填写本页债券代码，不能填银行账号或金额。上一页摘要只用于判断分页边界，禁止把上一页简称或代码复制到当前页。另外在同一 JSON 中返回 remittance_name（缴款附言里的债券简称，原件没有就留空）、coupon_rate（本页票面利率，保留百分号）、allotted_amount_text（本页获配量及单位，无法确认留空）。两处简称都能读到时分别逐字读取，不能直接互相复制。";
+const ALLOCATION_OCR_INSTRUCTIONS = '同一页表格列有两个及以上债券品种时，额外返回 allocations 数组（最多20项）：每项逐行读取 bond_short_name、security_code、amount_text、coupon_rate、tenor。amount_text 只取该行缴款金额并保留单位，不能把不同行的简称、代码、金额混用；未获配行的0或横线原样返回，无法读出时留空。共用缴款日期仍放 payment_date。普通单品种不必返回数组。';
 
 export default {
   async fetch(request, env) {
@@ -241,6 +244,14 @@ export async function receivePaymentReceiptEmail(message, env) {
 }
 
 export async function processPaymentReceiptQueueJob(env, job = {}) {
+  if (job.kind === 'reviewed-receipt-corrections') {
+    if (job.ownerUserId !== String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER)) {
+      throw permanentReceiptError('复核修正任务归属无效');
+    }
+    validateBindings(env);
+    await ensurePaymentReceiptSchema(env.DB);
+    return applyReviewedPaymentReceiptCorrections(env, job, { fingerprintMaterial: paymentReceiptFingerprintMaterial });
+  }
   if (job.kind === 'library-rebuild') {
     const ownerUserId = String(env.RECEIPT_OWNER_USER_ID || DEFAULT_OWNER);
     if (job.ownerUserId !== ownerUserId || !/^[a-f0-9-]{36}$/i.test(String(job.requestId || ''))) {
@@ -551,33 +562,30 @@ export async function processPaymentReceiptFile(env, job = {}) {
     : [];
   const createdReceiptIds = [];
 
-  for (const group of grouped.groups) {
+  for (const group of grouped.groups.flatMap(group => expandPaymentReceiptAllocationGroup(group, pageAnalyses))) {
     const groupBytes = await copyPdfPages(sourcePdf, group.pageNumbers.map((value) => value - 1));
     const groupObjectSha256 = await sha256Hex(groupBytes);
-    const receiptKeyHash = await sha256Hex(new TextEncoder().encode(`${job.fileId}:${group.pageNumbers.join(",")}`));
+    const receiptKeyHash = await sha256Hex(new TextEncoder().encode(`${job.fileId}:${group.pageNumbers.join(",")}${group.allocationKey ? ':' + group.allocationKey : ''}`));
     // Manual regrouping uses different receipt IDs. Reuse a row for exactly the
     // same source pages, otherwise its unique file/page key blocks a full rerun.
     const samePagesReceipt = existingFileReceipts.find(receipt=>Array.isArray(receipt.sourcePages)
       && receipt.sourcePages.length===group.pageNumbers.length
-      && receipt.sourcePages.every((page,index)=>Number(page)===group.pageNumbers[index]));
+      && receipt.sourcePages.every((page,index)=>Number(page)===group.pageNumbers[index])
+      && (group.allocationKey ? receipt.sourcePageLabel === group.pageLabel : !String(receipt.sourcePageLabel || '').includes('#')));
     const receiptId = samePagesReceipt?.id || `receipt-${receiptKeyHash.slice(0, 32)}`;
     const objectKey = samePagesReceipt?.objectKey || `receipts/${job.receivedDate.replaceAll("-", "/")}/${receiptId}.pdf`;
     const groupPageAnalyses = group.pageNumbers.map((pageNumber) => pageAnalyses[pageNumber - 1]);
-    const firstFields = groupPageAnalyses.find((item) => item.classification === "receipt_start")?.fields || {};
-    const recognized = recognizePaymentReceiptText(
-      groupPageAnalyses.map((item) => item.recognizedText).filter(Boolean).join("\n\n"),
-      firstFields,
-    );
+    const recognized = group.recognized;
     const match = selectPaymentReceiptMatch(recognized, projects);
     const hasUncertainPage = groupPageAnalyses.some((item) => item.classification === "uncertain");
     const hasGroupReceiptStart = groupPageAnalyses.some(isTrustedReceiptStart);
     const recognizedCode = paymentReceiptCodeIdentity(recognized.securityCode);
     const missingIdentity = !recognized.bondShortName && (!recognizedCode || recognizedCode.invalid) && !recognized.prepaymentNumber;
     const missingArchiveDate = !recognized.paymentDate && match.status !== 'matched';
-    const requiresReview = hasUncertainPage || !hasGroupReceiptStart || missingIdentity || missingArchiveDate || job.messageIdConflict === true;
+    const requiresReview = group.requiresReview || hasUncertainPage || !hasGroupReceiptStart || missingIdentity || missingArchiveDate || job.messageIdConflict === true;
     if(requiresReview)fileNeedsReview=true;
     const receiptFingerprint = await sha256Hex(new TextEncoder().encode(
-      paymentReceiptFingerprintMaterial(recognized, sourceSha256, group.pageNumbers),
+      paymentReceiptFingerprintMaterial({...recognized, allocationKey: group.allocationKey}, sourceSha256, group.pageNumbers),
     ));
     const existingReceipt = await getPaymentReceipt(env.DB, job.ownerUserId, receiptId);
     const duplicateOf = await findPaymentReceiptBySha(env.DB, job.ownerUserId, receiptFingerprint, receiptId);
@@ -637,7 +645,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
       customMetadata: {
         batchId: job.batchId,
         fileId: job.fileId,
-        sourcePages: group.pageLabel,
+        sourcePages: group.physicalPageLabel || group.pageLabel,
       },
       sha256: hexToBytes(groupObjectSha256),
     });
@@ -677,6 +685,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
       eventType: "receipt_extracted",
       detail: {
         sourcePages: group.pageNumbers,
+        allocationKey: group.allocationKey || '',
         matchStatus: effectiveMatchStatus,
         projectId: match.projectId,
         trancheId: match.trancheId,
@@ -741,7 +750,7 @@ export function paymentReceiptFingerprintMaterial(recognized = {}, sourceSha256 
   if (bondShortName && payerName && paymentDate && amountFen) {
     return `receipt-v1|bond:${bondShortName}|payer:${payerName}|date:${paymentDate}|amount:${amountFen}`;
   }
-  return `receipt-v1|source:${canonicalFingerprintPart(sourceSha256)}|pages:${pageNumbers.map(Number).join(",")}`;
+  return `receipt-v1|source:${canonicalFingerprintPart(sourceSha256)}|pages:${pageNumbers.map(Number).join(",")}${recognized.allocationKey ? '|allocation:' + canonicalFingerprintPart(recognized.allocationKey) : ''}`;
 }
 
 async function recoverAutomaticReceiptMatch(env, ownerUserId, receipt, match, hasUncertainPage) {
@@ -825,11 +834,11 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
                 type: "image_url",
                 image_url: { url: imageData, detail: "high" },
               },
-              { type: "text", text: SHORT_NAME_OCR_INSTRUCTIONS + ' 空白页判断：纸纹、扫描噪点、装订边和极淡的镜像背面透印不属于正面业务内容，可判 blank；清楚可辨的正面业务文字、盖章内容和真实表格不得判 blank。blank 时所有业务字段留空，不能从上一页复制信息。' },
+              { type: "text", text: SHORT_NAME_OCR_INSTRUCTIONS + ALLOCATION_OCR_INSTRUCTIONS + ' 空白页判断：纸纹、扫描噪点、装订边和极淡的镜像背面透印不属于正面业务内容，可判 blank；清楚可辨的正面业务文字、盖章内容和真实表格不得判 blank。blank 时所有业务字段留空，不能从上一页复制信息。' },
             ],
           }],
           temperature: 0,
-          max_tokens: ai.provider === 'deepseek' ? 1200 : 600,
+          max_tokens: ai.provider === 'deepseek' ? 2400 : 600,
           stream: false,
         };
         const aiResult = await runPaymentReceiptAiWithRetry(ai, aiInput, pageNumber);
@@ -904,6 +913,7 @@ export async function analyzePaymentReceiptPage(env, pageBytes, pageNumber, prev
               payeeName: "",
               bankReference: "",
               amountText: normalized.amount_text,
+              ...(normalized.allocations?.length ? {allocations: normalized.allocations} : {}),
             },
           };
         }
@@ -1329,6 +1339,7 @@ function paymentReceiptKeyText(parsed = {}) {
     parsed.coupon_rate ? `票面利率 ${parsed.coupon_rate}` : "",
     parsed.allotted_amount_text ? `获配量 ${parsed.allotted_amount_text}` : "",
     parsed.instrument_name ? `专项计划名称 ${parsed.instrument_name}` : "",
+    ...(parsed.allocations || []).map(row => `品种 ${row.bondShortName || row.bond_short_name || ''} 债券代码 ${row.securityCode || row.security_code || ''} 缴款金额 ${row.amountText || row.amount_text || (row.amountFen == null ? '' : row.amountFen / 100 + '元')}`),
   ].filter(Boolean).join("\n");
 }
 
@@ -1375,11 +1386,30 @@ function normalizeAiPaymentReceiptFields(parsed = {}) {
   normalized.remittance_name = normalizePaymentReceiptBondShortName(stripPaymentReceiptFieldLabel(parsed.remittance_name));
   normalized.coupon_rate = stripPaymentReceiptFieldLabel(parsed.coupon_rate);
   normalized.allotted_amount_text = stripPaymentReceiptFieldLabel(parsed.allotted_amount_text);
+  if (Array.isArray(parsed.allocations) && parsed.allocations.length <= 20) {
+    normalized.allocations = parsed.allocations.filter(row => row && typeof row === 'object' && !Array.isArray(row));
+    const rows = readPaymentReceiptAllocations(parsed.recognized_text || '', normalized), first = rows[0];
+    if (first && rows.every(row => !row.requiresReview)
+        && (normalized.allocations.length >= 2 || !normalized.bond_short_name && !normalized.security_code)) {
+      normalized.bond_short_name = first.bondShortName;
+      normalized.security_code = first.securityCode;
+      normalized.amount_text = first.amountFen == null ? normalized.amount_text : `${first.amountFen / 100}元`;
+    }
+  } else {
+    delete normalized.allocations;
+    if (Array.isArray(parsed.allocations)) { normalized.classification = 'uncertain'; normalized.confidence = .79; }
+  }
   return normalized;
 }
 
 /** Clear current-page DeepSeek readings need one call, not a compulsory reread. */
 export function paymentReceiptPrimaryIsClear(provider, fields = {}, previous = {}) {
+  if (provider === 'deepseek' && fields.classification === 'receipt_start'
+      && Number(fields.confidence) >= .9 && paymentReceiptStartSignals(fields.document_title)) {
+    const allocations = readPaymentReceiptAllocations('', fields);
+    if (fields.allocations?.length >= 2 && allocations.length >= 1 && allocations.length <= 20
+        && allocations.every(row => !row.requiresReview && row.paymentDate)) return true;
+  }
   if (provider !== 'deepseek' || fields.classification !== 'receipt_start'
       || !paymentReceiptStartSignals(fields.document_title) || !normalizePaymentReceiptBondShortName(fields.bond_short_name)) return false;
   const code = paymentReceiptCodeIdentity(fields.security_code);

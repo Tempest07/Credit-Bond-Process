@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createPaymentReceiptNameResolver } from '../payment-receipt-name-display.js';
+import { paymentReceiptPageLabel, paymentReceiptAmountDifference } from '../payment-receipt-reader.js';
 
 const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 function load(context, names) {
@@ -18,10 +19,20 @@ function harness() {
     { id: 'p1', shortName: '26测试MTN001', issuerName: '甲公司', tranches: [{ id: 't1', shortName: '26测试MTN001', paymentDate: '2026-10-15', paymentCompleted: false }] },
     { id: 'p2', shortName: '26测试CP002', issuerName: '乙公司', tranches: [{ id: 't2', shortName: '26测试CP002', paymentDate: '2026-10-23', paymentCompleted: true }] },
   ] };
-  const context = vm.createContext({ state, createPaymentReceiptNameResolver, paymentReceiptNameResolverCache: null, paymentReceiptIdentityReviews: new Map(),paymentReceiptMatchAi:null,paymentReceiptFileIdentityAi:null,paymentReceiptManualIdentityEdit:null });
-  load(context, ['paymentReceiptNameResolution', 'paymentReceiptNameSourceLabel', 'renderPaymentReceiptQuickMatch', 'renderPaymentReceiptIdentityReviewContent', 'paymentReceiptTargetOptions', 'paymentReceiptTarget', 'renderPaymentReceiptCandidates', 'escapeHtml', 'escapeAttribute']);
+  const context = vm.createContext({ state, createPaymentReceiptNameResolver, paymentReceiptPageLabel, paymentReceiptAmountDifference, paymentReceiptNameResolverCache: null, paymentReceiptIdentityReviews: new Map(),paymentReceiptMatchAi:null,paymentReceiptFileIdentityAi:null,paymentReceiptManualIdentityEdit:null });
+  load(context, ['paymentReceiptNameResolution', 'paymentReceiptNameSourceLabel', 'renderPaymentReceiptQuickMatch', 'renderPaymentReceiptAmountDifference', 'renderPaymentReceiptIdentityReviewContent', 'paymentReceiptTargetOptions', 'paymentReceiptTarget', 'renderPaymentReceiptCandidates', 'escapeHtml', 'escapeAttribute']);
   return { context, state };
 }
+
+test('matched receipts show actual and project amount differences beside the correspondence without changing either', () => {
+  const {context, state} = harness();
+  state.projects[0].tranches[0].winningAmountWan = 5000;
+  const receipt = {id:'r',projectId:'p1',trancheId:'t1',matchStatus:'matched',amountFen:4_000_000_000};
+  const before = JSON.stringify({state,receipt});
+  const html = context.renderPaymentReceiptQuickMatch(receipt);
+  assert.match(html, /单据 4,000 万元 · 项目 5,000 万元/);
+  assert.equal(JSON.stringify({state,receipt}), before);
+});
 
 test('quick matching is immediately available for an unassigned receipt without switching detail tabs', () => {
   const { context } = harness();

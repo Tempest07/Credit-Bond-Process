@@ -359,7 +359,8 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
     || best.signals.amount
     || best.signals.issuerName
     || exactIdentifier;
-  const canAutoMatch = !best.securityCodeConflict && uniqueBest && (exactIdentifier || (exactBusinessMatch && abbreviationCorroborated));
+  const canAutoMatch = !best.securityCodeConflict && !best.businessIdentityConflict
+    && uniqueBest && (exactIdentifier || (exactBusinessMatch && abbreviationCorroborated));
 
   return {
     status: canAutoMatch ? "matched" : "review",
@@ -368,7 +369,8 @@ export function selectPaymentReceiptMatch(receiptInput = {}, projects = []) {
     score: best.score,
     reason: canAutoMatch
       ? describeMatch(best)
-      : best.securityCodeConflict ? '证券代码或交易市场存在冲突，需要人工核对'
+      : best.businessIdentityConflict ? '券码相同，但简称、缴款日期和金额均与项目不符，需要核对原件'
+        : best.securityCodeConflict ? '证券代码或交易市场存在冲突，需要人工核对'
         : `存在${Math.min(candidates.length, 5)}个候选项目，需要人工确认`,
     candidates: candidates.slice(0, 5).map(publicCandidate),
   };
@@ -566,7 +568,11 @@ function scoreCandidate(receipt, candidate) {
     + (completeShortName ? 20 : 0)
     + (signals.amount ? 45 : 0)
     + (signals.issuerName ? 15 : 0);
-  return { ...candidate, score, signals, securityCodeConflict, completeShortName };
+  const businessIdentityConflict = signals.securityCode && !signals.prepaymentNumber
+    && Boolean(receiptName && cleanBondShortName(candidate.shortName)) && !signals.shortName
+    && Boolean(receipt.paymentDate && candidate.paymentDate) && !signals.date
+    && positiveFiniteNumber(receipt.amountFen) && positiveFiniteNumber(candidate.winningAmountWan) && !signals.amount;
+  return { ...candidate, score, signals, securityCodeConflict, businessIdentityConflict, completeShortName };
 }
 
 function amountsMatch(amountFen, winningAmountWan) {
@@ -593,6 +599,7 @@ function publicCandidate(candidate) {
     score: candidate.score,
     signals: candidate.signals,
     securityCodeConflict: candidate.securityCodeConflict,
+    businessIdentityConflict: candidate.businessIdentityConflict,
   };
 }
 

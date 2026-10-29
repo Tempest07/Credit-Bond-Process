@@ -27,3 +27,16 @@ export function paymentReceiptReaderPreview(entry) {
     label: value.sourceFilename || value.bondShortName || value.subject || "缴款单原件",
   };
 }
+
+// A logical allocation may share a physical page with another bond. Its
+// database suffix is an identity key, while the reader shows PDF page numbers.
+export function paymentReceiptPageLabel(value = {}) {
+  return String(typeof value === 'string' ? value : value.sourcePageLabel || '')
+    .replace(/#.*$/, '');
+}
+
+export function paymentReceiptAmountDifference(receipt = {}, tranche = {}) {
+  const actual = receipt.amountFen, expected = Math.round(Number(tranche.winningAmountWan) * 1_000_000);
+  return Number.isSafeInteger(actual) && actual > 0 && Number.isSafeInteger(expected) && expected > 0
+    && Math.abs(actual - expected) > 1 ? {receiptFen: actual, projectFen: expected} : null;
+}

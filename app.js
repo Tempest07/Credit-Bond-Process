@@ -1,6 +1,6 @@
 import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261028v540';
 import { createPaymentReceiptWorkspace } from './payment-receipt-workspace-ui.js?v=20261028v540r8';
-import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview } from './payment-receipt-reader.js?v=20261028v540r8';
+import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview, paymentReceiptPageLabel, paymentReceiptAmountDifference } from './payment-receipt-reader.js?v=20261028v540r11';
 import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261028v540r3';
 import { normalizePaymentReceiptBondShortName } from './payment-receipt-names.js?v=20261028v540';
 import { updateModelValuationAssist, resetModelValuationAssist } from './valuation-assistant.js?v=20261028v540';
@@ -203,7 +203,7 @@ import {
   buildPaymentReceiptOriginalFileTree,
   buildPaymentReceiptCoverage,
   normalizePaymentReceiptPageGroups,
-} from "./payment-receipts.js?v=20261028v540r8";
+} from "./payment-receipts.js?v=20261028v540r11";
 import {
   buildIssuerSearchIndex,
   searchIssuerIndex,
@@ -1685,7 +1685,7 @@ function renderPaymentReceiptIndexItem(entry) {
     ? [value.securityCode, formatPaymentReceiptAmount(value.amountFen), value.prepaymentNumber]
     : [value.sender, value.pageCount ? `${value.pageCount} 页` : ""];
   const source = entry.kind === "receipt"
-    ? [value.sourceFilename, value.sourcePageLabel ? `原件第 ${value.sourcePageLabel} 页` : ""].filter(Boolean).join(" · ")
+    ? [value.sourceFilename, paymentReceiptPageLabel(value) ? `原件第 ${paymentReceiptPageLabel(value)} 页` : ""].filter(Boolean).join(" · ")
     : entry.kind === "file" ? "待处理附件" : "邮件 · 暂无 PDF";
   return `<div class="payment-receipt-index-row">${entry.kind === 'receipt' ? `<label class="payment-receipt-select"><input type="checkbox" data-receipt-select="${escapeAttribute(value.id)}" aria-label="选择 ${escapeAttribute(name?.title || value.bondShortName || '单据')}"></label>` : ''}<button type="button" class="payment-receipt-index-item ${entry.key === selectedPaymentReceiptEntryKey ? "active" : ""}"
     data-receipt-entry="${escapeAttribute(entry.key)}" aria-pressed="${entry.key === selectedPaymentReceiptEntryKey}">
@@ -1878,7 +1878,7 @@ function renderPaymentReceiptCard(receipt) {
   const identity = [receipt.securityCode, receipt.prepaymentNumber, amount].filter(Boolean).join(" · ");
   const source = [
     receipt.sourceFilename,
-    receipt.sourcePageLabel ? `原附件第 ${receipt.sourcePageLabel} 页` : "",
+    paymentReceiptPageLabel(receipt) ? `原附件第 ${paymentReceiptPageLabel(receipt)} 页` : "",
     receipt.blankPages?.length ? `空白页 ${receipt.blankPages.join("、")}` : "",
   ].filter(Boolean).join(" · ");
   return `
@@ -1938,6 +1938,7 @@ function renderPaymentReceiptQuickMatch(receipt) {
     <div class="payment-receipt-match-summary"><span>对应项目</span><strong>${escapeHtml(title)}</strong>
       ${target ? `<button class="text-button" type="button" data-receipt-open-project="${escapeAttribute(target.project.id)}">查看项目 ↗</button>` : ""}
     </div>
+    ${renderPaymentReceiptAmountDifference(receipt, target)}
     ${name.warning ? `<p class="payment-receipt-name-warning" role="status">${escapeHtml(name.warning)}</p>` : ""}
     ${editable ? `<fieldset class="payment-receipt-match-controls" aria-label="项目对应操作"><div class="payment-receipt-manual payment-receipt-quick-match" data-receipt-id="${escapeAttribute(receipt.id)}">
         <input type="search" data-receipt-target-search placeholder="搜索项目、主体或日期" aria-label="筛选可对应项目" autocomplete="off">
@@ -1994,6 +1995,13 @@ function renderPaymentReceiptTargetLine(receipt, target = paymentReceiptTarget(r
       <span>${escapeHtml(target.tranche.shortName || "品种")} · ${escapeHtml(paymentLabel)}</span>
     </div>
   `;
+}
+
+function renderPaymentReceiptAmountDifference(receipt, target) {
+  const difference = paymentReceiptAmountDifference(receipt, target?.tranche);
+  if (!difference) return '';
+  const number = value => new Intl.NumberFormat('zh-CN', {maximumFractionDigits:2}).format(value / 1_000_000);
+  return `<span class="payment-receipt-amount-difference">金额不同：单据 ${number(difference.receiptFen)} 万元 · 项目 ${number(difference.projectFen)} 万元</span>`;
 }
 
 function paymentReceiptTarget(receipt) {
@@ -2186,7 +2194,7 @@ function renderPaymentReceiptExplorerBreadcrumb(selectedFolder) {
 function renderPaymentReceiptExplorerFile(file) {
   const metadata = [
     file.receiptCount ? `${file.receiptCount} 张拆分单据` : paymentReceiptFileStatusLabel(file.processingStatus),
-    file.sourcePageLabels.length ? `相关页 ${file.sourcePageLabels.join("、")}` : "",
+    file.sourcePageLabels.length ? `相关页 ${[...new Set(file.sourcePageLabels.map(paymentReceiptPageLabel))].join("、")}` : "",
     file.pageCount ? `${file.pageCount} 页` : "",
     formatPaymentReceiptReceivedAt(file.receivedAt),
   ].filter(Boolean).join(" · ");
@@ -2452,7 +2460,7 @@ function renderTranchePaymentReceiptContent(projectId, trancheId) {
     <div class="tranche-payment-receipt-list">
       ${receipts.map((receipt) => `
         <div class="tranche-payment-receipt-row"><a href="${paymentReceiptFileUrl(receipt.id)}" target="_blank" rel="noopener">
-          <span>${escapeHtml(receipt.paymentDate || receipt.archiveDate || "缴款日期待识别")} · ${escapeHtml(receipt.sourcePageLabel ? `原附件第 ${receipt.sourcePageLabel} 页` : receipt.sourceFilename || "PDF")}</span>
+          <span>${escapeHtml(receipt.paymentDate || receipt.archiveDate || "缴款日期待识别")} · ${escapeHtml(paymentReceiptPageLabel(receipt) ? `原附件第 ${paymentReceiptPageLabel(receipt)} 页` : receipt.sourceFilename || "PDF")}</span>
           <strong>查看缴款单</strong>
         </a><a class="button subtle" href="${paymentReceiptFileUrl(receipt.id)}?download=1" download>下载单张</a></div>
       `).join("")}

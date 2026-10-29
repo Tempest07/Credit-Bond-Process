@@ -593,7 +593,7 @@ export async function updatePaymentReceiptRecognition(db, input) {
 
 export async function listPaymentReceiptsForFile(db, ownerUserId, fileId) {
   const result = await db.prepare(`
-    SELECT r.id, r.object_key, r.match_status, r.source_pages_json,
+    SELECT r.id, r.object_key, r.match_status, r.source_pages_json, r.source_page_label,
            m.project_id, m.tranche_id
     FROM payment_receipts r
     LEFT JOIN payment_receipt_matches m
@@ -606,6 +606,7 @@ export async function listPaymentReceiptsForFile(db, ownerUserId, fileId) {
     objectKey: String(row.object_key || ""),
     matchStatus: String(row.match_status || "unmatched"),
     sourcePages: jsonArray(row.source_pages_json),
+    sourcePageLabel: String(row.source_page_label || ""),
     projectId: String(row.project_id || ""),
     trancheId: String(row.tranche_id || ""),
   }));
