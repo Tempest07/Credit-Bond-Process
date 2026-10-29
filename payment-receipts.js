@@ -402,9 +402,12 @@ export function buildPaymentReceiptCoverage(projects = [], matches = [], filters
   const matchedByTarget = new Map((Array.isArray(matches) ? matches : []).flatMap((match) => {
     const projectId = String(match?.projectId || "");
     const trancheId = String(match?.trancheId || "");
-    if (!projectId || !trancheId) return [];
+    // Coverage rows use receiptId; loaded matched documents use their own id.
+    // An incomplete row must never replace an already known correspondence.
+    const receiptId = String(match?.receiptId || (match?.matchStatus === "matched" ? match?.id : "") || "");
+    if (!projectId || !trancheId || !receiptId) return [];
     return [[`${projectId}:${trancheId}`, {
-      receiptId: String(match.receiptId || ""),
+      receiptId,
       matchSource: String(match.matchSource || ""),
       matchScore: Number(match.matchScore) || 0,
     }]];

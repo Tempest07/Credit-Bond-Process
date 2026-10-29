@@ -35,7 +35,9 @@ test("versions all first-party browser modules together", async () => {
     readFile(new URL("../bond-list-editor.js", import.meta.url), "utf8"),
   ]);
 
-  assert.match(html, /app\.js\?v=20261028v540/);
+  const entryBuild = html.match(/<meta name="application-build" content="([^"]+)">/)?.[1];
+  assert.ok(entryBuild, 'entry build identifies the deployed app module');
+  assert.ok(html.includes(`./app.js?v=${entryBuild}`), 'entry script cache version follows the current build');
   assert.match(html, /bond-list-editor\.css\?v=20261028v540/);
   assert.match(app, /bond-list-editor\.js\?v=20261028v540/);
   assert.match(html, /payment-receipt-reader\.css\?v=20261028v540/);

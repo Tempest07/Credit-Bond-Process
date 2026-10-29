@@ -83,6 +83,22 @@ test("moves receipt coverage locally without refetching the archive", () => {
   assert.equal(updated.targets[1].covered, true);
   assert.equal(updated.targets[1].receiptId, "receipt-1");
 });
+
+test('waiving another project retains coverage when API targets and loaded receipt documents are combined', () => {
+  const projects = [{id:'p',shortName:'26粤交投SCP002',tranches:[{id:'t',shortName:'26粤交投SCP002',
+    paymentDate:'2026-06-11',paymentCompleted:true,winningAmountWan:0.7}]},
+    {id:'waived',paymentReceiptRequired:false,tranches:[{id:'waived-t',paymentDate:'2026-06-11',winningAmountWan:1}]}];
+  const receipt = {id:'receipt',projectId:'p',trancheId:'t',matchStatus:'matched',matchSource:'auto',amountFen:7_000_000_000};
+  const initial = buildPaymentReceiptCoverage(projects,[{projectId:'p',trancheId:'t',receiptId:'receipt',matchSource:'auto'}]);
+  const after = buildPaymentReceiptCoverage(projects,[...initial.targets.filter(target=>target.covered),receipt]);
+  assert.equal(after.expected,1);
+  assert.equal(after.covered,1);
+  assert.equal(after.missing,0);
+  assert.equal(after.targets[0].receiptId,'receipt');
+  const invalidRows = [{id:'unassigned',projectId:'p',trancheId:'t',matchStatus:'unmatched'},
+    {id:'match-row-id',projectId:'p',trancheId:'t'}];
+  assert.equal(buildPaymentReceiptCoverage(projects,[...initial.targets,...invalidRows]).covered,1);
+});
 import {
   assignPaymentReceipt,
   listPaymentReceipts,
