@@ -1,4 +1,4 @@
-import PostalMime from "postal-mime";
+import {collectPaymentReceiptPdfAttachments,PaymentReceiptAttachmentLimitError} from './payment-receipt-email-attachments.js';
 import createJbig2 from "pdfjs-dist/wasm/jbig2_nowasm_fallback.js";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 
@@ -45,7 +45,6 @@ import { readPaymentReceiptAllocations, expandPaymentReceiptAllocationGroup } fr
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
-const MAX_ATTACHMENTS = 20;
 const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MAX_AI_IMAGE_DATA_CHARS = 13_900_000;
@@ -377,22 +376,22 @@ export async function processPaymentReceiptEmail(env, job = {}) {
   const rawObject = await env.PAYMENT_RECEIPTS.get(job.rawObjectKey);
   if (!rawObject) throw permanentReceiptError(`R2 中不存在原始缴款单邮件：${job.rawObjectKey}`);
   const raw = await rawObject.arrayBuffer();
-  const parsed = await PostalMime.parse(raw);
-  const attachments = parsed.attachments || [];
-  if (attachments.length > MAX_ATTACHMENTS) {
-    const message = `邮件包含 ${attachments.length} 个附件，超过 ${MAX_ATTACHMENTS} 个安全上限，未自动处理`;
-    await updatePaymentReceiptBatch(env.DB, job.batchId, { processingStatus: "review", errorMessage: message });
+  if(job.expectedRawSha256&&await sha256Hex(raw)!==job.expectedRawSha256)throw permanentReceiptError('原始缴款单邮件内容与恢复任务校验值不符');
+  let collected;
+  try{collected=await collectPaymentReceiptPdfAttachments(raw);}catch(error){
+    if(!(error instanceof PaymentReceiptAttachmentLimitError))throw error;
+    await updatePaymentReceiptBatch(env.DB, job.batchId, { processingStatus: "review", errorMessage: error.message });
     await insertPaymentReceiptEvent(env.DB, {
       id: crypto.randomUUID(), ownerUserId: job.ownerUserId || DEFAULT_OWNER, batchId: job.batchId,
       eventType: "email_rejected_attachment_limit",
-      detail: { attachmentCount: attachments.length, limit: MAX_ATTACHMENTS },
+      detail:error.detail,
     });
-    return { status: "too_many_attachments", batchId: job.batchId, attachmentCount: attachments.length };
+    return { status: error.detail.limit==='attachments'?"too_many_attachments":"attachment_limit", batchId: job.batchId, ...error.detail };
   }
 
   const baseKey = String(job.rawObjectKey || "").replace(/\/message\.eml$/, "");
-  let accepted = 0;
-  for (const attachment of attachments) {
+  let accepted = 0;const pdfSources=[];
+  for (const attachment of collected.pdfs) {
     const bytes = toArrayBuffer(attachment.content);
     const mimeType = String(attachment.mimeType || attachment.contentType || "application/octet-stream").toLowerCase();
     const filename = safeFilename(attachment.filename || `attachment-${accepted + 1}.pdf`);
@@ -401,6 +400,7 @@ export async function processPaymentReceiptEmail(env, job = {}) {
     const sha256 = await sha256Hex(bytes);
     const existingFile = await findPaymentReceiptFile(env.DB, job.batchId, sha256);
     if (existingFile) {
+      pdfSources.push({fileId:existingFile.id,filename,sourcePath:attachment.sourcePath,sha256,existing:true});
       accepted += 1;
       if (["received", "error"].includes(existingFile.processingStatus)) {
         await enqueuePaymentReceiptFile(env, job, existingFile);
@@ -428,6 +428,7 @@ export async function processPaymentReceiptEmail(env, job = {}) {
       createdAt: new Date().toISOString(),
     });
     if (!fileTooLarge) await enqueuePaymentReceiptFile(env, job, { id: fileId, objectKey, filename });
+    pdfSources.push({fileId,filename,sourcePath:attachment.sourcePath,sha256,existing:false});
     accepted += 1;
   }
 
@@ -436,14 +437,18 @@ export async function processPaymentReceiptEmail(env, job = {}) {
     ownerUserId: job.ownerUserId || DEFAULT_OWNER,
     batchId: job.batchId,
     eventType: "email_attachments_extracted",
-    detail: { acceptedPdfCount: accepted, attachmentCount: attachments.length, messageIdConflict: job.messageIdConflict === true },
+    detail: { acceptedPdfCount: accepted, attachmentCount: collected.attachmentCount, nestedEmailCount:collected.nestedEmailCount,
+      totalAttachmentBytes:collected.totalAttachmentBytes,pdfSources,attachmentSources:collected.attachmentSources,messageIdConflict: job.messageIdConflict === true },
   });
   if (!accepted) {
+    const invalidPdf=collected.attachmentSources.some(attachment=>attachment.kind==='invalid_pdf');
     await updatePaymentReceiptBatch(env.DB, job.batchId, {
-      processingStatus: "review",
-      errorMessage: "邮件中没有有效 PDF 附件",
+      processingStatus: invalidPdf?"review":"processed",
+      errorMessage: invalidPdf?'PDF附件内容无效，原始邮件已保留':"",
     });
-    return { status: "no_pdf", batchId: job.batchId, acceptedPdfCount: 0 };
+    await insertPaymentReceiptEvent(env.DB,{id:crypto.randomUUID(),ownerUserId:job.ownerUserId||DEFAULT_OWNER,batchId:job.batchId,
+      eventType:invalidPdf?'email_invalid_pdf_attachment':'email_archived_without_payment_pdf',detail:{attachmentCount:collected.attachmentCount,attachmentSources:collected.attachmentSources}});
+    return { status: invalidPdf?'invalid_pdf':"no_pdf", batchId: job.batchId, acceptedPdfCount: 0 };
   }
   await finalizeBatchStatus(env.DB, job.batchId);
   return { status: "queued", batchId: job.batchId, acceptedPdfCount: accepted };

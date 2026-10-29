@@ -255,6 +255,7 @@ export async function listPendingPaymentReceiptFiles(db, ownerUserId, filters = 
 export async function listPendingPaymentReceiptBatches(db, ownerUserId, filters = {}) {
   const where = [
     "b.owner_user_id = ?",
+    "b.processing_status <> 'processed'",
     "NOT EXISTS (SELECT 1 FROM payment_receipt_files f WHERE f.batch_id = b.id)",
   ];
   const values = [ownerUserId];
