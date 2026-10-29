@@ -20,7 +20,7 @@
 .tranche-payment-receipt-row > a:first-child { flex: 1; }
 .tranche-payment-receipt-row > a:last-child { flex: none; white-space: nowrap; }
 .tranche-payment-receipt-head { flex-wrap: wrap; gap: 8px; }
-.payment-receipt-amount-difference { display: block; color: #986019; font-size: 14px; line-height: 1.6; margin: 8px 0; }
+.payment-receipt-amount-difference { display: block; color: #777; font-size: 14px; line-height: 1.6; margin: 8px 0; }
 .receipt-requirement-toggle { margin-left: auto; font-size: 12px; }
 .tranche-payment-receipt-empty .receipt-requirement-toggle { margin-left: 0; justify-self: start; }
 @media (prefers-reduced-motion: reduce) { .payment-receipt-job.is-running strong::before, .payment-receipt-pdf[data-state="loading"] .payment-receipt-pdf-status::before, .payment-receipt-reader-view button[aria-busy="true"]::before { animation: none; } }

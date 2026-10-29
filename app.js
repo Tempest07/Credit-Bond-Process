@@ -2001,7 +2001,7 @@ function renderPaymentReceiptAmountDifference(receipt, target) {
   const difference = paymentReceiptAmountDifference(receipt, target?.tranche);
   if (!difference) return '';
   const number = value => new Intl.NumberFormat('zh-CN', {maximumFractionDigits:2}).format(value / 1_000_000);
-  return `<span class="payment-receipt-amount-difference">金额不同：单据 ${number(difference.receiptFen)} 万元 · 项目 ${number(difference.projectFen)} 万元</span>`;
+  return `<span class="payment-receipt-amount-difference">金额参考：单据 ${number(difference.receiptFen)} 万元 · 项目 ${number(difference.projectFen)} 万元</span>`;
 }
 
 function paymentReceiptTarget(receipt) {
