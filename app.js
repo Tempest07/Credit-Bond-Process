@@ -84,7 +84,7 @@ import {
   updateProjectCutoff,
   upsertProject,
 } from "./lifecycle.js?v=20261028v540r8";
-import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest } from "./issuance-recognition.js?v=20261028v540";
+import { ISSUANCE_FIELDS, ISSUANCE_OUTCOMES, validateRecognitionRequest, issuanceRecognitionContext } from "./issuance-recognition.js?v=20261101abs";
 import { createSequentialIssuanceQueue, ISSUANCE_QUEUE_STATUS } from "./issuance-queue.js?v=20261028v540";
 import {
   deriveIssuerAlias,
@@ -12255,7 +12255,7 @@ function resetIssuanceReview(message = "") {
 
 function issuanceReviewSnapshot() {
   const draft = readProjectForm();
-  return { projectId: draft.id, tranches: draft.tranches, cutoffAt: draft.cutoffAt,
+  return { projectId: draft.id, ...issuanceRecognitionContext(draft), cutoffAt: draft.cutoffAt,
     text: $("#projectResultAdvertisement").value, noticeDate: $("#issuanceNoticeDate").value };
 }
 
@@ -12450,11 +12450,12 @@ function confirmIssuanceResult() {
     const draft = readProjectForm();
     const currentRequest = validateRecognitionRequest({
       projectId: draft.id,
-      tranches: draft.tranches,
+      ...issuanceRecognitionContext(draft),
       text: task.payload.text,
       noticeDate: task.payload.noticeDate,
     });
-    if (JSON.stringify(currentRequest.tranches) !== JSON.stringify(task.payload.request.tranches)) {
+    if (JSON.stringify(currentRequest.tranches) !== JSON.stringify(task.payload.request.tranches)
+      || JSON.stringify(currentRequest.project) !== JSON.stringify(task.payload.request.project)) {
       activeIssuanceQueueTaskId = "";
       resetIssuanceReview("项目品种结构已变化，旧识别结果不能写入，请重新排队。");
       return;

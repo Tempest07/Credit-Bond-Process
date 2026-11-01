@@ -18,8 +18,24 @@ const codeKey = (value) => compact(value).toUpperCase().replace(/\.(?:SH|SZ|IB)$
 const hasQuote = (text, quote) => Boolean(compact(quote)) && compact(text).includes(compact(quote));
 const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function mentionsTranche(text, tranche) {
-  return Boolean(nameKey(tranche.shortName) && new RegExp(`${escapePattern(nameKey(tranche.shortName))}(?![A-Z0-9])`).test(nameKey(text)))
+  return trancheNames(tranche).some(name => new RegExp(`${escapePattern(name)}(?![A-Z0-9])`).test(nameKey(text)))
     || Boolean(tranche.securityCode && new RegExp(`(?<!\\d)${escapePattern(codeKey(tranche.securityCode))}(?!\\d)`).test(compact(text)));
+}
+const trancheNames = tranche => [tranche.shortName, ...(tranche.noticeAliases || [])].map(nameKey).filter(Boolean);
+
+// Only the selected project's public issuance identity is sent to the model.
+// Bids, approvals, valuations and existing investment results are not context.
+export function issuanceRecognitionContext(project) {
+  const context = { tranches: project.tranches || [] };
+  if (!['ABS', 'ABN'].includes(project.instrumentType) || !project.absInfo?.planName) return context;
+  context.project = { instrumentType: project.instrumentType, planName: project.absInfo.planName };
+  context.tranches = context.tranches.map(tranche => {
+    const layers = (project.absInfo.tranches || []).filter(layer => nameKey(layer.shortName) === nameKey(tranche.shortName));
+    const layer = layers.length === 1 ? layers[0] : null;
+    return { ...tranche, absClassName: tranche.absClassName || layer?.className || '',
+      issueScale: tranche.issueScale ?? layer?.scale };
+  });
+  return context;
 }
 function hasValueQuote(text, raw) {
   const value = compact(raw);
@@ -38,16 +54,66 @@ export function validateRecognitionRequest(input) {
   const noticeDate = typeof input.noticeDate === "string" ? input.noticeDate : "";
   if (noticeDate && !validDate(noticeDate)) throw new Error("通知日期无效。");
   if (!Array.isArray(input.tranches) || !input.tranches.length || input.tranches.length > 10) throw new Error("请选择含 1–10 个品种的项目。");
+  const project = ['ABS', 'ABN'].includes(input.project?.instrumentType) && typeof input.project?.planName === 'string'
+    && input.project.planName.trim() && input.project.planName.length <= 300
+    ? { instrumentType: input.project.instrumentType, planName: input.project.planName.trim() } : null;
   const tranches = input.tranches.map((item) => {
     if (!item || typeof item.id !== "string" || !item.id || item.id.length > 100
       || typeof item.shortName !== "string" || !item.shortName.trim() || item.shortName.length > 120) throw new Error("项目品种标识不完整。");
-    return { id: item.id, shortName: item.shortName.trim(), securityCode: String(item.securityCode || "").slice(0, 30), durationText: String(item.durationText || "").slice(0, 60) };
+    return { id: item.id, shortName: item.shortName.trim(), securityCode: String(item.securityCode || "").slice(0, 30), durationText: String(item.durationText || "").slice(0, 60),
+      ...(project ? { absClassName: String(item.absClassName || '').slice(0, 40),
+        issueScale: typeof item.issueScale === 'number' && Number.isFinite(item.issueScale) && item.issueScale > 0 ? item.issueScale : null } : {}) };
   });
   if (new Set(tranches.map((item) => item.id)).size !== tranches.length) throw new Error("项目品种标识重复。");
-  return { text, noticeDate, tranches };
+  return { text, noticeDate, tranches, ...(project ? { project } : {}) };
+}
+
+function noticeHeadings(text) {
+  return [...String(text).matchAll(/^[\t ]*【([^】\r\n]{2,120})】[\t ]*$/gm)]
+    .filter(match => /[\p{Script=Han}A-Z].*\d[A-Z]*\d*$/iu.test(compact(match[1])))
+    .map((match, index, all) => ({ name: match[1], index: match.index,
+      text: String(text).slice(match.index, all[index + 1]?.index ?? text.length) }));
+}
+
+const absSlot = name => nameKey(name).match(/^(.+?)(\d+)([A-Z]+\d+)$/);
+const tenorKey = value => compact(value).toUpperCase().replace(/年期?|Y$/, 'Y').replace(/个月|月|M$/, 'M').replace(/天|日|D$/, 'D');
+function withNoticeAliases(request) {
+  if (!request.project || !['ABS', 'ABN'].includes(request.project.instrumentType)) return request;
+  const plan = nameKey(request.project.planName), period = plan.match(/第?(\d+)期/)?.[1];
+  const family = plan.split(/[-—]/)[0].replace(/第?\d+期.*$/, '');
+  const headings = noticeHeadings(request.text), title = nameKey(String(request.text).slice(0, headings[0]?.index ?? 0));
+  if (!period || family.length < 4 || !title.includes(family) || !new RegExp(`第?${period}期`).test(title)) return request;
+  const matches = headings.flatMap(heading => {
+    const slot = absSlot(heading.name);
+    const labelled = heading.text.match(/(?:债券|证券)简称[：:]\s*([^\r\n]+)/)?.[1];
+    const scale = heading.text.match(/(?:发行|募集)规模[：:]\s*([\d.]+\s*(?:亿元?|万元?|元))/)?.[1];
+    const tenor = heading.text.match(/(?:债券)?期限[：:]\s*([^\r\n]+)/)?.[1];
+    if (!slot || slot[2] !== period || !family.startsWith(slot[1]) || slot[1].length < 2
+      || !labelled || nameKey(labelled) !== nameKey(heading.name) || !scale || !tenor) return [];
+    let issueScale;
+    try { issueScale = normalizeExtractedValue('issueScale', scale, request.noticeDate); } catch { return []; }
+    const candidates = request.tranches.filter(tranche => {
+      const target = absSlot(tranche.shortName);
+      const className = compact(tranche.absClassName).toUpperCase().match(/([A-Z]+\d+)(?:级)?$/)?.[1];
+      return target && target[2] === period && target[3] === slot[3] && (!className || className === slot[3])
+        && typeof tranche.issueScale === 'number' && Math.abs(tranche.issueScale - issueScale) < 1e-8
+        && tenorKey(tranche.durationText) === tenorKey(tenor);
+    });
+    return candidates.length === 1 ? [{ id: candidates[0].id, name: heading.name }] : [];
+  });
+  return { ...request, tranches: request.tranches.map(tranche => {
+    const aliases = matches.filter(match => match.id === tranche.id);
+    return { ...tranche, noticeAliases: aliases.length === 1 ? [aliases[0].name] : [] };
+  }) };
+}
+
+export function issuanceRecognitionCandidates(request) {
+  return withNoticeAliases(request).tranches.map(({ shortName, securityCode, durationText, absClassName, issueScale, noticeAliases }) => ({
+    shortName, securityCode, durationText, ...(request.project ? { absClassName, issueScale, noticeAliases: noticeAliases || [] } : {}) }));
 }
 
 export function validateSemanticResult(request, result) {
+  request = withNoticeAliases(request);
   const errors = [];
   const warnings = [];
   const items = [];
@@ -55,12 +121,13 @@ export function validateSemanticResult(request, result) {
   if (!result || !Array.isArray(result.items) || result.items.length > 10) throw new Error("模型返回的结构不完整，请重新识别。");
   const shared = Array.isArray(result.sharedEvidence) ? result.sharedEvidence.filter((quote) => typeof quote === "string" && hasQuote(request.text, quote)) : [];
   const paymentFooter = commonPaymentFooter(request);
+  const startFooter = commonPaymentFooter(request, 'startDate');
   const used = new Set();
   for (const extracted of result.items) {
     const name = typeof extracted.shortName === "string" ? extracted.shortName : "";
     const source = typeof extracted.sourceText === "string" ? extracted.sourceText : "";
     const code = extracted.fields?.securityCode?.raw || "";
-    const named = request.tranches.filter((t) => nameKey(t.shortName) === nameKey(name));
+    const named = request.tranches.filter((t) => trancheNames(t).includes(nameKey(name)));
     const coded = code ? request.tranches.filter((t) => sameCode(codeIdentity(t.securityCode), codeIdentity(code))) : [];
     const target = named.length === 1 ? named[0] : coded.length === 1 ? coded[0] : null;
     if (!target || (named.length && coded.length && named[0].id !== coded[0].id)) {
@@ -109,7 +176,8 @@ export function validateSemanticResult(request, result) {
       needsModelRepair = true;
       errors.push(`${prefix}券码或交易市场与本品种原文／项目已有券码冲突，不能采用。`);
     }
-    if (request.tranches.some((t) => t.id !== target.id && referencesTranche(ownSource, t, request.tranches))
+    if (noticeHeadingConflict(ownSource, target, request.tranches)
+      || request.tranches.some((t) => t.id !== target.id && referencesTranche(ownSource, t, request.tranches))
       || otherBondNames(ownSource, [target])) { needsModelRepair = true; errors.push(`${prefix}源片段混入其他品种，请拆分后重新识别。`); }
     const item = { trancheId: target.id, shortName: target.shortName, outcome, evidence: {}, sourceText: source,
       allocationNote: noIssue ? `${ISSUANCE_OUTCOMES[outcome]}：${outcomeEvidence.replace(/^[-—]+|[-—]+$/g, "").trim()}` : "" };
@@ -120,8 +188,12 @@ export function validateSemanticResult(request, result) {
       if (typeof cell.raw !== "string" || typeof cell.evidence !== "string" || cell.raw.length > 100 || cell.evidence.length > 2000
         || !hasValueQuote(cell.evidence, cell.raw) || !hasQuote(request.text, cell.evidence)
         || evidenceContexts(request.text, cell.evidence).some(identityConflict)
+        || (!hasQuote(source, cell.evidence) && evidenceHeadingConflict(request.text, cell.evidence, target, request.tranches)
+          && !(['paymentDate', 'startDate'].includes(field) && isPaymentFooterEvidence(cell.evidence,
+            field === 'startDate' ? startFooter : paymentFooter, request.noticeDate, field)))
         || (!hasQuote(source, cell.evidence) && !shared.some((quote) => hasQuote(quote, cell.evidence) && isSharedFor(cell.evidence, target, request.tranches, request.text))
-          && !(field === "paymentDate" && isPaymentFooterEvidence(cell.evidence, paymentFooter, request.noticeDate)))) {
+          && !(['paymentDate', 'startDate'].includes(field) && isPaymentFooterEvidence(cell.evidence,
+            field === 'startDate' ? startFooter : paymentFooter, request.noticeDate, field)))) {
         needsModelRepair = true;
         errors.push(`${prefix}${label}的摘录与原文不符，未采用（值“${String(cell?.raw || "").slice(0, 60)}”；依据“${String(cell?.evidence || "").slice(0, 120)}”）。`); continue;
       }
@@ -146,7 +218,8 @@ export function validateSemanticResult(request, result) {
       const scopedNoticeEvidence = request.text
         .split(/[\r\n。；;！？!?]+/)
         .map((quote) => quote.trim())
-        .filter((quote) => quote && isSharedFor(quote, target, request.tranches, request.text));
+        .filter((quote) => quote && isSharedFor(quote, target, request.tranches, request.text)
+          && !evidenceHeadingConflict(request.text, quote, target, request.tranches));
       const inferredPayment = explicitPaymentDateFromEvidence(
         [source, ...shared.filter((quote) => isSharedFor(quote, target, request.tranches, request.text)), ...scopedNoticeEvidence],
         request.noticeDate,
@@ -158,6 +231,10 @@ export function validateSemanticResult(request, result) {
       } else if (inferredPayment && !item.paymentDate) {
         item.paymentDate = inferredPayment.date;
         item.evidence.paymentDate = inferredPayment.evidence;
+      }
+      if (!item.startDate && startFooter?.date) {
+        item.startDate = startFooter.date;
+        item.evidence.startDate = startFooter.evidence;
       }
     }
     if (outcome === "unknown" || (!noIssue && item.couponRate == null)) errors.push(`${prefix}尚无明确最终票息，不能确认中标结果。`);
@@ -186,7 +263,7 @@ function otherBondNames(text, tranches) {
     /(?<!\d)\d{2}[\p{Script=Han}·]{2,24}[A-Z]?\d{1,4}[A-Z]*(?![A-Z\d])/gu];
   return patterns.some(pattern => [...value.matchAll(pattern)].some(match =>
     !/^\d{2}(?:年|月|日|天|亿元|万元)/.test(match[0])
-    && !tranches.some(t => nameKey(t.shortName) === match[0])));
+    && !tranches.some(t => trancheNames(t).includes(match[0]))));
 }
 
 function withoutTransferDestinations(source, target, tranches) {
@@ -223,14 +300,52 @@ function evidenceContexts(text, quote) {
   return contexts;
 }
 
-function contextCodeConflict(context, target, tranches, extractedCode = '') {
-  const scope = nameKey(String(context).replace(/[\r\n]+/g, ';'));
+const noticeScope = text => nameKey(String(text).replace(/[\r\n]+/g, ';'));
+function noticeOwners(context, tranches) {
+  const scope = noticeScope(context), headingOwners = [];
   const owners = tranches.flatMap(tranche => {
-    const names = [...scope.matchAll(new RegExp(`${escapePattern(nameKey(tranche.shortName))}(?![A-Z0-9])`, 'g'))];
+    const names = trancheNames(tranche).flatMap(name => [...scope.matchAll(new RegExp(`${escapePattern(name)}(?![A-Z0-9])`, 'g'))]);
     const alias = trancheAlias(tranche, tranches);
     if (alias) names.push(...scope.matchAll(new RegExp(`(?<![A-Z0-9])${alias}(?![A-Z0-9])`, 'g')));
     return names.map(match => ({ index: match.index, id: tranche.id }));
-  }).sort((a, b) => a.index - b.index);
+  });
+  // Explicit notice headings also bound unselected varieties. An A3 section
+  // cannot donate its code to the selected A2 simply because A3 is not a bid.
+  for (const heading of noticeHeadings(context)) {
+    const named = tranches.filter(tranche => trancheNames(tranche).includes(nameKey(heading.name)));
+    const codes = sourceCodes(heading.text);
+    const coded = tranches.filter(tranche => {
+      const headerSlot = absSlot(heading.name), targetSlot = absSlot(tranche.shortName);
+      return !(headerSlot && targetSlot && (headerSlot[2] !== targetSlot[2] || headerSlot[3] !== targetSlot[3]))
+        && codes.some(code => sameCode(codeIdentity(tranche.securityCode), code));
+    });
+    const owner = named.length === 1 ? named[0] : coded.length === 1 ? coded[0] : null;
+    const headingIndex = scope.indexOf(nameKey(heading.name), noticeScope(String(context).slice(0, heading.index)).length);
+    if (headingIndex >= 0) {
+      const marker = { index: headingIndex, id: owner?.id || `notice:${heading.index}` };
+      owners.push(marker);
+      headingOwners.push(marker);
+    }
+  }
+  return { scope, owners: owners.sort((a, b) => a.index - b.index), headingOwners };
+}
+
+function noticeHeadingConflict(text, target, tranches) {
+  return noticeOwners(text, tranches).headingOwners.some(owner => owner.id !== target.id);
+}
+
+function evidenceHeadingConflict(text, quote, target, tranches) {
+  if (!noticeHeadings(text).length) return false;
+  const { scope, owners } = noticeOwners(text, tranches), needle = noticeScope(quote);
+  for (let index = scope.indexOf(needle); index >= 0; index = scope.indexOf(needle, index + 1)) {
+    const owner = owners.filter(item => item.index < index).at(-1);
+    if (owner && owner.id !== target.id) return true;
+  }
+  return false;
+}
+
+function contextCodeConflict(context, target, tranches, extractedCode = '') {
+  const { scope, owners } = noticeOwners(context, tranches);
   const scopedCodes = sourceCodes(context).filter(identity => {
     if (identity.invalid) return true;
     const occurrences = [...scope.matchAll(new RegExp(`(?<![A-Z0-9])${escapePattern(identity.text)}(?![A-Z0-9])`, 'g'))];
@@ -267,45 +382,66 @@ function isSharedFor(quote, target, tranches, notice = quote) {
 
 // Only payment dates can use an unlabelled closing arrangement. Other fields
 // still require the explicit ownership rules in isSharedFor.
-function commonPaymentFooter({ text, tranches, noticeDate }) {
-  if (tranches.length < 2 || otherBondNames(text, tranches)) return null;
-  const notice = nameKey(text);
+function commonPaymentFooter({ text, tranches, noticeDate }, field = 'paymentDate') {
+  if ((tranches.length < 2 && noticeHeadings(text).length < 2) || otherBondNames(text, tranches)) return null;
+  const notice = noticeScope(text);
+  const headingNames = noticeHeadings(text).map(heading => nameKey(heading.name));
+  const headingAliases = headingNames.map(name => absSlot(name)?.[3] || name.match(/([A-Z])$/)?.[1]).filter(Boolean);
+  const hasNoticeOwner = context => [...headingNames, ...headingAliases].some(name =>
+    new RegExp(`(?<![A-Z0-9])${escapePattern(name)}(?![A-Z0-9])`).test(nameKey(context)));
   let lastIdentityEnd = 0;
   for (const tranche of tranches) {
-    const name = nameKey(tranche.shortName);
-    const named = [...notice.matchAll(new RegExp(`${escapePattern(name)}(?![A-Z0-9])`, "g"))];
+    const named = trancheNames(tranche).flatMap(name => [...notice.matchAll(new RegExp(`${escapePattern(name)}(?![A-Z0-9])`, "g"))]);
     const code = codeKey(tranche.securityCode);
     const identified = named.length ? named : code
       ? [...notice.matchAll(new RegExp(`(?<!\\d)${escapePattern(code)}(?!\\d)`, "g"))] : [];
     if (!identified.length) return null;
     lastIdentityEnd = Math.max(lastIdentityEnd, ...identified.map(match => match.index + match[0].length));
   }
+  const ownership = noticeOwners(text, tranches), ownedCodes = new Map();
+  for (const identity of sourceCodes(text)) {
+    if (identity.invalid) return null;
+    const occurrence = [...ownership.scope.matchAll(new RegExp(`(?<![A-Z0-9])${escapePattern(identity.text)}(?![A-Z0-9])`, 'g'))];
+    for (const match of occurrence) {
+      const owner = ownership.owners.filter(item => item.index < match.index).at(-1) || ownership.owners[0];
+      if (!owner) return null;
+      const header = ownership.headingOwners.filter(item => item.index < match.index).at(-1);
+      const namedContext = evidenceContexts(text, identity.text).every(context =>
+        tranches.filter(tranche => referencesTranche(context, tranche, tranches)).length === 1);
+      if (!namedContext && (!header || header.id !== owner.id)) return null;
+      const codes = ownedCodes.get(owner.id) || [];
+      if (codes.some(code => !sameCode(code, identity))) return null;
+      const target = tranches.find(tranche => tranche.id === owner.id);
+      if (target?.securityCode && !sameCode(codeIdentity(target.securityCode), identity)) return null;
+      ownedCodes.set(owner.id, [...codes, identity]);
+      lastIdentityEnd = Math.max(lastIdentityEnd, match.index + match[0].length);
+    }
+  }
+  for (const heading of noticeHeadings(text)) {
+    lastIdentityEnd = Math.max(lastIdentityEnd, noticeScope(String(text).slice(0, heading.index)).length + nameKey(heading.name).length);
+  }
   // A loose code or private owner label after the last variety can turn what
   // looks like a footer into a statement belonging to only that variety.
   const privateScope = /本品种|该品种|此品种|仅|只适用|分别|依次|长端|短端|品种[一二三四五六七八九十0-9A-Z]|[A-Z]品种/;
   const tail = notice.slice(lastIdentityEnd);
-  if (privateScope.test(tail) || tranches.some(tranche => {
+  if (privateScope.test(tail) || hasNoticeOwner(tail) || tranches.some(tranche => {
     const alias = trancheAlias(tranche, tranches);
     return alias && new RegExp(`(?<![A-Z0-9])${alias}(?![A-Z0-9])`).test(tail);
   })) return null;
-  for (const identity of sourceCodes(text)) {
-    if (identity.invalid) return null;
-    const contexts = evidenceContexts(text, identity.text);
-    if (!contexts.length || contexts.some(context => tranches.filter(tranche => referencesTranche(context, tranche, tranches)).length !== 1)) return null;
-  }
+  const datePattern = field === 'startDate' ? /起息(?:日期|日|时间)?/ : /缴款|缴付|付款|到账/;
   const contexts = String(text).match(/[^\r\n。；;！？!?]+[。；;！？!?]?/g) || [];
   const closing = contexts.filter(context => {
-    if (!/缴款|缴付|付款|到账/.test(context) || privateScope.test(context)
+    if (!datePattern.test(context) || privateScope.test(context) || hasNoticeOwner(context)
       || sourceCodes(context).length || tranches.some(tranche => referencesTranche(context, tranche, tranches))) return false;
-    return notice.lastIndexOf(nameKey(context)) >= lastIdentityEnd;
+    return notice.lastIndexOf(noticeScope(context)) >= lastIdentityEnd;
   });
   if (!closing.length) return null;
   const closingDates = closing.map(context => ({ context,
-    parsed: explicitPaymentDateFromEvidence([context], noticeDate, { includeAbsolute: true, strict: true }) }));
+    parsed: explicitPaymentDateFromEvidence([context], noticeDate, { includeAbsolute: true, strict: true, field }) }));
   const unresolved = closingDates.find(item => item.parsed?.error);
   if (unresolved) return unresolved.parsed;
   if (!closingDates.some(item => item.parsed?.date)) return null;
-  const complete = explicitPaymentDateFromEvidence([text], noticeDate, { includeAbsolute: true, strict: true });
+  const complete = explicitPaymentDateFromEvidence([text], noticeDate, { includeAbsolute: true, strict: true, field });
   // A conflicting date elsewhere vetoes sharing; it must not invalidate an
   // already verified private date belonging to a particular variety.
   if (!complete || complete.error) return null;
@@ -314,14 +450,14 @@ function commonPaymentFooter({ text, tranches, noticeDate }) {
   return { date: complete.date, contexts: eligible, evidence: eligible[0].trim() };
 }
 
-function isPaymentFooterEvidence(quote, footer, noticeDate) {
+function isPaymentFooterEvidence(quote, footer, noticeDate, field = 'paymentDate') {
   return Boolean(footer && !footer.error && footer.contexts.some(context => hasQuote(context, quote))
-    && explicitPaymentDateFromEvidence([quote], noticeDate, { includeAbsolute: true, strict: true })?.date === footer.date);
+    && explicitPaymentDateFromEvidence([quote], noticeDate, { includeAbsolute: true, strict: true, field })?.date === footer.date);
 }
 
-function explicitPaymentDateFromEvidence(sources, noticeDate, { includeAbsolute = false, strict = false } = {}) {
+function explicitPaymentDateFromEvidence(sources, noticeDate, { includeAbsolute = false, strict = false, field = 'paymentDate' } = {}) {
   const relative = relativeDatePattern;
-  const payment = "(?:配售)?(?:缴款|缴付|付款|到账)";
+  const payment = field === 'startDate' ? '起息' : "(?:配售)?(?:缴款|缴付|付款|到账)";
   const combinedPatterns = [
     new RegExp(`(${combinedDatePattern})(?:为|是|进行|安排)?${payment}`, "g"),
     new RegExp(`${payment}(?:日期|时间|日)?(?:为|是|安排在|定于)?(${combinedDatePattern})`, "g"),
@@ -334,9 +470,10 @@ function explicitPaymentDateFromEvidence(sources, noticeDate, { includeAbsolute 
   ];
   const matches = [];
   for (const source of [...new Set(sources.filter(Boolean))]) {
+    const normalized = compact(source).replace(/[【】\[\]]/g, '');
     // Check both parts even when the model extracts only "明日" or "9.18".
     for (const pattern of combinedPatterns) {
-      for (const match of compact(source).matchAll(pattern)) {
+      for (const match of normalized.matchAll(pattern)) {
         try {
           matches.push({ date: resolveNoticeDate(match[1], noticeDate), evidence: match[0] });
         } catch (error) { return { error: error.message }; }
@@ -344,7 +481,7 @@ function explicitPaymentDateFromEvidence(sources, noticeDate, { includeAbsolute 
     }
     for (const pattern of patterns) {
       pattern.lastIndex = 0;
-      for (const match of (includeAbsolute ? compact(source) : source).matchAll(pattern)) {
+      for (const match of (includeAbsolute ? normalized : source).matchAll(pattern)) {
         try {
           matches.push({ date: resolveNoticeDate(match[1], noticeDate), evidence: match[0] });
         } catch (error) { if (strict) return { error: error.message }; }
