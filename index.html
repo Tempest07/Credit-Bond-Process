@@ -62,7 +62,7 @@
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4 · 2026-10-28">v5.4</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4 · 2026-11-01">v5.4</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1674,7 +1674,12 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
-      <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-10-29">2026 / 10 / 29</time></div>
+      <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-11-01">2026 / 11 / 01</time></div>
+      <section><h3>ABS 发行结果识别</h3><ul>
+        <li>结合专项计划、分档、规模和期限核对简称差异，保留原项目名称与编号。</li>
+        <li>未投资分档的券码、票息和专属日期不再串入已选品种，也不会自动新增品种。</li>
+        <li>分别识别通知末尾明确的缴款日期和起息日期，结果仍由用户确认后写入。</li>
+      </ul></section>
       <section><h3>缴款单整理与归档</h3><ul>
         <li>整库后台重新整理：识别、拆页、归档、自动对应，逐文件逐页显示进度。</li>
         <li>单张缴款单可在预览和项目明细中直接下载。</li>
