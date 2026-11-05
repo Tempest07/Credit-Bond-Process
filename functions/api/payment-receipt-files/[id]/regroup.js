@@ -399,7 +399,7 @@ async function replaceReceiptRows(db, input) {
     ) VALUES (?1, ?2, NULL, ?3, 'file_manually_regrouped', ?4, ?5)
   `).bind(
     crypto.randomUUID(), input.ownerUserId, input.file.batch_id,
-    JSON.stringify({ groups: input.normalized.groups, blankPages: input.normalized.blankPages, preservedMatches: input.receipts.filter((receipt) => receipt.preservedMatch).length }),
+    JSON.stringify({ fileId: input.file.id, groups: input.normalized.groups, blankPages: input.normalized.blankPages, preservedMatches: input.receipts.filter((receipt) => receipt.preservedMatch).length }),
     input.createdAt,
   ));
   try {

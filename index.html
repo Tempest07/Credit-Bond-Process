@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.4">
-  <meta name="application-build-version" content="5.4">
-  <meta name="application-build" content="20261101v540abs">
-  <title>Bond Centre 5.4 - Tempest07</title>
+  <meta name="application-version" content="5.4.1">
+  <meta name="application-build-version" content="5.4.1">
+  <meta name="application-build" content="20261105release541">
+  <title>Bond Centre 5.4.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="./bond-list-editor.css?v=20261028v540">
   <link rel="stylesheet" href="./payment-receipt-reader.css?v=20261028v540r4">
   <link rel="stylesheet" href="./payment-receipt-workspace-ui.css?v=20261029v540r15">
+  <link rel="stylesheet" href="./payment-receipt-status.css?v=20261105release541">
   <link rel="stylesheet" href="./project-target-note.css?v=20261028v540r5">
   <link rel="stylesheet" href="./project-ofr.css?v=20261028v540">
   <link rel="stylesheet" href="./ai-review.css?v=20261028v540">
@@ -56,13 +57,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.4">v5.4</span>
+      <span class="header-version" aria-label="当前版本 5.4.1">v5.4.1</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4 · 2026-11-01">v5.4</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4.1 · 2026-11-05">v5.4.1</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1369,6 +1370,25 @@
             <div><strong data-receipt-job-title></strong><span data-receipt-job-detail></span></div>
             <progress data-receipt-job-progress max="100" value="0" aria-label="缴款单整理进度"></progress>
           </section>
+          <section class="receipt-flow-panel" id="paymentReceiptStatusFlow" aria-labelledby="paymentReceiptFlowTitle">
+            <div class="receipt-flow-head">
+              <h2 id="paymentReceiptFlowTitle">处理动态</h2>
+              <button class="button subtle" type="button" data-flow-refresh>刷新动态</button>
+            </div>
+            <div class="receipt-flow-summary" data-flow-summary role="status" aria-live="polite"></div>
+            <div class="receipt-flow-toolbar">
+              <input type="search" data-flow-search placeholder="搜索文件或邮件" aria-label="搜索最近 50 项处理任务的文件或邮件">
+              <select data-flow-filter aria-label="筛选解析状态">
+                <option value="">全部处理状态</option><option value="active">处理中</option><option value="success">已完成</option><option value="review">待人工复核</option><option value="failed">解析失败</option>
+              </select>
+              <span data-flow-sync>北京时间 · 前台每 10 秒刷新</span>
+            </div>
+            <p class="receipt-flow-error" data-flow-error role="status" hidden></p>
+            <div class="receipt-flow-table">
+              <div class="receipt-flow-table-head" aria-hidden="true"><span>文件 / 邮件</span><span>收到时间</span><span>最后更新</span><span>当前状态</span><span></span></div>
+              <div class="receipt-flow-list" data-flow-list></div>
+            </div>
+          </section>
           <div class="payment-receipt-reader-grid">
             <aside class="panel payment-receipt-index-panel" aria-labelledby="paymentReceiptIndexTitle">
               <div class="panel-head"><h2 id="paymentReceiptIndexTitle">单据清单</h2><button class="button subtle" data-receipt-manage type="button" aria-pressed="false">批量管理</button></div>
@@ -1674,6 +1694,13 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.4.1</strong><time datetime="2026-11-05">2026 / 11 / 05</time></div>
+      <section><h3>缴款单处理动态</h3><ul>
+        <li>按文件查看收件时间、当前解析阶段与成功或失败结果；展开查看逐步事件及北京时间。</li>
+        <li>沿用新版黑白工作区，当前阶段显示斜纹流动；支持搜索、筛选和自动刷新。</li>
+        <li>重新解析从本轮进度开始，旧失败记录保留在时间线；没有缴款 PDF 的邮件单独显示已归档。</li>
+        <li>历史任务只展示已有记录，不补造分步时间；解析完成不改变项目的人工缴款确认。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.4</strong><time datetime="2026-11-01">2026 / 11 / 01</time></div>
       <section><h3>ABS 发行结果识别</h3><ul>
         <li>结合专项计划、分档、规模和期限核对简称差异，保留原项目名称与编号。</li>
@@ -1960,7 +1987,7 @@
   </div>
   <script src="./ui-mode.js?v=20261028v540"></script>
   <script type="module" src="./vendor/search-border-beam.js?v=20261028v540"></script>
-  <script type="module" src="./app.js?v=20261101v540abs"></script>
+  <script type="module" src="./app.js?v=20261105release541"></script>
   <script type="module" src="./todo-fluid.js?v=20261028v540"></script>
   <script type="module" src="./release-notes.js?v=20261028v540"></script>
 </body>

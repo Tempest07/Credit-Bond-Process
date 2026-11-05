@@ -163,3 +163,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_receipts_file_pages
   ON payment_receipts(file_id, source_page_label);
 CREATE INDEX IF NOT EXISTS idx_payment_receipt_matches_target
   ON payment_receipt_matches(owner_user_id, project_id, tranche_id);
+
+CREATE INDEX IF NOT EXISTS idx_payment_receipt_events_owner_batch_time
+  ON payment_receipt_events(owner_user_id, batch_id, created_at);

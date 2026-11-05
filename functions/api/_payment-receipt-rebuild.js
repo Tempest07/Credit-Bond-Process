@@ -1,3 +1,5 @@
+import { recordPaymentReceiptStatus } from './_payment-receipts.js';
+
 const READY = new Set(['processed', 'review', 'error']);
 const ACTIVE = new Set(['received', 'queued', 'processing', 'regrouping', 'reprocess_requested']);
 const MAX_FILES = 500;
@@ -105,10 +107,14 @@ export async function dispatchRequestedPaymentReceiptFiles(env, ownerUserId, fil
     try {
       if (typeof env.RECEIPT_QUEUE.sendBatch==='function') await env.RECEIPT_QUEUE.sendBatch(messages);
       else await Promise.all(messages.map(message=>env.RECEIPT_QUEUE.send(message.body)));
+      for (const file of group) await recordPaymentReceiptStatus(env.DB,{ownerUserId,batchId:file.batch_id,fileId:file.id},'file_retry_queued',{},queuedAt);
     } catch {
-      await env.DB.prepare(`UPDATE payment_receipt_files SET processing_status='reprocess_requested',error_message='等待后台重试',updated_at=?1
-        WHERE id IN (SELECT value FROM json_each(?2)) AND processing_status='queued' AND updated_at=?3`)
-        .bind(new Date().toISOString(),JSON.stringify(group.map(file=>file.id)),queuedAt).run();
+      const restored = await env.DB.prepare(`UPDATE payment_receipt_files SET processing_status='reprocess_requested',error_message='等待后台重试',updated_at=?1
+        WHERE id IN (SELECT value FROM json_each(?2)) AND processing_status='queued' AND updated_at=?3 RETURNING id`)
+        .bind(new Date().toISOString(),JSON.stringify(group.map(file=>file.id)),queuedAt).all();
+      const restoredIds = new Set((restored.results || []).map(file=>file.id));
+      for (const file of group.filter(file=>restoredIds.has(file.id))) await recordPaymentReceiptStatus(env.DB,
+        {ownerUserId,batchId:file.batch_id,fileId:file.id},'file_queue_failed',{error:'重新识别任务入队失败，等待后台重试'});
     }
   }
 }

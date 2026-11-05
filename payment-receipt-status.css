@@ -1,0 +1,110 @@
+/* Receipt activity uses the same paper, type and controls as the v5.4 reader. */
+.receipt-flow-panel {
+  --flow-ink: var(--receipt-reader-ink, #171717);
+  --flow-muted: var(--receipt-reader-muted, #707070);
+  --flow-line: var(--receipt-reader-line, #e5e5e5);
+  --flow-paper: var(--receipt-reader-paper, #fff);
+  --flow-soft: var(--receipt-reader-soft, #f5f5f5);
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--flow-line);
+  border-radius: 20px;
+  color: var(--flow-ink);
+  background: var(--flow-paper);
+  font-size: 13px;
+}
+.receipt-flow-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.receipt-flow-head h2 { margin: 0; font-size: 19px; font-weight: 500; line-height: 1.5; }
+.receipt-flow-summary { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 20px 0; }
+.receipt-flow-stat { display: inline-flex; align-items: baseline; gap: 10px; color: var(--flow-muted); }
+.receipt-flow-stat > span { display: inline-flex; align-items: center; gap: 6px; }
+.receipt-flow-stat > span::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--flow-ink); }
+.receipt-flow-stat.total > span::before { display: none; }
+.receipt-flow-stat.success > span::before { background: #26805c; }
+.receipt-flow-stat.review > span::before { background: var(--warning, #94621c); }
+.receipt-flow-stat.failed > span::before { background: var(--danger, #bd3838); }
+.receipt-flow-stat strong { color: var(--flow-ink); font-size: 23px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.receipt-flow-toolbar { display: grid; grid-template-columns: minmax(160px, 1fr) 165px auto; gap: 10px; align-items: center; margin-bottom: 18px; }
+.receipt-flow-toolbar :is(input, select) { width: 100%; min-width: 0; min-height: 40px; padding: 8px 12px; border: 1px solid var(--flow-line); border-radius: 9px; color: var(--flow-ink); background: var(--flow-paper); font: inherit; box-shadow: none; }
+.receipt-flow-toolbar > span { color: var(--flow-muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.receipt-flow-table { overflow: hidden; border-top: 1px solid var(--flow-line); }
+.receipt-flow-table-head, .receipt-flow-job summary { display: grid; grid-template-columns: minmax(180px, 1fr) 125px 125px minmax(195px, .75fr) 12px; align-items: center; gap: 16px; padding: 14px 16px; }
+.receipt-flow-table-head { color: var(--flow-muted); background: var(--flow-soft); font-size: 12px; font-weight: 400; }
+.receipt-flow-list { display: grid; max-height: 600px; overflow: auto; scrollbar-width: thin; scrollbar-color: #cfcfcf transparent; }
+.receipt-flow-job { min-width: 0; border-top: 1px solid var(--flow-line); background: var(--flow-paper); }
+.receipt-flow-job summary { cursor: pointer; list-style: none; transition: background .16s ease; }
+.receipt-flow-job summary:hover, .receipt-flow-job[open] summary { background: var(--flow-soft); }
+.receipt-flow-job summary::-webkit-details-marker { display: none; }
+.receipt-flow-job summary::after { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--flow-muted); border-bottom: 1.5px solid var(--flow-muted); transform: rotate(45deg); transition: transform .16s ease; }
+.receipt-flow-job[open] summary::after { transform: rotate(225deg); }
+.receipt-flow-job summary:focus-visible { outline: 2px solid var(--flow-ink); outline-offset: -2px; }
+.receipt-flow-file, .receipt-flow-current { display: grid; gap: 5px; min-width: 0; }
+.receipt-flow-file strong { color: var(--flow-ink); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.receipt-flow-file > span { color: var(--flow-muted); font-size: 12px; }
+.receipt-flow-time { min-width: 0; }
+.receipt-flow-time time { display: grid; gap: 4px; color: var(--flow-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.receipt-flow-time time strong { color: var(--flow-ink); font-weight: 400; letter-spacing: .03em; }
+.receipt-flow-time-label { display: none; }
+.receipt-flow-current { justify-items: start; }
+.receipt-flow-badge { display: inline-flex; align-items: baseline; gap: 7px; color: var(--flow-muted); font-size: 13px; line-height: 1.6; }
+.receipt-flow-badge::before { content: ""; flex: 0 0 5px; width: 5px; height: 5px; background: currentColor; border-radius: 50%; }
+.receipt-flow-badge.active, .receipt-flow-stage-status.active { color: var(--flow-ink); }
+.receipt-flow-badge.success, .receipt-flow-stage-status.success { color: #26805c; }
+.receipt-flow-badge.review, .receipt-flow-stage-status.review { color: var(--warning, #94621c); }
+.receipt-flow-badge.failed, .receipt-flow-stage-status.failed { color: var(--danger, #bd3838); }
+.receipt-flow-detail { border-top: 1px solid var(--flow-line); overflow-wrap: anywhere; }
+.receipt-flow-inspector { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
+.receipt-flow-process, .receipt-flow-event-panel { min-width: 0; padding: 22px 20px; }
+.receipt-flow-event-panel { border-left: 1px solid var(--flow-line); }
+.receipt-flow-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 22px; }
+.receipt-flow-detail-head strong { color: var(--flow-ink); font-size: 13px; font-weight: 500; }
+.receipt-flow-detail-head > span { color: var(--flow-muted); font-size: 12px; }
+.receipt-flow-stages { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin: 0; padding: 0; list-style: none; }
+.receipt-flow-stages li { display: grid; gap: 9px; color: var(--flow-muted); font-size: 12px; }
+.receipt-flow-stages li::before { content: ""; height: 4px; border-radius: 1px; background: var(--flow-line); }
+.receipt-flow-stages .recorded::before { background: var(--flow-ink); }
+.receipt-flow-stages .active { color: var(--flow-ink); }
+.receipt-flow-stages .active::before { background: repeating-linear-gradient(110deg, var(--flow-ink) 0 5px, #bdbdbd 5px 10px); background-size: 21.3px 100%; animation: receiptFlowProcessing 1.2s linear infinite; }
+@keyframes receiptFlowProcessing { from { background-position: 0 0; } to { background-position: 21.3px 0; } }
+.receipt-flow-stages .success::before { background: #26805c; }
+.receipt-flow-stages .review::before { background: var(--warning, #94621c); }
+.receipt-flow-stages .failed::before { background: var(--danger, #bd3838); }
+.receipt-flow-stage-status { margin: 24px 0 12px; font-size: 17px; font-weight: 500; line-height: 1.6; }
+.receipt-flow-subject, .receipt-flow-history-note { margin: 8px 0 0; color: var(--flow-muted); line-height: 1.7; }
+.receipt-flow-error, .receipt-flow-warning { margin: 12px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger, #bd3838) 20%, var(--flow-line)); border-radius: 9px; color: var(--danger, #bd3838); background: color-mix(in srgb, var(--danger, #bd3838) 4%, var(--flow-paper)); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.receipt-flow-warning { color: var(--warning, #94621c); border-color: color-mix(in srgb, var(--warning, #94621c) 25%, var(--flow-line)); background: var(--warning-soft, #fff5e6); }
+.receipt-flow-timeline { display: grid; gap: 0; padding: 0 0 0 4px; margin: 0; max-height: 240px; overflow: auto; scrollbar-width: thin; list-style: none; }
+.receipt-flow-timeline li { position: relative; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 0 0 14px 16px; border-left: 1px solid var(--flow-line); line-height: 1.7; }
+.receipt-flow-timeline li::before { content: ""; position: absolute; top: 7px; left: -3px; width: 5px; height: 5px; border-radius: 50%; background: #bdbdbd; }
+.receipt-flow-timeline li:last-child { padding-bottom: 0; border-left-color: transparent; }
+.receipt-flow-timeline li:last-child::before { background: var(--flow-ink); }
+.receipt-flow-timeline time { color: var(--flow-muted); font-size: 12px; line-height: 1.8; font-variant-numeric: tabular-nums; }
+.receipt-flow-event-error { display: block; color: var(--danger, #bd3838); }
+.receipt-flow-empty { padding: 24px 16px; color: var(--flow-muted); font-size: 13px; }
+@media (max-width: 1100px) {
+  .receipt-flow-toolbar { grid-template-columns: minmax(0, 1fr) 165px; }
+  .receipt-flow-toolbar > span { grid-column: 1 / -1; text-align: left; }
+  .receipt-flow-table-head { display: none; }
+  .receipt-flow-job summary { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 12px; gap: 12px; }
+  .receipt-flow-file { grid-column: 1 / 3; }
+  .receipt-flow-job summary::after { grid-column: 3; grid-row: 1; }
+  .receipt-flow-time-label { display: block; color: var(--flow-muted); font-size: 12px; margin-bottom: 5px; }
+  .receipt-flow-time time { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+  .receipt-flow-current { grid-column: 1 / -1; }
+  .receipt-flow-inspector { grid-template-columns: minmax(0, 1fr); }
+  .receipt-flow-event-panel { border-left: 0; border-top: 1px solid var(--flow-line); }
+}
+@media (max-width: 760px) {
+  .receipt-flow-panel { padding: 16px; border-radius: 16px; }
+  .receipt-flow-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .receipt-flow-summary { gap: 10px 20px; }
+  .receipt-flow-stat strong { font-size: 20px; }
+  .receipt-flow-job summary { padding: 16px 10px; }
+  .receipt-flow-process, .receipt-flow-event-panel { padding: 20px 10px; }
+  .receipt-flow-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .receipt-flow-stage-status { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .receipt-flow-stages .active::before { animation: none; }
+  .receipt-flow-job summary, .receipt-flow-job summary::after { transition: none; }
+}

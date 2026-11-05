@@ -118,6 +118,8 @@ const RECEIPT_SCHEMA_STATEMENTS = [
     ON payment_receipts(file_id, source_page_label)`,
   `CREATE INDEX IF NOT EXISTS idx_payment_receipt_matches_target
     ON payment_receipt_matches(owner_user_id, project_id, tranche_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_payment_receipt_events_owner_batch_time
+    ON payment_receipt_events(owner_user_id, batch_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_payment_receipt_identity_reviews
     ON payment_receipt_events(owner_user_id, receipt_id, event_type, created_at DESC, id DESC)`,
 ];
@@ -882,6 +884,114 @@ export async function insertPaymentReceiptEvent(db, input) {
     JSON.stringify(input.detail || {}),
     input.createdAt || new Date().toISOString(),
   ).run();
+}
+
+// Observability must never turn a successfully processed document into a failed job.
+export async function recordPaymentReceiptStatus(db, job, eventType, detail = {}, createdAt) {
+  try {
+    await insertPaymentReceiptEvent(db, {
+      id: crypto.randomUUID(), ownerUserId: job.ownerUserId || "admin",
+      batchId: job.batchId, eventType,
+      detail: paymentReceiptStatusDetail({ ...detail, ...(job.fileId ? { fileId: job.fileId } : {}) }),
+      createdAt,
+    });
+    return true;
+  } catch {
+    console.error(JSON.stringify({ event: "payment_receipt_status_record_failed", batchId: job.batchId, fileId: job.fileId || "", eventType }));
+    return false;
+  }
+}
+
+// This read model deliberately excludes document text, storage keys and AI responses.
+export async function listPaymentReceiptStatus(db, ownerUserId) {
+  const limit = 50;
+  const eventLimit = 160;
+  const result = await db.prepare(`
+    SELECT * FROM (
+    SELECT f.id, f.batch_id, f.id AS file_id, 'file' AS kind, f.filename,
+           b.subject, b.received_at, f.updated_at, f.processing_status,
+           f.error_message, f.page_count
+    FROM payment_receipt_files f
+    JOIN payment_receipt_batches b ON b.id = f.batch_id
+    WHERE b.owner_user_id = ?1
+    UNION ALL
+    SELECT b.id, b.id, '', 'email', '', b.subject, b.received_at, b.updated_at,
+           b.processing_status, b.error_message, NULL
+    FROM payment_receipt_batches b
+    WHERE b.owner_user_id = ?1
+      AND NOT EXISTS (SELECT 1 FROM payment_receipt_files f WHERE f.batch_id = b.id)
+    )
+    ORDER BY CASE WHEN processing_status IN ('received','queued','processing','regrouping','reprocess_requested') THEN 0 ELSE 1 END,
+      updated_at DESC, received_at DESC, id DESC
+    LIMIT ?2
+  `).bind(ownerUserId, limit + 1).all();
+  const rows = result?.results || [];
+  const jobs = rows.slice(0, limit).map((row) => ({
+    id: String(row.id), batchId: String(row.batch_id), fileId: String(row.file_id || ""),
+    kind: row.kind, filename: String(row.filename || ""), subject: decodePaymentReceiptSubject(row.subject),
+    receivedAt: String(row.received_at || ""), updatedAt: String(row.updated_at || ""),
+    processingStatus: String(row.processing_status || "received"),
+    errorMessage: String(row.error_message || "").slice(0, 1000),
+    pageCount: Number(row.page_count) || null, events: [], eventsTruncated: false,
+  }));
+  if (!jobs.length) return { jobs, limit, hasMore: false };
+  // Bound each job independently so a large PDF cannot hide another file's progress.
+  const eventResult = await db.prepare(`
+    WITH selected_jobs AS (
+      SELECT json_extract(value, '$.id') AS job_id,
+             json_extract(value, '$.batchId') AS batch_id,
+             json_extract(value, '$.fileId') AS file_id
+      FROM json_each(?2)
+    ), ranked_events AS (
+      SELECT j.job_id, e.id, e.event_type, e.detail_json, e.created_at,
+             ROW_NUMBER() OVER (PARTITION BY j.job_id ORDER BY e.created_at DESC, e.rowid DESC) AS event_rank
+      FROM selected_jobs j
+      JOIN payment_receipt_events e ON e.batch_id = j.batch_id AND e.owner_user_id = ?1
+      LEFT JOIN payment_receipts r ON r.id = e.receipt_id AND r.owner_user_id = ?1
+      WHERE COALESCE(json_extract(CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.fileId'), r.file_id, '') = j.file_id
+         OR (e.event_type LIKE 'email_%' AND e.receipt_id IS NULL
+             AND COALESCE(json_extract(CASE WHEN json_valid(e.detail_json) THEN e.detail_json ELSE '{}' END, '$.fileId'), '') = '')
+    )
+    SELECT * FROM ranked_events WHERE event_rank <= ?3
+    ORDER BY job_id, event_rank DESC
+  `).bind(ownerUserId, JSON.stringify(jobs.map(({ id, batchId, fileId }) => ({ id, batchId, fileId }))), eventLimit + 1).all();
+  const byId = new Map(jobs.map((job) => [job.id, job]));
+  for (const row of eventResult?.results || []) {
+    const job = byId.get(row.job_id);
+    if (!job) continue;
+    if (Number(row.event_rank) > eventLimit) { job.eventsTruncated = true; continue; }
+    job.events.push({ id: String(row.id), eventType: String(row.event_type),
+      createdAt: String(row.created_at || ""), detail: paymentReceiptStatusDetail(jsonObject(row.detail_json)) });
+  }
+  for (const job of jobs) {
+    const latestEventAt = job.events.at(-1)?.createdAt;
+    if (latestEventAt && latestEventAt > job.updatedAt) job.updatedAt = latestEventAt;
+    const ownEvents = job.events.filter((event) => job.kind === "email" ? event.eventType.startsWith("email_") : event.detail.fileId === job.fileId || event.eventType.startsWith("receipt_"));
+    const runStart = ownEvents.findLastIndex((event) => /^(?:file_(?:reprocess_requested|processing_started|regroup_commit_started)|email_processing_started)$/.test(event.eventType));
+    const currentEvents = runStart < 0 ? ownEvents : ownEvents.slice(runStart);
+    const lastEvent = currentEvents.findLast((event) => /^(?:file_|email_|receipt_extracted)/.test(event.eventType));
+    job.outcome = ["received", "queued", "processing", "regrouping", "reprocess_requested"].includes(job.processingStatus) ? "active"
+      : job.processingStatus === "error" ? "failed"
+      : job.processingStatus === "processed" ? "success"
+      : /(?:failed|rejected|dead_lettered|no_pdf|invalid_pdf_attachment|rejected_attachment_limit)$/.test(lastEvent?.eventType || "") ? "failed" : "review";
+    const pageEvent = currentEvents.findLast((event) => Number(event.detail.pageCount) > 0);
+    job.progress = { stage: ["queued", "received", "regrouping", "reprocess_requested"].includes(job.processingStatus) ? job.processingStatus : lastEvent?.eventType || job.processingStatus,
+      pageNumber: Number(pageEvent?.detail.pageNumber) || null,
+      pageCount: Number(pageEvent?.detail.pageCount) || job.pageCount };
+  }
+  return { jobs, limit, hasMore: rows.length > limit };
+}
+
+export function paymentReceiptStatusDetail(input = {}) {
+  const result = {};
+  for (const field of ["fileId", "filename", "classification", "error", "reason", "outcome"]) {
+    if (typeof input[field] === "string") result[field] = input[field].slice(0, field === "error" ? 1000 : 255);
+  }
+  for (const field of ["pageNumber", "pageCount", "completedPages", "receiptCount", "groupCount", "blankPageCount", "uncertainPageCount", "acceptedPdfCount", "attachmentCount", "attempt", "limit"]) {
+    if (Number.isFinite(input[field])) result[field] = input[field];
+  }
+  if (typeof input.reused === "boolean") result.reused = input.reused;
+  return result;
 }
 
 export function paymentReceiptFromRow(row = {}) {

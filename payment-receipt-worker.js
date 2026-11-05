@@ -16,6 +16,7 @@ import {
   insertPaymentReceiptFile,
   insertPaymentReceiptMatch,
   listPaymentReceiptsForFile,
+  recordPaymentReceiptStatus,
   readPaymentProjects,
   updatePaymentReceiptBatch,
   updatePaymentReceiptFile,
@@ -42,6 +43,7 @@ import { splitBondNames } from "./bond-identity.js";
 import { extractPaymentReceiptFlateImage } from "./payment-receipt-flate-image.js";
 import { applyReviewedPaymentReceiptCorrections } from "./payment-receipt-reviewed-corrections.js";
 import { readPaymentReceiptAllocations, expandPaymentReceiptAllocationGroup } from "./payment-receipt-allocations.js";
+export { recordPaymentReceiptStatus } from "./functions/api/_payment-receipts.js";
 
 const DEFAULT_OWNER = "admin";
 const DEFAULT_TIME_ZONE = "Asia/Shanghai";
@@ -64,7 +66,7 @@ export default {
       return Response.json({
         status: readiness.ready ? "ok" : "not_ready",
         service: "credit-bond-payment-receipts",
-        buildVersion: "5.4",
+        buildVersion: "5.4.1",
         checks: readiness.checks,
       }, { status: readiness.ready ? 200 : 503 });
     }
@@ -114,7 +116,7 @@ export default {
         continue;
       }
       try {
-        await processPaymentReceiptQueueJob(env, queued.body);
+        await processPaymentReceiptQueueJob(env, { ...queued.body, attempt: queued.attempts });
         queued.ack();
       } catch (error) {
         console.error(JSON.stringify({
@@ -211,9 +213,11 @@ export async function receivePaymentReceiptEmail(message, env) {
       errorMessage: messageIdConflict ? "Message-ID 与既有邮件相同但内容不同，已作为新来件保留并等待复核" : "",
       createdAt: receivedAt,
     });
+    await recordPaymentReceiptStatus(env.DB, { ownerUserId, batchId }, "email_received", {}, receivedAt);
   }
   const queueClaimed = await markBatchQueued(env.DB, batchId);
   if (!queueClaimed) return { status: "duplicate", batchId };
+  const queuedAt = new Date().toISOString();
   try {
     await env.RECEIPT_QUEUE.send({
       kind: "email",
@@ -225,15 +229,16 @@ export async function receivePaymentReceiptEmail(message, env) {
     });
   } catch (error) {
     await revertBatchQueueClaim(env.DB, batchId, error);
+    await recordPaymentReceiptStatus(env.DB, { ownerUserId, batchId }, "email_queue_failed", { error: String(error?.message || error) });
     throw error;
   }
   await insertPaymentReceiptEvent(env.DB, {
     id: crypto.randomUUID(),
     ownerUserId,
     batchId,
-    eventType: existing ? "email_resumed" : "email_received",
+    eventType: existing ? "email_resumed" : "email_queued",
     detail: { queuedRawEmail: true, messageIdConflict },
-    createdAt: receivedAt,
+    createdAt: queuedAt,
   }).catch((error) => console.error(JSON.stringify({
     event: "payment_receipt_email_event_failed",
     batchId,
@@ -312,6 +317,7 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
   `).bind(cutoff, RECONCILE_LIMIT).all();
   for (const batch of batches?.results || []) {
     if (!await reclaimStaleBatchForQueue(env.DB, batch.id, batch.updated_at)) continue;
+    const queuedAt = new Date().toISOString();
     try {
       await env.RECEIPT_QUEUE.send({
         kind: "email",
@@ -322,9 +328,11 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
         messageIdConflict: paymentReceiptMessageIdConflict(batch.message_id),
       });
       summary.emailJobs += 1;
+      await recordPaymentReceiptStatus(env.DB, { ownerUserId: batch.owner_user_id, batchId: batch.id }, "email_retry_queued", {}, queuedAt);
     } catch (error) {
       summary.failures += 1;
       await revertBatchQueueClaim(env.DB, batch.id, error);
+      await recordPaymentReceiptStatus(env.DB, { ownerUserId: batch.owner_user_id, batchId: batch.id }, "email_queue_failed", { error: String(error?.message || error) });
     }
   }
 
@@ -342,6 +350,7 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
   `).bind(cutoff, RECONCILE_LIMIT).all();
   for (const file of files?.results || []) {
     if (!await reclaimStaleFileForQueue(env.DB, file.id, file.updated_at)) continue;
+    const queuedAt = new Date().toISOString();
     try {
       await env.RECEIPT_QUEUE.send({
         kind: "file",
@@ -355,9 +364,11 @@ export async function reconcileStalePaymentReceiptJobs(env, now = new Date()) {
         forceReanalyze: file.processing_status === "reprocess_requested",
       });
       summary.fileJobs += 1;
+      await recordPaymentReceiptStatus(env.DB, { ownerUserId: file.owner_user_id, batchId: file.batch_id, fileId: file.id }, "file_retry_queued", {}, queuedAt);
     } catch (error) {
       summary.failures += 1;
       await revertFileQueueClaim(env.DB, file.id, error);
+      await recordPaymentReceiptStatus(env.DB, { ownerUserId: file.owner_user_id, batchId: file.batch_id, fileId: file.id }, "file_queue_failed", { error: String(error?.message || error) });
     }
   }
 
@@ -373,6 +384,7 @@ export async function processPaymentReceiptEmail(env, job = {}) {
   if (!await beginBatchProcessing(env.DB, job.batchId)) {
     return { status: "already_handled", batchId: job.batchId, acceptedPdfCount: 0 };
   }
+  await recordPaymentReceiptStatus(env.DB, job, "email_processing_started", { attempt: job.attempt });
   const rawObject = await env.PAYMENT_RECEIPTS.get(job.rawObjectKey);
   if (!rawObject) throw permanentReceiptError(`R2 中不存在原始缴款单邮件：${job.rawObjectKey}`);
   const raw = await rawObject.arrayBuffer();
@@ -427,6 +439,8 @@ export async function processPaymentReceiptEmail(env, job = {}) {
       errorMessage: fileTooLarge ? `PDF 超过 ${MAX_PDF_BYTES / 1024 / 1024} MiB 自动处理上限，原文件已保留，请人工处理` : "",
       createdAt: new Date().toISOString(),
     });
+    await recordPaymentReceiptStatus(env.DB, { ...job, fileId }, "file_received", { filename });
+    if (fileTooLarge) await recordPaymentReceiptStatus(env.DB, { ...job, fileId }, "file_processing_rejected", { error: "PDF 超过自动处理上限，原文件已保留，请人工处理" });
     if (!fileTooLarge) await enqueuePaymentReceiptFile(env, job, { id: fileId, objectKey, filename });
     pdfSources.push({fileId,filename,sourcePath:attachment.sourcePath,sha256,existing:false});
     accepted += 1;
@@ -456,6 +470,7 @@ export async function processPaymentReceiptEmail(env, job = {}) {
 
 async function enqueuePaymentReceiptFile(env, emailJob, file) {
   if (!await markFileQueued(env.DB, file.id)) return false;
+  const queuedAt = new Date().toISOString();
   try {
     await env.RECEIPT_QUEUE.send({
       kind: "file",
@@ -467,9 +482,11 @@ async function enqueuePaymentReceiptFile(env, emailJob, file) {
       receivedDate: emailJob.receivedDate,
       messageIdConflict: emailJob.messageIdConflict === true,
     });
+    await recordPaymentReceiptStatus(env.DB, { ...emailJob, fileId: file.id }, "file_queued", { filename: file.filename }, queuedAt);
     return true;
   } catch (error) {
     await revertFileQueueClaim(env.DB, file.id, error);
+    await recordPaymentReceiptStatus(env.DB, { ...emailJob, fileId: file.id }, "file_queue_failed", { error: String(error?.message || error) });
     throw error;
   }
 }
@@ -483,6 +500,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
   if (!await beginFileProcessing(env.DB, job.fileId)) {
     return { status: "already_handled", fileId: job.fileId, batchId: job.batchId };
   }
+  await recordPaymentReceiptStatus(env.DB, job, "file_processing_started", { filename: job.filename, attempt: job.attempt });
   const sourceObject = await env.PAYMENT_RECEIPTS.get(job.objectKey);
   if (!sourceObject) throw permanentReceiptError(`R2 中不存在原始缴款单附件：${job.objectKey}`);
   const sourceBytes = await sourceObject.arrayBuffer();
@@ -515,6 +533,8 @@ export async function processPaymentReceiptFile(env, job = {}) {
   };
   const checkpoint = reusablePaymentReceiptPageCheckpoint(storedFile?.pageAnalysis, previousProgress, sourceSha256, sourcePdf.getPageCount());
   let pageAnalyses = checkpoint || (fullReanalysis ? null : reusablePageAnalysis(storedFile?.pageAnalysis, sourcePdf.getPageCount()));
+  const pageCount = sourcePdf.getPageCount();
+  if (pageAnalyses?.length) await recordPaymentReceiptStatus(env.DB, job, "file_analysis_reused", { pageCount, completedPages: pageAnalyses.length });
   if (!pageAnalyses || pageAnalyses.length < sourcePdf.getPageCount()) {
     pageAnalyses ||= [];
     await updatePaymentReceiptFile(env.DB,job.fileId,{pageCount:sourcePdf.getPageCount(),pageAnalysis:pageAnalyses,
@@ -523,6 +543,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
     let previousPageContext = lastPage ? {classification:lastPage.classification,
       recognizedText:String(lastPage.recognizedText || '').slice(0,1200),fields:lastPage.fields || {}} : null;
     for (let pageIndex = pageAnalyses.length; pageIndex < sourcePdf.getPageCount(); pageIndex += 1) {
+      await recordPaymentReceiptStatus(env.DB, job, "file_page_started", { pageNumber: pageIndex + 1, pageCount });
       const pageBytes = await copyPdfPages(sourcePdf, [pageIndex]);
       const cached=recognizedPageCache.find(page=>page?.pageNumber===pageIndex+1 && page.analysisVersion===PAGE_ANALYSIS_VERSION
         && ['deepseek-page-image','pdf-text-layer'].includes(page.analysisSource)
@@ -530,6 +551,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
         && (page.classification!=='receipt_start' || normalizePaymentReceiptBondShortName(page.fields?.bondShortName)
           || (paymentReceiptCodeIdentity(page.fields?.securityCode)&&!paymentReceiptCodeIdentity(page.fields?.securityCode).invalid) || page.fields?.prepaymentNumber));
       const analysis = cached || await analyzePaymentReceiptPage(env, pageBytes, pageIndex + 1, previousPageContext);
+      await recordPaymentReceiptStatus(env.DB, job, "file_page_completed", { pageNumber: pageIndex + 1, pageCount, classification: analysis.classification, reused: Boolean(cached) });
       pageAnalyses.push(analysis);
       previousPageContext = {
         classification: analysis.classification,
@@ -543,6 +565,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
     }
   }
 
+  await recordPaymentReceiptStatus(env.DB, job, "file_grouping_started", { pageCount });
   const grouped = groupPaymentReceiptPages(pageAnalyses.map((page) => ({
     pageNumber: page.pageNumber,
     text: page.recognizedText,
@@ -571,6 +594,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
     ? await listPaymentReceiptsForFile(env.DB, job.ownerUserId, job.fileId)
     : [];
   const createdReceiptIds = [];
+  await recordPaymentReceiptStatus(env.DB, job, "file_matching_started", { pageCount, groupCount: grouped.groups.length });
 
   for (const group of grouped.groups.flatMap(group => expandPaymentReceiptAllocationGroup(group, pageAnalyses))) {
     const groupBytes = await copyPdfPages(sourcePdf, group.pageNumbers.map((value) => value - 1));
@@ -694,6 +718,7 @@ export async function processPaymentReceiptFile(env, job = {}) {
       batchId: job.batchId,
       eventType: "receipt_extracted",
       detail: {
+        fileId: job.fileId,
         sourcePages: group.pageNumbers,
         allocationKey: group.allocationKey || '',
         matchStatus: effectiveMatchStatus,
@@ -740,6 +765,10 @@ export async function processPaymentReceiptFile(env, job = {}) {
   // refresh must not turn the file back into an OCR retry and repeat paid work.
   await finalizeBatchStatus(env.DB, job.batchId).catch(error=>console.warn(JSON.stringify({event:'payment_receipt_batch_finalize_retry',batchId:job.batchId,error:String(error?.message || error)})));
   await finalizePaymentReceiptRebuild(env,job.ownerUserId,progress.rebuildId).catch(error=>console.warn(JSON.stringify({event:'payment_receipt_rebuild_finalize_retry',rebuildId:progress.rebuildId,error:String(error?.message || error)})));
+  await recordPaymentReceiptStatus(env.DB, job, fileNeedsReview ? "file_review" : "file_processed", {
+    pageCount, receiptCount: createdReceiptIds.length,
+    blankPageCount: grouped.blankPages.length, uncertainPageCount: grouped.uncertainPages.length,
+  });
   return {
     status: fileNeedsReview ? "review" : "processed",
     receiptIds: createdReceiptIds,

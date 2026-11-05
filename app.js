@@ -1,5 +1,6 @@
 import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261028v540';
 import { createPaymentReceiptWorkspace } from './payment-receipt-workspace-ui.js?v=20261028v540r8';
+import { initializePaymentReceiptStatus } from './payment-receipt-status.js?v=20261105release541';
 import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview, paymentReceiptPageLabel, paymentReceiptAmountDifference } from './payment-receipt-reader.js?v=20261028v540r11';
 import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261028v540r3';
 import { normalizePaymentReceiptBondShortName } from './payment-receipt-names.js?v=20261028v540';
@@ -383,6 +384,7 @@ let paymentReceiptBoundaryAi = null;
 let paymentReceiptFileIdentityAi = null;
 let paymentReceiptManualIdentityEdit = null;
 let paymentReceiptWorkspace = null;
+let paymentReceiptStatusController = null;
 let projectIntakeAi = null;
 let paymentReceiptExplorerTree = buildPaymentReceiptOriginalFileTree();
 let paymentReceiptExplorerLevel = "root";
@@ -764,6 +766,12 @@ function bindReminders() {
 }
 
 function bindPaymentReceipts() {
+  paymentReceiptStatusController = initializePaymentReceiptStatus({
+    root: $("#paymentReceiptStatusFlow"),
+    headers: authHeaders,
+    onUnauthorized: () => { clearAuthSession(); redirectToGatewayLogin(); },
+    onCompleted: () => { if (!paymentReceiptsLoading) void loadPaymentReceipts({ silent: true }); },
+  });
   paymentReceiptWorkspace = createPaymentReceiptWorkspace({ root: $('.payment-receipt-reader-view'),
     getReceipts: () => paymentReceipts,
     getVisibleReceipts: () => paymentReceiptReaderEntries(paymentReceipts, [], [], paymentReceiptIndexView).map(entry => entry.value),
@@ -814,7 +822,10 @@ function bindPaymentReceipts() {
     onApply({groups,blankPages}){$('#paymentReceiptRegroupGroups').value=formatPaymentReceiptPageGroups(groups);$('#paymentReceiptRegroupBlankPages').value=formatPaymentReceiptPageList(blankPages);},onToast:showToast});
   const previewContainer = $("#paymentReceiptPdfPreview");
   if (previewContainer) paymentReceiptPreview = createPaymentReceiptPreview(previewContainer);
-  $("#paymentReceiptRefreshButton")?.addEventListener("click", () => loadPaymentReceipts());
+  $("#paymentReceiptRefreshButton")?.addEventListener("click", () => {
+    void loadPaymentReceipts();
+    void paymentReceiptStatusController?.refresh();
+  });
   $("#paymentReceiptExplorerButton")?.addEventListener("click", (event) => {
     void openPaymentReceiptExplorer(event.currentTarget);
   });
@@ -2780,6 +2791,7 @@ function applyRouteFocus(route = {}) {
 }
 
 function switchView(viewName, options = {}) {
+  paymentReceiptStatusController?.setActive(viewName === "payment-receipts");
   if (viewName !== "ledger") setProjectWorkspaceOpen(false);
   if ($("#workspaceTools")) $("#workspaceTools").open = false;
   const more = $("#navMore");
@@ -15070,6 +15082,7 @@ function setCurrentUser(user) {
 }
 
 function clearAuthSession() {
+  if (typeof paymentReceiptStatusController !== 'undefined') paymentReceiptStatusController?.reset();
   if (typeof paymentReceiptWorkspace !== 'undefined') paymentReceiptWorkspace?.reset();
   projectIntakeAi?.reset();
   paymentReceiptMatchAi?.clear();

@@ -1,6 +1,6 @@
 {
   "name": "credit-bond-process",
-  "version": "5.4.0",
+  "version": "5.4.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,7 +24,7 @@
     "thinking-orbs": "0.3.1",
     "unpdf": "2.0.0"
   },
-  "buildVersion": "5.4",
+  "buildVersion": "5.4.1",
   "devDependencies": {
     "esbuild": "0.25.12"
   }
