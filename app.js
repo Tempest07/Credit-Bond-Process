@@ -1,6 +1,6 @@
 import { createPaymentReceiptPreview } from './payment-receipt-preview.js?v=20261028v540';
 import { createPaymentReceiptWorkspace } from './payment-receipt-workspace-ui.js?v=20261028v540r8';
-import { initializePaymentReceiptStatus } from './payment-receipt-status.js?v=20261105release541';
+import { initializePaymentReceiptStatus } from './payment-receipt-status.js?v=20261106release5411';
 import { paymentReceiptReaderEntries, paymentReceiptReaderSelection, paymentReceiptReaderPreview, paymentReceiptPageLabel, paymentReceiptAmountDifference } from './payment-receipt-reader.js?v=20261028v540r11';
 import { createPaymentReceiptNameResolver } from './payment-receipt-name-display.js?v=20261028v540r3';
 import { normalizePaymentReceiptBondShortName } from './payment-receipt-names.js?v=20261028v540';

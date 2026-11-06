@@ -19,12 +19,14 @@ const EVENT_LABELS = {
   receipt_manually_matched: "已人工确认项目对应", receipt_manually_unmatched: "已解除项目对应",
 };
 
+const flowClock = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
+
 export function formatReceiptFlowTime(value) {
   if (!value || !Number.isFinite(new Date(value).getTime())) return "时间未记录";
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).format(new Date(value)).replaceAll("/", "-");
+  return flowClock.format(new Date(value)).replaceAll("/", "-");
 }
 
 export function receiptFlowEvents(job) {
@@ -108,12 +110,16 @@ function renderFlowTimestamp(value, label) {
     : `<span>${escape(formatted)}</span>`}</span>`;
 }
 
+function isStalled(job, now) {
+  const updated = Date.parse(job.updatedAt);
+  return ACTIVE_STATUSES.has(job.processingStatus) && Number.isFinite(updated) && now - updated > 30 * 60_000;
+}
+
 export function renderReceiptFlowJob(job, { open = false, now = Date.now() } = {}) {
   const state = receiptFlowState(job);
   const events = receiptFlowEvents(job);
   const title = job.filename || job.subject || "待提取附件的邮件";
-  const updatedTime = Date.parse(job.updatedAt);
-  const stalled = state.kind === "active" && Number.isFinite(updatedTime) && now - updatedTime > 30 * 60_000;
+  const stalled = isStalled(job, now);
   const received = { eventType: "email_received", createdAt: job.receivedAt, detail: {} };
   const timeline = events.some((event) => event.eventType === "email_received") ? events : [received, ...events];
   const stages = receiptFlowStages(job);
@@ -131,20 +137,39 @@ export function renderReceiptFlowJob(job, { open = false, now = Date.now() } = {
       <section class="receipt-flow-process" aria-label="文件处理阶段">
       <div class="receipt-flow-detail-head"><strong>运行状态</strong><span>${escape(fileMeta)}</span></div>
       <ol class="receipt-flow-stages">${stages.map((stage) => `<li class="${stage.state}"${stage.state === "active" ? ' aria-current="step"' : ""}><span>${stage.label}</span></li>`).join("")}</ol>
-      <p class="receipt-flow-stage-status ${state.kind}">${escape(state.label)}</p>
+      <div class="receipt-flow-process-info"><p class="receipt-flow-stage-status ${state.kind}">${escape(state.label)}</p>
       ${job.filename && job.subject ? `<p class="receipt-flow-subject">邮件：${escape(job.subject)}</p>` : ""}
       ${job.errorMessage ? `<p class="receipt-flow-error">${escape(job.errorMessage)}</p>` : ""}
       ${stalled ? '<p class="receipt-flow-warning">已超过 30 分钟没有状态更新，任务尚未确认完成。</p>' : ""}
-      </section>
+      </div></section>
       <section class="receipt-flow-event-panel" aria-label="处理时间线">
       <div class="receipt-flow-detail-head"><strong>事件记录</strong><span>北京时间</span></div>
       <ol class="receipt-flow-timeline" tabindex="0" aria-label="按发生时间排列的处理记录">${timeline.map((event) => `<li><time>${escape(formatReceiptFlowTime(event.createdAt))}</time><span>${escape(receiptFlowEventLabel(event))}${event.detail?.error ? `<span class="receipt-flow-event-error">${escape(event.detail.error)}</span>` : ""}</span></li>`).join("")}</ol>
-      ${job.eventsTruncated ? '<p class="receipt-flow-history-note">仅展示最近的处理事件；收件时间保留。</p>' : ""}
+      <div class="receipt-flow-notes">${job.eventsTruncated ? '<p class="receipt-flow-history-note">仅展示最近的处理事件；收件时间保留。</p>' : ""}
       ${events.length ? "" : '<p class="receipt-flow-history-note">此历史任务未记录分步时间，当前状态以最后更新记录为准。</p>'}
-      </section>
+      </div></section>
       </div>
     </div>
   </details>`;
+}
+
+// Keep the native disclosure, its focused controls and the timeline's scroll container mounted.
+function updateFlowRow(row, next) {
+  row.className = next.className;
+  for (const selector of ["summary", ".receipt-flow-process .receipt-flow-detail-head", ".receipt-flow-process-info", ".receipt-flow-timeline", ".receipt-flow-notes"]) {
+    const current = row.querySelector(selector);
+    const content = next.querySelector(selector).innerHTML;
+    if (current.innerHTML !== content) current.innerHTML = content;
+  }
+  const stages = row.querySelector(".receipt-flow-stages").children;
+  const nextStages = next.querySelector(".receipt-flow-stages").children;
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i];
+    if (stage.className !== nextStages[i].className) stage.className = nextStages[i].className;
+    if (stage.textContent !== nextStages[i].textContent) stage.firstElementChild.textContent = nextStages[i].textContent;
+    if (stage.classList.contains("active")) stage.setAttribute("aria-current", "step");
+    else stage.removeAttribute("aria-current");
+  }
 }
 
 export function initializePaymentReceiptStatus({ root, url = "./api/payment-receipt-status", headers = () => ({}), onUnauthorized = () => {}, onCompleted = () => {} }) {
@@ -156,12 +181,15 @@ export function initializePaymentReceiptStatus({ root, url = "./api/payment-rece
   const summary = root.querySelector("[data-flow-summary]");
   const sync = root.querySelector("[data-flow-sync]");
   const errorBox = root.querySelector("[data-flow-error]");
+  const panelToggle = root.querySelector("[data-flow-toggle]");
+  const panelBody = root.querySelector("#paymentReceiptFlowBody");
   const doc = root.ownerDocument;
   let jobs = [], active = false, timer = null, controller = null, fetchedAt = "", loaded = false, error = "";
   let requestVersion = 0;
   const expanded = new Set();
+  const rowSnapshots = new WeakMap();
 
-  function render() {
+  function render(keepViewedRows = true) {
     const counts = { active: 0, success: 0, review: 0, failed: 0, unknown: 0 };
     jobs.forEach((job) => counts[receiptFlowState(job).kind]++);
     summary.innerHTML = [
@@ -174,16 +202,69 @@ export function initializePaymentReceiptStatus({ root, url = "./api/payment-rece
     errorBox.textContent = error ? `状态读取失败：${error}${loaded ? "。当前保留上次结果。" : ""}` : "";
     refreshButton.disabled = Boolean(controller);
     refreshButton.textContent = controller ? "刷新中…" : "刷新动态";
-    const visible = filterReceiptFlowJobs(jobs, { status: statusSelect.value, query: search.value });
-    const html = visible.length ? visible.map((job) => renderReceiptFlowJob(job, { open: expanded.has(job.id) })).join("")
-      : `<div class="empty receipt-flow-empty">${!loaded ? error ? "暂时无法读取处理动态。" : "正在读取处理动态…" : jobs.length ? "没有符合筛选条件的任务。" : "尚未收到缴款单邮件。"}</div>`;
-    // Do not replace identical rows every poll: keep keyboard focus and expanded details stable.
-    if (list.innerHTML !== html) {
-      const focused = doc.activeElement?.closest("[data-flow-job]");
-      const focusedId = focused?.dataset.flowJob;
-      list.innerHTML = html;
-      if (focusedId) [...list.querySelectorAll("[data-flow-job]")].find((row) => row.dataset.flowJob === focusedId)?.querySelector("summary")?.focus({ preventScroll: true });
+    renderRows(keepViewedRows);
+  }
+
+  function renderRows(keepViewedRows) {
+    const filter = { status: statusSelect.value, query: search.value };
+    const rows = [...list.querySelectorAll("[data-flow-job]")];
+    const rowsById = new Map(rows.map(row => [row.dataset.flowJob, row]));
+    // Native toggle events are queued. Read the actual DOM before an in-flight refresh can replace data.
+    for (const [id, row] of rowsById) {
+      if (row.open) expanded.add(id);
+      else expanded.delete(id);
     }
+    let visible = filterReceiptFlowJobs(jobs, filter);
+    if (keepViewedRows) {
+      // A processing file sorts into a different group on success. Keep open rows at their
+      // viewed positions until the user closes them or explicitly changes the filter.
+      const jobsById = new Map(jobs.map(job => [job.id, job]));
+      const pinned = rows.map((row, index) => ({ index, job: row.open && jobsById.get(row.dataset.flowJob) })).filter(item => item.job);
+      const pinnedIds = new Set(pinned.map(item => item.job.id));
+      visible = visible.filter(job => !pinnedIds.has(job.id));
+      for (const { job, index } of pinned) visible.splice(index, 0, job);
+    }
+    if (!visible.length) {
+      list.innerHTML = `<div class="empty receipt-flow-empty">${!loaded ? error ? "暂时无法读取处理动态。" : "正在读取处理动态…" : jobs.length ? "没有符合筛选条件的任务。" : "尚未收到缴款单邮件。"}</div>`;
+      return;
+    }
+    const now = Date.now();
+    const snapshots = visible.map(job => JSON.stringify([job, isStalled(job, now)]));
+    const markup = job => renderReceiptFlowJob(job, { open: expanded.has(job.id), now });
+    if (!rows.length) {
+      list.innerHTML = visible.map(markup).join("");
+      [...list.querySelectorAll("[data-flow-job]")].forEach((row, i) => rowSnapshots.set(row, snapshots[i]));
+      return;
+    }
+    const viewport = list.getBoundingClientRect();
+    const anchor = keepViewedRows && rows.find(row => {
+      if (!row.open) return false;
+      const bounds = row.getBoundingClientRect();
+      return bounds.bottom > viewport.top && bounds.top < viewport.bottom;
+    });
+    const anchorTop = anchor && anchor.getBoundingClientRect().top;
+    const focused = doc.activeElement;
+    const visibleIds = new Set(visible.map(job => job.id));
+    for (const [id, row] of rowsById) if (!visibleIds.has(id)) row.remove();
+    let cursor = list.firstElementChild;
+    visible.forEach((job, i) => {
+      let row = rowsById.get(job.id);
+      if (!row || rowSnapshots.get(row) !== snapshots[i]) {
+        const template = doc.createElement("template");
+        template.innerHTML = markup(job);
+        const next = template.content.firstElementChild;
+        if (row) updateFlowRow(row, next);
+        else row = next;
+        rowSnapshots.set(row, snapshots[i]);
+      }
+      if (row !== cursor) {
+        if (row.parentElement === list && list.moveBefore) list.moveBefore(row, cursor);
+        else list.insertBefore(row, cursor);
+      }
+      cursor = row.nextElementSibling;
+    });
+    if (focused?.isConnected && doc.activeElement === doc.body && focused !== doc.body) focused.focus({ preventScroll: true });
+    if (anchor?.isConnected) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
   }
 
   function schedule() {
@@ -246,19 +327,32 @@ export function initializePaymentReceiptStatus({ root, url = "./api/payment-rece
     fetchedAt = "";
     error = "";
     expanded.clear();
+    list.innerHTML = "";
     search.value = "";
     statusSelect.value = "";
     render();
   }
   list.addEventListener("toggle", (event) => {
     const row = event.target;
-    if (!row.matches("[data-flow-job]")) return;
+    if (row.parentElement !== list || !row.matches("[data-flow-job]")) return;
     if (row.open) expanded.add(row.dataset.flowJob);
-    else expanded.delete(row.dataset.flowJob);
+    else {
+      expanded.delete(row.dataset.flowJob);
+      // A completed row held in the processing filter leaves it once the reader closes it.
+      if (statusSelect.value && !row.classList.contains(statusSelect.value)) render();
+    }
   }, true);
+  panelToggle.addEventListener("click", () => {
+    const collapsed = !panelBody.hidden;
+    panelBody.hidden = collapsed;
+    refreshButton.hidden = collapsed;
+    panelToggle.setAttribute("aria-expanded", String(!collapsed));
+    panelToggle.setAttribute("aria-label", collapsed ? "展开处理动态" : "收起处理动态");
+    panelToggle.textContent = collapsed ? "展开" : "收起";
+  });
   refreshButton.addEventListener("click", () => void refresh());
-  statusSelect.addEventListener("change", render);
-  search.addEventListener("input", render);
+  statusSelect.addEventListener("change", () => render(false));
+  search.addEventListener("input", () => render(false));
   const visibility = () => { if (doc.hidden) pause(); else if (active) void refresh(); };
   doc.addEventListener("visibilitychange", visibility);
   return {
