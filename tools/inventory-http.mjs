@@ -33,7 +33,7 @@ async function jsonInput(request) {
     return input;
   } catch {throw new InventoryError('请求格式无效。')}
 }
-async function query(input, action, {db,apiKey}) {
+async function query(input, action, {db,bucket,apiKey}) {
   const snapshots=await listInventory(db);
   if(!snapshots.length)return {clarification:'请先上传完整库存快照。'};
   const previous=action==='ask'&&input.previousResultId ? await answerContext(db,input.previousResultId) : null;
@@ -48,8 +48,23 @@ async function query(input, action, {db,apiKey}) {
     const outcome=await planInventoryQuestion({question:input.question,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey});
     if(outcome.clarification)return outcome;
     plan=outcome.plan;
+    if(outcome.overviewSubject){
+      const subject=outcome.overviewSubject;
+      const snapshot=base.date===plan.date?base:snapshots.find(s=>s.date===plan.date);
+      const filters={...plan.filters};
+      for(const key of ['issuer','attribution','guarantor','marketType'])delete filters[key];
+      const lookup=extra=>newInventoryAnswer(db,snapshot,{...plan,group:'code',metric:'principal',filters:{...filters,...extra}},bucket);
+      const [issued,enhanced]=await Promise.all([lookup({issuer:subject}),lookup({guarantor:subject,marketType:'资产支持证券'})]);
+      for(const result of [issued,enhanced]){
+        if(result.clarification?.includes('可能指多家主体'))return result;
+      }
+      if(issued.resultId && enhanced.rowCount && issued.plan.filters.issuer!==enhanced.roleEvidence.entity)
+        return {clarification:'发行人与增信方匹配到不同主体，请指定机构全称：'+issued.plan.filters.issuer+'、'+enhanced.roleEvidence.entity+'。'};
+      return {clarification:'按“'+subject+'”分别查看自发债和增信 ABS。',overview:[
+        {title:'自己发行的债券',result:issued},{title:'占用其授信的 ABS',result:enhanced}]};
+    }
   }
-  return newInventoryAnswer(db,base.date===plan.date?base:snapshots.find(s=>s.date===plan.date),plan);
+  return newInventoryAnswer(db,base.date===plan.date?base:snapshots.find(s=>s.date===plan.date),plan,bucket);
 }
 
 // The caller authenticates before providing bindings. Browser writes are restricted

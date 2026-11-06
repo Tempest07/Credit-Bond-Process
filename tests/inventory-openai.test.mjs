@@ -34,7 +34,42 @@ test("one server-side call plans a Chinese query without disclosing unrelated co
     } });
   assert.equal(count, 1);
   assert.deepEqual(result.plan, { date: "2026-04-30", metric: "principal", group: "issuer",
-    filters: { issuer: null, branch: "甲分行", portfolio: null, account: null, code: null, marketType: null, scope: null, holdingStatus: null } });
+    filters: { issuer: null, guarantor: null, attribution: null, branch: "甲分行", portfolio: null, account: null, code: null, marketType: null, scope: null, holdingStatus: null } });
+});
+
+test("ambiguous company holdings select parallel views without setting an issuer filter",async()=>{
+  const reply=await planInventoryQuestion({...base,question:"甲集团的债有哪些？",fetchImpl:respond(outcome([
+    {field:"branch",value:"广州分行"},{field:"overviewSubject",value:"甲集团"}
+  ]))});
+  assert.equal(reply.overviewSubject,"甲集团");
+  assert.equal(reply.plan.filters.branch,"广州分行");
+  assert.equal(reply.plan.filters.issuer,null);
+});
+
+test("guarantee queries preserve the legal role and ABS scope through follow-ups", async () => {
+  const subject = { ...base, question: "甲集团担保的 ABS 还剩多少？" };
+  const wrong = await planInventoryQuestion({ ...subject, fetchImpl: respond(outcome([{ field:"issuer", value:"甲集团" }])) });
+  assert.ok(wrong.clarification); assert.equal(wrong.plan, undefined);
+  const lostType = await planInventoryQuestion({ ...subject, fetchImpl: respond(outcome([{ field:"guarantor", value:"甲集团" }])) });
+  assert.ok(lostType.clarification); assert.equal(lostType.plan, undefined);
+  const first = await planInventoryQuestion({ ...subject, fetchImpl:respond(outcome([
+    {field:"marketType",value:"ABS"}, {field:"guarantor",value:"甲集团"}])) });
+  const next = await planInventoryQuestion({ ...subject, question:"逐券列出，只看表内", previousPlan:first.plan,
+    fetchImpl: respond(outcome([{field:"group",value:"code"},{field:"scope",value:"表内"}])) });
+  assert.equal(next.plan.filters.marketType,"资产支持证券");
+  assert.equal(next.plan.filters.guarantor,"甲集团"); assert.equal(next.plan.filters.issuer,null);
+  assert.equal(next.plan.group,"code"); assert.equal(next.plan.filters.scope,"表内");
+  const contract = await planInventoryQuestion({ ...subject, question:"这些券有连带责任保证吗？",
+    previousPlan:first.plan, fetchImpl:respond(outcome([])) });
+  assert.match(contract.clarification,/合同/); assert.equal(contract.plan,undefined);
+  const allTypes = await planInventoryQuestion({ ...subject, question:"这家客户一共占了多少授信？按品种列。",
+    previousPlan:first.plan, fetchImpl:respond(outcome([{field:"attribution",value:"甲集团"},
+      {field:"guarantor",value:null},{field:"marketType",value:null},{field:"group",value:"marketType"}])) });
+  assert.equal(allTypes.plan.filters.attribution,"甲集团");assert.equal(allTypes.plan.filters.guarantor,null);
+  assert.equal(allTypes.plan.filters.marketType,null);assert.equal(allTypes.plan.group,"marketType");
+  const unused = await planInventoryQuestion({ ...subject, question:"它还有多少剩余授信额度？",
+    previousPlan:allTypes.plan, fetchImpl:respond(outcome([])) });
+  assert.match(unused.clarification,/授信批复额度/); assert.equal(unused.plan,undefined);
 });
 
 test("follow-ups change or remove only requested conditions and preserve previous plan", async () => {

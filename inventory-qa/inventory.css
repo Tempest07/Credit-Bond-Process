@@ -95,6 +95,7 @@ dialog::backdrop{background:#15191866}
 #detail-body{margin-top:10px;overflow:auto}
 .detail-table{min-width:575px}
 .detail-table small{display:block;color:var(--muted)}
+.evidence-label{display:table;margin:12px 0 4px;padding:4px 9px;border:1px solid var(--rule);border-radius:6px;background:#f5f5ef;color:#494c35;font-size:13px;font-weight:600}
 .pager{justify-content:flex-end;margin-top:12px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 @media(max-width:560px){.sitebar{gap:10px;min-height:54px}.brand{font-size:19px}.product{padding-left:10px;font-size:13px}.back{font-size:12px}.workspace-heading{align-items:flex-start;margin:21px 0 17px}.compact{min-width:0;max-width:140px}.bar-row{grid-template-columns:minmax(80px,1.3fr) minmax(42px,1fr) auto;gap:7px}.empty,.upload{padding:15px}.manual form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}th,td{padding:7px 3px}.snap-row{flex-wrap:wrap}}

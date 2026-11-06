@@ -2,8 +2,9 @@
 
 const $ = (id) => document.getElementById(id);
 const api = "../api/inventory/";
-const groupNames = { issuer: "发行人", branch: "联动分行", portfolio: "交易组合", scope: "持仓范围", account: "会计分类", marketType: "债券类型", none: "全部持仓" };
-const filterNames = { ...groupNames, code: "券码", holdingStatus: "台账状态" };
+const groupNames = { issuer: "发行人", branch: "联动分行", portfolio: "交易组合", scope: "持仓范围", account: "会计分类", marketType: "债券类型", code: "逐券", none: "全部持仓" };
+const filterNames = { ...groupNames, code: "券码", holdingStatus: "台账状态", guarantor: "查询担保人", attribution: "损益还原客户" };
+const evidenceLabels = { enhancement: "增信占用 · 按损益还原客户统计", candidate: "待核实 · 损益还原客户匹配", unknown: "台账信息不足", ledger: "台账列明的担保人", attribution: "客户占用 · 按损益还原客户统计" };
 const number = new Intl.NumberFormat("zh-CN");
 const decimal = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const yuan = (cents) => Number.isFinite(cents) ? decimal.format(cents / 100) : "—";
@@ -106,7 +107,9 @@ function renderControls() {
   for (const el of $("manual-form").elements) el.disabled = busy || !snap;
   $("suggestions").replaceChildren();
   if (state.configured) {
-    const suggestions = state.current
+    const suggestions = state.current?.data.roleEvidence
+      ? ["逐券列出", "只看表内", "这个客户一共占了多少授信？按品种列"]
+      : state.current
       ? ["只看表内", "按交易组合分", "改为按发行人分"]
       : ["广州分行的库存按发行人分有多少亿元？", "哪些联动分行持仓最多？", "按会计分类汇总库存"];
     for (const q of suggestions) {
@@ -159,8 +162,9 @@ function amountValue(metric, data, isGroup = false) {
   const cents = isGroup ? data.cents : data.totalCents;
   return { value: cents, display: billions(cents), unit: "亿元" };
 }
-function filterText(filters) {
-  return Object.entries(filters || {}).filter(([, v]) => v != null && String(v) !== "").map(([k, v]) => (filterNames[k] || k) + "：" + v).join("　");
+function filterText(filters, kind) {
+  return Object.entries(filters || {}).filter(([, v]) => v != null && String(v) !== "").map(([k, v]) =>
+    (k === "guarantor" && kind === "enhancement" ? "增信方" : filterNames[k] || k) + "：" + v).join("　");
 }
 function table(headers, rows, numeric = []) {
   const el = node("table"), head = el.createTHead().insertRow();
@@ -179,6 +183,7 @@ function table(headers, rows, numeric = []) {
   return el;
 }
 function groupName(name) { return name === "" || name == null ? "未填写" : String(name); }
+function groupLabel(g) { return g.securityName ? g.securityName + " · " + g.name : groupName(g.name); }
 function showChart(groups, metric, data) {
   const chart = node("div", null, "viz");
   chart.setAttribute("aria-label", "按当前指标排序的分组条形图");
@@ -194,7 +199,7 @@ function showChart(groups, metric, data) {
     fill.style.left = 100 * (zero + Math.min(n.value || 0, 0) / range) + "%";
     fill.style.width = 100 * Math.abs(n.value || 0) / range + "%";
     mark.append(fill); mark.setAttribute("aria-hidden", "true");
-    row.append(button(groupName(g.name), () => openDetail(data, g.name), "row-link"), mark, node("span", n.display + " " + n.unit, "num"));
+    row.append(button(groupLabel(g), () => openDetail(data, g.name), "row-link"), mark, node("span", n.display + " " + n.unit, "num"));
     chart.append(row);
   }
   return chart;
@@ -205,14 +210,24 @@ function renderAnswer() {
   const article = node("article", null, "answer");
   const m = amountValue(data.plan.metric, data);
   const metric = node("div", m.display, "metric"); metric.append(node("small", m.unit));
-  article.append(node("p", label, "question"), node("p", [manual ? "手动查询" : "库存问数", data.snapshot.date, filterText(data.plan.filters)].filter(Boolean).join(" · "), "meta"), metric);
+  const filters = filterText(data.plan.filters, data.roleEvidence?.kind);
+  article.append(node("p", label, "question"), node("p", [manual ? "手动查询" : "库存问数", data.snapshot.date, filters].filter(Boolean).join(" · "), "meta"));
+  const evidence = data.roleEvidence;
+  if (evidence) article.append(node("p", evidenceLabels[evidence.kind] || "库存统计口径", "evidence-label"));
+  if (evidence?.kind !== "unknown") article.append(metric);
+  if (["enhancement", "attribution"].includes(evidence?.kind) && data.plan.metric === "principal")
+    article.append(node("p", "库存名义本金 " + yuan(data.totalCents) + " 元", "meta"));
   if (data.summary && ![("名义本金 " + m.display + " 亿元"), (String(data.rowCount) + " 条持仓记录"), (String(data.securityCount) + " 只不同券码")].includes(data.summary)) {
     article.append(node("p", data.summary, "summary"));
   }
-  article.append(node("p", count(data.securityCount) + " 只券 · " + count(data.rowCount) + " 条持仓 · " + count(data.groups.length) + " 个分组", "tagline"));
+  if (evidence?.kind !== "unknown") article.append(node("p", count(data.securityCount) + " 只券 · " + count(data.rowCount) + " 条持仓 · " + count(data.groups.length) + " 个分组", "tagline"));
   for (const warning of data.warnings || []) {
     const text = typeof warning === "string" ? warning : warning?.message;
     if (text) article.append(node("p", text, "warning"));
+  }
+  if (evidence?.kind === "unknown") {
+    $("current-answer").replaceChildren(article);
+    return;
   }
   const group = groupNames[data.plan.group] || "分组";
   const chunk = data.groups.slice(0, state.expanded ? data.groups.length : 5);
@@ -227,7 +242,7 @@ function renderAnswer() {
   if (!chunk.length) article.append(node("p", "当前条件没有匹配持仓。", "meta"));
   else if (state.view === "chart") article.append(showChart(chunk, data.plan.metric, data));
   else article.append(table([group, "本金（亿元）", "不同券数", "持仓行数"], chunk.map((g) => [
-    button(groupName(g.name), () => openDetail(data, g.name), "row-link"), billions(g.cents), count(g.securityCount), count(g.count),
+    button(groupLabel(g), () => openDetail(data, g.name), "row-link"), billions(g.cents), count(g.securityCount), count(g.count),
   ]), [1, 2, 3]));
   const actions = node("div", null, "view-actions");
   if (data.groups.length > 5) actions.append(button(state.expanded ? "收起排名" : "查看全部 " + data.groups.length + " 组", () => { state.expanded = !state.expanded; renderAnswer(); }));
@@ -235,7 +250,7 @@ function renderAnswer() {
   const download = button("下载完整 Excel", () => exportResult(data, download)); actions.append(download); article.append(actions);
   const source = node("details", null, "source");
   source.append(node("summary", "口径与来源"), node("p", [data.snapshot.filename, data.snapshot.sheet, "快照业务日 " + data.snapshot.date].filter(Boolean).join(" · ")),
-    node("p", (filterText(data.plan.filters) || "全部匹配范围") + "；人民币元汇总后换算为亿元。"));
+    node("p", (filters || "全部匹配范围") + "；人民币元汇总后换算为亿元。"));
   article.append(source);
   $("current-answer").replaceChildren(article);
 }
@@ -244,8 +259,36 @@ function rememberAnswer() {
   const { label, data } = state.current;
   const record = node("details", null, "record");
   record.append(node("summary", label), node("p", data.snapshot.date + " · " + data.summary));
-  const b = button("下载本次完整结果", () => exportResult(data, b)); record.append(b);
+  if (data.roleEvidence?.kind !== "unknown") {
+    const b = button("下载本次完整结果", () => exportResult(data, b)); record.append(b);
+  }
   $("history").append(record);
+}
+function showSubjectOverview(data, label) {
+  rememberAnswer();
+  state.current = null;
+  const article = node("article", null, "answer");
+  article.append(node("p", label, "question"),node("p", data.clarification));
+  for (const {title,result} of data.overview) {
+    const section = node("section", null, "source");
+    section.append(node("h3",title));
+    if (!result.resultId || result.roleEvidence?.kind === "unknown") {
+      section.append(node("p", result.clarification || result.summary));
+    } else {
+      section.append(node("p", result.snapshot.date + " · " + count(result.securityCount) + " 只 · " + billions(result.totalCents) + " 亿元"));
+      if(result.groups.length) section.append(node("p",result.groups.slice(0,8).map(groupLabel).join("、") + (result.groups.length>8?" 等":"")));
+      const actions = node("div",null,"view-actions");
+      actions.append(button("查看并追问这组",()=>{
+        state.current={label:label+" · "+title,data:result}; state.pending=null;
+        state.expanded=true;state.view="table";renderAnswer();renderControls();notice("query-notice");
+      }));
+      const download=button("下载这组 Excel",()=>exportResult(result,download));actions.append(download);
+      section.append(actions);
+    }
+    article.append(section);
+  }
+  $("current-answer").replaceChildren(article);
+  article.scrollIntoView({block:"start"});
 }
 async function query(path, payload, label) {
   if (state.askController || !state.selected) return;
@@ -257,8 +300,9 @@ async function query(path, payload, label) {
     const data = await json(path, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (state.askController !== controller) return;
     if (data.clarification) {
-      state.pending = { question: payload.question, clarification: String(data.clarification) };
-      notice("query-notice", data.clarification);
+      state.pending = { question: payload.question, clarification: String(data.clarification), previousResultId:payload.previousResultId };
+      if(Array.isArray(data.overview)){showSubjectOverview(data,label);notice("query-notice");}
+      else notice("query-notice", data.clarification);
       $("question").value = ""; $("question").focus();
       return;
     }
@@ -313,10 +357,24 @@ async function fetchDetail() {
     state.detailRows = rows.length;
     if (!rows.length) $("detail-body").replaceChildren(node("p", "当前条件没有匹配持仓。", "meta"));
     else {
-      const t = table(["发行人 / 券名", "券码", "联动分行 / 组合", "本金（元）", "原表行号"], rows.map(r => {
+      const role = state.current?.data.resultId === id ? state.current.data.roleEvidence : null;
+      const columns = ["发行人 / 券名", "券码", "联动分行 / 组合", "本金（元）", "原表行号"];
+      columns.push("债券类型");
+      if (role) columns.push(role.kind === "enhancement" ? "增信占用方" : role.kind === "attribution" ? "损益还原客户" : "台账担保人 / 损益还原客户");
+      const t = table(columns, rows.map(r => {
         const name = node("span", r.issuer || "未填写"), ledger = node("span", r.branch || "未填写");
         name.append(node("small", r.name || "—")); ledger.append(node("small", [r.scope, r.portfolio].filter(Boolean).join(" · ")));
-        return [name, r.code, ledger, yuan(r.cents), r.sourceRow];
+        const cells = [name, r.code, ledger, yuan(r.cents), r.sourceRow];
+        const type = node("span", r.queryMarketType || r.marketType || "未填写");
+        if (r.queryMarketType && r.marketType && r.queryMarketType !== r.marketType) type.append(node("small", "原表：" + r.marketType));
+        cells.push(type);
+        if (role) {
+          const byCustomer = ["enhancement", "attribution"].includes(role.kind);
+          const evidence = node("span", (byCustomer ? r.attribution : r.guarantor) || "未列明");
+          if (!byCustomer) evidence.append(node("small", r.attribution || "未填写"));
+          cells.push(evidence);
+        }
+        return cells;
       }), [3, 4]);
       t.className = "detail-table"; $("detail-body").replaceChildren(t);
     }
@@ -361,7 +419,7 @@ $("ask-form").addEventListener("submit", event => {
   const label = $("question").value.trim();
   if (!label || !state.configured) return;
   const question = state.pending ? "原问题：" + state.pending.question + "\n待澄清：" + state.pending.clarification + "\n用户补充：" + label : label;
-  query("ask", { question, snapshotId: state.selected, previousResultId: state.current?.data.resultId, effort: $("effort").value }, label);
+  query("ask", { question, snapshotId: state.selected, previousResultId: state.current?.data.resultId || state.pending?.previousResultId, effort: $("effort").value }, label);
 });
 $("question").addEventListener("keydown", event => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {

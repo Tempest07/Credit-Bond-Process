@@ -15,7 +15,9 @@ const columns = {
   scope: '表内/委外', code: '债券代码', name: '债券简称', principal: '名义本金',
   issuer: '发行人全称', marketType: '债券类型', date: '数据业务日期',
   maturity: '到期日期', expected: 'ABS预计到期日', legal: '法定到期日',
+  attribution: '资产端损益还原客户名称', guarantor: '担保人',
 };
+const guarantorHeaders = new Set(['担保人','担保人全称','担保人名称','担保方','担保方全称','保证人','保证人全称','保证人名称']);
 const required = ['date','code','name','principal','issuer','branch','scope','account','portfolio','institution'];
 const text = value => typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 function dateOf(value, epoch1904) {
@@ -133,19 +135,21 @@ const requiredHeader = '每次需有一张可识别的库存明细工作表，�
 function snapshotSheet(zip, sheet, strings, epoch1904) {
   let sourceRow = 0, column = 0, cellType = '', value = '', capture = false, inCell = false, phonetic = false;
   let values = new Map(), header = null, headerRow = 0, date = '', totalCents = 0, absoluteCents = 0;
+  let guarantorHeader = '';
   const headerMissing = Symbol('skip worksheet');
   const rows = [];
   function closeRow() {
     if (!header) {
       const idx = {}, duplicates = new Set();
       for (const [col,v] of values) for (const [field, label] of Object.entries(columns)) {
-        if (text(v) !== label) continue;
+        if (field === 'guarantor' ? !guarantorHeaders.has(text(v)) : text(v) !== label) continue;
         if (field in idx) duplicates.add(field);
         idx[field] = col;
       }
       if (!required.every(k => k in idx)) return;
       if (duplicates.size) throw new InventoryError('库存表头含重复字段，请先核对。');
       header = idx;
+      guarantorHeader = text(values.get(idx.guarantor));
       headerRow = sourceRow;
       return;
     }
@@ -162,7 +166,7 @@ function snapshotSheet(zip, sheet, strings, epoch1904) {
     if (!Number.isSafeInteger(absoluteCents)) throw new InventoryError('快照累计金额超过精确统计范围。');
     totalCents += cents;
     const r = { sourceRow, cents };
-    for (const field of ['institution','branch','account','portfolio','scope','code','name','issuer','marketType']) r[field] = text(read(field));
+    for (const field of ['institution','branch','account','portfolio','scope','code','name','issuer','marketType','guarantor','attribution']) r[field] = text(read(field));
     for (const field of ['maturity','expected','legal']) r[field] = dateOf(read(field),epoch1904);
     rows.push(r);
   }
@@ -216,7 +220,8 @@ function snapshotSheet(zip, sheet, strings, epoch1904) {
     });
   } catch (error) { if (error === headerMissing) return null; throw error; }
   if (!header) return null;
-  return { rows, date, rowCount: rows.length, totalCents, sheet: sheet.name };
+  return { rows, date, rowCount: rows.length, totalCents, sheet: sheet.name,
+    guarantorHeader, hasAttribution: 'attribution' in header };
 }
 export async function parseInventoryWorkbook(bytes) {
   try {
@@ -293,22 +298,25 @@ export async function exportInventoryWorkbook(result, rows) {
     const entry=new ZipDeflate(name,{level:1});
     zip.add(entry);entry.push(encode.encode(xml+content),true);
   });
+  const {roleEvidence:evidence,snapshot,plan}=result;
+  const hasQueryType=rows.some(row=>Object.hasOwn(row,'queryMarketType'));
+  const roleLabel=evidence?.basis==='enhancement'?'增信占用':({ledger:'台账列明担保',candidate:'归属候选（待核担保）',attribution:'客户归属',unknown:'无法确认担保'})[evidence?.kind]||'';
+  const byCode=plan.group==='code';
   writeSheet(zip,1,{
-    headers:['分组','名义本金（人民币元）','名义本金（亿元）','持仓行数','不同券数'],widths:[42,25,23,14,14],formats:[0,2,3],
-    rows:result.groups.map(g=>[g.name,g.cents/100,g.cents/1e10,g.count,g.securityCount]),
-    total:['全部匹配',result.totalCents/100,result.totalCents/1e10,result.rowCount,result.securityCount],filter:true,
+    headers:[roleLabel?roleLabel+'分组':'分组','名义本金（人民币元）','名义本金（亿元）','持仓行数','不同券数',...(byCode?['券名']:[])],widths:[42,25,23,14,14,...(byCode?[29]:[])],formats:[0,2,3],
+    rows:result.groups.map(g=>[g.name,g.cents/100,g.cents/1e10,g.count,g.securityCount,...(byCode?[g.securityName]:[])]),
+    total:evidence?.kind==='unknown'?[result.summary]:[roleLabel?roleLabel+'合计':'全部匹配',result.totalCents/100,result.totalCents/1e10,result.rowCount,result.securityCount],filter:true,
   });
   function* details(){
-    for(const r of rows)yield [r.issuer,r.code,r.name,r.cents/100,r.institution,r.branch,r.portfolio,r.account,r.scope,r.marketType,r.maturity,r.expected,r.legal,r.sourceRow];
+    for(const r of rows)yield [r.issuer,r.code,r.name,r.cents/100,r.institution,r.branch,r.portfolio,r.account,r.scope,r.marketType,r.maturity,r.expected,r.legal,r.sourceRow,...(evidence?[r.attribution,r.guarantor]:[]),...(hasQueryType?[r.queryMarketType]:[])];
   }
   writeSheet(zip,2,{
-    headers:['发行人','债券代码','债券简称','名义本金（人民币元）','机构','联动分行','交易组合','会计分类','表内/委外','债券类型','到期日期','ABS预计到期日','法定到期日','原表行号'],
-    widths:[40,19,29,25,22,17,25,15,16,22,18,18,18,12],formats:[0,0,0,2],rows:details(),filter:true,
+    headers:['发行人','债券代码','债券简称','名义本金（人民币元）','机构','联动分行','交易组合','会计分类','表内/委外','债券类型','到期日期','ABS预计到期日','法定到期日','原表行号',...(evidence?['资产端损益还原客户名称','台账列明担保人']:[]),...(hasQueryType?['本次归集品种']:[])],
+    widths:[40,19,29,25,22,17,25,15,16,22,18,18,18,12,...(evidence?[38,38]:[]),...(hasQueryType?[20]:[])],formats:[0,0,0,2],rows:details(),filter:true,
   });
-  const {snapshot,plan}=result;
   writeSheet(zip,3,{
     headers:['项目','内容'],widths:[24,94],
-    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],['覆盖提示',result.warnings.join('；')]],
+    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[])],
   });
   zip.end();
   const bytes=new Uint8Array(length);let offset=0;
