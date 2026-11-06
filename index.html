@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.4.1.1">
-  <meta name="application-build-version" content="5.4.1.1">
-  <meta name="application-build" content="20261106release5411">
-  <title>Bond Centre 5.4.1.1 - Tempest07</title>
+  <meta name="application-version" content="5.4.2">
+  <meta name="application-build-version" content="5.4.2">
+  <meta name="application-build" content="20261106inventory542">
+  <title>Bond Centre 5.4.2 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="./workspace-design.css?v=20261028v540" data-ui-beta media="all">
   <link rel="stylesheet" href="./workspace-sections.css?v=20261028v540" data-ui-beta media="all">
   <link rel="stylesheet" href="./workspace-motion.css?v=20261028v540" data-ui-beta media="all">
+  <link rel="stylesheet" href="./inventory-qa/entry.css">
   <link rel="stylesheet" href="./ui-mode.css?v=20261028v540">
   <script src="./ui-preference.js?v=20261028v540"></script>
   <link rel="stylesheet" href="./valuation-assistant.css?v=20261028v540">
@@ -45,11 +46,13 @@
         <button class="nav-item" data-view-target="realtime-quotes" data-view-label="Real Time Information">实时行情</button>
         <button class="nav-item" data-view-target="payment-receipts">缴款单</button>
         <button class="nav-item" data-view-target="secondary-trading" data-view-label="Trading">二级交易</button>
+        <a class="inventory-entry" href="./inventory-qa/">问数助手 <span class="inventory-beta">Beta</span></a>
         <button class="nav-item" data-view-target="bond-list" data-view-label="OFR/BID">OFR/BID 清单</button>
         <button class="nav-item" data-view-target="batch" hidden>批量撰写</button>
         <details class="nav-more" id="navMore">
           <summary class="nav-more-trigger">更多 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
           <div class="nav-more-panel">
+        <a class="inventory-entry" href="./inventory-qa/#upload-form">上传库存表</a>
         <button class="nav-item" data-view-target="database">主体与授信库</button>
         <button class="nav-item" data-view-target="dm-test">数据查询</button>
         <button class="nav-item" data-view-target="rules">规则说明</button>
@@ -57,13 +60,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.4.1.1">v5.4.1.1</span>
+      <span class="header-version" aria-label="当前版本 5.4.2">v5.4.2</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4.1.1 · 2026-11-06">v5.4.1.1</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.4.2 · 2026-11-06">v5.4.2</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1468,6 +1471,8 @@
             <button class="android-more-close" id="androidMoreCloseButton" type="button" data-close-android-more aria-label="关闭">×</button>
           </header>
           <nav class="android-more-links" aria-label="更多业务页面">
+            <a class="android-more-link inventory-entry" href="./inventory-qa/">问数助手 <span class="inventory-beta">Beta</span></a>
+            <a class="android-more-link inventory-entry" href="./inventory-qa/#upload-form">上传库存表</a>
             <button class="nav-item android-more-link" type="button" data-view-target="database" data-view-label="主体与授信库">主体与授信库</button>
             <button class="nav-item android-more-link" type="button" data-view-target="realtime-quotes" data-view-label="实时行情">实时行情</button>
             <button class="nav-item android-more-link" type="button" data-view-target="dm-test" data-view-label="数据查询">数据查询</button>
@@ -1699,6 +1704,11 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.4.2</strong><time datetime="2026-11-06">2026 / 11 / 06</time></div>
+      <section><h3>库存问数助手 Beta</h3><ul>
+        <li>从“问数助手 Beta”进入库存问数，或点击“上传库存表”选择完整 Excel。</li>
+        <li>可连续追问、核对原始行并下载完整结果；同日修订先核对行数与金额后再替换。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.4.1.1</strong><time datetime="2026-11-06">2026 / 11 / 06</time></div>
       <section><h3>缴款单处理动态</h3><ul>
         <li>五段细条内的斜纹按处理阶段滚动。展开已完成的文件时，高光依次扫过有记录的阶段。</li>
@@ -1998,7 +2008,7 @@
   </div>
   <script src="./ui-mode.js?v=20261028v540"></script>
   <script type="module" src="./vendor/search-border-beam.js?v=20261028v540"></script>
-  <script type="module" src="./app.js?v=20261106release5411"></script>
+  <script type="module" src="./app.js?v=20261106inventory542"></script>
   <script type="module" src="./todo-fluid.js?v=20261028v540"></script>
   <script type="module" src="./release-notes.js?v=20261028v540"></script>
 </body>
