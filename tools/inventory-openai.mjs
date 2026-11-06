@@ -139,7 +139,7 @@ export async function planInventoryQuestion({ question, previousPlan, effort = "
   let response, payload;
   try {
     response = await fetchImpl("https://api.openai.com/v1/responses", {
-      method: "POST", redirect: "error", signal,
+      method: "POST", redirect: "manual", signal,
       headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: MODEL, store: false, reasoning: { effort }, max_output_tokens: 6144,

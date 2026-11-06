@@ -18,7 +18,7 @@ test("one server-side call plans a Chinese query without disclosing unrelated co
       count++;
       assert.equal(url, "https://api.openai.com/v1/responses");
       assert.equal(options.method, "POST");
-      assert.equal(options.redirect, "error");
+      assert.equal(options.redirect, "manual");
       assert.equal(options.headers.Authorization, "Bearer unit-test-only");
       assert.ok(options.signal instanceof AbortSignal);
       assert.ok(!options.body.includes("private-row-probe"));
