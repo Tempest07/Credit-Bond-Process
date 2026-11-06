@@ -143,3 +143,102 @@ test("provider failures or refusals do not expose wire payload, model name, cred
   }) });
   assert.ok(refusal.clarification && !refusal.clarification.includes("upstream-specific-message"));
 });
+const lookup = (term, field = "overviewSubject", date = "2026-04-30") =>
+  ({kind:"lookup",reason:"none",changes:[],lookup:{term,field,date}});
+const ref = (name, basis, code="111.IB", bondName="26测试债") =>
+  ({name,role:"issuer",code,bondName,basis});
+
+function scripted(decisions, inspectEvidence) {
+  let calls=0;
+  const bodies=[];
+  return {bodies,options:{inspectEvidence, fetchImpl:async (_url, options) => {
+    const input=JSON.parse(JSON.parse(options.body).input);
+    bodies.push(input);
+    const step=decisions[calls++];
+    assert.ok(step,"decision budget exceeded");
+    return Response.json(message(typeof step==="function"?step(input):step));
+  }}};
+}
+
+test("agent inspects an unfamiliar clue, can follow a real security code, and only sends whitelisted evidence back",async()=>{
+  const question="林业集团有哪些债？";
+  const name="甲林业集团有限公司";
+  const evidence=ref(name,"bondStem");
+  const checked=[];
+  const agent=scripted([lookup("林业集团"),input=>{
+    assert.equal(input.evidence[0].matches[0].name,name);
+    assert.ok(!JSON.stringify(input).includes("private-row-probe"));
+    return lookup(input.evidence[0].matches[0].code,"code");
+  },input=>{
+    assert.equal(input.evidence[1].matches[0].basis,"code");
+    return outcome([{field:"overviewSubject",value:"林业集团"}]);
+  }],async q=>{
+    checked.push(q);
+    return {rowDetails:"private-row-probe",matches:[{...evidence,basis:q.field==="code"?"code":"bondStem",cents:"private-row-probe"}]};
+  });
+  const answer=await planInventoryQuestion({...base,question,...agent.options});
+  assert.deepEqual(checked.map(q=>q.term),["林业集团","111.IB"]);assert.equal(answer.trace.length,2);
+  assert.equal(answer.overviewSubject,"林业集团");assert.equal(agent.bodies.length,3);
+});
+
+test("an early subject plan still needs a search and a second decision; absence never becomes a fabricated balance",async()=>{
+  const plan=outcome([{field:"overviewSubject",value:"从未录入公司"}]);
+  const agent=scripted([plan,lookup("假设全称有限公司"),outcome([{field:"overviewSubject",value:"假设全称有限公司"}])],
+    async({term})=>({matches:term==="从未录入公司"?[]:[ref(term,"exact")]}));
+  const answer=await planInventoryQuestion({...base,question:"从未录入公司有哪些债？",...agent.options});
+  assert.equal(answer.overviewSubject,"从未录入公司");
+  assert.deepEqual(answer.candidateNames,["假设全称有限公司"]);
+  assert.match(answer.trace[0],/未匹配/);
+});
+
+test("a failed inspection, exhausted search budget or a dropped identity never widens to all holdings",async()=>{
+  const run=(steps, inspectEvidence=async()=>({matches:[]}))=>planInventoryQuestion({...base,question:"甲集团有哪些债？",
+    ...scripted(steps,inspectEvidence).options});
+  const dropped=await run([lookup("甲集团"),outcome([])]);
+  assert.ok(dropped.clarification);assert.equal(dropped.plan,undefined);
+  const rounds=await run(["甲集团","甲类","甲公司","甲"].map(key=>lookup(key)));
+  assert.equal(rounds.trace.length,3);assert.equal(rounds.plan,undefined);
+  const repeated=await run([lookup("甲集团"),lookup("甲集团")]);assert.equal(repeated.plan,undefined);
+  await assert.rejects(run([lookup("甲集团")],async()=>{throw Error("private-row-probe");}),error=>error.status===503&&!error.message.includes("private-row-probe"));
+  const wrongDate=await run([lookup("甲集团","issuer","2026-02-03")]);
+  assert.equal(wrongDate.plan,undefined);assert.match(wrongDate.clarification,/业务日/);
+});
+
+test("ordinary branch totals remain a single call without an evidence read",async()=>{
+  const agent=scripted([outcome([{field:"branch",value:"甲分行"}])],()=>assert.fail("unexpected lookup"));
+  const result=await planInventoryQuestion({...base,...agent.options});
+  assert.equal(result.plan.filters.branch,"甲分行");assert.equal(agent.bodies.length,1);assert.deepEqual(result.trace,[]);
+});
+
+test("look up top issuer in scope, verify it by name, and keep the same branch in the final query",async()=>{
+  const name="甲公司",question="广州分行持仓最多的发行人，我们持有它哪些债？";
+  const steps=missing=>[lookup("广州分行","topIssuer"),lookup(name, "issuer"),
+    outcome([{field:"issuer",value:name},{field:"group",value:"code"},...(!missing?[{field:"branch",value:"广州分行"}]:[])])];
+  const inspect=async({field})=>({matches:[ref(name,field==="topIssuer"?"ranking":"exact")]});
+  const selected=await planInventoryQuestion({...base,question,...scripted(steps(false),inspect).options});
+  assert.equal(selected.plan.filters.issuer,name);assert.equal(selected.plan.filters.branch,"广州分行");assert.equal(selected.trace.length,2);
+  const broad=await planInventoryQuestion({...base,question,...scripted(steps(true),inspect).options});assert.equal(broad.plan,undefined);
+  const tie=await planInventoryQuestion({...base,question,...scripted(steps(false),async q=>({matches:q.field==="topIssuer"?
+    [ref(name,"ranking"),ref("乙公司","ranking")]:[ref(name,"exact")]})).options});
+  assert.equal(tie.plan,undefined);assert.match(tie.clarification,/多家/);
+});
+test("an unrelated or widened ranking scope cannot reach the database",async()=>{
+  for (const term of ["北京分行","不限","广州分行|表内"]) {
+    const result=await planInventoryQuestion({...base,question:"广州分行持仓最多的发行人有哪些债？",
+      ...scripted([lookup(term,"topIssuer")],()=>assert.fail("unexpected ranking lookup")).options});
+    assert.equal(result.plan,undefined);assert.match(result.clarification,/范围/);
+  }
+});
+test("ABS enhancement inspects customer attribution, while an ordinary guarantee inspects the named guarantor",async()=>{
+  for(const [question,searchField,marketType,role] of [
+    ["格力集团担保的ABS还剩多少？","enhancement","ABS","attribution"],
+    ["格力集团担保的中票有多少？","guarantor","中期票据","guarantor"],
+  ]){
+    const final=outcome([{field:"guarantor",value:"格力集团"},{field:"marketType",value:marketType}]);
+    const looked=[];
+    const result=await planInventoryQuestion({...base,question,...scripted([final,final],
+      async q=>{looked.push(q.field);return {matches:[{...ref("珠海格力集团有限公司","nameFragment"),role}]};}).options});
+    assert.deepEqual(looked,[searchField]);assert.equal(result.plan.filters.guarantor,"格力集团");
+    assert.equal(result.plan.filters.marketType,marketType==="ABS"?"资产支持证券":marketType);
+  }
+});

@@ -1,6 +1,9 @@
 import { InventoryError, exportInventoryWorkbook } from './inventory-workbook.mjs';
 import { listInventory, ingestInventory, answerContext, answerDetails, newInventoryAnswer, exportData } from './inventory-store.mjs';
 import { planInventoryQuestion } from './inventory-openai.mjs';
+import { issuerHints } from './inventory-issuer-hints.mjs';
+import { readInventoryEvidence } from './inventory-evidence.mjs';
+import { readTopIssuer } from './inventory-rank-evidence.mjs';
 
 const methods = {status:'GET', upload:'POST', ask:'POST', manual:'POST', detail:'GET', export:'GET'};
 const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -40,31 +43,72 @@ async function query(input, action, {db,bucket,apiKey}) {
   const selected=input.snapshotId ? snapshots.find(s=>s.id===input.snapshotId)||(previous?.snapshot.id===input.snapshotId?previous.snapshot:null) : null;
   if(input.snapshotId&&!selected)throw new InventoryError('所选库存快照已修订，请刷新数据台账。',409);
   const base=selected||previous?.snapshot||snapshots[0];
-  let plan;
+  let plan, subject, trace=[], suggested=[];
+  const snapshotFor = date => date===base.date ? base : snapshots.find(s=>s.date===date);
   if(action==='manual'){
     plan={date:base.date,group:input.group||'issuer',metric:input.metric||'principal',filters:input.filters||{}};
+    if(input.identityValue!==undefined){
+      if(typeof input.identityValue!=='string'||!input.identityValue.trim()||input.identityValue.length>160||
+          !['overviewSubject','issuer','guarantor','attribution'].includes(input.field))
+        throw new InventoryError('请提供主体全称或一只相关债券的完整券码。');
+      if(input.field==='overviewSubject')subject=input.identityValue.trim();
+      else plan.filters={...plan.filters,[input.field]:input.identityValue.trim()};
+    }
   }else{
     const previousPlan=previous?{...previous.plan,date:base.date}:{date:base.date,group:'none',metric:'principal',filters:{}};
-    const outcome=await planInventoryQuestion({question:input.question,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey});
+    const inspectEvidence=async request=>{
+      const snapshot=snapshotFor(request.date);
+      if(!snapshot)throw new InventoryError('所选日期没有可用快照。');
+      if(request.field==='topIssuer')return readTopIssuer(db,snapshot,request.term,previousPlan.filters);
+      return readInventoryEvidence({db,bucket},snapshot,request);
+    };
+    const outcome=await planInventoryQuestion({question:input.question,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey,inspectEvidence});
     if(outcome.clarification)return outcome;
     plan=outcome.plan;
-    if(outcome.overviewSubject){
-      const subject=outcome.overviewSubject;
-      const snapshot=base.date===plan.date?base:snapshots.find(s=>s.date===plan.date);
+    subject=outcome.overviewSubject;
+    trace=outcome.trace||[];
+    suggested=outcome.candidateNames||[];
+  }
+  const snapshot=snapshotFor(plan.date);
+  const answer=await executeInventoryPlan({db,bucket},snapshot,plan,subject,suggested,trace);
+  return trace.length ? {...answer,trace} : answer;
+}
+async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, suggested, trace) {
+  const identityReply=async(query,field,filters,candidates)=>{
+    candidates=[...new Set([...candidates,...suggested])].slice(0,12);
+    const hints=['issuer','overviewSubject'].includes(field)?await issuerHints(db,snapshot,query,filters,candidates):[];
+    return {clarification:hints.length?'按本期库存的发行人和券简称，找到以下相关持仓。':
+      candidates.length?'请从本期台账的主体全称中选择。':'本期台账无法从这个称呼确认主体，请补充全称或相关券码。',
+      identity:{query,field,candidates,hints},
+      resume:{snapshotId:snapshot.id,group:plan.group,metric:plan.metric,filters,field}};
+  };
+  if(subject){
       const filters={...plan.filters};
       for(const key of ['issuer','attribution','guarantor','marketType'])delete filters[key];
-      const lookup=extra=>newInventoryAnswer(db,snapshot,{...plan,group:'code',metric:'principal',filters:{...filters,...extra}},bucket);
+      if(suggested.length)return identityReply(subject,'overviewSubject',filters,suggested);
+      const lookup=extra=>newInventoryAnswer(db,snapshot,{...plan,group:'code',metric:'principal',filters:{...filters,...extra}},bucket,trace);
       const [issued,enhanced]=await Promise.all([lookup({issuer:subject}),lookup({guarantor:subject,marketType:'资产支持证券'})]);
-      for(const result of [issued,enhanced]){
-        if(result.clarification?.includes('可能指多家主体'))return result;
+      const choices=new Set([...(issued.identity?.candidates||[]),...(enhanced.identity?.candidates||[])]);
+      const exact=issued.plan?.filters.issuer===subject || (enhanced.resultId && enhanced.roleEvidence?.entity===subject);
+      if(!exact && (issued.identity||enhanced.identity) && (choices.size || (!issued.resultId&&!enhanced.resultId))){
+        if(issued.resultId)choices.add(issued.plan.filters.issuer);
+        if(enhanced.resultId&&enhanced.roleEvidence?.entity)choices.add(enhanced.roleEvidence.entity);
+        return identityReply(subject,'overviewSubject',filters,[...choices]);
       }
       if(issued.resultId && enhanced.rowCount && issued.plan.filters.issuer!==enhanced.roleEvidence.entity)
-        return {clarification:'发行人与增信方匹配到不同主体，请指定机构全称：'+issued.plan.filters.issuer+'、'+enhanced.roleEvidence.entity+'。'};
+        return identityReply(subject,'overviewSubject',filters,[issued.plan.filters.issuer,enhanced.roleEvidence.entity]);
+      const missingRole=(result,source)=>exact && result.identity
+        ? {clarification:'本期“'+source+'”未匹配该主体全称。'} : result;
       return {clarification:'按“'+subject+'”分别查看自发债和增信 ABS。',overview:[
-        {title:'自己发行的债券',result:issued},{title:'占用其授信的 ABS',result:enhanced}]};
-    }
+        {title:'自己发行的债券',result:missingRole(issued,'发行人全称')},{title:'占用其授信的 ABS',result:missingRole(enhanced,'资产端损益还原客户名称')}]};
   }
-  return newInventoryAnswer(db,base.date===plan.date?base:snapshots.find(s=>s.date===plan.date),plan,bucket);
+  if(suggested.length){
+    const field=['guarantor','attribution','issuer'].find(key=>plan.filters[key]);
+    if(field)return identityReply(plan.filters[field],field,plan.filters,suggested);
+  }
+  const result=await newInventoryAnswer(db,snapshot,plan,bucket,trace);
+  if(result.identity)return identityReply(result.identity.query,result.identity.field,plan.filters,result.identity.candidates);
+  return result;
 }
 
 // The caller authenticates before providing bindings. Browser writes are restricted

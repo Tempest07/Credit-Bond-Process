@@ -39,15 +39,7 @@ export async function listInventory(db) {
 async function active(db,date){
   return await db.prepare('SELECT v.* FROM inventory_versions v JOIN inventory_current a ON a.version=v.id WHERE a.date=?').bind(date).first();
 }
-// Isolate supplemental columns from already published inventory_rows. A version's
-// marker is written only after its immutable source has been indexed completely.
-async function loadRoleIndex(db,snapshot,bucket){
-  await db.batch([
-    db.prepare('CREATE TABLE IF NOT EXISTS inventory_role_rows(version TEXT NOT NULL, sourceRow INTEGER NOT NULL, attribution TEXT NOT NULL, guarantor TEXT NOT NULL, guarantors TEXT NOT NULL, guarantorKnown INTEGER NOT NULL, PRIMARY KEY(version,sourceRow))'),
-    db.prepare('CREATE TABLE IF NOT EXISTS inventory_role_sources(version TEXT PRIMARY KEY, guarantorHeader TEXT NOT NULL, hasAttribution INTEGER NOT NULL)'),
-  ]);
-  const meta=await db.prepare('SELECT * FROM inventory_role_sources WHERE version=?').bind(snapshot.id).first();
-  if(meta)return meta;
+export async function readVerifiedRoleWorkbook(db,snapshot,bucket){
   const key='inventory/'+snapshot.date+'/'+snapshot.id+'.xlsx';
   let bytes;
   for(let attempt=0;attempt<2;attempt++){
@@ -63,11 +55,28 @@ async function loadRoleIndex(db,snapshot,bucket){
   if(version?.sha!==digest)throw message('库存原件与已发布快照校验不符，不能核对担保和客户归属。',503);
   const original=await parseInventoryWorkbook(bytes);
   if(original.date!==snapshot.date || original.rowCount!==snapshot.rowCount || original.totalCents!==snapshot.totalCents)throw message('原件行数、日期或金额与已发布快照不符。',503);
+  return original;
+}
+
+export function ledgerGuarantors(guarantor){
+  const unknown=/^(?:[-—/\s]*|未知|待核(?:实)?|未填写|不详|暂无|N\/?A|null)$/i.test(guarantor);
+  const guarantors=unknown || /^(?:无|无担保|无保证人|不适用)$/.test(guarantor) ? [] : guarantor.split(/[、；;，,\n]+/).map(s=>s.trim()).filter(Boolean);
+  return {guarantors,guarantorKnown:unknown?0:1};
+}
+
+// Isolate supplemental columns from already published inventory_rows. A version's
+// marker is written only after its immutable source has been indexed completely.
+async function loadRoleIndex(db,snapshot,bucket){
+  await db.batch([
+    db.prepare('CREATE TABLE IF NOT EXISTS inventory_role_rows(version TEXT NOT NULL, sourceRow INTEGER NOT NULL, attribution TEXT NOT NULL, guarantor TEXT NOT NULL, guarantors TEXT NOT NULL, guarantorKnown INTEGER NOT NULL, PRIMARY KEY(version,sourceRow))'),
+    db.prepare('CREATE TABLE IF NOT EXISTS inventory_role_sources(version TEXT PRIMARY KEY, guarantorHeader TEXT NOT NULL, hasAttribution INTEGER NOT NULL)'),
+  ]);
+  const meta=await db.prepare('SELECT * FROM inventory_role_sources WHERE version=?').bind(snapshot.id).first();
+  if(meta)return meta;
+  const original=await readVerifiedRoleWorkbook(db,snapshot,bucket);
   const insert="INSERT OR IGNORE INTO inventory_role_rows SELECT ?,json_extract(value,'$.sourceRow'),json_extract(value,'$.attribution'),json_extract(value,'$.guarantor'),json_extract(value,'$.guarantors'),json_extract(value,'$.guarantorKnown') FROM json_each(?)";
   const records=original.rows.map(({sourceRow,attribution,guarantor})=>{
-    const unknown=/^(?:[-—/\s]*|未知|待核(?:实)?|未填写|不详|暂无|N\/?A|null)$/i.test(guarantor);
-    const guarantors=unknown || /^(?:无|无担保|无保证人|不适用)$/.test(guarantor) ? [] : guarantor.split(/[、；;，,\n]+/).map(s=>s.trim()).filter(Boolean);
-    return {sourceRow,attribution,guarantor,guarantors,guarantorKnown:unknown?0:1};
+    return {sourceRow,attribution,guarantor,...ledgerGuarantors(guarantor)};
   });
   for(let i=0;i<records.length;i+=500){
     const batch=[];
@@ -84,11 +93,24 @@ async function loadRoleIndex(db,snapshot,bucket){
 // Match a full legal name or one unambiguous abbreviated name. Only drop a
 // known location prefix (branch cities in this snapshot, plus major cities).
 // A group and a subsidiary with a different legal stem never share an alias.
-function resolveEntity(query,names,places){
+function askIdentity(field,query,candidates){
+  const choices=[...new Set(candidates)].sort((a,b)=>a.localeCompare(b,'zh-CN')).slice(0,8);
+  const clarification=choices.length
+    ? '请确认“'+query+'”对应的主体：'+choices.join('、')+'。'
+    : '本期没有匹配到可确认的“'+query+'”。请补充主体全称或一只相关债券的完整券码。';
+  return {clarification,identity:{field,query,candidates:choices}};
+}
+const codeWithMarket=/^[A-Z0-9-]+\.[A-Z]{2,5}$/i;
+async function resolveEntity(db,snapshot,field,query,names,places,codeSource){
   const key=query.trim();
+  if(codeWithMarket.test(key)){
+    const {results}=await db.prepare(codeSource+' WHERE version=? AND upper(code)=?')
+      .bind(snapshot.id,key.toUpperCase()).all();
+    const candidates=results.map(row=>row.entity).filter(n=>names.includes(n));
+    return askIdentity(field,key,candidates);
+  }
   if(names.includes(key))return {entity:key};
   const stem=s=>s.replace(/(?:股份有限公司|有限责任公司|有限公司)$/,'');
-  if(stem(key)!==key)return {entity:key};
   const geographic=new Set(['北京','天津','上海','重庆','珠海','广州','深圳','香港','澳门',...places]);
   const possible=names.filter(name=>{
     const nameStem=stem(name);
@@ -96,8 +118,18 @@ function resolveEntity(query,names,places){
     if(key.length<4 || !nameStem.endsWith(key))return false;
     return geographic.has(nameStem.slice(0,-key.length).replace(/市$/,''));
   });
-  if(possible.length>1)return {clarification:'“'+key+'”可能指多家主体，请写明全称：'+possible.slice(0,8).join('、')+'。'};
-  return {entity:possible[0]??key};
+  if(possible.length===1)return {entity:possible[0]};
+  const fragment=stem(key);
+  if(possible.length>1)return askIdentity(field,key,possible);
+  if(fragment.length<2 || /^(?:公司|集团|投资|控股|建设|有限|股份|中票|短融|债券|ABS|MTN)$/i.test(fragment))
+    return askIdentity(field,key,[]);
+  const suggestions=names.filter(name=>stem(name).includes(fragment));
+  // A bond abbreviation supplies leads only. Its issuer and credit-support
+  // customer may differ, so use the same source as the selected role.
+  const {results}=await db.prepare(codeSource+' WHERE version=? AND instr(upper(name),upper(?))>0')
+    .bind(snapshot.id,fragment).all();
+  const leads=results.map(row=>row.entity).filter(name=>names.includes(name));
+  return askIdentity(field,key,[...suggestions,...leads]);
 }
 export async function ingestInventory({db,bucket}, bytes,filename,replaceId) {
   const sha=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
@@ -182,6 +214,8 @@ async function roleEvidence(db,snapshot,plan,bucket){
   if(!plan.filters.guarantor&&!plan.filters.attribution)return null;
   const meta=await loadRoleIndex(db,snapshot,bucket);
   const enhancement=Boolean(plan.filters.guarantor && plan.filters.marketType==='资产支持证券');
+  if(!meta.hasAttribution && plan.filters.attribution)return {clarification:'此快照没有“'+roleSource+'”列，无法按客户归属查询。'};
+  if(enhancement && !meta.hasAttribution)return {kind:'unknown',basis:'enhancement',entity:plan.filters.guarantor,source:roleSource,hasAttribution:false};
   const orgNames="SELECT DISTINCT attribution AS entity FROM inventory_role_rows WHERE version=? AND attribution<>''";
   const orgQuery=enhancement||!plan.filters.guarantor?db.prepare(orgNames).bind(snapshot.id):
     db.prepare(orgNames+" UNION SELECT DISTINCT value AS entity FROM inventory_role_rows,json_each(guarantors) WHERE version=?").bind(snapshot.id,snapshot.id);
@@ -189,15 +223,17 @@ async function roleEvidence(db,snapshot,plan,bucket){
     orgQuery,
     db.prepare("SELECT DISTINCT branch FROM inventory_rows WHERE version=? AND branch LIKE '%分行'").bind(snapshot.id),
   ]);
-  const names=orgs.results.map(r=>r.entity), places=locations.results.map(r=>r.branch.replace(/分行$/,'').replace(/市$/,''));
-  const attribution=plan.filters.attribution && resolveEntity(plan.filters.attribution,names,places);
+  const names=orgs.results.map(r=>r.entity).filter(name=>name && !/^(?:[-—/\s]+|未知|待核(?:实)?|未填写|不详|暂无|无|N\/?A|null)$/i.test(name));
+  const places=locations.results.map(r=>r.branch.replace(/分行$/,'').replace(/市$/,''));
+  const customerByCode='SELECT DISTINCT attribution AS entity FROM '+roleRows;
+  const attribution=plan.filters.attribution && await resolveEntity(db,snapshot,'attribution',plan.filters.attribution,names,places,customerByCode);
   if(attribution?.clarification)return attribution;
   const attributionEntity=attribution?.entity||'';
   if(!plan.filters.guarantor){
-    if(!meta.hasAttribution)return {clarification:'此快照没有“'+roleSource+'”列，无法按客户归属查询。'};
     return {kind:'attribution',entity:attributionEntity,source:roleSource,attributionEntity};
   }
-  const guarantor=resolveEntity(plan.filters.guarantor,names,places);
+  const guarantorByCode='SELECT DISTINCT value AS entity FROM '+roleRows+',json_each(guarantors)';
+  const guarantor=await resolveEntity(db,snapshot,'guarantor',plan.filters.guarantor,names,places,enhancement?customerByCode:guarantorByCode);
   if(guarantor.clarification)return guarantor;
   const {entity}=guarantor;
   const w=where(snapshot,plan,null,{attributionEntity});
@@ -261,7 +297,7 @@ async function compute(db,snapshot,plan,resultId,evidence,typeRules=true) {
   }
   return {resultId,summary,plan,snapshot:publicVersion(snapshot),totalCents:total.cents,rowCount:total.count,securityCount:total.securityCount,groups,warnings,...(evidence?{roleEvidence:evidence}:{})};
 }
-export async function newInventoryAnswer(db,snapshot,input,bucket){
+export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[]){
   const plan=normalizePlan(input);
   if(!snapshot||snapshot.date!==plan.date)throw message('指定日期没有可用库存快照。',404);
   if(broadCredit.test(plan.filters.marketType||''))return {clarification:explainCredit};
@@ -272,15 +308,15 @@ export async function newInventoryAnswer(db,snapshot,input,bucket){
       db.prepare("SELECT DISTINCT branch FROM inventory_rows WHERE version=? AND branch LIKE '%分行'").bind(snapshot.id),
     ]);
     const names=issuers.results.map(r=>r.issuer),places=branches.results.map(r=>r.branch.replace(/市?分行$/,''));
-    const resolved=resolveEntity(issuer,names,places);
+    const resolved=await resolveEntity(db,snapshot,'issuer',issuer,names,places,'SELECT DISTINCT issuer AS entity FROM inventory_rows');
     if(resolved.clarification)return resolved;
-    if(!names.includes(resolved.entity))return {clarification:'本期“发行人全称”列没有匹配到“'+issuer+'”。请核对发行人全称，或改查资产端损益还原客户。'};
     plan.filters.issuer=resolved.entity;
   }
   const evidence=await roleEvidence(db,snapshot,plan,bucket);
   if(evidence?.clarification)return evidence;
   const id=crypto.randomUUID(),result=await compute(db,snapshot,plan,id,evidence);
-  const saved={...plan,typeRules:1,...(evidence?{roleEvidence:evidence}:{})};
+  if(trace.length)result.trace=trace;
+  const saved={...plan,typeRules:1,...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
   await db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(id,snapshot.id,JSON.stringify(saved),new Date().toISOString()).run();
   return result;
 }
@@ -291,7 +327,7 @@ export async function answerContext(db,id){
   const snapshot=await db.prepare('SELECT * FROM inventory_versions WHERE id=?').bind(a.version).first();
   const saved=JSON.parse(a.plan);
   const typeRules=saved.typeRules===1;
-  return {snapshot,plan:normalizePlan(saved,typeRules),evidence:saved.roleEvidence,typeRules};
+  return {snapshot,plan:normalizePlan(saved,typeRules),evidence:saved.roleEvidence,typeRules,trace:saved.trace};
 }
 function detailQuery(evidence,plan,typeRules){
   const includeType=typeRules&&(plan.group==='marketType'||plan.filters.marketType);
@@ -306,7 +342,8 @@ export async function answerDetails(db,id,{group=null,offset=0,limit=50}={}) {
   return {rows:records.results,total:counts.results[0].n};
 }
 export async function exportData(db,id){
-  const {snapshot,plan,evidence,typeRules}=await answerContext(db,id),result=await compute(db,snapshot,plan,id,evidence,typeRules),w=where(snapshot,plan,null,evidence,typeRules),rows=[];
+  const {snapshot,plan,evidence,typeRules,trace}=await answerContext(db,id),result=await compute(db,snapshot,plan,id,evidence,typeRules),w=where(snapshot,plan,null,evidence,typeRules),rows=[];
+  if(trace)result.trace=trace;
   for(let i=0;i<result.rowCount;i+=500){
     const page=await bind(db,detailQuery(evidence,plan,typeRules)+w.sql+' ORDER BY sourceRow LIMIT 500 OFFSET ?',[...w.args,i]).all();
     rows.push(...page.results);

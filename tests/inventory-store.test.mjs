@@ -80,8 +80,8 @@ test('ABS enhancement uses only attributed exposure, handles incomplete coverage
   assert.equal(a.roleEvidence.missingAttributionRows,1);assert.equal(a.rowCount,2);assert.equal(a.securityCount,1);
   assert.equal(a.groups[0].securityName,'简称A');assert.match(a.summary,/增信占用/);assert.match(a.warnings.join(' '),/法律担保/);
   const noMatch=await newInventoryAnswer(store.db,v,{...q,filters:{...q.filters,guarantor:'其他未记录主体'}});
-  assert.equal(noMatch.roleEvidence.kind,'unknown');assert.doesNotMatch(noMatch.summary,/0|零/);
-  const changed=await ingestInventory(store,await roleFixture([['B',1000,abs,org,other]]),'新表.xlsx',v.id);
+  assert.deepEqual(noMatch.identity,{query:'其他未记录主体',field:'guarantor',candidates:[]});assert.equal(noMatch.totalCents,undefined);
+  const changed=await ingestInventory(store,await roleFixture([['B',1000,abs,org,other],['C',15,'中票','',org]]),'新表.xlsx',v.id);
   const clean=await newInventoryAnswer(store.db,changed,q,store.bucket);
   assert.equal(clean.roleEvidence.kind,'enhancement');assert.match(clean.summary,/未匹配/);
   const detail=await answerDetails(store.db,a.resultId,{group:'A'});assert.deepEqual(detail.rows.map(r=>r.attribution),[org,org]);
@@ -89,6 +89,37 @@ test('ABS enhancement uses only attributed exposure, handles incomplete coverage
   const wb=new ExcelJS.Workbook();await wb.xlsx.load(await exportInventoryWorkbook(full.result,full.rows));
   assert.equal(wb.getWorksheet('持仓明细').getCell('O2').value,org);
   assert.equal(wb.getWorksheet('分组汇总').getCell('B3').value,152.13);assert.match(wb.getWorksheet('分组汇总').getCell('A3').value,/增信占用/);
+});
+test('weak nicknames and exact bond code clues request confirmation before reporting balances',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const group='珠海格力集团有限公司',electric='珠海格力电器股份有限公司',manager='金元证券股份有限公司',guarantor='其他担保有限公司';
+  const v=await ingestInventory(store,await roleFixture([
+    ['123456.SZ',55,'ABS',guarantor,group,manager],['1234567.SZ',7,'中票','',electric,electric],
+    ['22.IB',30,'中票','',group,group],['99.IB',20,'中票','','铁路客户','中国国家铁路集团有限公司','26铁总MTN001'],
+  ]),'线索.xlsx');
+  const ask=filters=>newInventoryAnswer(store.db,v,{date:v.date,group:'code',metric:'principal',filters},store.bucket);
+  const short=await ask({attribution:'格力'});
+  assert.equal(short.resultId,undefined);
+  assert.deepEqual(new Set(short.identity.candidates),new Set([group,electric]));
+  const single=await ask({issuer:'电器'});
+  assert.deepEqual(single.identity.candidates,[electric]);
+  const clue=await ask({issuer:'铁总'});
+  assert.deepEqual(clue.identity.candidates,['中国国家铁路集团有限公司']);
+  assert.equal(clue.resultId,undefined);
+  const cases=[
+    [{issuer:'123456.sz'},'issuer',manager],
+    [{attribution:'123456.SZ'},'attribution',group],
+    [{guarantor:'123456.SZ',marketType:'ABS'},'guarantor',group],
+    [{guarantor:'123456.SZ'},'guarantor',guarantor],
+    [{issuer:'223344.SZ'},'issuer',null],
+  ];
+  for(const [filters,field,expected] of cases){
+    const reply=await ask(filters);
+    assert.equal(reply.resultId,undefined);
+    assert.equal(reply.identity.field,field);
+    assert.deepEqual(reply.identity.candidates,expected?[expected]:[]);
+  }
+  assert.equal((await ask({guarantor:group,marketType:'ABS'})).totalCents,5500);
 });
 test('missing attribution, namesakes and generic guarantee questions do not convert an ambiguous role to a definite amount',async()=>{
   const store=isolatedStore();await initInventory(store.db);

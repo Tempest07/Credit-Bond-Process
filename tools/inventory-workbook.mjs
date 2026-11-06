@@ -316,7 +316,7 @@ export async function exportInventoryWorkbook(result, rows) {
   });
   writeSheet(zip,3,{
     headers:['项目','内容'],widths:[24,94],
-    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[])],
+    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[]),...(result.trace||[]).map(step=>['查证过程',step])],
   });
   zip.end();
   const bytes=new Uint8Array(length);let offset=0;
