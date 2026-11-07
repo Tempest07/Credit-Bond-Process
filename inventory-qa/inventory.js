@@ -618,6 +618,10 @@ async function query(path, payload, label, parentTrace) {
     const data=withParentTrace(answer,parentTrace);
     const snap=data.snapshot || data.overview?.find(i=>i.result?.snapshot)?.result.snapshot;
     state.chatSnapshot = snap || state.snapshots.find(s=>s.id===chat.snapshotId) || state.chatSnapshot;
+    if (state.selected !== chat.snapshotId) {
+      state.selected=chat.snapshotId;
+      showSnapshots();
+    }
     const previousResultId=payload.previousResultId || state.pending?.previousResultId;
     applyTurn({label,data,action:path,identityValue:payload.identityValue,previousResultId},true);
   } catch(error) {
