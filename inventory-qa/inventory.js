@@ -11,7 +11,7 @@ const yuan = (cents) => Number.isFinite(cents) ? decimal.format(cents / 100) : "
 const billions = (cents) => Number.isFinite(cents) ? decimal.format(cents / 1e10) : "—";
 const count = (n) => Number.isFinite(n) ? number.format(n) : "—";
 const state = {
-  snapshots: [], configured: false, selected: "", current: null, pending: null,
+  snapshots: [], configured: false, selected: "", current: null, pending: null, conversation: [],
   statusVersion: 0, askController: null, uploading: false, revision: null, view: "table", expanded: false,
   detailController: null, detailGroup: null, offsets: [0], detailRows: 0,
 };
@@ -74,6 +74,7 @@ function resetConversation() {
   state.askController = null;
   state.current = null;
   state.pending = null;
+  state.conversation = [];
   state.expanded = false;
   state.view = "table";
   if ($("detail").open) $("detail").close();
@@ -91,19 +92,18 @@ function chooseSnapshot(id) {
 function renderControls() {
   const snap = state.snapshots.find((item) => item.id === state.selected);
   const busy = Boolean(state.askController);
-  const choosingName = state.pending?.kind === "identity" && !state.pending.hasPreview;
   $("snapshot-context").textContent = snap
     ? snap.filename + " · " + count(snap.rowCount) + " 条持仓"
     : "当前没有可查询的有效快照。";
   $("query-workspace").hidden = !snap;
   $("empty").hidden = Boolean(snap);
   $("snapshot-picker").disabled = !snap;
-  $("submit").disabled = busy || !snap || !state.configured || choosingName;
-  $("question").disabled = !snap || !state.configured || choosingName;
+  $("submit").disabled = busy || !snap || !state.configured;
+  $("question").disabled = !snap || !state.configured;
   $("effort").disabled = busy || !state.configured;
   $("reset").hidden = !state.current && !state.pending && !busy;
   $("submit").textContent = busy ? "查询中…" : state.current || state.pending ? "追问 ↑" : "提问 ↑";
-  $("compose-heading").textContent = choosingName ? "请先确认主体" : state.current || state.pending ? "继续追问" : "向库存提问";
+  $("compose-heading").textContent = state.current || state.pending ? "继续追问" : "向库存提问";
   $("ai-status").textContent = !state.configured ? "问数专用 API Key 待配置。你可以先使用手动查询。" : "";
   for (const el of $("manual-form").elements) el.disabled = busy || !snap;
   for (const el of $("current-answer").querySelectorAll(".identity-choice button, .identity-choice input")) el.disabled = busy;
@@ -264,7 +264,13 @@ function renderAnswer() {
     button(groupLabel(g), () => openDetail(data, g.name), "row-link"), billions(g.cents), count(g.securityCount), count(g.count),
   ]), [1, 2, 3]));
   const actions = node("div", null, "view-actions");
-  if (data.groups.length > 5) actions.append(button(state.expanded ? "收起排名" : "查看全部 " + data.groups.length + " 组", () => { state.expanded = !state.expanded; renderAnswer(); }));
+  if (data.groups.length > 5) actions.append(button(state.expanded ? "收起排名" : "查看全部 " + data.groups.length + " 组", () => {
+    state.expanded = !state.expanded;
+    const last = state.conversation.at(-1);
+    if (last?.choices && last.dimension === data.plan.group)
+      last.choices = data.groups.slice(0,state.expanded ? 16 : 5).map(item => item.name);
+    renderAnswer();
+  }));
   actions.append(button("查看匹配明细", () => openDetail(data, null)));
   const download = button("下载完整 Excel", () => exportResult(data, download)); actions.append(download); article.append(actions);
   const source = node("details", null, "source");
@@ -284,6 +290,37 @@ function rememberAnswer() {
   }
   $("history").append(record);
 }
+function rememberTurn(question, data) {
+  const turn = { question };
+  const applied = data.plan || data.resume;
+  if (applied) {
+    turn.filters = Object.fromEntries(Object.entries(applied.filters || {}).filter(([key,value]) =>
+      key !== "portfolio" && typeof value === "string" && value));
+    turn.metric = applied.metric;
+  }
+  if (data.identity) {
+    const hints = (data.identity.hints || []).map(hint => hint.name);
+    turn.dimension = hints.length ? "issuer" : data.identity.field;
+    turn.choices = [...new Set([...hints, ...data.identity.candidates])];
+  } else if (data.overview) {
+    turn.dimension = "role";
+    turn.choices = data.overview.map(item => item.title);
+  } else if (data.plan) {
+    turn.dimension = data.plan.group;
+    if (["issuer","code","marketType","branch","scope","account"].includes(turn.dimension))
+      turn.choices = data.groups.slice(0,5).map(item => item.name);
+  }
+  if (data.clarification) turn.reply = data.clarification;
+  state.conversation.push(turn);
+  if (state.conversation.length > 8) state.conversation.shift();
+}
+function archivePrompt() {
+  if (state.current || !state.pending) return;
+  const record = node("details", null, "record");
+  record.append(node("summary", state.pending.label), node("p", state.pending.reply));
+  if (state.pending.choices?.length) record.append(node("p",state.pending.choices.join("、")));
+  $("history").append(record);
+}
 function showSubjectOverview(data, label) {
   rememberAnswer();
   state.current = null;
@@ -300,6 +337,9 @@ function showSubjectOverview(data, label) {
       if(result.groups.length) section.append(node("p",result.groups.slice(0,8).map(groupLabel).join("、") + (result.groups.length>8?" 等":"")));
       const actions = node("div",null,"view-actions");
       actions.append(button("查看并追问这组",()=>{
+        if (state.askController) return;
+        archivePrompt();
+        rememberTurn(title,result);
         state.current={label:label+" · "+title,data:withParentTrace(result, data.trace)}; state.pending=null;
         state.expanded=true;state.view="table";renderAnswer();renderControls();notice("query-notice");
       }));
@@ -381,11 +421,15 @@ async function query(path, payload, label, parentTrace) {
     const response = await json(path, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (state.askController !== controller) return;
     const data = withParentTrace(response, parentTrace);
+    if (!data.clarification && (!data.resultId || !Array.isArray(data.groups) || !data.snapshot || !data.plan)) throw new Error("问数服务返回的数据不完整。");
+    archivePrompt();
+    const turnLabel = payload.identityValue ? "选择" + payload.identityValue : label;
+    rememberTurn(path === "manual" && !payload.identityValue ? "手动查询库存" : turnLabel,data);
     if (data.identity && data.resume) {
       const manual = path === "manual" && (!payload.identityValue || state.pending?.manual);
       state.pending = {
-        kind: "identity", manual, hasPreview: Boolean(data.identity.hints?.length),
-        question: payload.question || label, clarification:"用户正在查看相关发行人，请按用户补充继续查询。",
+        kind: "identity", manual,
+        label:turnLabel, reply:data.clarification, choices:state.conversation.at(-1)?.choices,
         previousResultId: payload.previousResultId || state.pending?.previousResultId,
       };
       syncAnswerSnapshot(data.resume.snapshotId);
@@ -395,8 +439,7 @@ async function query(path, payload, label, parentTrace) {
       return;
     }
     if (data.clarification) {
-      const original = payload.question || (payload.identityValue ? label + "（已确认主体：" + payload.identityValue + "）" : label);
-      state.pending = { question: original, clarification: String(data.clarification), previousResultId:payload.previousResultId };
+      state.pending = { label:turnLabel, reply:String(data.clarification), previousResultId:payload.previousResultId };
       if (Array.isArray(data.overview)) showSubjectOverview(data,label);
       else {
         rememberAnswer();
@@ -411,7 +454,6 @@ async function query(path, payload, label, parentTrace) {
       $("question").value = ""; $("question").focus();
       return;
     }
-    if (!data.resultId || !Array.isArray(data.groups) || !data.snapshot || !data.plan) throw new Error("问数服务返回的数据不完整。");
     rememberAnswer();
     const manual = path === "manual" && (!payload.identityValue || state.pending?.manual);
     state.pending = null;
@@ -525,8 +567,7 @@ $("ask-form").addEventListener("submit", event => {
   event.preventDefault();
   const label = $("question").value.trim();
   if (!label || !state.configured) return;
-  const question = state.pending ? "原问题：" + state.pending.question + "\n待澄清：" + state.pending.clarification + "\n用户补充：" + label : label;
-  query("ask", { question, snapshotId: state.selected, previousResultId: state.current?.data.resultId || state.pending?.previousResultId, effort: $("effort").value }, label);
+  query("ask", { question:label, conversation:state.conversation, snapshotId: state.selected, previousResultId: state.current?.data.resultId || state.pending?.previousResultId, effort: $("effort").value }, label);
 });
 $("question").addEventListener("keydown", event => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {

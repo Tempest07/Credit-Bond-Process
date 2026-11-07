@@ -160,6 +160,21 @@ function scripted(decisions, inspectEvidence) {
   }}};
 }
 
+test("an ordinal follow-up can reference a displayed issuer after another turn, and verifies it again", async()=>{
+  const name="乙方集团有限公司";
+  const conversation=[{question:"这些机构的债有哪些？",dimension:"issuer",choices:["甲方集团有限公司",name],
+    reply:"名义本金 private-row-probe 元",rows:["private-row-probe"],filters:{portfolio:"private-row-probe"}},
+    {question:"只数和条数有什么区别？"}];
+  const agent=scripted([lookup(name,"issuer"),outcome([{field:"issuer",value:name}])],async request=>{
+    assert.equal(request.term,name);
+    return {matches:[ref(name,"exact")]};
+  });
+  const result=await planInventoryQuestion({...base,question:"只看前面第二家",conversation,...agent.options});
+  assert.equal(result.plan.filters.issuer,name);
+  assert.deepEqual(agent.bodies[0].conversation[0].choices,conversation[0].choices);
+  assert.ok(!JSON.stringify(agent.bodies).includes("private-row-probe"));
+});
+
 test("agent inspects an unfamiliar clue, can follow a real security code, and only sends whitelisted evidence back",async()=>{
   const question="林业集团有哪些债？";
   const name="甲林业集团有限公司";

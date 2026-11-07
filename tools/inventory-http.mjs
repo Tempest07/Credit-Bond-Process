@@ -29,7 +29,7 @@ async function limitedBytes(request, limit) {
 }
 async function jsonInput(request) {
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) throw new InventoryError('需要 JSON 请求。',415);
-  const bytes=await limitedBytes(request,16000);
+  const bytes=await limitedBytes(request,64000);
   try {
     const input=JSON.parse(new TextDecoder().decode(bytes));
     if(!input || typeof input!=='object'|| Array.isArray(input)) throw Error();
@@ -62,7 +62,7 @@ async function query(input, action, {db,bucket,apiKey}) {
       if(request.field==='topIssuer')return readTopIssuer(db,snapshot,request.term,previousPlan.filters);
       return readInventoryEvidence({db,bucket},snapshot,request);
     };
-    const outcome=await planInventoryQuestion({question:input.question,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey,inspectEvidence});
+    const outcome=await planInventoryQuestion({question:input.question,conversation:input.conversation,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey,inspectEvidence});
     if(outcome.clarification)return outcome;
     plan=outcome.plan;
     subject=outcome.overviewSubject;
