@@ -35,6 +35,14 @@ main{width:min(960px,100%);margin:0 auto;padding:0 clamp(16px,3vw,32px) 64px}
 .field{display:grid;gap:5px;font-size:13px;color:var(--muted);min-width:0}
 .field :is(input,select),.effort select{width:100%;border:1px solid var(--rule);background:#fff;border-radius:7px;min-height:37px;padding:5px 8px;color:var(--ink)}
 .compact{min-width:154px}
+.chat-actions{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+#chat-dialog{width:min(540px,calc(100% - 28px))}
+#chat-list-status:not(:empty){margin:12px 0}
+#chat-list{display:grid;margin-top:8px}
+#chat-list button{border:0;border-bottom:1px solid var(--rule);border-radius:0;display:grid;justify-items:start;justify-content:stretch;gap:2px;text-align:left;overflow-wrap:anywhere}
+#chat-list button[aria-current=true]{background:var(--wash)}
+#more-chats{margin-top:12px}
+@media(max-width:560px){.chat-actions{width:100%}.chat-actions .compact{margin-left:auto}}
 .empty,.upload{padding:22px;background:var(--soft);border:1px solid var(--rule);border-radius:12px}
 .empty p,.upload p{margin:7px 0 14px}
 .composer,.manual,.snapshots{margin-top:24px}

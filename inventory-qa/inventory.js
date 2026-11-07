@@ -12,6 +12,8 @@ const billions = (cents) => Number.isFinite(cents) ? decimal.format(cents / 1e10
 const count = (n) => Number.isFinite(n) ? number.format(n) : "—";
 const state = {
   snapshots: [], configured: false, selected: "", current: null, pending: null, conversation: [],
+  chat:null, chatSnapshot:null, loadingChat:true, navigation:0, retry:null, currentTurn:null,
+  chatListVersion:0, nextCursor:null,
   statusVersion: 0, askController: null, uploading: false, revision: null, view: "table", expanded: false,
   detailController: null, detailGroup: null, offsets: [0], detailRows: 0,
 };
@@ -75,6 +77,10 @@ function resetConversation() {
   state.current = null;
   state.pending = null;
   state.conversation = [];
+  state.currentTurn = null;
+  state.chat = null;
+  state.chatSnapshot = null;
+  state.retry = null;
   state.expanded = false;
   state.view = "table";
   if ($("detail").open) $("detail").close();
@@ -84,25 +90,42 @@ function resetConversation() {
   notice("query-notice");
   renderControls();
 }
+const lastChatKey = "bond-centre.inventory.last-chat";
+function markChat(id) {
+  const url = new URL(location.href);
+  url.searchParams.set("chat",id);
+  history.replaceState(null,"",url);
+  try { localStorage.setItem(lastChatKey,id); } catch {}
+}
+function newChat(snapshotId) {
+  ++state.navigation;
+  state.loadingChat = false;
+  resetConversation();
+  state.selected = snapshotId || state.snapshots[0]?.id || "";
+  markChat("new");
+  showSnapshots();
+  renderControls();
+}
 function chooseSnapshot(id) {
-  if (state.selected !== id) { state.selected = id; resetConversation(); }
+  if (state.selected !== id) newChat(id);
   $("snapshot-picker").value = id;
   renderControls();
 }
 function renderControls() {
-  const snap = state.snapshots.find((item) => item.id === state.selected);
-  const busy = Boolean(state.askController);
+  const snap = currentSnapshot();
+  const busy = Boolean(state.askController) || state.loadingChat;
   $("snapshot-context").textContent = snap
-    ? snap.filename + " · " + count(snap.rowCount) + " 条持仓"
+    ? snap.filename + " · " + count(snap.rowCount) + " 条持仓" + (state.snapshots.some(s=>s.id===snap.id) ? "" : " · 修订前版本")
     : "当前没有可查询的有效快照。";
   $("query-workspace").hidden = !snap;
   $("empty").hidden = Boolean(snap);
-  $("snapshot-picker").disabled = !snap;
+  $("snapshot-picker").disabled = !snap || busy;
   $("submit").disabled = busy || !snap || !state.configured;
-  $("question").disabled = !snap || !state.configured;
+  $("question").disabled = !snap || !state.configured || state.loadingChat;
   $("effort").disabled = busy || !state.configured;
-  $("reset").hidden = !state.current && !state.pending && !busy;
-  $("submit").textContent = busy ? "查询中…" : state.current || state.pending ? "追问 ↑" : "提问 ↑";
+  $("reset").disabled = !snap || busy;
+  $("open-chats").disabled = busy;
+  $("submit").textContent = state.loadingChat ? "读取中…" : busy ? "查询中…" : state.current || state.pending ? "追问 ↑" : "提问 ↑";
   $("compose-heading").textContent = state.current || state.pending ? "继续追问" : "向库存提问";
   $("ai-status").textContent = !state.configured ? "问数专用 API Key 待配置。你可以先使用手动查询。" : "";
   for (const el of $("manual-form").elements) el.disabled = busy || !snap;
@@ -121,6 +144,9 @@ function renderControls() {
     }
   }
 }
+function currentSnapshot() {
+  return state.snapshots.find(s=>s.id===state.selected) || (state.chatSnapshot?.id===state.selected ? state.chatSnapshot : null);
+}
 function showSnapshots() {
   const select = $("snapshot-picker");
   select.replaceChildren();
@@ -134,7 +160,12 @@ function showSnapshots() {
     item.append(info, button("用此快照问数", () => { chooseSnapshot(snapshot.id); switchTab("ask"); }));
     list.append(item);
   }
-  if (!state.snapshots.length) { list.append(node("p", "尚无已发布快照。", "meta")); select.append(node("option", "暂无快照")); }
+  if (state.chatSnapshot && !state.snapshots.some(s=>s.id===state.chatSnapshot.id)) {
+    const opt = node("option",state.chatSnapshot.date + " · 修订前版本");
+    opt.value = state.chatSnapshot.id;
+    select.append(opt);
+  }
+  if (!state.snapshots.length) { list.append(node("p", "尚无已发布快照。", "meta")); if (!state.chatSnapshot) select.append(node("option", "暂无快照")); }
   select.value = state.selected;
 }
 async function refresh(preferredId) {
@@ -147,8 +178,11 @@ async function refresh(preferredId) {
     state.configured = data.configured === true;
     state.snapshots = data.snapshots.filter((s) => s.isActive !== false).sort((a, b) => b.date.localeCompare(a.date));
     const wanted = preferredId || state.selected;
-    const selected = state.snapshots.some((s) => s.id === wanted) ? wanted : state.snapshots[0]?.id || "";
-    if (selected !== state.selected) { state.selected = selected; resetConversation(); }
+    const selected = state.snapshots.some((s) => s.id === wanted) || state.chatSnapshot?.id === wanted ? wanted : state.snapshots[0]?.id || "";
+    if (selected !== state.selected) {
+      if (preferredId && state.chat) newChat(selected);
+      else state.selected = selected;
+    }
     if (!state.configured) $("manual").open = true;
     else if (!previousConfig) $("manual").open = false;
     showSnapshots(); renderControls(); notice("status-error");
@@ -222,9 +256,11 @@ function showChart(groups, metric, data) {
   }
   return chart;
 }
-function renderAnswer() {
-  if (!state.current) return;
-  const { data, label, manual } = state.current;
+function renderAnswer(current = state.current, target = $("current-answer"), view = state) {
+  if (!current) return;
+  const { data, label, manual } = current;
+  const groupCount = data.groupCount ?? data.groups.length;
+  const rerender = () => renderAnswer(current,target,view);
   const article = node("article", null, "answer");
   const m = amountValue(data.plan.metric, data);
   const metric = node("div", m.display, "metric"); metric.append(node("small", m.unit));
@@ -238,38 +274,53 @@ function renderAnswer() {
   if (data.summary && ![("名义本金 " + m.display + " 亿元"), (String(data.rowCount) + " 条持仓记录"), (String(data.securityCount) + " 只不同券码")].includes(data.summary)) {
     article.append(node("p", data.summary, "summary"));
   }
-  if (evidence?.kind !== "unknown") article.append(node("p", count(data.securityCount) + " 只券 · " + count(data.rowCount) + " 条持仓 · " + count(data.groups.length) + " 个分组", "tagline"));
+  if (evidence?.kind !== "unknown") article.append(node("p", count(data.securityCount) + " 只券 · " + count(data.rowCount) + " 条持仓 · " + count(groupCount) + " 个分组", "tagline"));
   for (const warning of data.warnings || []) {
     const text = typeof warning === "string" ? warning : warning?.message;
     if (text) article.append(node("p", text, "warning"));
   }
   appendTrace(article, data.trace);
   if (evidence?.kind === "unknown") {
-    $("current-answer").replaceChildren(article);
+    target.replaceChildren(article);
     return;
   }
   const group = groupNames[data.plan.group] || "分组";
-  const chunk = data.groups.slice(0, state.expanded ? data.groups.length : 5);
+  const chunk = data.groups.slice(0, view.expanded ? data.groups.length : 5);
   const heading = node("div", null, "result-head");
-  heading.append(node("h3", group + (data.groups.length > 5 && !state.expanded ? " · 前五" : "")));
+  heading.append(node("h3", group + (groupCount > 5 && !view.expanded ? " · 前五" : "")));
   const switches = node("div", null, "mode-switch");
   for (const [key, title] of [["table", "表格"], ["chart", "图表"]]) {
-    const b = button(title, () => { state.view = key; renderAnswer(); });
-    b.setAttribute("aria-pressed", String(state.view === key)); switches.append(b);
+    const b = button(title, () => { view.view = key; rerender(); });
+    b.setAttribute("aria-pressed", String(view.view === key)); switches.append(b);
   }
   heading.append(switches); article.append(heading);
   if (!chunk.length) article.append(node("p", "当前条件没有匹配持仓。", "meta"));
-  else if (state.view === "chart") article.append(showChart(chunk, data.plan.metric, data));
+  else if (view.view === "chart") article.append(showChart(chunk, data.plan.metric, data));
   else article.append(table([group, "本金（亿元）", "不同券数", "持仓行数"], chunk.map((g) => [
     button(groupLabel(g), () => openDetail(data, g.name), "row-link"), billions(g.cents), count(g.securityCount), count(g.count),
   ]), [1, 2, 3]));
   const actions = node("div", null, "view-actions");
-  if (data.groups.length > 5) actions.append(button(state.expanded ? "收起排名" : "查看全部 " + data.groups.length + " 组", () => {
-    state.expanded = !state.expanded;
+  if (groupCount > 5) actions.append(button(view.expanded ? "收起排名" : "查看全部 " + groupCount + " 组", async event => {
+    if (!view.expanded && data.groupsTruncated) {
+      const trigger = event.currentTarget;
+      trigger.disabled = true;
+      try {
+        const whole = await json("answer?" + new URLSearchParams({id:data.resultId,chatId:state.chat.id}));
+        if (!article.isConnected) return;
+        if (whole.resultId !== data.resultId || !Array.isArray(whole.groups) || whole.groups.length !== groupCount)
+          throw new Error("历史分组读取不完整，请重试。");
+        data.groups = whole.groups;
+        data.groupsTruncated = false;
+      } catch (error) {
+        if (article.isConnected) { notice("query-notice",error.message,true); trigger.disabled=false; }
+        return;
+      }
+    }
+    view.expanded = !view.expanded;
     const last = state.conversation.at(-1);
-    if (last?.choices && last.dimension === data.plan.group)
-      last.choices = data.groups.slice(0,state.expanded ? 16 : 5).map(item => item.name);
-    renderAnswer();
+    if (current === state.current && last?.choices && last.dimension === data.plan.group)
+      last.choices = data.groups.slice(0,view.expanded ? 16 : 5).map(item => item.name);
+    rerender();
   }));
   actions.append(button("查看匹配明细", () => openDetail(data, null)));
   const download = button("下载完整 Excel", () => exportResult(data, download)); actions.append(download); article.append(actions);
@@ -277,17 +328,37 @@ function renderAnswer() {
   source.append(node("summary", "口径与来源"), node("p", [data.snapshot.filename, data.snapshot.sheet, "快照业务日 " + data.snapshot.date].filter(Boolean).join(" · ")),
     node("p", (filters || "全部匹配范围") + "；人民币元汇总后换算为亿元。"));
   article.append(source);
-  $("current-answer").replaceChildren(article);
+  target.replaceChildren(article);
 }
-function rememberAnswer() {
-  if (!state.current) return;
-  const { label, data } = state.current;
+function archiveTurn(turn) {
+  if (!turn) return;
+  const {label,data,action,identityValue} = turn;
   const record = node("details", null, "record");
-  record.append(node("summary", label), node("p", data.snapshot.date + " · " + data.summary));
-  appendTrace(record, data.trace);
-  if (data.roleEvidence?.kind !== "unknown") {
-    const b = button("下载本次完整结果", () => exportResult(data, b)); record.append(b);
-  }
+  record.append(node("summary",identityValue ? "选择" + identityValue : label));
+  record.addEventListener("toggle",function populate() {
+    if (!record.open) return;
+    record.removeEventListener("toggle",populate);
+    if (data.resultId) {
+      const body = node("div");
+      record.append(body);
+      renderAnswer({label,data,manual:action==="manual"&&!identityValue},body,{view:"table",expanded:false});
+      return;
+    }
+    record.append(node("p",data.clarification));
+    appendTrace(record,data.trace);
+    if (data.identity) {
+      const hints=data.identity.hints || [];
+      if (hints.length) record.append(table(["发行人","券数","本金（亿元）"],hints.map(h=>[h.name,count(h.securityCount),billions(h.totalCents)]),[1,2]));
+      const other=data.identity.candidates.filter(name=>!hints.some(h=>h.name===name));
+      if (other.length) record.append(node("p",other.join("、")));
+    }
+    for (const {title,result} of data.overview || []) {
+      record.append(node("h3",title));
+      if (!result.resultId) { record.append(node("p",result.clarification || result.summary)); continue; }
+      const body=node("div"); record.append(body);
+      renderAnswer({label:title,data:result},body,{view:"table",expanded:false});
+    }
+  });
   $("history").append(record);
 }
 function rememberTurn(question, data) {
@@ -314,15 +385,7 @@ function rememberTurn(question, data) {
   state.conversation.push(turn);
   if (state.conversation.length > 8) state.conversation.shift();
 }
-function archivePrompt() {
-  if (state.current || !state.pending) return;
-  const record = node("details", null, "record");
-  record.append(node("summary", state.pending.label), node("p", state.pending.reply));
-  if (state.pending.choices?.length) record.append(node("p",state.pending.choices.join("、")));
-  $("history").append(record);
-}
 function showSubjectOverview(data, label) {
-  rememberAnswer();
   state.current = null;
   const article = node("article", null, "answer");
   article.append(node("p", label, "question"),node("p", data.clarification));
@@ -336,26 +399,20 @@ function showSubjectOverview(data, label) {
       section.append(node("p", result.snapshot.date + " · " + count(result.securityCount) + " 只 · " + billions(result.totalCents) + " 亿元"));
       if(result.groups.length) section.append(node("p",result.groups.slice(0,8).map(groupLabel).join("、") + (result.groups.length>8?" 等":"")));
       const actions = node("div",null,"view-actions");
-      actions.append(button("查看并追问这组",()=>{
-        if (state.askController) return;
-        archivePrompt();
-        rememberTurn(title,result);
-        state.current={label:label+" · "+title,data:withParentTrace(result, data.trace)}; state.pending=null;
-        state.expanded=true;state.view="table";renderAnswer();renderControls();notice("query-notice");
-      }));
+      actions.append(button("查看并追问这组",()=>query("select",{
+        previousResultId:result.resultId,snapshotId:result.snapshot.id,
+      },title,data.trace)));
       const download=button("下载这组 Excel",()=>exportResult(result,download));actions.append(download);
       section.append(actions);
     }
     article.append(section);
   }
   $("current-answer").replaceChildren(article);
-  article.scrollIntoView({block:"start"});
 }
 function showIdentityChoice(data, label) {
-  rememberAnswer();
   state.current = null;
   const article = node("article", null, "answer identity-choice");
-  const snapshot = state.snapshots.find(item => item.id === data.resume.snapshotId);
+  const snapshot = currentSnapshot();
   const hints = Array.isArray(data.identity.hints) ? data.identity.hints : [];
   article.append(node("p", label, "question"), node("h3", hints.length ? "按发行人查看" : "确认主体"));
   const primary = hints.filter(hint => hint.primary);
@@ -403,7 +460,6 @@ function showIdentityChoice(data, label) {
   });
   article.append(form);
   $("current-answer").replaceChildren(article);
-  article.scrollIntoView({block:"start"});
 }
 function syncAnswerSnapshot(id) {
   if (id && state.snapshots.some(snapshot => snapshot.id === id)) {
@@ -411,63 +467,171 @@ function syncAnswerSnapshot(id) {
     $("snapshot-picker").value = id;
   }
 }
+function applyTurn(turn, live) {
+  const {action,identityValue,previousResultId,data,label} = turn;
+  if (!data.clarification && (!data.resultId || !Array.isArray(data.groups) || !data.snapshot || !data.plan))
+    throw new Error("问数服务返回的数据不完整。");
+  archiveTurn(state.currentTurn);
+  state.currentTurn = turn;
+  const turnLabel = identityValue ? "选择" + identityValue : label;
+  const manual = action === "manual" && (!identityValue || state.pending?.manual);
+  rememberTurn(action === "manual" && !identityValue ? "手动查询库存" : turnLabel,data);
+  if (data.clarification) {
+    state.current = null;
+    state.pending = {label:turnLabel, reply:data.clarification,previousResultId};
+    if (data.identity && data.resume) {
+      Object.assign(state.pending,{kind:"identity",manual});
+      syncAnswerSnapshot(data.resume.snapshotId);
+      showIdentityChoice(data,turnLabel);
+    } else if (Array.isArray(data.overview)) {
+      showSubjectOverview(data,turnLabel);
+    } else {
+      const article = node("article",null,"answer");
+      article.append(node("p",turnLabel,"question"),node("p",data.clarification));
+      appendTrace(article,data.trace);
+      $("current-answer").replaceChildren(article);
+    }
+  } else {
+    state.current = {label:turnLabel,manual,data};
+    state.pending = null;
+    if (data.snapshot.id === state.chat?.snapshotId) state.chatSnapshot = data.snapshot;
+    syncAnswerSnapshot(data.snapshot.id);
+    state.expanded = false; state.view = "table";
+    renderAnswer();
+    if (action === "manual") $("manual").open=false;
+  }
+  if (live) {
+    $("question").value = "";
+    notice("query-notice");
+    $("current-answer").scrollIntoView({block:"start"});
+  }
+}
+function displayChat(chat) {
+  if (!chat.snapshot?.id || !Array.isArray(chat.turns) || !chat.turns.length)
+    throw new Error("保存的对话读取不完整。");
+  resetConversation();
+  state.chat = {id:chat.id,version:chat.version,snapshotId:chat.snapshotId};
+  state.chatSnapshot = chat.snapshot;
+  state.selected = chat.snapshot.id;
+  // Every saved turn remains readable, while only recent turns go into a follow-up.
+  for (const turn of chat.turns.slice(0,-1)) {
+    archiveTurn(turn);
+    const question = turn.identityValue ? "选择" + turn.identityValue : turn.action === "manual" ? "手动查询库存" : turn.label;
+    rememberTurn(question,turn.data);
+  }
+  applyTurn(chat.turns.at(-1),false);
+  state.selected = chat.snapshot.id;
+  showSnapshots();
+  markChat(chat.id);
+}
+async function openChat(id) {
+  const nav = ++state.navigation;
+  state.loadingChat = true;
+  renderControls();
+  notice("query-notice","正在读取已保存的对话…");
+  try {
+    const chat = await json("chat?" + new URLSearchParams({id}));
+    if (nav !== state.navigation) return false;
+    displayChat(chat);
+    if ($("chat-dialog").open) $("chat-dialog").close();
+    notice("query-notice");
+    return true;
+  } catch (error) {
+    if (nav === state.navigation) {
+      notice("query-notice",error.message,true);
+      if ($("chat-dialog").open) $("chat-list-status").textContent=error.message;
+    }
+    throw error;
+  } finally {
+    if (nav===state.navigation) {state.loadingChat=false;renderControls();}
+  }
+}
+async function loadChatList(append=false) {
+  const seq=++state.chatListVersion;
+  $("chat-list-status").textContent="正在加载…";
+  $("more-chats").hidden=true;
+  if (!append) $("chat-list").replaceChildren();
+  try {
+    const page=await json("chats"+(append?"?"+new URLSearchParams({cursor:state.nextCursor}):""));
+    if(seq!==state.chatListVersion)return;
+    for(const item of page.chats) {
+      const row=button("",()=>{if (!state.loadingChat) openChat(item.id).catch(()=>{});});
+      row.append(node("strong",item.title),node("small",new Date(item.updatedAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}),"meta"));
+      row.setAttribute("aria-current",String(item.id===state.chat?.id));
+      $("chat-list").append(row);
+    }
+    state.nextCursor=page.nextCursor;
+    $("more-chats").hidden=!page.nextCursor;
+    $("chat-list-status").textContent=$("chat-list").childElementCount ? "" : "还没有已保存的对话。";
+  } catch(error) {
+    if(seq!==state.chatListVersion)return;
+    $("chat-list-status").textContent=error.message;
+    if (append) $("more-chats").hidden=false;
+  }
+}
+async function initialize() {
+  let nav=state.navigation;
+  await refresh();
+  if (nav!==state.navigation) return;
+  try {
+    const requested=new URL(location.href).searchParams.get("chat");
+    if (requested==="new") return;
+    let last;
+    try {last=localStorage.getItem(lastChatKey);} catch {}
+    if (requested || (last && last!=="new")) {
+      nav=state.navigation+1;
+      try {await openChat(requested || last);return;}
+      catch(error) {
+        if (nav!==state.navigation || requested || error.status!==404) return;
+        state.loadingChat=true;
+        renderControls();
+        try {localStorage.removeItem(lastChatKey);} catch {}
+      }
+    }
+    const {chats}=await json("chats");
+    if (nav!==state.navigation) return;
+    if (chats.length) await openChat(chats[0].id);
+    else notice("query-notice");
+  } catch (error) {if (nav===state.navigation) notice("query-notice",error.message,true);}
+  finally {if (nav===state.navigation) {state.loadingChat=false;renderControls();}}
+}
 async function query(path, payload, label, parentTrace) {
-  if (state.askController || !state.selected) return;
+  if (state.askController || state.loadingChat || !state.selected) return;
   const controller = new AbortController();
   state.askController = controller;
   renderControls();
-  notice("query-notice", path === "ask" ? "正在解析问题并核对库存…" : "正在汇总库存…");
+  notice("query-notice",path==="ask" ? "正在解析问题并核对库存…" : "正在读取库存结果…");
+  const signature=JSON.stringify([path,payload,label,state.chat?.id,state.chat?.version]);
+  const retry=state.retry?.signature===signature ? state.retry : {
+    signature,chatId:state.chat?.id || crypto.randomUUID(),requestId:crypto.randomUUID()
+  };
+  state.retry=retry;
   try {
-    const response = await json(path, { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (state.askController !== controller) return;
-    const data = withParentTrace(response, parentTrace);
-    if (!data.clarification && (!data.resultId || !Array.isArray(data.groups) || !data.snapshot || !data.plan)) throw new Error("问数服务返回的数据不完整。");
-    archivePrompt();
-    const turnLabel = payload.identityValue ? "选择" + payload.identityValue : label;
-    rememberTurn(path === "manual" && !payload.identityValue ? "手动查询库存" : turnLabel,data);
-    if (data.identity && data.resume) {
-      const manual = path === "manual" && (!payload.identityValue || state.pending?.manual);
-      state.pending = {
-        kind: "identity", manual,
-        label:turnLabel, reply:data.clarification, choices:state.conversation.at(-1)?.choices,
-        previousResultId: payload.previousResultId || state.pending?.previousResultId,
-      };
-      syncAnswerSnapshot(data.resume.snapshotId);
-      showIdentityChoice(data, label);
-      notice("query-notice");
-      $("question").value = "";
-      return;
-    }
-    if (data.clarification) {
-      state.pending = { label:turnLabel, reply:String(data.clarification), previousResultId:payload.previousResultId };
-      if (Array.isArray(data.overview)) showSubjectOverview(data,label);
-      else {
-        rememberAnswer();
-        state.current = null;
-        const article = node("article", null, "answer");
-        article.append(node("p", label, "question"), node("p", data.clarification));
-        appendTrace(article, data.trace);
-        $("current-answer").replaceChildren(article);
-        article.scrollIntoView({block:"start"});
-      }
-      notice("query-notice");
-      $("question").value = ""; $("question").focus();
-      return;
-    }
-    rememberAnswer();
-    const manual = path === "manual" && (!payload.identityValue || state.pending?.manual);
-    state.pending = null;
-    syncAnswerSnapshot(data.snapshot.id);
-    state.current = { label, manual, data };
-    state.expanded = false; state.view = "table";
-    $("question").value = "";
-    renderAnswer(); notice("query-notice");
-    if (path === "manual") $("manual").open = false;
-    $("current-answer").scrollIntoView({ block: "start" });
-  } catch (error) {
-    if (state.askController === controller && error.name !== "AbortError") notice("query-notice", error.message, true);
+    const input={...payload,label,chatId:retry.chatId,requestId:retry.requestId,version:state.chat?.version || 0};
+    const response=await json(path,{method:"POST",signal:controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
+    if (state.askController!==controller)return;
+    const {chat,...answer}=response;
+    if (chat?.id!==retry.chatId || !Number.isInteger(chat.version)) throw new Error("服务未确认对话已保存，请重试。");
+    state.chat=chat;
+    state.retry=null;
+    markChat(chat.id);
+    const data=withParentTrace(answer,parentTrace);
+    const snap=data.snapshot || data.overview?.find(i=>i.result?.snapshot)?.result.snapshot;
+    state.chatSnapshot = snap || state.snapshots.find(s=>s.id===chat.snapshotId) || state.chatSnapshot;
+    const previousResultId=payload.previousResultId || state.pending?.previousResultId;
+    applyTurn({label,data,action:path,identityValue:payload.identityValue,previousResultId},true);
+  } catch(error) {
+    if (state.askController!==controller || error.name==="AbortError")return;
+    if (error.status===409 && error.data?.code==="chat_conflict") {
+      const draft=$("question").value;
+      try {
+        await openChat(retry.chatId);
+        $("question").value=draft;
+        notice("query-notice","这段对话在另一页面有更新，已载入最新对话。可以继续提问。");
+      } catch {}
+    } else notice("query-notice",error.message,true);
   } finally {
-    if (state.askController === controller) { state.askController = null; renderControls(); }
+    if (state.askController===controller) {state.askController=null;renderControls();}
   }
 }
 async function exportResult(data, trigger) {
@@ -486,7 +650,7 @@ async function exportResult(data, trigger) {
   finally { trigger.disabled = false; trigger.textContent = previous; }
 }
 function openDetail(data, group) {
-  state.detailGroup = { id: data.resultId, group }; state.offsets = [0];
+  state.detailGroup = { id: data.resultId, group,role:data.roleEvidence }; state.offsets = [0];
   $("detail-title").textContent = group === null ? "全部匹配持仓" : groupName(group);
   $("detail-meta").textContent = data.snapshot.date + " · " + data.snapshot.filename;
   if (!$("detail").open) $("detail").showModal();
@@ -506,7 +670,7 @@ async function fetchDetail() {
     state.detailRows = rows.length;
     if (!rows.length) $("detail-body").replaceChildren(node("p", "当前条件没有匹配持仓。", "meta"));
     else {
-      const role = state.current?.data.resultId === id ? state.current.data.roleEvidence : null;
+      const role = state.detailGroup.role;
       const columns = ["发行人 / 券名", "券码", "联动分行 / 组合", "本金（元）", "原表行号"];
       columns.push("债券类型");
       if (role) columns.push(role.kind === "enhancement" ? "增信占用方" : role.kind === "attribution" ? "损益还原客户" : "台账担保人 / 损益还原客户");
@@ -582,7 +746,10 @@ $("manual-form").addEventListener("submit", event => {
   query("manual", { group, metric, filters, snapshotId: state.selected }, "手动查询 · " + (filterText(filters) || "全部库存") + " · " + groupNames[group]);
 });
 $("snapshot-picker").addEventListener("change", () => chooseSnapshot($("snapshot-picker").value));
-$("reset").addEventListener("click", () => { resetConversation(); $("question").focus(); });
+$("reset").addEventListener("click", () => { newChat(state.snapshots.some(s=>s.id===state.selected) ? state.selected : undefined); $("question").focus(); });
+$("open-chats").addEventListener("click",()=>{ $("chat-dialog").showModal(); loadChatList(); });
+$("more-chats").addEventListener("click",()=>loadChatList(true));
+$("close-chats").addEventListener("click",()=>$("chat-dialog").close());
 $("refresh").addEventListener("click", () => refresh());
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
 $("open-upload").addEventListener("click", () => {
@@ -603,4 +770,4 @@ $("close-detail").addEventListener("click", () => $("detail").close());
 $("detail").addEventListener("close", () => { state.detailController?.abort(); state.detailController = null; });
 $("detail-prev").addEventListener("click", () => { if (state.offsets.length > 1) { state.offsets.pop(); fetchDetail(); } });
 $("detail-next").addEventListener("click", () => { state.offsets.push(state.offsets.at(-1) + state.detailRows); fetchDetail(); });
-refresh();
+initialize();

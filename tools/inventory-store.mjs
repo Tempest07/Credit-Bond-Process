@@ -341,6 +341,12 @@ export async function answerDetails(db,id,{group=null,offset=0,limit=50}={}) {
   ]);
   return {rows:records.results,total:counts.results[0].n};
 }
+export async function readInventoryAnswer(db,id){
+  const {snapshot,plan,evidence,typeRules,trace}=await answerContext(db,id);
+  const result=await compute(db,snapshot,plan,id,evidence,typeRules);
+  if(trace)result.trace=trace;
+  return result;
+}
 export async function exportData(db,id){
   const {snapshot,plan,evidence,typeRules,trace}=await answerContext(db,id),result=await compute(db,snapshot,plan,id,evidence,typeRules),w=where(snapshot,plan,null,evidence,typeRules),rows=[];
   if(trace)result.trace=trace;

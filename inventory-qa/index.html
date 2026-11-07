@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#ffffff">
   <title>问数助手 Beta · Bond Centre</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./inventory.css?v=550">
-  <script src="./inventory.js?v=551" defer></script>
+  <link rel="stylesheet" href="./inventory.css?v=552">
+  <script src="./inventory.js?v=552" defer></script>
 </head>
 <body>
   <header class="sitebar">
@@ -31,7 +31,11 @@
     <section id="ask-pane" aria-label="问数">
       <div class="workspace-heading">
         <div><h1>库存问数</h1><p class="meta" id="snapshot-context">正在读取库存快照…</p></div>
-        <label class="field compact">库存日期<select id="snapshot-picker" disabled><option>待载入</option></select></label>
+        <div class="chat-actions">
+          <button type="button" id="open-chats">历史对话</button>
+          <button type="button" id="reset" disabled>新对话</button>
+          <label class="field compact">库存日期<select id="snapshot-picker" disabled><option>待载入</option></select></label>
+        </div>
       </div>
       <div class="empty" id="empty" hidden>
         <h2>还没有库存快照</h2><p>点击上方“上传库存表”，选择完整的余额台账后即可提问。</p>
@@ -40,7 +44,7 @@
         <div id="history" aria-label="本轮问答"></div>
         <div id="current-answer" aria-live="polite"></div>
         <section class="composer" aria-label="提问">
-          <div class="bar-title"><h2 id="compose-heading">向库存提问</h2><button type="button" id="reset" class="quiet" hidden>新对话</button></div>
+          <div class="bar-title"><h2 id="compose-heading">向库存提问</h2></div>
           <div class="suggestions" id="suggestions" aria-label="示例问题"></div>
           <form id="ask-form">
             <label class="sr-only" for="question">库存问题</label>
@@ -96,6 +100,12 @@
       <section class="snapshots"><div class="bar-title"><h2>库存快照</h2><span class="meta" id="snapshot-count"></span></div><div id="snapshot-list"></div></section>
     </section>
   </main>
+  <dialog id="chat-dialog" aria-labelledby="chat-list-heading">
+    <div class="dialog-head"><h2 id="chat-list-heading">历史对话</h2><button type="button" class="close" id="close-chats" aria-label="关闭历史对话">×</button></div>
+    <p class="meta" id="chat-list-status" role="status"></p>
+    <div id="chat-list"></div>
+    <button type="button" id="more-chats" hidden>加载更早的对话</button>
+  </dialog>
   <dialog id="detail" aria-labelledby="detail-title">
     <div class="dialog-head"><div><h2 id="detail-title">持仓明细</h2><p class="meta" id="detail-meta"></p></div><button type="button" class="close" id="close-detail" aria-label="关闭明细">×</button></div>
     <div id="detail-body" aria-live="polite"></div>

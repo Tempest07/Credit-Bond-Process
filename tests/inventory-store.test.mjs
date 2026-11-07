@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import ExcelJS from 'exceljs';
-import {initInventory,ingestInventory,listInventory,newInventoryAnswer,answerDetails,exportData} from '../tools/inventory-store.mjs';
+import {initInventory,ingestInventory,listInventory,newInventoryAnswer,readInventoryAnswer,answerDetails,exportData} from '../tools/inventory-store.mjs';
 import {exportInventoryWorkbook} from '../tools/inventory-workbook.mjs';
 
 // Runs the actual SQLite queries and transactions, without provisioning cloud data for tests.
@@ -41,6 +41,10 @@ test('immutable versions, row preservation, distinct codes, confirmation and ful
   const old=await answerDetails(storage.db,r.resultId,{group:'甲公司'});
   assert.equal(old.rows.length,2);assert.equal(old.rows[1].cents,31012);
   const {result,rows}=await exportData(storage.db,r.resultId);
+  const reopened=await readInventoryAnswer(storage.db,r.resultId);
+  assert.equal(reopened.snapshot.id,v1.id);
+  assert.deepEqual(reopened.groups,r.groups);
+  assert.equal(reopened.totalCents,r.totalCents);
   const wb=new ExcelJS.Workbook();await wb.xlsx.load(await exportInventoryWorkbook(result,rows));
   assert.equal(wb.getWorksheet('持仓明细').rowCount,3);assert.equal(wb.getWorksheet('分组汇总').getCell('B3').value,410.12);
   assert.equal(wb.getWorksheet('持仓明细').getCell('N3').value,3);
