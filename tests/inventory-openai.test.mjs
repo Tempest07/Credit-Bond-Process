@@ -439,3 +439,20 @@ test("use prior answer's exact row set for follow-up analysis including historic
     await assert.rejects(planInventoryQuestion({...base,previousPlan,hasPreviousResult:exists,fetchImpl:respond(outcome(changes))}),{status:502});
   }
 });
+
+test("an evidence-backed full-name miss and a genuine request to choose an entity are both valid research decisions",async()=>{
+  const name="甲乙产业投资有限公司", question=name+"有债券吗？";
+  for (const conclude of [
+    {decision:{kind:"clarification",reason:"chooseEntity"}},
+    {kind:"clarification",reason:"chooseEntity",changes:[],lookup:null},
+    {decision:{kind:"explain",reason:"chooseEntity"}},
+  ]) {
+    const agent=scripted([{decision:{kind:"lookup",lookup:{term:name,field:"overviewSubject",date:"2026-04-30"}}},conclude],async()=>({matches:[]}));
+    const result=await planInventoryQuestion({...base,question,...agent.options});
+    assert.equal(result.overviewSubject,name);
+    assert.equal(result.trace.length,1);
+  }
+  const ambiguous=await planInventoryQuestion({...base,question:"另一家呢？",...scripted([{decision:{kind:"clarification",reason:"chooseEntity"}}],()=>assert.fail()).options});
+  assert.ok(ambiguous.clarification);
+  assert.equal(ambiguous.plan,undefined);
+});

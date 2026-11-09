@@ -74,6 +74,48 @@ async function loadRoleIndex(db,snapshot,bucket){
   return {guarantorHeader,hasAttribution};
 }
 
+// Check the full role columns independently of bond labels, which may be missing
+// or unsuitable as evidence for the planner. Related names are choices only.
+export async function reviewInventoryCompany(db,snapshot,bucket,name,field,filters,suggested){
+  const overview=field==='overviewSubject';
+  const issuer=overview || field==='issuer';
+  const enhancement=overview || (field==='guarantor' && typeAliases.get(String(filters.marketType||'').toUpperCase())==='资产支持证券');
+  if(!issuer && !enhancement && field!=='attribution')return null;
+  const names=new Set();
+  if(issuer){
+    const rows=await db.prepare("SELECT DISTINCT issuer FROM inventory_rows WHERE version=? AND issuer<>''").bind(snapshot.id).all();
+    for(const row of rows.results)names.add(row.issuer);
+    if(names.has(name))return {exact:true};
+  }
+  let hasAttribution;
+  if(enhancement || field==='attribution'){
+    const meta=await loadRoleIndex(db,snapshot,bucket);
+    hasAttribution=Boolean(meta.hasAttribution);
+    if(hasAttribution){
+      const typeFilter=enhancement?' AND '+classifiedType+"='资产支持证券'":'';
+      const rows=await db.prepare("SELECT DISTINCT attribution FROM "+roleRows+" WHERE version=? AND attribution<>''"+typeFilter).bind(snapshot.id).all();
+      for(const row of rows.results)names.add(row.attribution);
+      if(names.has(name))return {exact:true};
+    }
+  }
+  const sources=[];
+  if(issuer)sources.push('发行人全称');
+  if(hasAttribution)sources.push((enhancement?'ABS 的':'')+'“'+roleSource+'”');
+  const stem=name.replace(/(?:股份有限公司|有限责任公司|有限公司)$/u,'').replace(/(?:产业|投资|控股|集团|发展|建设|管理|运营)+$/u,'');
+  const related=new Set(suggested.filter(candidate=>names.has(candidate)));
+  if(stem.length>=2){
+    for(const candidate of [...names].sort((a,b)=>a.localeCompare(b,'zh-CN'))){
+      if(candidate.includes(stem))related.add(candidate);
+    }
+  }
+  const candidates=[...related].slice(0,8);
+  let clarification=snapshot.date+' 库存中，';
+  if(sources.length)clarification+='按'+sources.join('和')+'核对，未查到以“'+name+'”登记的持仓。';
+  if(hasAttribution===false)clarification+='本期缺少“'+roleSource+'”列，无法核对'+(enhancement?' ABS 增信':'客户归属')+'。';
+  if(candidates.length)clarification+='下列是本期台账中其他名称相近的主体，可单独查看。';
+  return {exact:false,clarification,candidates};
+}
+
 // Match a full legal name or one unambiguous abbreviated name. Only drop a
 // known location prefix (branch cities in this snapshot, plus major cities).
 // A group and a subsidiary with a different legal stem never share an alias.

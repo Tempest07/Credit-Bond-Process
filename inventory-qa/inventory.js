@@ -530,7 +530,7 @@ function showIdentityChoice(data, label) {
   const article = node("article", null, "answer identity-choice");
   const snapshot = currentSnapshot();
   const hints = Array.isArray(data.identity.hints) ? data.identity.hints : [];
-  article.append(node("p", label, "question"), node("h3", hints.length ? "按发行人查看" : "确认主体"));
+  article.append(node("p", label, "question"), node("h3", data.identity.fullNameMiss ? "本期未查到该全称的持仓" : hints.length ? "按发行人查看" : "确认主体"));
   const primary = hints.filter(hint => hint.primary);
   const lead = primary.length === 1 ? primary[0] : null;
   if (lead) {

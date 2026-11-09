@@ -20,6 +20,12 @@ export function isEvidenceOrganization(name) {
   return typeof name === 'string' && boundedLabel.test(name) && publicOrganization.test(name);
 }
 
+// Restrict negative full-name conclusions to explicit legal forms; a group
+// or bank nickname can still identify an issuer through a bond abbreviation.
+export function isFullLedgerName(name) {
+  return isEvidenceOrganization(name) && /(?:有限公司|有限责任公司|股份公司|合伙企业[（(]有限合伙[）)]|\b(?:Limited|Ltd\.?|Corporation|Inc\.?|PLC|LLC))$/iu.test(name);
+}
+
 // On a historical snapshot without a role index, read its immutable original.
 // Keep only identifiers in the transient cache. The evidence tool does no writes.
 function originalLabels(db, bucket, snapshot) {

@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import ExcelJS from 'exceljs';
 import {initInventory,ingestInventory,listInventory,newInventoryAnswer,answerSourceRows,readInventoryAnswer,answerDetails,exportData} from '../tools/inventory-store.mjs';
 import {exportInventoryWorkbook} from '../tools/inventory-workbook.mjs';
+import {inventoryHttp} from '../tools/inventory-http.mjs';
 
 // Runs the actual SQLite queries and transactions, without provisioning cloud data for tests.
 function isolatedStore(){
@@ -103,6 +104,44 @@ async function roleFixture(entries,withAttribution=true) {
     s.addRow(['中心','广州分行','AFS','组合甲','表内',code,name,amount,issuer,type,'2030-01-01','2026-10-29',guarantor, ...(withAttribution?[attribution]:[])]);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
+test('full-name misses are dated ledger answers; nearby names, self-issued holdings and ABS customers remain separate',async()=>{
+  const store=isolatedStore();
+  await initInventory(store.db);
+  const target='星帆产业投资有限公司', issuer='星帆新能源有限公司', support='星帆控股有限公司';
+  const entries=[
+    ['A.IB',120,'中期票据','',target,issuer],
+    ['B.IB',30,'ABS','',support,issuer],
+  ];
+  const snap=await ingestInventory(store,await roleFixture(entries),'样例.xlsx');
+  const query=async(field,identityValue,filters={})=>{
+    const response=await inventoryHttp(new Request('http://localhost/test',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({field,identityValue,filters,snapshotId:snap.id,group:'code'}),
+    }),'manual',async()=>store,[],true);
+    assert.equal(response.status,200);
+    return response.json();
+  };
+  const all=await query('overviewSubject',target);
+  assert.match(all.clarification,/2026-10-29.*发行人全称.*ABS.*未查到.*星帆产业投资有限公司/);
+  assert.equal(all.identity.fullNameMiss,true);
+  assert.deepEqual(new Set(all.identity.candidates),new Set([issuer,support]));
+  assert.deepEqual(all.identity.hints,[]);
+  assert.equal(all.totalCents,undefined);
+  assert.equal(all.resume.snapshotId,snap.id);
+  const asIssuer=await query('issuer',target);
+  assert.deepEqual(asIssuer.identity.candidates,[issuer]);
+  assert.doesNotMatch(asIssuer.clarification,/ABS/);
+  const exact=await query('overviewSubject',support);
+  assert.equal(exact.overview[1].result.totalCents,3000);
+  assert.equal((await query('issuer',issuer)).totalCents,15000);
+  assert.equal((await query('attribution',target)).totalCents,12000);
+  const weak=await query('overviewSubject','星帆');
+  assert.equal(weak.identity.fullNameMiss,undefined);
+  const unrelated=await query('issuer','青屿产业投资有限公司');
+  assert.match(unrelated.clarification,/未查到/);
+  assert.equal(unrelated.identity,undefined);
+  assert.equal(unrelated.resume.snapshotId,snap.id);
+});
 test('ABS enhancement uses only attributed exposure, handles incomplete coverage, and pins detail and export to the imported source',async()=>{
   const store=isolatedStore();await initInventory(store.db);
   const abs='资产支持证券',other='其他集团有限公司',org='珠海格力集团有限公司',electric='珠海格力电器股份有限公司';

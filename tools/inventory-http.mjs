@@ -1,9 +1,9 @@
 import { InventoryError, exportInventoryWorkbook } from './inventory-workbook.mjs';
-import { listInventory, ingestInventory, answerContext, answerSourceRows, answerDetails, newInventoryAnswer, readInventoryAnswer, exportData } from './inventory-store.mjs';
+import { listInventory, ingestInventory, answerContext, answerSourceRows, answerDetails, newInventoryAnswer, readInventoryAnswer, exportData, reviewInventoryCompany } from './inventory-store.mjs';
 import {initChats,listChats,readChat,checkChatResult,checkResultOwner,appendChatTurn} from './inventory-chats.mjs';
 import { planInventoryQuestion } from './inventory-openai.mjs';
 import { issuerHints } from './inventory-issuer-hints.mjs';
-import { readInventoryEvidence } from './inventory-evidence.mjs';
+import { isFullLedgerName, readInventoryEvidence } from './inventory-evidence.mjs';
 import { sourceFields } from './inventory-source-columns.mjs';
 import { readTopIssuer } from './inventory-rank-evidence.mjs';
 
@@ -98,22 +98,35 @@ async function query(input, action, {db,bucket,apiKey}, pinned=null) {
   }
   const snapshot=snapshotFor(plan.date);
   if(Array.isArray(sourceRows))trace.push('从前次查询锁定的 '+sourceRows.length+' 条原表持仓继续计算。');
-  const answer=await executeInventoryPlan({db,bucket},snapshot,plan,subject,suggested,trace,fixedMembers,sourceRows,scopeRef);
+  const question=action==='manual'?input.identityValue:input.question;
+  const answer=await executeInventoryPlan({db,bucket},snapshot,plan,subject,suggested,trace,fixedMembers,sourceRows,scopeRef,question);
   return trace.length ? {...answer,trace} : answer;
 }
-async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, suggested, trace, fixedMembers, sourceRows, scopeRef) {
+async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, suggested, trace, fixedMembers, sourceRows, scopeRef, question) {
+  const resume=(field,filters)=>({...scopeRef,snapshotId:snapshot.id,group:plan.group,metric:plan.metric,filters,field,
+    ...(plan.rank?{rank:plan.rank}:{}),...(plan.analysis?{analysis:plan.analysis}:{})});
+  const review=async(query,field,filters,candidates)=>{
+    if(!isFullLedgerName(query) || typeof question!=='string' || !question.includes(query))return null;
+    return reviewInventoryCompany(db,snapshot,bucket,query,field,filters,candidates);
+  };
+  const absent=(checked,query,field,filters)=>({
+    clarification:checked.clarification,resume:resume(field,filters),
+    ...(checked.candidates.length?{identity:{query,field,candidates:checked.candidates,hints:[],fullNameMiss:true}}:{}),
+  });
   const identityReply=async(query,field,filters,candidates)=>{
     candidates=[...new Set([...candidates,...suggested])].slice(0,12);
     const hints=['issuer','overviewSubject'].includes(field)?await issuerHints(db,snapshot,query,filters,candidates):[];
     return {clarification:hints.length?'按本期库存的发行人和券简称，找到以下相关持仓。':
       candidates.length?'请从本期台账的主体全称中选择。':'本期台账无法从这个称呼确认主体，请补充全称或相关券码。',
       identity:{query,field,candidates,hints},
-      resume:{...scopeRef,snapshotId:snapshot.id,group:plan.group,metric:plan.metric,filters,field,...(plan.rank?{rank:plan.rank}:{}),...(plan.analysis?{analysis:plan.analysis}:{})}};
+      resume:resume(field,filters)};
   };
   if(subject){
       const filters={...plan.filters};
       for(const key of ['issuer','attribution','guarantor','marketType'])delete filters[key];
-      if(suggested.length)return identityReply(subject,'overviewSubject',filters,suggested);
+      const checked=await review(subject,'overviewSubject',filters,suggested);
+      if(checked && !checked.exact)return absent(checked,subject,'overviewSubject',filters);
+      if(suggested.length && !checked?.exact)return identityReply(subject,'overviewSubject',filters,suggested);
       const lookup=extra=>newInventoryAnswer(db,snapshot,{...plan,group:'code',metric:'principal',filters:{...filters,...extra}},bucket,trace,undefined,sourceRows);
       const [issued,enhanced]=await Promise.all([lookup({issuer:subject}),lookup({guarantor:subject,marketType:'资产支持证券'})]);
       const choices=new Set([...(issued.identity?.candidates||[]),...(enhanced.identity?.candidates||[])]);
@@ -130,12 +143,19 @@ async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, sugges
       return {clarification:'按“'+subject+'”分别查看自发债和增信 ABS。',overview:[
         {title:'自己发行的债券',result:missingRole(issued,'发行人全称')},{title:'占用其授信的 ABS',result:missingRole(enhanced,'资产端损益还原客户名称')}]};
   }
-  if(suggested.length){
-    const field=['guarantor','attribution','issuer'].find(key=>plan.filters[key]);
-    if(field)return identityReply(plan.filters[field],field,plan.filters,suggested);
+  const field=['guarantor','attribution','issuer'].find(key=>plan.filters[key]);
+  if(suggested.length && field){
+    const checked=await review(plan.filters[field],field,plan.filters,suggested);
+    if(checked && !checked.exact)return absent(checked,plan.filters[field],field,plan.filters);
+    if(!checked?.exact)return identityReply(plan.filters[field],field,plan.filters,suggested);
   }
   const result=await newInventoryAnswer(db,snapshot,plan,bucket,trace,fixedMembers,sourceRows);
-  if(result.identity)return identityReply(result.identity.query,result.identity.field,plan.filters,result.identity.candidates);
+  if(result.identity){
+    const {query,field,candidates}=result.identity;
+    const checked=await review(query,field,plan.filters,candidates);
+    if(checked && !checked.exact)return absent(checked,query,field,plan.filters);
+    return identityReply(query,field,plan.filters,candidates);
+  }
   return result;
 }
 
