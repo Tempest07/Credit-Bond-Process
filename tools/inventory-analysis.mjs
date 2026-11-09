@@ -259,6 +259,7 @@ export function runAnalysis(rows,steps) {
   }
   const originals = [...rows].sort((a,b)=>a.sourceRow-b.sourceRow);
   let selected = originals, groups = [], dimensions = [], metric = 'principalCents', measure = null, denominator = 0;
+  let expandedOrder=null, showMemberOrder=false;
   function retainedRows() {
     const retained = new Set();
     for (const group of groups) for (const id of group.sourceRows) retained.add(id);
@@ -271,6 +272,7 @@ export function runAnalysis(rows,steps) {
         break;
       case 'group':
         dimensions = step.fields;
+        showMemberOrder=dimensions.length>1 && expandedOrder?.field===dimensions[0];
         measure = step.measure ?? null;
         denominator = measure?.fn==='principalShare' ? selected.reduce((sum,row)=>sum+row.cents,0) : 0;
         if (!Number.isSafeInteger(denominator)) throw new InventoryError('本金占比分母超过精确统计范围。',422);
@@ -284,18 +286,23 @@ export function runAnalysis(rows,steps) {
         });
         break;
       case 'sort':
+        showMemberOrder=false;
         metric = step.metric;
         sortGroups(groups,metric,step.descending);
         break;
       case 'take':
+        showMemberOrder=false;
         groups = groups.slice(0,step.limit);
         break;
       case 'expand':
+        expandedOrder=dimensions.length===1 ? {field:dimensions[0],order:new Map(groups.map((g,i)=>[g.labels[0],i]))} : null;
         selected = retainedRows();
         groups = [];
         break;
     }
   }
+  // Present each member’s breakdown in the selection order, after all business operations.
+  if (showMemberOrder) groups.sort((a,b)=>expandedOrder.order.get(a.labels[0])-expandedOrder.order.get(b.labels[0]));
   const kept = retainedRows();
   let measureTotal = null;
   if (measure) {

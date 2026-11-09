@@ -22,7 +22,7 @@ test('selects top issuers, regroups their original rows by two columns and prese
   assert.deepEqual(result.dimensions,['issuer','account']);
   assert.deepEqual(result.rows,[rows[4],rows[1],rows[0],rows[5]]);
   assert.deepEqual(result.groups.map(g=>[g.labels,g.principalCents,g.sourceRows]),[
-    [['乙','委外（公募）'],90,[2]],[['甲','Receivable'],70,[3]],[['甲','AFS'],50,[5]],[['乙','AFS'],10,[6]],
+    [['甲','Receivable'],70,[3]],[['甲','AFS'],50,[5]],[['乙','委外（公募）'],90,[2]],[['乙','AFS'],10,[6]],
   ]);
   assert.ok(result.groups.every(g=>g.name===JSON.stringify(g.labels) && g.value===g.principalCents));
 });
@@ -117,4 +117,11 @@ test('round trips strict model placeholder fields; rejects invalid state transit
   }
   assert.throws(()=>runAnalysis([rows[0],rows[0]],[group()]),e=>e.status===422);
   assert.throws(()=>runAnalysis([{...rows[0],cents:Number.MAX_SAFE_INTEGER},rows[1]],[group()]),e=>e.status===422);
+});
+
+test('a breakdown keeps the chosen member order even when the largest individual cell belongs to another member',()=>{
+  const rows=[[1,'甲','AFS',60],[2,'甲','Trading',50],[3,'乙','AFS',100]].map(([sourceRow,issuer,account,cents])=>({sourceRow,issuer,account,cents,code:String(sourceRow)}));
+  const steps=[{op:'group',fields:['issuer']},{op:'take',limit:2},{op:'expand'},{op:'group',fields:['issuer','account']}];
+  assert.deepEqual(runAnalysis(rows,steps).groups.map(g=>g.labels[0]),['甲','甲','乙']);
+  assert.equal(runAnalysis(rows,[...steps,{op:'sort',metric:'principalCents',descending:true}]).groups[0].labels[0],'乙');
 });
