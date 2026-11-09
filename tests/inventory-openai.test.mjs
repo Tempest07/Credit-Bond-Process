@@ -307,3 +307,135 @@ test("ABS enhancement inspects customer attribution, while an ordinary guarantee
     assert.equal(result.plan.filters.marketType,marketType==="ABS"?"资产支持证券":marketType);
   }
 });
+
+test("composes reusable stages over published workbook columns, and can change display metric independently", async()=>{
+  const field="原表:行业分类";
+  const question="至少三只券的发行人里挑余额最大的五家，按各家行业和科目拆，只看持仓条数";
+  const analysis=[
+    {op:"group",fields:["issuer"]},
+    {op:"having",metric:"securityCount",operator:"gte",value:3},
+    {op:"sort",metric:"principalCents",descending:true},
+    {op:"take",limit:5},{op:"expand"},{op:"group",fields:["issuer",field,"account"]},
+  ];
+  const previousPlan={date:"2026-04-15",group:"issuer",metric:"principal",filters:{branch:"北京分行"}};
+  const answer=await planInventoryQuestion({...base,question,workbookFields:[field],previousPlan,
+    inspectEvidence:()=>assert.fail("computed members do not require entity lookup"),
+    fetchImpl:async (_url,options)=>{
+      const body=JSON.parse(options.body);
+      assert.deepEqual(JSON.parse(body.input).workbookFields,[field]);
+      assert.ok(JSON.stringify(body.text.format.schema).includes(field));
+      return Response.json(message(outcome([{field:"analysis",value:analysis},{field:"metric",value:"count"}])));
+    }});
+  assert.deepEqual(answer.plan.analysis,analysis);
+  assert.equal(answer.plan.metric,"count");
+  assert.equal(answer.plan.filters.branch,"北京分行");
+  assert.equal(answer.plan.date,"2026-04-15");
+  const explanation=await planInventoryQuestion({...base,question:"刚才怎么算的？",previousPlan:answer.plan,
+    ...scripted([{kind:"explain",reason:"method",changes:[],lookup:null}],()=>assert.fail()).options});
+  assert.match(explanation.clarification,/北京分行.+不同券数不低于3.+前5组.+持仓明细.+发行人、行业分类、会计科目/);
+});
+
+test("repair invalid stages once without going to market data or widening a query", async()=>{
+  const badPrograms=[
+    [{op:"group",fields:["原表:未发布的列"]}],
+    [{op:"take",limit:5}],
+    [{op:"filter",field:"issuer",operator:"contains",value:"简称"},{op:"group",fields:["branch"]}],
+  ];
+  const ok=[{op:"group",fields:["branch","account"]}];
+  for (const invalid of badPrograms) {
+    let seen=0;
+    const answer=await planInventoryQuestion({...base,fetchImpl:async (_url,options)=>{
+      if (seen++) assert.ok(JSON.parse(JSON.parse(options.body).input).planFeedback);
+      return Response.json(message(outcome([{field:"analysis",value:seen===1?invalid:ok}])));
+    }});
+    assert.equal(seen,2);
+    assert.deepEqual(answer.plan.analysis,ok);
+    const alwaysBad=respond(outcome([{field:"analysis",value:invalid}]));
+    await assert.rejects(planInventoryQuestion({...base,fetchImpl:alwaysBad}),{status:502});
+  }
+});
+
+test("a saved pipeline reuses local portfolio filters without disclosing their values, and can explicitly reset",async()=>{
+  const value="private-portfolio-probe";
+  const analysis=[{op:"filter",field:"portfolio",operator:"eq",value},{op:"group",fields:["account"]}];
+  const previousPlan={date:"2026-04-30",group:"none",metric:"principal",filters:{portfolio:value},analysis};
+  const answer=await planInventoryQuestion({...base,previousPlan,question:"改成按品种合计",fetchImpl:async (_url,options)=>{
+    assert.ok(!options.body.includes(value));
+    const current=JSON.parse(JSON.parse(options.body).input).currentPlan;
+    return Response.json(message(outcome([{field:"analysis",value:[current.analysis[0],{op:"group",fields:["marketType"]}]}])));
+  }});
+  assert.equal(answer.plan.filters.portfolio,value);
+  assert.deepEqual(answer.plan.analysis,[analysis[0],{op:"group",fields:["marketType"]}]);
+  const reset=await planInventoryQuestion({...base,previousPlan:answer.plan,question:"另查全部余额",
+    fetchImpl:respond(outcome([{field:"analysis",value:null},{field:"portfolio",value:null}]))});
+  assert.equal(reset.plan.analysis,undefined);
+  assert.equal(reset.plan.filters.portfolio,null);
+});
+
+test("derived workbook measures with separate thresholds, orders, and grouping stages use the available field catalog", async()=>{
+  const rate="原表:票面利率", industry="原表:产业分类";
+  const examples=[
+    {question:"分行的账面票面利率按本金加权后，从高往低列出来",steps:[
+      {op:"group",fields:["branch"],measure:{fn:"weightedAvg",field:rate}},
+      {op:"sort",metric:"measure",descending:true},
+    ]},
+    {question:"选发行人至少四家的行业，再按科目看这些持仓的本金占比，留超过5.5%的科目",steps:[
+      {op:"group",fields:[industry],measure:{fn:"distinct",field:"issuer"}},
+      {op:"having",metric:"measure",operator:"gte",value:4},{op:"expand"},
+      {op:"group",fields:["account"],measure:{fn:"principalShare",field:null}},
+      {op:"having",metric:"measure",operator:"gt",value:5.5},
+    ]},
+  ];
+  for (const {question,steps} of examples) {
+    const result=await planInventoryQuestion({...base,question,workbookFields:[industry,rate],
+      fetchImpl:respond(outcome([{field:"analysis",value:steps}]))});
+    assert.deepEqual(result.plan.analysis,steps);
+  }
+  const unavailable=[{op:"group",fields:["account"],measure:{fn:"avg",field:"原表:未发布列"}}];
+  await assert.rejects(planInventoryQuestion({...base,workbookFields:[rate],fetchImpl:respond(outcome([{field:"analysis",value:unavailable}]))}),{status:502});
+});
+
+test("one reconsideration can recover from an unnecessary unsupported decision",async()=>{
+  let calls=0;
+  const answer=await planInventoryQuestion({...base,fetchImpl:async(_url,options)=>{
+    const input=JSON.parse(JSON.parse(options.body).input);
+    if (calls++===0) return Response.json(message({kind:"clarification",reason:"unsupported",changes:[]}));
+    assert.ok(input.planFeedback);
+    return Response.json(message(outcome([{field:"analysis",value:[{op:"group",fields:["account","scope"]}]}])));
+  }});
+  assert.equal(calls,2);
+  assert.deepEqual(answer.plan.analysis,[{op:"group",fields:["account","scope"]}]);
+});
+
+test("use prior answer's exact row set for follow-up analysis including historical fixed rankings, and detach explicitly",async()=>{
+  const previousPlan={date:"2026-04-15",group:"account",metric:"principal",filters:{branch:"北京分行",account:"AFS"},
+    rank:{by:"issuer",limit:5},rankReused:true,scopedToPrevious:true};
+  const stages=[{op:"group",fields:["marketType"],measure:{fn:"principalShare",field:null}}];
+  const result=await planInventoryQuestion({...base,previousPlan,hasPreviousResult:true,fetchImpl:async(_url,options)=>{
+    const input=JSON.parse(JSON.parse(options.body).input);
+    assert.equal(input.hasPreviousResult,true);
+    assert.equal(input.currentPlan.scopedToPrevious,true);
+    return Response.json(message(outcome([{field:"analysis",value:stages},{field:"inputRows",value:"previous"},
+      {field:"scope",value:"表内"}])));
+  }});
+  assert.equal(result.inputRows,"previous");
+  assert.equal(result.plan.inputRows,undefined);
+  assert.equal(result.plan.scopedToPrevious,undefined);
+  assert.equal(result.plan.rank,undefined);
+  assert.equal(result.plan.filters.branch,null);
+  assert.equal(result.plan.filters.account,null);
+  assert.equal(result.plan.filters.scope,"表内");
+  assert.deepEqual(result.plan.analysis,stages);
+  assert.equal(result.reuseRank,undefined);
+  const reset=await planInventoryQuestion({...base,previousPlan,hasPreviousResult:true,
+    fetchImpl:respond(outcome([{field:"inputRows",value:"snapshot"},{field:"account",value:null}]))});
+  assert.equal(reset.inputRows,"snapshot");
+  assert.equal(reset.plan.filters.branch,"北京分行");
+  assert.equal(reset.reuseRank,undefined);
+  for (const [exists,changes] of [
+    [false,[{field:"inputRows",value:"previous"}]],
+    [true,[{field:"inputRows",value:"previous"},{field:"date",value:"latest"}]],
+  ]) {
+    await assert.rejects(planInventoryQuestion({...base,previousPlan,hasPreviousResult:exists,fetchImpl:respond(outcome(changes))}),{status:502});
+  }
+});

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import ExcelJS from 'exceljs';
-import {initInventory,ingestInventory,listInventory,newInventoryAnswer,readInventoryAnswer,answerDetails,exportData} from '../tools/inventory-store.mjs';
+import {initInventory,ingestInventory,listInventory,newInventoryAnswer,answerSourceRows,readInventoryAnswer,answerDetails,exportData} from '../tools/inventory-store.mjs';
 import {exportInventoryWorkbook} from '../tools/inventory-workbook.mjs';
 
 // Runs the actual SQLite queries and transactions, without provisioning cloud data for tests.
@@ -205,4 +205,149 @@ test('total attributed credit and self-issued debt are separate; CP and identifi
   const oldId=crypto.randomUUID();
   await store.db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(oldId,v.id,JSON.stringify({...base,filters:{marketType:'短期融资券'}}),'old').run();
   const old=await exportData(store.db,oldId);assert.equal(old.result.totalCents,500);assert.equal(old.rows.length,2);
+});
+
+test('a saved multi-stage program can change cohorts repeatedly and reconcile details and workbook after snapshot replacement',async()=>{
+  const storage=isolatedStore();
+  await initInventory(storage.db);
+  const wb=new ExcelJS.Workbook(), sheet=wb.addWorksheet('本期底稿');
+  sheet.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','到期日期','数据业务日期']);
+  for(const [id,issuer,code,account,amount,branch] of [
+    [1,'甲','A1','公募',150,'北京'],[2,'甲','A1','委外(公募)',150,'北京'],
+    [3,'乙','B1','AFS',50,'北京'],[4,'乙','B2','公募',50,'北京'],
+    [5,'丙','C1','AFS',200,'北京'],[6,'甲','A2','公募',5000,'上海'],
+  ]) sheet.addRow(['中心',branch,account,'组合','表内',code,'示例'+id,amount,issuer,'中票','2030-01-01','2026-10-29']);
+  const snap=await ingestInventory(storage,await wb.xlsx.writeBuffer(),'组合查询.xlsx');
+  const plan={date:snap.date,group:'none',metric:'principal',filters:{branch:'北京'},analysis:[
+    {op:'group',fields:['issuer']},{op:'having',metric:'rowCount',operator:'gte',value:2},
+    {op:'sort',metric:'securityCount',descending:true},{op:'take',limit:2},{op:'expand'},
+    {op:'group',fields:['account']},{op:'sort',metric:'principalCents',descending:true},{op:'take',limit:1},{op:'expand'},
+    {op:'group',fields:['issuer','account','marketType']},
+  ]};
+  const answer=await newInventoryAnswer(storage.db,snap,plan,storage.bucket);
+  assert.deepEqual(answer.dimensions,['issuer','account','marketType']);
+  assert.deepEqual(answer.groups.map(g=>[g.labels,g.cents,g.count,g.securityCount]),
+    [[['甲','委外（公募）','中期票据'],30000,2,1],[['乙','委外（公募）','中期票据'],5000,1,1]]);
+  assert.equal(answer.totalCents,35000);assert.equal(answer.securityCount,2);
+  assert.ok(answer.groups.every(g=>!Object.hasOwn(g,'sourceRows')));
+  const second=await sample();
+  await ingestInventory(storage,second,'替换.xlsx',snap.id);
+  const read=await readInventoryAnswer(storage.db,answer.resultId);
+  assert.deepEqual(read.groups,answer.groups);
+  const page=await answerDetails(storage.db,answer.resultId,{group:answer.groups[0].name,offset:1,limit:1});
+  assert.equal(page.total,2);assert.equal(page.rows[0].sourceRow,3);
+  const empty=await answerDetails(storage.db,answer.resultId,{group:'["未入选"]'});
+  assert.deepEqual(empty,{rows:[],total:0});
+  const {result,rows}=await exportData(storage.db,answer.resultId);
+  assert.deepEqual(rows.map(r=>r.sourceRow),[2,3,5]);
+  const book=new ExcelJS.Workbook();await book.xlsx.load(await exportInventoryWorkbook(result,rows));
+  const groups=book.getWorksheet('分组汇总');
+  assert.deepEqual(groups.getRow(1).values.slice(1,4),['发行人','会计科目','债券类型']);
+  assert.equal(groups.getCell('D4').value,350);assert.equal(groups.getCell('F4').value,3);
+  assert.equal(book.getWorksheet('持仓明细').getCell('N4').value,5);
+  const noRows=await newInventoryAnswer(storage.db,snap,{...plan,analysis:[
+    {op:'filter',field:'cents',operator:'gt',value:999999},{op:'group',fields:['issuer']},
+  ]},storage.bucket);
+  assert.equal(noRows.rowCount,0);assert.deepEqual(noRows.groups,[]);
+  assert.deepEqual((await exportData(storage.db,noRows.resultId)).rows,[]);
+});
+
+test('uncatalogued workbook headers can be used in a program and replayed from the verified snapshot cache, including Excel columns past Z',async()=>{
+  const storage=isolatedStore();
+  await initInventory(storage.db);
+  const wb=new ExcelJS.Workbook(),sheet=wb.addWorksheet('本期底稿');
+  const headers=['地区','内部类别',...Array.from({length:10},(_,i)=>'新字段'+(i+1))];
+  sheet.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','数据业务日期',...headers]);
+  for(const [code,principal,region] of [['A1',100,'北部'],['B1',90,'北部'],['C1',50,'南部']]){
+    sheet.addRow(['总部','北京','AFS','组合','表内',code,'样例债',principal,'甲公司','MTN','2026-10-29',region,'内部A',...Array(10).fill('存在')]);
+  }
+  const snapshot=await ingestInventory(storage,await wb.xlsx.writeBuffer(),'更多列.xlsx');
+  const plan={date:snapshot.date,group:'none',filters:{},metric:'principal',analysis:[
+    ...headers.slice(2).map(header=>({op:'filter',field:'原表:'+header,operator:'eq',value:'存在'})),
+    {op:'group',fields:['原表:地区']},{op:'take',limit:1},{op:'expand'},
+    {op:'group',fields:['原表:内部类别','account']},
+  ]};
+  const answer=await newInventoryAnswer(storage.db,snapshot,plan,storage.bucket);
+  assert.equal(answer.rowCount,2);assert.equal(answer.totalCents,19000);
+  assert.match(answer.warnings.join(' '),/未经市场数据核验/);
+  storage.objects.clear();
+  const details=await answerDetails(storage.db,answer.resultId,{group:answer.groups[0].name});
+  assert.deepEqual(details.rows.map(r=>r['原表:地区']),['北部','北部']);
+  const {result,rows}=await exportData(storage.db,answer.resultId);
+  const book=new ExcelJS.Workbook();await book.xlsx.load(await exportInventoryWorkbook(result,rows));
+  const detail=book.getWorksheet('持仓明细');
+  assert.equal(detail.getCell('AB1').value,'内部类别');
+  assert.equal(detail.getCell('AB2').value,'内部A');
+  assert.equal(detail.autoFilter,'A1:AB3');
+  assert.equal(book.getWorksheet('分组汇总').getCell('A1').value,'内部类别');
+  assert.match(book.getWorksheet('计算口径').getSheetValues().flat().join(' '),/未经市场数据核验/);
+});
+
+test('custom numeric measurements reconcile independently and survive reopening without access to the original upload',async()=>{
+  const storage=isolatedStore();
+  await initInventory(storage.db);
+  const wb=new ExcelJS.Workbook(),sheet=wb.addWorksheet('本期底稿');
+  sheet.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','数据业务日期','测试原字段(年)']);
+  for(const [code,branch,amount,years] of [['01','北京',100,3],['02','北京',300,5],['03','广州',100,0],['04','上海',100,null]])
+    sheet.addRow(['中心',branch,'AFS','组合','表内',code,'测试债',amount,'公司','中票','2026-10-29',years]);
+  const snapshot=await ingestInventory(storage,await wb.xlsx.writeBuffer(),'期限.xlsx');
+  const measure={fn:'weightedAvg',field:'原表:测试原字段(年)'};
+  const answer=await newInventoryAnswer(storage.db,snapshot,{date:snapshot.date,group:'none',metric:'principal',filters:{},analysis:[
+    {op:'group',fields:['branch'],measure,metric:'measure'},{op:'sort',metric:'measure',descending:true},
+  ]},storage.bucket);
+  assert.deepEqual(answer.measure,measure);
+  assert.equal(answer.measureTotal,3.6);
+  assert.deepEqual(answer.groups.map(g=>[g.labels[0],g.measureValue]),[['北京',4.5],['广州',0],['上海',null]]);
+  storage.objects.clear();
+  const {result,rows}=await exportData(storage.db,answer.resultId);
+  assert.deepEqual(result.groups,answer.groups);assert.equal(result.measureTotal,3.6);
+  const saved=new ExcelJS.Workbook();await saved.xlsx.load(await exportInventoryWorkbook(result,rows));
+  const summary=saved.getWorksheet('分组汇总');
+  assert.equal(summary.getCell('F1').value,'测试原字段(年)本金加权均值');
+  assert.equal(summary.getCell('F3').value,0);assert.equal(summary.getCell('F5').value,3.6);
+  assert.equal(saved.getWorksheet('持仓明细').getCell('Q2').value,3);
+});
+
+test('programs preserve issuer and guarantee lookup boundaries and only group roles present in this snapshot',async()=>{
+  const storage=isolatedStore();await initInventory(storage.db);
+  const snapshot=await ingestInventory(storage,await sample(),'角色边界.xlsx');
+  const base={date:snapshot.date,group:'none',metric:'principal',filters:{}};
+  for(const field of ['issuer','guarantor','attribution','code']){
+    const analysis=[{op:'filter',field,operator:'contains',value:'电网'},{op:'group',fields:['account']}];
+    await assert.rejects(newInventoryAnswer(storage.db,snapshot,{...base,analysis},storage.bucket),error=>error.status===400);
+  }
+  const program=[{op:'group',fields:['issuer']}];
+  const ambiguous=await newInventoryAnswer(storage.db,snapshot,{...base,analysis:program,filters:{issuer:'电网'}},storage.bucket);
+  assert.equal(ambiguous.identity.query,'电网');assert.equal(ambiguous.resultId,undefined);
+  await assert.rejects(newInventoryAnswer(storage.db,snapshot,{...base,analysis:[{op:'group',fields:['guarantor']}]},storage.bucket),/没有台账列明担保人列/);
+  await assert.rejects(newInventoryAnswer(storage.db,snapshot,{...base,analysis:[{op:'group',fields:['原表:发行人全称']}]},storage.bucket),/缺少查询使用的原表列/);
+});
+
+test('a follow-up inherits exact source rows including an empty prior answer, independent of the new query shape',async()=>{
+  const storage=isolatedStore();await initInventory(storage.db);
+  const {db,bucket}=storage,snapshot=await ingestInventory(storage,await sample(),'库存.xlsx');
+  const base={date:snapshot.date,group:'none',metric:'principal',filters:{}};
+  const first=await newInventoryAnswer(db,snapshot,{...base,analysis:[
+    {op:'group',fields:['portfolio']},{op:'sort',metric:'principalCents',descending:true},{op:'take',limit:1},
+  ]},bucket);
+  const sourceRows=await answerSourceRows(db,first.resultId,snapshot.id);
+  assert.deepEqual(sourceRows,[3]);
+  const second=await newInventoryAnswer(db,snapshot,{...base,group:'branch',rank:{by:'issuer',limit:1}},bucket,[],undefined,sourceRows);
+  assert.equal(second.scopedToPrevious,true);assert.equal(second.totalCents,31012);
+  assert.equal(Object.hasOwn(second.plan,'sourceRows'),false);assert.equal(Object.hasOwn(second,'sourceRows'),false);
+  assert.deepEqual(await answerSourceRows(db,second.resultId),sourceRows);
+  const {rows,result}=await exportData(db,second.resultId);
+  assert.deepEqual(rows.map(r=>r.sourceRow),[3]);assert.equal(result.totalCents,31012);
+  assert.equal((await answerDetails(db,second.resultId,{group:second.groups[0].name})).total,1);
+  assert.deepEqual((await readInventoryAnswer(db,second.resultId)).groups,second.groups);
+  const third=await newInventoryAnswer(db,snapshot,{...base,filters:{branch:'北京分行'},analysis:[{op:'group',fields:['account']}]},bucket,[],undefined,sourceRows);
+  assert.equal(third.rowCount,0);
+  const empty=await answerSourceRows(db,third.resultId);
+  assert.deepEqual(empty,[]);
+  assert.equal((await newInventoryAnswer(db,snapshot,base,bucket,[],undefined,empty)).rowCount,0);
+  const forged=await newInventoryAnswer(db,snapshot,{...base,sourceRows:[]},bucket);
+  assert.equal(forged.rowCount,3);assert.equal(forged.scopedToPrevious,undefined);
+  await assert.rejects(newInventoryAnswer(db,snapshot,base,bucket,[],undefined,[3,3]),err=>err.status===409);
+  const replacement=await ingestInventory(storage,await sample(12),'修订.xlsx',snapshot.id);
+  await assert.rejects(answerSourceRows(db,second.resultId,replacement.id),err=>err.status===409);
 });

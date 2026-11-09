@@ -220,12 +220,57 @@ function table(headers, rows, numeric = []) {
 }
 function groupName(name) { return name === "" || name == null ? "未填写" : String(name); }
 function groupLabel(g) {
+  if (Array.isArray(g.labels)) return g.labels.map(groupName).join(" · ") || "合计";
   if (g.rankName != null) return g.rankName + " · " + (g.securityName || g.bucketName);
   return g.securityName ? g.securityName + " · " + g.name : groupName(g.name);
 }
+const analysisNames = {...filterNames, attribution:"资产端损益还原客户名称", guarantor:"台账列明担保人", institution:"机构名称", name:"债券简称", maturity:"到期日期", expected:"ABS 预计到期日", legal:"法定到期日", cents:"名义本金", principalCents:"名义本金", rowCount:"持仓行数", securityCount:"不同券数"};
+function fieldLabel(field) { return analysisNames[field] || field.replace(/^原表:/,""); }
+const aggregateLabels={distinct:"不同取值数",sum:"合计",avg:"平均值",weightedAvg:"本金加权平均值",min:"最小值",max:"最大值",principalShare:"本金占比"};
+const aggregateNumber=new Intl.NumberFormat("zh-CN",{maximumSignificantDigits:10});
+function measureLabel(measure) {
+  return (measure.field ? fieldLabel(measure.field)+" · " : "")+aggregateLabels[measure.fn];
+}
+function displayMetric(data, group) {
+  if (!data.measure) return amountValue(data.plan.metric,group || data,Boolean(group));
+  const value=group ? group.measureValue : data.measureTotal;
+  return {value,display:Number.isFinite(value) ? aggregateNumber.format(value) : "—",
+    unit:data.measure.fn==="principalShare" ? "%" : data.measure.fn==="distinct" ? "个" : ""};
+}
+function analysisTable(data, groups) {
+  const dimensions=data.dimensions;
+  const headers=[...(dimensions.length ? dimensions.map(fieldLabel) : ["分组"]), ...(data.measure ? [measureLabel(data.measure)] : []), "本金（亿元）", "不同券数", "持仓行数"];
+  const rows=groups.map(g=>{
+    const labels=g.labels.length ? g.labels.map(groupName) : ["合计"];
+    labels[labels.length-1]=button(labels.at(-1),()=>openDetail(data,g.name),"row-link");
+    const m=displayMetric(data,g);
+    return [...labels,...(data.measure ? [m.display+m.unit] : []),billions(g.cents),count(g.securityCount),count(g.count)];
+  });
+  return table(headers,rows,headers.map((_,i)=>i).slice(Math.max(1,dimensions.length)));
+}
+function analysisTrace(steps) {
+  const operators={eq:"等于",neq:"不等于",gt:"大于",gte:"至少",lt:"小于",lte:"至多",contains:"包含"};
+  let measure;
+  return steps.map(step=>{
+    switch(step.op) {
+      case "group":
+        measure=step.measure;
+        return (step.fields.length ? "按"+step.fields.map(fieldLabel).join("、")+"汇总" : "汇总全部入选持仓")+(measure ? "，计算"+measureLabel(measure) : "");
+      case "expand": return "取出入选分组对应的原表持仓，继续查询";
+      case "sort": return "按"+(step.metric==="measure" ? measureLabel(measure) : fieldLabel(step.metric))+(step.descending?"从高到低":"从低到高")+"排序";
+      case "take": return "保留前 "+step.limit+" 组";
+      default: {
+        const field=step.op==="having"?step.metric:step.field;
+        const threshold=field==="principalCents" || field==="cents" ? number.format(Number(step.value)/100)+" 元" : step.value;
+        return (step.op==="having"?"保留分组中":"保留明细中")+(field==="measure" ? measureLabel(measure) : fieldLabel(field))+operators[step.operator]+threshold+"的记录";
+      }
+    }
+  });
+}
 function rankedTable(data, groups, complete) {
-  const {rank,group,metric} = data.plan;
-  const primary = groupNames[rank.by], secondary = groupNames[group];
+  const {rank,metric} = data.plan;
+  const group = data.dimensions?.[1] ?? data.plan.group;
+  const primary = fieldLabel(data.dimensions?.[0] ?? rank.by), secondary = fieldLabel(group);
   const buckets = [...new Set([...(group === "account" ? ["AFS","Receivable","委外（公募）","委外（专户）","Trading"] : []),
     ...groups.map(g=>g.bucketName)])];
   const wide = node("div",null,"rank-table");
@@ -289,15 +334,15 @@ function withParentTrace(result, parentTrace) {
   if (parentTrace.every((step, index) => trace[index] === step)) return result;
   return { ...result, trace: [...parentTrace, ...trace] };
 }
-function showChart(groups, metric, data) {
+function showChart(groups, data) {
   const chart = node("div", null, "viz");
-  chart.setAttribute("aria-label", "按当前指标排序的分组条形图");
-  const values = groups.map((g) => amountValue(metric, g, true).value || 0);
+  chart.setAttribute("aria-label", "当前结果的分组条形图");
+  const values = groups.map((g) => displayMetric(data,g).value || 0);
   const min = Math.min(0, ...values), max = Math.max(0, ...values);
   const range = max - min || 1;
   const zero = -min / range;
   for (const g of groups) {
-    const n = amountValue(metric, g, true);
+    const n = displayMetric(data,g);
     const row = node("div", null, "bar-row");
     const mark = node("div", null, "bars");
     const fill = node("div", null, "bar-fill" + (n.value < 0 ? " negative" : ""));
@@ -315,16 +360,17 @@ function renderAnswer(current = state.current, target = $("current-answer"), vie
   const groupCount = data.groupCount ?? data.groups.length;
   const rerender = () => renderAnswer(current,target,view);
   const article = node("article", null, "answer");
-  const m = amountValue(data.plan.metric, data);
+  const m = displayMetric(data);
   const metric = node("div", m.display, "metric"); metric.append(node("small", m.unit));
   const filters = filterText(data.plan.filters, data.roleEvidence?.kind);
   article.append(node("p", label, "question"), node("p", [manual ? "手动查询" : "库存问数", data.snapshot.date, filters].filter(Boolean).join(" · "), "meta"));
   const evidence = data.roleEvidence;
   if (evidence) article.append(node("p", evidenceLabels[evidence.kind] || "库存统计口径", "evidence-label"));
+  if (data.measure) article.append(node("p",measureLabel(data.measure),"meta"));
   if (evidence?.kind !== "unknown") article.append(metric);
   if (["enhancement", "attribution"].includes(evidence?.kind) && data.plan.metric === "principal")
     article.append(node("p", "库存名义本金 " + yuan(data.totalCents) + " 元", "meta"));
-  if (data.summary && ![("名义本金 " + m.display + " 亿元"), (String(data.rowCount) + " 条持仓记录"), (String(data.securityCount) + " 只不同券码")].includes(data.summary)) {
+  if (data.summary && (!data.measure || evidence) && ![("名义本金 " + m.display + " 亿元"), (String(data.rowCount) + " 条持仓记录"), (String(data.securityCount) + " 只不同券码")].includes(data.summary)) {
     article.append(node("p", data.summary, "summary"));
   }
   if (evidence?.kind !== "unknown") article.append(node("p", count(data.securityCount) + " 只券 · " + count(data.rowCount) + " 条持仓 · " + count(groupCount) + " 个分组", "tagline"));
@@ -332,18 +378,19 @@ function renderAnswer(current = state.current, target = $("current-answer"), vie
     const text = typeof warning === "string" ? warning : warning?.message;
     if (text) article.append(node("p", text, "warning"));
   }
-  appendTrace(article, data.trace);
+  appendTrace(article, [...(data.trace || []), ...(data.plan.analysis ? analysisTrace(data.plan.analysis) : [])]);
   if (evidence?.kind === "unknown") {
     target.replaceChildren(article);
     return;
   }
-  const group = groupNames[data.plan.group] || "分组";
+  const analytical = Array.isArray(data.dimensions);
+  const group = analytical ? data.dimensions.map(fieldLabel).join(" · ") || "合计" : groupNames[data.plan.group] || "分组";
   const rank = data.plan.rank;
-  const previewSize = rank ? 100 : 5;
+  const previewSize = rank ? 100 : analytical ? 16 : 5;
   const chunk = data.groups.slice(0, view.expanded ? data.groups.length : previewSize);
   const heading = node("div", null, "result-head");
   heading.append(node("h3",rank ? "本金前" + rank.limit + "名" + groupNames[rank.by] + " · " + group :
-    group + (groupCount > 5 && !view.expanded ? " · 前五" : "")));
+    group + (groupCount > previewSize && !view.expanded ? analytical ? " · 显示前 "+previewSize+" 组" : " · 前五" : "")));
   const switches = node("div", null, "mode-switch");
   for (const [key, title] of [["table", "表格"], ["chart", "图表"]]) {
     const b = button(title, () => { view.view = key; rerender(); });
@@ -351,7 +398,12 @@ function renderAnswer(current = state.current, target = $("current-answer"), vie
   }
   heading.append(switches); article.append(heading);
   if (!chunk.length) article.append(node("p", "当前条件没有匹配持仓。", "meta"));
-  else if (view.view === "chart") article.append(showChart(chunk, data.plan.metric, data));
+  else if (view.view === "chart") article.append(showChart(chunk, data));
+  else if (analytical && data.dimensions.length===2 && !data.measure && chunk.length===groupCount &&
+           new Set(chunk.map(g=>g.labels[1])).size<=8) {
+    const cells=chunk.map(g=>({...g,rankName:g.labels[0],bucketName:g.labels[1]}));
+    article.append(rankedTable(data,cells,true));
+  } else if (analytical) article.append(analysisTable(data,chunk));
   else if (rank) article.append(rankedTable(data,chunk,chunk.length===groupCount));
   else article.append(table([group, "本金（亿元）", "不同券数", "持仓行数"], chunk.map((g) => [
     button(groupLabel(g), () => openDetail(data, g.name), "row-link"), billions(g.cents), count(g.securityCount), count(g.count),
@@ -375,7 +427,7 @@ function renderAnswer(current = state.current, target = $("current-answer"), vie
     }
     view.expanded = !view.expanded;
     const last = state.conversation.at(-1);
-    if (current === state.current && !rank && last?.choices && last.dimension === data.plan.group)
+    if (current === state.current && !rank && !analytical && last?.choices && last.dimension === data.plan.group)
       last.choices = data.groups.slice(0,view.expanded ? 16 : 5).map(item => item.name);
     rerender();
   }));
@@ -433,6 +485,10 @@ function rememberTurn(question, data) {
   } else if (data.overview) {
     turn.dimension = "role";
     turn.choices = data.overview.map(item => item.title);
+  } else if (Array.isArray(data.dimensions)) {
+    turn.dimension=data.dimensions[0];
+    if (["issuer","code","marketType","branch","scope","account"].includes(turn.dimension))
+      turn.choices=[...new Set(data.groups.slice(0,16).map(g=>g.labels[0]))];
   } else if (data.plan?.rank) {
     turn.dimension=data.plan.rank.by;
     if (turn.dimension!=="portfolio") turn.choices=[...new Set(data.groups.map(g=>g.rankName))].slice(0,16);
@@ -715,7 +771,7 @@ async function exportResult(data, trigger) {
 }
 function openDetail(data, group) {
   state.detailGroup = { id: data.resultId, group,role:data.roleEvidence }; state.offsets = [0];
-  const cell = data.plan.rank && data.groups.find(item=>item.name===group);
+  const cell = (data.plan.rank || data.dimensions) && data.groups.find(item=>item.name===group);
   $("detail-title").textContent = group === null ? "全部匹配持仓" : cell ? groupLabel(cell) : groupName(group);
   $("detail-meta").textContent = data.snapshot.date + " · " + data.snapshot.filename;
   if (!$("detail").open) $("detail").showModal();

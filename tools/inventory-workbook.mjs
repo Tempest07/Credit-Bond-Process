@@ -132,7 +132,8 @@ function sharedStrings(zip, parts) {
   return strings;
 }
 const requiredHeader = '每次需有一张可识别的库存明细工作表，含业务日期、名义本金、机构、联动分行、会计分类、交易组合、表内/委外、券码、简称和发行人全称。';
-function snapshotSheet(zip, sheet, strings, epoch1904) {
+function snapshotSheet(zip, sheet, strings, epoch1904, sourceKeys) {
+  let sourceFields = [], projected = [];
   let sourceRow = 0, column = 0, cellType = '', value = '', capture = false, inCell = false, phonetic = false;
   let values = new Map(), header = null, headerRow = 0, date = '', totalCents = 0, absoluteCents = 0;
   let guarantorHeader = '';
@@ -149,6 +150,18 @@ function snapshotSheet(zip, sheet, strings, epoch1904) {
       if (!required.every(k => k in idx)) return;
       if (duplicates.size) throw new InventoryError('库存表头含重复字段，请先核对。');
       header = idx;
+      if (sourceKeys) {
+        const known = new Set(Object.values(idx)), names = new Set(), duplicates = new Set();
+        for (const [col, raw] of values) {
+          const label = text(raw);
+          if (known.has(col) || !label || label.length > 80 || /[\u0000-\u001f\u007f]/u.test(label)) continue;
+          if (names.has(label)) duplicates.add(label);
+          names.add(label);
+          sourceFields.push({key:'原表:'+label,col});
+        }
+        sourceFields = sourceFields.filter(({key})=>!duplicates.has(key.slice(3)));
+        projected = sourceFields.filter(({key})=>sourceKeys.has(key));
+      }
       guarantorHeader = text(values.get(idx.guarantor));
       headerRow = sourceRow;
       return;
@@ -168,6 +181,11 @@ function snapshotSheet(zip, sheet, strings, epoch1904) {
     const r = { sourceRow, cents };
     for (const field of ['institution','branch','account','portfolio','scope','code','name','issuer','marketType','guarantor','attribution']) r[field] = text(read(field));
     for (const field of ['maturity','expected','legal']) r[field] = dateOf(read(field),epoch1904);
+    for (const {key,col} of projected) {
+      const v = values.get(col), label = key.slice(3);
+      r[key] = v == null ? '' : typeof v === 'number' && /(?:日期|到期日|行权日|起息日|发行日)$/.test(label)
+        ? dateOf(v,epoch1904) : v;
+    }
     rows.push(r);
   }
   try {
@@ -210,6 +228,8 @@ function snapshotSheet(zip, sheet, strings, epoch1904) {
           } else if (cellType === 'd') {
             const day = new Date(value);
             v = Number.isFinite(+day) ? day.toISOString().slice(0,10) : '';
+          } else if (cellType === 'b' && sourceKeys && projected.some(field=>field.col===column)) {
+            v = value === '1' ? 'TRUE' : 'FALSE';
           } else if (cellType === 'e' || cellType === 'b') {
             v = '';
           }
@@ -221,9 +241,10 @@ function snapshotSheet(zip, sheet, strings, epoch1904) {
   } catch (error) { if (error === headerMissing) return null; throw error; }
   if (!header) return null;
   return { rows, date, rowCount: rows.length, totalCents, sheet: sheet.name,
+    ...(sourceKeys ? {sourceFields:sourceFields.map(field=>field.key)} : {}),
     guarantorHeader, hasAttribution: 'attribution' in header };
 }
-export async function parseInventoryWorkbook(bytes) {
+export async function parseInventoryWorkbook(bytes, sourceKeys) {
   try {
     const zip = new PizZip(bytes);
     const entries = Object.values(zip.files);
@@ -232,7 +253,7 @@ export async function parseInventoryWorkbook(bytes) {
     const parts = relationships(zip), { sheets, epoch1904 } = workbookInfo(zip, parts), strings = sharedStrings(zip, parts);
     let found = null;
     for (const sheet of sheets) {
-      const candidate = snapshotSheet(zip, sheet, strings, epoch1904);
+      const candidate = snapshotSheet(zip, sheet, strings, epoch1904, sourceKeys);
       if (!candidate) continue;
       if (found) throw new InventoryError(requiredHeader);
       found = candidate;
@@ -264,11 +285,16 @@ function metadata(zipPart) {
   zipPart('xl/_rels/workbook.xml.rels',relHead+files.map(s=>'<Relationship Id="'+s.id+'" Type="'+rel+'/worksheet" Target="worksheets/sheet'+s.number+'.xml"/>').join('')+'<Relationship Id="rId4" Type="'+rel+'/styles" Target="styles.xml"/></Relationships>');
   zipPart('xl/styles.xml',styles);
 }
+function columnName(index) {
+  let name='';
+  for(let n=index+1;n>0;n=Math.floor((n-1)/26))name=String.fromCharCode(65+(n-1)%26)+name;
+  return name;
+}
 function rowXml(number,values,formats=[],bold=false) {
   const attrs = number===1 ? ' ht="23" customHeight="1"' : '';
   const cells=values.map((v,i)=>{
     const format=number===1 ? 1 : bold ? ({2:5,3:6}[formats[i]] || 4) : formats[i] || 0;
-    const attr=' r="'+String.fromCharCode(65+i)+number+'" s="'+format+'"';
+    const attr=' r="'+columnName(i)+number+'" s="'+format+'"';
     return typeof v==='number' ? '<c'+attr+'><v>'+v+'</v></c>' : '<c'+attr+' t="inlineStr"><is><t xml:space="preserve">'+escapeText(v)+'</t></is></c>';
   });
   return '<row r="'+number+'"'+attrs+'>'+cells.join('')+'</row>';
@@ -283,12 +309,19 @@ function writeSheet(zip,index,{headers,widths,formats=[],rows,total,filter=false
     chunk += rowXml(++number,row,formats);
     if(chunk.length>=32768){entry.push(encode.encode(chunk),false);chunk='';}
   }
-  const lastColumn=String.fromCharCode(64+headers.length);
+  const lastColumn=columnName(headers.length-1);
   if(total)chunk += rowXml(number+1,total,formats,true);
   chunk+='</sheetData>'+(filter?'<autoFilter ref="A1:'+lastColumn+number+'"/>':'')+'</worksheet>';
   entry.push(encode.encode(chunk),true);
 }
 export const inventoryDimensions=Object.freeze({issuer:'发行人',branch:'联动分行',portfolio:'交易组合',account:'会计科目',scope:'表内/委外',marketType:'债券类型',code:'券码',none:'合计'});
+const columnLabel=field=>inventoryDimensions[field]??columns[field]??(field==='cents'?'名义本金（人民币分）':field?.replace(/^原表:/,''));
+export function analysisMeasureLabel(measure) {
+  if(measure.fn==='principalShare')return '名义本金占比（%）';
+  const label=columnLabel(measure.field);
+  const operation={distinct:'不同值数',sum:'合计',avg:'均值',min:'最小值',max:'最大值',weightedAvg:'本金加权均值'};
+  return label+operation[measure.fn];
+}
 export async function exportInventoryWorkbook(result, rows) {
   const parts=[]; let length=0;
   const zip=new Zip((error,part)=>{
@@ -303,23 +336,26 @@ export async function exportInventoryWorkbook(result, rows) {
   const hasQueryType=rows.some(row=>Object.hasOwn(row,'queryMarketType'));
   const hasQueryAccount=rows.some(row=>Object.hasOwn(row,'queryAccount'));
   const roleLabel=evidence?.basis==='enhancement'?'增信占用':({ledger:'台账列明担保',candidate:'归属候选（待核担保）',attribution:'客户归属',unknown:'无法确认担保'})[evidence?.kind]||'';
-  const byCode=plan.group==='code';
-  const groupHeaders=plan.rank?[inventoryDimensions[plan.rank.by],inventoryDimensions[plan.group]]:[roleLabel?roleLabel+'分组':'分组'];
+  const analysisFields=[...new Set((plan.analysis??[]).flatMap(step=>[step.field,step.measure?.field,...(step.fields??[])]))];
+  const extraFields=analysisFields.filter(field=>field?.startsWith('原表:'));
+  const roleDetails=Boolean(evidence)||analysisFields.includes('guarantor')||analysisFields.includes('attribution');
+  const byCode=!plan.analysis&&plan.group==='code';
+  const groupHeaders=result.dimensions?(result.dimensions.length?result.dimensions.map(columnLabel):['合计']):plan.rank?[inventoryDimensions[plan.rank.by],inventoryDimensions[plan.group]]:[roleLabel?roleLabel+'分组':'分组'];
   writeSheet(zip,1,{
-    headers:[...groupHeaders,'名义本金（人民币元）','名义本金（亿元）','持仓行数','不同券数',...(byCode?['券名']:[])],widths:[42,...(plan.rank?[23]:[]),25,23,14,14,...(byCode?[29]:[])],formats:[...groupHeaders.map(()=>0),2,3],
-    rows:result.groups.map(g=>[...(plan.rank?[g.rankName,g.bucketName]:[g.name]),g.cents/100,g.cents/1e10,g.count,g.securityCount,...(byCode?[g.securityName]:[])]),
-    total:evidence?.kind==='unknown'?[result.summary]:[roleLabel?roleLabel+'合计':'全部匹配',...(plan.rank?['']:[]),result.totalCents/100,result.totalCents/1e10,result.rowCount,result.securityCount],filter:true,
+    headers:[...groupHeaders,'名义本金（人民币元）','名义本金（亿元）','持仓行数','不同券数',...(byCode?['券名']:[]),...(result.measure?[analysisMeasureLabel(result.measure)]:[])],widths:[42,...groupHeaders.slice(1).map(()=>23),25,23,14,14,...(byCode?[29]:[]),...(result.measure?[27]:[])],formats:[...groupHeaders.map(()=>0),2,3],
+    rows:result.groups.map(g=>[...(g.labels?(g.labels.length?g.labels:['全部']):plan.rank?[g.rankName,g.bucketName]:[g.name]),g.cents/100,g.cents/1e10,g.count,g.securityCount,...(byCode?[g.securityName]:[]),...(result.measure?[g.measureValue]:[])]),
+    total:evidence?.kind==='unknown'?[result.summary]:[roleLabel?roleLabel+'合计':'全部匹配',...groupHeaders.slice(1).map(()=>''),result.totalCents/100,result.totalCents/1e10,result.rowCount,result.securityCount,...(result.measure?[result.measureTotal]:[])],filter:true,
   });
   function* details(){
-    for(const r of rows)yield [r.issuer,r.code,r.name,r.cents/100,r.institution,r.branch,r.portfolio,r.account,r.scope,r.marketType,r.maturity,r.expected,r.legal,r.sourceRow,...(evidence?[r.attribution,r.guarantor]:[]),...(hasQueryType?[r.queryMarketType]:[]),...(hasQueryAccount?[r.queryAccount]:[])];
+    for(const r of rows)yield [r.issuer,r.code,r.name,r.cents/100,r.institution,r.branch,r.portfolio,r.account,r.scope,r.marketType,r.maturity,r.expected,r.legal,r.sourceRow,...(roleDetails?[r.attribution,r.guarantor]:[]),...(hasQueryType?[r.queryMarketType]:[]),...(hasQueryAccount?[r.queryAccount]:[]),...extraFields.map(field=>r[field])];
   }
   writeSheet(zip,2,{
-    headers:['发行人','债券代码','债券简称','名义本金（人民币元）','机构','联动分行','交易组合','会计分类','表内/委外','债券类型','到期日期','ABS预计到期日','法定到期日','原表行号',...(evidence?['资产端损益还原客户名称','台账列明担保人']:[]),...(hasQueryType?['本次归集品种']:[]),...(hasQueryAccount?['本次会计科目']:[])],
-    widths:[40,19,29,25,22,17,25,15,16,22,18,18,18,12,...(evidence?[38,38]:[]),...(hasQueryType?[20]:[]),...(hasQueryAccount?[20]:[])],formats:[0,0,0,2],rows:details(),filter:true,
+    headers:['发行人','债券代码','债券简称','名义本金（人民币元）','机构','联动分行','交易组合','会计分类','表内/委外','债券类型','到期日期','ABS预计到期日','法定到期日','原表行号',...(roleDetails?['资产端损益还原客户名称','台账列明担保人']:[]),...(hasQueryType?['本次归集品种']:[]),...(hasQueryAccount?['本次会计科目']:[]),...extraFields.map(columnLabel)],
+    widths:[40,19,29,25,22,17,25,15,16,22,18,18,18,12,...(roleDetails?[38,38]:[]),...(hasQueryType?[20]:[]),...(hasQueryAccount?[20]:[]),...extraFields.map(()=>23)],formats:[0,0,0,2],rows:details(),filter:true,
   });
   writeSheet(zip,3,{
     headers:['项目','内容'],widths:[24,94],
-    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],...(plan.rank?[['排名口径',result.rankReused?'沿用上次排名的主体名单和顺序，在其中按本轮条件筛选统计。':'按筛选范围内的名义本金从高到低取前 '+plan.rank.limit+' 个'+inventoryDimensions[plan.rank.by]+'，同额按名称顺序取舍。合计仅含入选持仓。']]:[]),['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[]),...(result.trace||[]).map(step=>['查证过程',step])],
+    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],...(result.scopedToPrevious?[['持仓范围','在上轮结果继承的原表持仓行内查询，完整入选行号见持仓明细。']]:[]),['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],...(plan.rank?[['排名口径',result.rankReused?'沿用上次排名的主体名单和顺序，在其中按本轮条件筛选统计。':'按筛选范围内的名义本金从高到低取前 '+plan.rank.limit+' 个'+inventoryDimensions[plan.rank.by]+'，同额按名称顺序取舍。合计仅含入选持仓。']]:[]),['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[]),...(result.trace||[]).map(step=>['查证过程',step])],
   });
   zip.end();
   const bytes=new Uint8Array(length);let offset=0;

@@ -1,4 +1,7 @@
-import {InventoryError, parseInventoryWorkbook, inventoryDimensions as dimensions} from './inventory-workbook.mjs';
+import {InventoryError, analysisMeasureLabel, parseInventoryWorkbook, inventoryDimensions as dimensions} from './inventory-workbook.mjs';
+import {attachSourceColumns,readVerifiedRoleWorkbook} from './inventory-source-columns.mjs';
+export {readVerifiedRoleWorkbook};
+import {normalizeAnalysis,runAnalysis} from './inventory-analysis.mjs';
 import {accountLabel,accountSql} from './inventory-account.mjs';
 
 const fieldNames=['institution','branch','portfolio','account','scope','issuer','code','name','marketType','maturity','expected','legal'];
@@ -39,25 +42,6 @@ export async function listInventory(db) {
 async function active(db,date){
   return await db.prepare('SELECT v.* FROM inventory_versions v JOIN inventory_current a ON a.version=v.id WHERE a.date=?').bind(date).first();
 }
-export async function readVerifiedRoleWorkbook(db,snapshot,bucket){
-  const key='inventory/'+snapshot.date+'/'+snapshot.id+'.xlsx';
-  let bytes;
-  for(let attempt=0;attempt<2;attempt++){
-    try {
-      const object=await bucket?.get(key);
-      if(object)bytes=new Uint8Array(await object.arrayBuffer());
-      break;
-    }catch{ /* Retry a failed R2 read once; an absent object is not retried. */ }
-  }
-  if(!bytes)throw message('无法读取此版本的云端库存原件，暂时无法核对担保和客户归属，请稍后重试。',503);
-  const version=await db.prepare('SELECT sha FROM inventory_versions WHERE id=?').bind(snapshot.id).first();
-  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
-  if(version?.sha!==digest)throw message('库存原件与已发布快照校验不符，不能核对担保和客户归属。',503);
-  const original=await parseInventoryWorkbook(bytes);
-  if(original.date!==snapshot.date || original.rowCount!==snapshot.rowCount || original.totalCents!==snapshot.totalCents)throw message('原件行数、日期或金额与已发布快照不符。',503);
-  return original;
-}
-
 export function ledgerGuarantors(guarantor){
   const unknown=/^(?:[-—/\s]*|未知|待核(?:实)?|未填写|不详|暂无|N\/?A|null)$/i.test(guarantor);
   const guarantors=unknown || /^(?:无|无担保|无保证人|不适用)$/.test(guarantor) ? [] : guarantor.split(/[、；;，,\n]+/).map(s=>s.trim()).filter(Boolean);
@@ -193,7 +177,10 @@ export function normalizePlan(input,normalizeTypes=true,accountRules=true) {
   if(rank!=null && (typeof rank!=='object' || !Object.hasOwn(dimensions,rank.by) || rank.by==='none' ||
       rank.by===input.group || !Number.isSafeInteger(rank.limit) || rank.limit<1 || rank.limit>50))
     throw message('请选择有效的排名维度、分组及前 1 至 50 名。',400);
-  return {date:input.date,group:input.group,metric:input.metric,filters,...(rank?{rank:{by:rank.by,limit:rank.limit}}:{})};
+  if(input.analysis!=null && !Array.isArray(input.analysis))throw message('查询步骤格式无效。',400);
+  const analysis=input.analysis?.length ? normalizeAnalysis(input.analysis) : undefined;
+  if(analysis && rank)throw message('组合查询须在步骤中排序和选取名单。',400);
+  return {date:input.date,group:input.group,metric:input.metric,filters,...(analysis?{analysis}:{}),...(rank?{rank:{by:rank.by,limit:rank.limit}}:{})};
 }
 function groupLabel(field,{typeRules=true,accountRules=true}={}) {
   if(field==='none')return "'全部'";
@@ -203,6 +190,10 @@ function groupLabel(field,{typeRules=true,accountRules=true}={}) {
 function where(snapshot,plan,selectedGroup,evidence,options={}) {
   const {typeRules=true,accountRules=true,rankMembers}=options;
   const args=[snapshot.id],parts=['version=?'];
+  if(options.sourceRows!==undefined){
+    parts.push('sourceRow IN (SELECT value FROM json_each(?))');
+    args.push(JSON.stringify(options.sourceRows));
+  }
   for(const [k,v] of Object.entries(plan.filters)){
     if(k==='guarantor' || k==='attribution')continue;
     if(k==='holdingStatus'){parts.push("cents>0 AND maturity>?");args.push(snapshot.date);continue}
@@ -232,7 +223,7 @@ function where(snapshot,plan,selectedGroup,evidence,options={}) {
   }
   return {sql:parts.join(' AND '),args};
 }
-async function roleEvidence(db,snapshot,plan,bucket){
+async function roleEvidence(db,snapshot,plan,bucket,sourceRows){
   if(!plan.filters.guarantor&&!plan.filters.attribution)return null;
   const meta=await loadRoleIndex(db,snapshot,bucket);
   const enhancement=Boolean(plan.filters.guarantor && plan.filters.marketType==='资产支持证券');
@@ -258,7 +249,7 @@ async function roleEvidence(db,snapshot,plan,bucket){
   const guarantor=await resolveEntity(db,snapshot,'guarantor',plan.filters.guarantor,names,places,enhancement?customerByCode:guarantorByCode);
   if(guarantor.clarification)return guarantor;
   const {entity}=guarantor;
-  const w=where(snapshot,plan,null,{attributionEntity});
+  const w=where(snapshot,plan,null,{attributionEntity},{sourceRows});
   if(enhancement){
     const stats=await bind(db,"SELECT count(*) FILTER (WHERE attribution=?) AS matchCount,count(*) FILTER (WHERE trim(attribution) IN ('','-','--','—','未知','待核','未填写','不详','N/A')) AS missingAttributionRows FROM "+roleRows+" WHERE "+w.sql,[entity,...w.args]).first();
     const unknown=!meta.hasAttribution || (stats.matchCount===0 && stats.missingAttributionRows>0);
@@ -274,16 +265,16 @@ async function roleEvidence(db,snapshot,plan,bucket){
     guarantorHeader:meta.guarantorHeader,hasAttribution:Boolean(meta.hasAttribution),...matches};
 }
 const agg='coalesce(sum(cents),0) AS cents,count(*) AS count,count(distinct code) AS securityCount';
-async function topMembers(db,snapshot,plan,evidence) {
-  const w=where(snapshot,plan,null,evidence);
+async function topMembers(db,snapshot,plan,evidence,sourceRows) {
+  const w=where(snapshot,plan,null,evidence,{sourceRows});
   const source=evidence?roleRows:'inventory_rows';
   const sql='SELECT '+groupLabel(plan.rank.by)+' AS label FROM '+source+' WHERE '+w.sql+
     ' GROUP BY 1 ORDER BY sum(cents) DESC,label LIMIT ?';
   const {results}=await bind(db,sql,[...w.args,plan.rank.limit]).all();
   return results.map(row=>row.label);
 }
-async function compute(db,snapshot,plan,resultId,evidence,options={}) {
-  const {typeRules=true,rankMembers}=options;
+async function sqlTotals(db,snapshot,plan,evidence,options) {
+  const {rankMembers}=options;
   const w=where(snapshot,plan,null,evidence,options),source=evidence?roleRows:'inventory_rows';
   const group=groupLabel(plan.group,options);
   const order={principal:'cents',count:'count',securities:'securityCount'}[plan.metric];
@@ -297,16 +288,66 @@ async function compute(db,snapshot,plan,resultId,evidence,options={}) {
     ? {name:JSON.stringify([g.rankName,label]),bucketName:label,rankPosition:rankMembers.indexOf(g.rankName)+1,...g}
     : {name:label,...g});
   if(plan.rank)groups.sort((a,b)=>a.rankPosition-b.rankPosition);
+  return {total,groups};
+}
+async function loadRows(db,select,w) {
+  const sql=select+w.sql+' AND sourceRow>? ORDER BY sourceRow LIMIT 1000',rows=[];
+  let after=0;
+  for(;;){
+    const page=await bind(db,sql,[...w.args,after]).all();
+    rows.push(...page.results);
+    if(page.results.length<1000)return rows;
+    after=page.results.at(-1).sourceRow;
+  }
+}
+async function analyzeRows(db,snapshot,plan,evidence,options) {
+  const fields=new Set(plan.analysis.flatMap(s=>[s.field,s.measure?.field,...(s.fields??[])]).filter(Boolean));
+  const needsRoles=fields.has('attribution')||fields.has('guarantor');
+  if(needsRoles){
+    const meta=await loadRoleIndex(db,snapshot,options.bucket);
+    if(fields.has('attribution')&&!meta.hasAttribution)throw message('此快照没有资产端损益还原客户名称列。',400);
+    if(fields.has('guarantor')&&!meta.guarantorHeader)throw message('此快照没有台账列明担保人列。',400);
+  }
+  const w=where(snapshot,plan,null,evidence,options);
+  const rows=await loadRows(db,detailQuery(evidence||needsRoles,plan,options),w);
+  const extraFields=[...fields].filter(field=>field.startsWith('原表:'));
+  if(extraFields.length)await attachSourceColumns(db,snapshot,rows,extraFields,options.bucket);
+  return runAnalysis(rows,plan.analysis);
+}
+function analysisTotals(analysis,snapshot) {
+  const groups=analysis.groups.map(({name,labels,principalCents,rowCount,securityCount,value,measureValue})=>
+    ({name,labels,cents:principalCents,count:rowCount,securityCount,value,...(analysis.measure?{measureValue}:{})}));
+  const total={cents:0,count:analysis.rows.length,flagged:0};
+  const codes=new Set();
+  for(const row of analysis.rows){
+    total.cents+=row.cents;
+    codes.add(row.code);
+    if(row.expected && row.expected<=snapshot.date && row.legal>snapshot.date)total.flagged++;
+  }
+  total.securityCount=codes.size;
+  return {total,groups};
+}
+function measureSummary({measure,measureTotal}) {
+  const label=analysisMeasureLabel(measure);
+  if(measureTotal==null)return label+' 暂无有效值';
+  return label+' '+new Intl.NumberFormat('zh-CN',{maximumFractionDigits:8}).format(measureTotal);
+}
+async function compute(db,snapshot,plan,resultId,evidence,options={},analysisResult) {
+  const {typeRules=true,rankMembers}=options;
+  const analysis=plan.analysis?(analysisResult??await analyzeRows(db,snapshot,plan,evidence,options)):null;
+  const {groups,total}=analysis?analysisTotals(analysis,snapshot):await sqlTotals(db,snapshot,plan,evidence,options);
   const warnings=[];
+  if(plan.analysis?.some(step=>[step.field,step.measure?.field,...(step.fields??[])].some(field=>field?.startsWith('原表:'))))
+    warnings.push('原表扩展列使用该快照记录值，未经市场数据核验。');
   const shortTypes=['短期融资券','超短期融资券'];
-  if(typeRules&&(shortTypes.includes(plan.filters.marketType)||plan.group==='marketType'&&groups.some(g=>shortTypes.includes(g.bucketName??g.name))||
+  if(typeRules&&(analysis?.rows.some(r=>shortTypes.includes(r.queryMarketType))||shortTypes.includes(plan.filters.marketType)||plan.group==='marketType'&&groups.some(g=>shortTypes.includes(g.bucketName??g.name))||
       plan.rank?.by==='marketType'&&rankMembers.some(type=>shortTypes.includes(type))))
     warnings.push('短融与超短融分列。原表列作短融、简称含 SCP 发行编号或“超短期融资券”的持仓计入超短融。');
   if(total.flagged)warnings.push(total.flagged+' 条持仓的 ABS 预计到期日已过、法定到期日尚未到，实际兑付待核。');
   if(plan.filters.holdingStatus)warnings.push('台账存续按正本金且表列到期日晚于业务日统计。');
   if(!total.count&&!evidence)warnings.push('当前筛选未匹配持仓，请检查日期和筛选名称。');
   const yuan=new Intl.NumberFormat('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(total.cents/1e10);
-  let summary=plan.metric==='count'?total.count+' 条持仓记录':plan.metric==='securities'?total.securityCount+' 只不同券码':'名义本金 '+yuan+' 亿元';
+  let summary=analysis?.measure?measureSummary(analysis):plan.metric==='count'?total.count+' 条持仓记录':plan.metric==='securities'?total.securityCount+' 只不同券码':'名义本金 '+yuan+' 亿元';
   if(evidence){
     const {kind,entity,source,guarantorHeader,missingGuarantorRows,candidateCount,candidateCents}=evidence;
     if(evidence.basis==='enhancement'){
@@ -315,6 +356,8 @@ async function compute(db,snapshot,plan,resultId,evidence,options={}) {
       if(!evidence.hasAttribution)warnings.push('库存缺少“'+roleSource+'”列，无法识别占用增信方。');
       else if(evidence.missingAttributionRows)warnings.push('同范围有 '+evidence.missingAttributionRows+' 条持仓的增信占用归属未明确，已列金额仅覆盖可识别部分。');
     }
+    if(plan.analysis&&(evidence.missingAttributionRows||missingGuarantorRows||candidateCount))
+      warnings.push('主体归属与担保资料的覆盖条数按本次分组、排名之前的初始筛选范围计算。');
     if(kind==='attribution'){
       summary='按 '+entity+' 授信占用归集：'+summary;
       warnings.unshift('以“'+roleSource+'”列认定授信占用客户，以“债券类型”区分品种。自发债另按“发行人全称”查询。');
@@ -332,12 +375,18 @@ async function compute(db,snapshot,plan,resultId,evidence,options={}) {
     }
   }
   return {resultId,summary,plan,snapshot:publicVersion(snapshot),totalCents:total.cents,rowCount:total.count,securityCount:total.securityCount,groups,warnings,
-    ...(options.rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{})};
+    ...(options.sourceRows!==undefined?{scopedToPrevious:true}:{}),...(analysis?{dimensions:analysis.dimensions,analysisMetric:analysis.metric}:{}),
+    ...(analysis?.measure?{measure:analysis.measure,measureTotal:analysis.measureTotal}:{}),...(options.rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{})};
 }
-export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixedMembers){
+export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixedMembers,sourceRows){
+  if(sourceRows!==undefined && (!Array.isArray(sourceRows)||sourceRows.length>30000||
+     sourceRows.some(row=>!Number.isSafeInteger(row)||row<1)||new Set(sourceRows).size!==sourceRows.length))
+    throw message('上次结果的持仓范围无效，请重新查询。',409);
   const plan=normalizePlan(input);
   if(!snapshot||snapshot.date!==plan.date)throw message('指定日期没有可用库存快照。',404);
-  if(broadCredit.test(plan.filters.marketType||''))return {clarification:explainCredit};
+  if(broadCredit.test(plan.filters.marketType||'') ||
+     plan.analysis?.some(step=>step.op==='filter'&&step.field==='marketType'&&broadCredit.test(step.value)))
+    return {clarification:explainCredit};
   const issuer=plan.filters.issuer;
   if(issuer&&issuer!=='未填写'){
     const [issuers,branches]=await db.batch([
@@ -349,13 +398,13 @@ export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixed
     if(resolved.clarification)return resolved;
     plan.filters.issuer=resolved.entity;
   }
-  const evidence=await roleEvidence(db,snapshot,plan,bucket);
+  const evidence=await roleEvidence(db,snapshot,plan,bucket,sourceRows);
   if(evidence?.clarification)return evidence;
   // The HTTP service may carry the previously saved cohort into a follow-up.
   // It belongs to an earlier answer on this snapshot, never to a client list.
   let rankMembers;
   if(plan.rank){
-    if(fixedMembers===undefined)rankMembers=await topMembers(db,snapshot,plan,evidence);
+    if(fixedMembers===undefined)rankMembers=await topMembers(db,snapshot,plan,evidence,sourceRows);
     else {
       if(!Array.isArray(fixedMembers)||fixedMembers.length>plan.rank.limit||
          fixedMembers.some(name=>typeof name!=='string')||new Set(fixedMembers).size!==fixedMembers.length)
@@ -364,9 +413,9 @@ export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixed
     }
   }
   const rankReused=Boolean(plan.rank && fixedMembers!==undefined);
-  const id=crypto.randomUUID(),result=await compute(db,snapshot,plan,id,evidence,{rankMembers,rankReused});
+  const id=crypto.randomUUID(),result=await compute(db,snapshot,plan,id,evidence,{rankMembers,rankReused,bucket,sourceRows});
   if(trace.length)result.trace=trace;
-  const saved={...plan,typeRules:1,accountRules:1,...(rankMembers?{rankMembers}:{}),...(rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
+  const saved={...plan,typeRules:1,accountRules:1,...(sourceRows!==undefined?{sourceRows}:{}),...(rankMembers?{rankMembers}:{}),...(rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
   await db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(id,snapshot.id,JSON.stringify(saved),new Date().toISOString()).run();
   return result;
 }
@@ -379,16 +428,27 @@ export async function answerContext(db,id){
   const typeRules=saved.typeRules===1;
   const accountRules=saved.accountRules===1;
   return {snapshot,plan:normalizePlan(saved,typeRules,accountRules),evidence:saved.roleEvidence,typeRules,accountRules,trace:saved.trace,
-    rankMembers:saved.rankMembers,rankReused:saved.rankReused===true};
+    sourceRows:saved.sourceRows,rankMembers:saved.rankMembers,rankReused:saved.rankReused===true};
 }
-function detailQuery(evidence,plan,{typeRules,accountRules}){
-  const includeType=typeRules&&(plan.group==='marketType'||plan.rank?.by==='marketType'||plan.filters.marketType);
-  const includeAccount=accountRules&&(plan.group==='account'||plan.rank?.by==='account'||plan.filters.account);
+function detailQuery(evidence,plan,{typeRules=true,accountRules=true}){
+  const includeType=typeRules&&(plan.analysis||plan.group==='marketType'||plan.rank?.by==='marketType'||plan.filters.marketType);
+  const includeAccount=accountRules&&(plan.analysis||plan.group==='account'||plan.rank?.by==='account'||plan.filters.account);
   return 'SELECT sourceRow,cents,'+fieldNames.join(',')+(evidence?',guarantor,attribution':'')+(includeType?','+classifiedType+' AS queryMarketType':'')+
     (includeAccount?','+accountSql+' AS queryAccount':'')+' FROM '+(evidence?roleRows:'inventory_rows')+' WHERE ';
 }
 export async function answerDetails(db,id,{group=null,offset=0,limit=50}={}) {
-  const context=await answerContext(db,id),{snapshot,plan,evidence}=context,w=where(snapshot,plan,group,evidence,context);
+  const context=await answerContext(db,id),{snapshot,plan,evidence}=context;
+  if(plan.analysis){
+    const analysis=await analyzeRows(db,snapshot,plan,evidence,context);
+    let rows=analysis.rows;
+    if(group!==null){
+      const selected=analysis.groups.find(g=>g.name===group);
+      const sourceRows=new Set(selected?.sourceRows);
+      rows=rows.filter(row=>sourceRows.has(row.sourceRow));
+    }
+    return {rows:rows.slice(offset,offset+limit),total:rows.length};
+  }
+  const w=where(snapshot,plan,group,evidence,context);
   const [counts,records]=await db.batch([
     bind(db,'SELECT count(*) AS n FROM '+(evidence?roleRows:'inventory_rows')+' WHERE '+w.sql,w.args),
     bind(db,detailQuery(evidence,plan,context)+w.sql+' ORDER BY sourceRow LIMIT ? OFFSET ?',[...w.args,limit,offset]),
@@ -401,11 +461,26 @@ export async function readInventoryAnswer(db,id){
   if(trace)result.trace=trace;
   return result;
 }
+// Only the server may derive this cohort, after checking answer ownership and snapshot.
+export async function answerSourceRows(db,id,expectedSnapshotId) {
+  const context=await answerContext(db,id),{snapshot,plan,evidence}=context;
+  if(expectedSnapshotId!==undefined && snapshot.id!==expectedSnapshotId)
+    throw message('无法跨库存版本沿用持仓行集合。',409);
+  if(plan.analysis){
+    const analysis=await analyzeRows(db,snapshot,plan,evidence,context);
+    return analysis.rows.map(row=>row.sourceRow);
+  }
+  const w=where(snapshot,plan,null,evidence,context);
+  const select='SELECT sourceRow FROM '+(evidence?roleRows:'inventory_rows')+' WHERE ';
+  return (await loadRows(db,select,w)).map(row=>row.sourceRow);
+}
 export async function exportData(db,id){
   const context=await answerContext(db,id),{snapshot,plan,evidence,trace}=context;
-  const result=await compute(db,snapshot,plan,id,evidence,context),w=where(snapshot,plan,null,evidence,context),rows=[];
+  const analysis=plan.analysis?await analyzeRows(db,snapshot,plan,evidence,context):null;
+  const result=await compute(db,snapshot,plan,id,evidence,context,analysis);
+  const w=where(snapshot,plan,null,evidence,context),rows=analysis?.rows??[];
   if(trace)result.trace=trace;
-  for(let i=0;i<result.rowCount;i+=500){
+  for(let i=0;!analysis&&i<result.rowCount;i+=500){
     const page=await bind(db,detailQuery(evidence,plan,context)+w.sql+' ORDER BY sourceRow LIMIT 500 OFFSET ?',[...w.args,i]).all();
     rows.push(...page.results);
   }
