@@ -573,7 +573,7 @@ export async function planInventoryQuestion({ question, previousPlan, conversati
     }
     let outcome;
     try {
-      outcome = validatePlan(decodePlan(parsed, structuredClone(plan), visible, fields, hasPreviousResult===true), question, plan.filters);
+      outcome = validatePlan(decodePlan(parsed, structuredClone(plan), visible, fields, hasPreviousResult===true), question);
     } catch (error) {
       if (!error.analysisFeedback || planFeedback) throw error;
       planFeedback = error.analysisFeedback;
@@ -633,13 +633,9 @@ export async function planInventoryQuestion({ question, previousPlan, conversati
   }
 }
 
-function validatePlan(outcome, question, priorFilters) {
+function validatePlan(outcome, question) {
   if (outcome.plan) {
-    const explicit = outcome.plan.filters;
-    if (/^(?:ABS|资产支持证券)$/i.test(explicit.marketType || "")) explicit.marketType = "资产支持证券";
-    const filters = outcome.inputRows==="previous" ? {
-      ...priorFilters,...Object.fromEntries(Object.entries(explicit).filter(([,value])=>value!==null)),
-    } : explicit;
+    const filters = outcome.plan.filters;
     const currentQuestion = question.split("用户补充：").at(-1);
     if (/(?:授信(?:批复额度|批复总额|余额还可用)|(?:剩余(?:可用)?|可用|获批|批复)授信(?:额|额度))/u.test(currentQuestion))
       return { clarification: REASONS.creditLimit };
@@ -655,6 +651,7 @@ function validatePlan(outcome, question, priorFilters) {
     if (/(?:担保的|提供(?:连带责任)?(?:保证|担保)的|(?:是|作为)增信方的)/u.test(currentQuestion) &&
         !/(?:不(?:限|筛|看)|忽略|取消)(?:制)?担保/u.test(currentQuestion) && !filters.guarantor)
       return { clarification: REASONS.guarantee };
+    if (/^(?:ABS|资产支持证券)$/i.test(filters.marketType || "")) filters.marketType = "资产支持证券";
     if (filters.guarantor && /(?:ABS|资产支持证券)/i.test(currentQuestion) &&
         !/(?:排除|不含|剔除|不看|不要)\s*(?:ABS|资产支持证券)/i.test(currentQuestion) &&
         filters.marketType !== "资产支持证券") return { clarification: REASONS.scope };
