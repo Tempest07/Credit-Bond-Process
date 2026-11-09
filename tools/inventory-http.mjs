@@ -7,7 +7,10 @@ import { isFullLedgerName, readInventoryEvidence } from './inventory-evidence.mj
 import { sourceFields } from './inventory-source-columns.mjs';
 import { readTopIssuer } from './inventory-rank-evidence.mjs';
 
+import {flowAction} from './flow-dialog.mjs';
+
 const methods = {status:'GET', upload:'POST', ask:'POST', manual:'POST', detail:'GET', export:'GET',
+  'flow-status':'GET','flow-upload':'POST','flow-ask':'POST','flow-chat':'GET','flow-chats':'GET','flow-export':'GET',
   chats:'GET',chat:'GET',answer:'GET',select:'POST'};
 const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const privateHeaders = {'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
@@ -171,6 +174,11 @@ export async function inventoryHttp(request, action, getAccess, allowedOrigins, 
     const access=await getAccess(), {db,apiKey}=access;
     const owner=access.owner || (allowCli ? 'local-inventory-beta' : null);
     const params=new URL(request.url).searchParams;
+    if(action.startsWith('flow-') && action!=='flow-upload'){
+      const out=await flowAction({...access,owner},action,{params,input:action==='flow-ask'?await jsonInput(request):null});
+      if(action==='flow-export')return new Response(out,{headers:{...privateHeaders,'Content-Type':xlsxType,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent('交易流水_'+params.get('id').slice(0,8)+'.xlsx')}});
+      return json(out);
+    }
     if(action==='status')return json({snapshots:await listInventory(db),configured:Boolean(apiKey)});
     if(['chats','chat','answer'].includes(action)){
       await initChats(db,owner);
@@ -179,11 +187,12 @@ export async function inventoryHttp(request, action, getAccess, allowedOrigins, 
       await checkChatResult(db,owner,params.get('id'),params.get('chatId'));
       return json(await readInventoryAnswer(db,params.get('id')));
     }
-    if(action==='upload'){
+    if(action==='upload'||action==='flow-upload'){
       let filename;try{filename=decodeURIComponent(request.headers.get('X-File-Name')||'')}catch{throw new InventoryError('文件名编码无效。')}
       if(!filename||filename.length>200||/[\\/\x00-\x1f]/.test(filename)||!filename.toLowerCase().endsWith('.xlsx'))throw new InventoryError('请选择 .xlsx 文件。');
       if(![xlsxType,'application/octet-stream'].includes(request.headers.get('Content-Type')?.split(';')[0]))throw new InventoryError('请选择 .xlsx 文件。',415);
       const bytes=await limitedBytes(request,15*1024*1024);
+      if(action==='flow-upload')return json(await flowAction({...access,owner},action,{upload:{bytes,filename}}));
       return json(await ingestInventory(access,bytes,filename,request.headers.get('X-Replace-Id')||'',request.headers.get('X-Inventory-Year')));
     }
     if(action==='detail'||action==='export'){
@@ -219,6 +228,6 @@ export async function inventoryHttp(request, action, getAccess, allowedOrigins, 
     return json(await query(input,action,access));
   }catch(e){
     if(e instanceof InventoryError||e.name==='InventoryPlannerError')return json({error:e.message,...(e.details||{})},e.status||400);
-    return json({error:'库存知识库暂时不可用，请稍后重试。'},503);
+    return json({error:action.startsWith('flow-')?'交易问数服务暂时不可用，请稍后重试。':'库存知识库暂时不可用，请稍后重试。'},503);
   }
 }

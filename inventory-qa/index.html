@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#ffffff">
   <title>问数助手 Beta · Bond Centre</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./inventory.css?v=561">
-  <script src="./inventory.js?v=562" defer></script>
+  <link rel="stylesheet" href="./inventory.css?v=570">
+  <script src="./inventory.js?v=570" defer></script>
 </head>
 <body>
   <header class="sitebar">
@@ -18,7 +18,8 @@
   <main>
     <div class="workhead">
       <nav aria-label="问数助手导航">
-        <button type="button" data-tab="ask" aria-current="page">问数</button>
+        <button type="button" data-tab="ask" aria-current="page">库存问数</button>
+        <a href="./trades.html">增减持问数</a>
         <button type="button" data-tab="data">数据台账</button>
       </nav>
       <div class="workhead-actions">
@@ -56,6 +57,7 @@
               <button type="submit" class="primary" id="submit">提问 <span aria-hidden="true">↑</span></button>
             </div>
           </form>
+          <p class="trade-shortcut" id="trade-shortcut" hidden><a href="./trades.html?chat=new" id="trade-draft">用增减持台账查这句话 →</a></p>
           <p class="meta" id="ai-status" role="status"></p>
         </section>
         <details class="manual" id="manual">
@@ -81,7 +83,7 @@
     </section>
 
     <section id="data-pane" aria-label="数据台账" hidden>
-      <div class="workspace-heading"><div><h1>数据台账</h1></div></div>
+      <div class="workspace-heading"><div><h1>数据台账</h1></div><a class="secondary" href="./trades.html#upload-form">管理增减持台账</a></div>
       <form class="upload" id="upload-form" novalidate>
         <h2>上传库存表</h2>
         <p class="meta">每份文件须为一个业务日的全库存余额台账。可分次添加文件，也可从周报文件夹按年份选取。</p>

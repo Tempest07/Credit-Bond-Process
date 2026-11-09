@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>增减持问数 Beta · Bond Centre</title>
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./inventory.css?v=570">
+  <script src="./trades.js?v=570" defer></script>
+</head>
+<body>
+  <header class="sitebar">
+    <a class="brand" href="../" aria-label="返回 Bond Centre">Bond Centre</a>
+    <span class="product">问数助手 <span class="beta-label">Beta</span></span>
+    <a href="../" class="back"><span aria-hidden="true">←</span> 返回工作区</a>
+  </header>
+  <main>
+    <div class="workhead">
+      <nav aria-label="问数助手导航">
+        <a href="./">库存问数</a>
+        <a id="ask-tab" href="#" aria-current="page">增减持问数</a>
+        <a id="books-tab" href="#upload-form">交易台账</a>
+      </nav>
+      <div class="workhead-actions">
+        <button class="quiet" id="refresh" type="button">刷新状态</button>
+        <a class="primary" href="#upload-form">上传交易表</a>
+      </div>
+    </div>
+    <div id="status-error" class="notice" role="alert" hidden></div>
+    <section id="ask-pane" aria-label="交易流水问数">
+      <div class="workspace-heading">
+        <div><h1>增减持问数</h1><p class="meta" id="coverage">正在读取交易台账…</p></div>
+        <div class="chat-actions"><button id="open-chats" type="button">历史对话</button><button id="reset" type="button" disabled>新对话</button></div>
+      </div>
+      <div class="empty" id="empty" hidden><h2>还没有交易台账</h2><p>上传年度累计的增持或减持报表后即可提问。</p><a class="secondary" href="#upload-form">上传交易表</a></div>
+      <div id="history" aria-label="本轮问答"></div>
+      <section class="composer" id="composer" aria-label="交易提问" hidden>
+        <div class="bar-title"><h2 id="compose-heading">向交易流水提问</h2></div>
+        <div class="suggestions" id="suggestions" aria-label="示例问题"></div>
+        <form id="ask-form">
+          <label class="sr-only" for="question">交易问题</label>
+          <textarea id="question" rows="2" maxlength="1000" placeholder="例如：按年比较增持、减持和净增持金额。" required></textarea>
+          <div class="composer-actions">
+            <label class="effort">思考强度<select id="effort"><option value="low">低</option><option value="medium">中</option><option value="high" selected>高</option><option value="xhigh">更高</option></select></label>
+            <button id="submit" type="submit" class="primary">提问 ↑</button>
+          </div>
+        </form>
+        <p class="meta" id="ai-status" role="status"></p>
+      </section>
+      <div id="query-notice" class="notice" role="status" hidden></div>
+    </section>
+    <section id="data-pane" aria-label="交易台账" hidden>
+      <div class="workspace-heading"><h1>交易台账</h1><a href="./#upload-form" class="secondary">管理库存快照</a></div>
+      <form class="upload" id="upload-form">
+        <h2>上传增减持报表</h2>
+        <p>请选择从年初累计至报表期末的完整 Excel。上传后，同一年度、同一方向以新表为准。</p>
+        <div class="file-actions">
+          <label class="file-select"><span>选择 Excel 文件</span><input type="file" id="file" multiple accept=".xlsx" aria-label="选择增减持 Excel 工作簿"></label>
+          <button class="primary" id="upload" type="submit" disabled>上传并生效</button>
+        </div>
+      </form>
+      <div class="notice" id="upload-notice" role="status" hidden></div>
+      <ul class="upload-list" id="upload-list" aria-label="本批文件" hidden></ul>
+      <section class="snapshots"><div class="bar-title"><h2>生效中的台账</h2><span class="meta" id="book-count"></span></div><div class="flow-register" id="book-list"></div></section>
+    </section>
+  </main>
+  <dialog id="chat-dialog" aria-labelledby="chat-list-heading">
+    <div class="dialog-head"><h2 id="chat-list-heading">交易历史对话</h2><button type="button" class="close" id="close-chats" aria-label="关闭历史对话">×</button></div>
+    <p id="chat-list-status" class="meta" role="status"></p><div id="chat-list"></div>
+    <button type="button" id="more-chats" hidden>加载更早的对话</button>
+  </dialog>
+</body>
+</html>

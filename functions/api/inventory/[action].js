@@ -14,10 +14,10 @@ export async function onRequest(context) {
     const identity='bond-centre-inventory-qa-beta';
     const row=await db.prepare('SELECT scope FROM inventory_cloud_identity WHERE scope=?').bind(identity).first();
     if(row?.scope!==identity)throw Error('inventory database mismatch');
-    if(params.action==='upload'){
+    if(params.action==='upload'||params.action==='flow-upload'){
       const marker=await bucket.get('system/cloud-identity.txt');
       if(await marker?.text()!==identity)throw Error('inventory bucket mismatch');
-      await initInventory(db);
+      if(params.action==='upload')await initInventory(db);
     }
     return {db,bucket,owner:user.id,apiKey:env.INVENTORY_OPENAI_API_KEY||''};
   },['https://tempest07.com','https://www.tempest07.com']);

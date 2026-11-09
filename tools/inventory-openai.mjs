@@ -12,7 +12,7 @@ const FILTERS = ["branch", "issuer", "guarantor", "attribution", "portfolio", "a
 const FIELDS = ["date", "group", "metric", "overviewSubject", "rank", "analysis", "inputRows", ...FILTERS];
 const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"];
 const REASONS = {
-  transactions: "这需要对应期间的交易流水。当前 beta 可查询库存余额，买卖及净买入要等同范围的流水接入后才能计算。",
+  transactions: "买入、卖出和净增持需要查交易流水。请打开“增减持问数”，按对应期间的累计交易表查询。",
   market: "这需要相应日期、来源和口径的市场数据。当前 beta 仅查询库存，尚未接入市场补数。",
   redemption: "要核实实际兑付或法律存续状态，需要兑付或行权资料。库存能查询正本金、表列到期日晚于业务日的账面持仓。",
   comparison: "这需要比较多个快照。当前 beta 一次查询一个业务日，可先分别查看两个日期的库存。",

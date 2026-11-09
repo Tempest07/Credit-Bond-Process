@@ -112,6 +112,7 @@ function chooseSnapshot(id) {
   renderControls();
 }
 function renderControls() {
+  showTradeShortcut();
   const snap = currentSnapshot();
   const busy = Boolean(state.askController) || state.loadingChat;
   $("snapshot-context").textContent = snap
@@ -920,6 +921,13 @@ async function uploadFiles(items,replaceId) {
     state.uploading=false;renderUploads();
   }
 }
+function showTradeShortcut() {
+  $("trade-shortcut").hidden = !/(?:增持|减持|买入|卖出|交易流水|交易量)/.test($("question").value);
+}
+$("question").addEventListener("input",showTradeShortcut);
+$("trade-draft").addEventListener("click",() => {
+  try {sessionStorage.setItem("bond-centre.trade.draft",$("question").value.trim());} catch {}
+});
 $("ask-form").addEventListener("submit", event => {
   event.preventDefault();
   const label = $("question").value.trim();

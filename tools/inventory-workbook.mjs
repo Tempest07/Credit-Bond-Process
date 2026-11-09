@@ -300,8 +300,8 @@ const styles = '<styleSheet xmlns="'+ns+'"><numFmts count="2"><numFmt numFmtId="
   '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
 const encode = new TextEncoder();
 const escapeText = v => String(v ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function metadata(zipPart) {
-  const files = worksheetNames.map((name,i)=>({ name, number:i+1, id:'rId'+(i+1) }));
+function metadata(zipPart, names=worksheetNames) {
+  const files = names.map((name,i)=>({ name, number:i+1, id:'rId'+(i+1) }));
   zipPart('[Content_Types].xml','<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+files.map(s=>'<Override PartName="/xl/worksheets/sheet'+s.number+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'</Types>');
   const relHead = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
   zipPart('_rels/.rels',relHead+'<Relationship Id="rId1" Type="'+rel+'/officeDocument" Target="xl/workbook.xml"/></Relationships>');
@@ -386,3 +386,6 @@ export async function exportInventoryWorkbook(result, rows) {
   for(const part of parts){bytes.set(part,offset);offset+=part.length;}
   return bytes;
 }
+
+// Reuse the bounded XLSX reader and XML-safe exporter for transaction workbooks.
+export {relationships,workbookInfo,sharedStrings,readPart,dateOf,amount,metadata,rowXml,columnName,maxPartBytes,maxWorkbookBytes};

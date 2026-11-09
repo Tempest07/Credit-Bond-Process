@@ -27,8 +27,8 @@ main{width:min(960px,100%);margin:0 auto;padding:0 clamp(16px,3vw,32px) 64px}
 .workhead-actions{display:flex;align-items:center;gap:6px}
 .upload,.answer{scroll-margin-top:72px}
 .workhead nav{display:flex;align-self:stretch;gap:25px}
-.workhead nav button{padding:10px 0;border:0;border-bottom:2px solid transparent;border-radius:0;font-weight:500;background:transparent;color:var(--muted)}
-.workhead nav button[aria-current=page]{border-color:var(--ink);font-weight:600;color:var(--ink)}
+.workhead nav :is(button,a){display:inline-flex;align-items:center;text-decoration:none;padding:10px 0;border:0;border-bottom:2px solid transparent;border-radius:0;font-weight:500;background:transparent;color:var(--muted)}
+.workhead nav [aria-current=page]{border-color:var(--ink);font-weight:600;color:var(--ink)}
 .quiet{border:0;background:transparent;color:var(--muted);font-size:13px;padding:5px 8px}
 .workspace-heading{margin:30px 0 24px;flex-wrap:wrap}
 .workspace-heading p,.result-head p,.dialog-head p{margin-top:6px}
@@ -131,3 +131,14 @@ dialog::backdrop{background:#15191866}
 @media(max-width:560px){.sitebar{gap:10px;min-height:54px}.brand{font-size:19px}.product{padding-left:10px;font-size:13px}.back{font-size:12px}.workspace-heading{align-items:flex-start;margin:21px 0 17px}.compact{min-width:0;max-width:140px}.bar-row{grid-template-columns:minmax(80px,1.3fr) minmax(42px,1fr) auto;gap:7px}.empty,.upload{padding:15px}.manual form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}th,td{padding:7px 3px}.snap-row{flex-wrap:wrap}}
 @media(pointer:coarse){button,.file-select,.row-link{min-height:44px}input,select,textarea{font-size:16px}}
 @media(max-width:400px){.sitebar{gap:8px;padding-inline:12px}.sitebar .brand,.sitebar .product,.sitebar .back{white-space:nowrap}.workhead{gap:7px}.workhead nav{gap:14px}.workhead-actions{gap:2px}.workhead-actions .primary{padding-inline:9px}}
+
+.flow-totals{display:flex;gap:8px 22px;flex-wrap:wrap;margin:10px 0}
+.flow-totals span{font-variant-numeric:tabular-nums}
+.flow-sources li{overflow-wrap:anywhere}
+.flow-scroll{max-width:100%;overflow-x:auto}
+.flow-scroll th.num,.flow-scroll td.num{white-space:nowrap}
+.flow-register{margin-top:16px}
+.flow-register h3{font-size:15px}
+@media(max-width:650px){.workhead{align-items:stretch;flex-wrap:wrap;gap:0;padding-top:4px}.workhead nav{gap:16px}.workhead-actions{margin-left:auto}.workhead-actions .quiet{display:none}}
+
+.trade-shortcut{margin:8px 0;font-size:14px}.trade-shortcut a{text-underline-offset:3px}
