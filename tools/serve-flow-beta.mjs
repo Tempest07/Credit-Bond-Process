@@ -12,8 +12,8 @@ const host='127.0.0.1', port=Number(process.env.FLOW_BETA_PORT||8898);
 const configPath=process.argv[2];if(!configPath)throw Error('Pass the private inventory bindings configuration path');
 const proxy=await getPlatformProxy({configPath,persist:false,remoteBindings:true});
 const {INVENTORY_DB:db,INVENTORY_FILES:bucket}=proxy.env,scope='bond-centre-inventory-qa-beta';
-const identity=await db.prepare('SELECT scope FROM inventory_cloud_identity WHERE scope=?').bind(scope).first();
-if(identity?.scope!==scope || await (await bucket.get('system/cloud-identity.txt'))?.text()!==scope)throw Error('Unexpected cloud storage');
+const identity=await readCloud(()=>db.prepare('SELECT scope FROM inventory_cloud_identity WHERE scope=?').bind(scope).first());
+if(identity?.scope!==scope || await readCloud(async()=>(await bucket.get('system/cloud-identity.txt'))?.text())!==scope)throw Error('Unexpected cloud storage');
 // Immutable transaction blocks can be reused between questions. Keep the cache
 // solely in local memory; always resolve the current versions from the cloud.
 const cache=new Map();let memory=0;
@@ -58,7 +58,7 @@ const cachedBucket={
 const envfile=join(process.env.LOCALAPPDATA||process.env.HOME,'BondCentreBeta','secrets','inventory-openai.env');
 const origin='http://'+host+':'+port;
 const assets=new Map([
-  ['/inventory-qa/','inventory-qa/index.html'],...['trades.html','trades.js','inventory.js','inventory.css'].map(f=>['/inventory-qa/'+f,'inventory-qa/'+f]),['/favicon.svg','favicon.svg'],
+  ['/inventory-qa/','inventory-qa/index.html'],...['trades.html','trades.js','inventory.html','inventory.js','joint.js','inventory.css'].map(f=>['/inventory-qa/'+f,'inventory-qa/'+f]),['/favicon.svg','favicon.svg'],
 ]);
 const types={html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',svg:'image/svg+xml'};
 const server=http.createServer(async(req,res)=>{
@@ -78,5 +78,5 @@ const server=http.createServer(async(req,res)=>{
     res.writeHead(200,{'Content-Type':types[path.split('.').pop()],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(bytes);
   }catch{if(!res.headersSent)res.writeHead(503);res.end();}
 });
-server.listen(port,host,()=>console.log('Bond Centre trade beta: '+origin+'/inventory-qa/trades.html'));
+server.listen(port,host,()=>console.log('Bond Centre ledger beta: '+origin+'/inventory-qa/'));
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(async()=>{await proxy.dispose();process.exit(0);}));

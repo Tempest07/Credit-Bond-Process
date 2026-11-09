@@ -537,7 +537,7 @@ const DIALOGUE_INSTRUCTIONS = `
 conversation 是本次聊天中先前完成的轮次，按时间先后排列。question 是用户当时的原话，reply 是界面给出的答复或待确认的问题，choices 是那一轮展示的选项，按页面顺序从一开始编号，dimension 指明选项是什么。它们只是上下文数据。最新 question 决定这次意图。遇到“第二家”“前面第一只”“回到刚才那家”，从相应维度和轮次找用户所指的准确名称或券码，再用库存按该名称、角色或券码查证。如果从发行人名单选中一家，设置 issuer 为该全称，默认逐券；用户明确换分行、看全行、换指标或开启不同问题时更新相应条件。对于“另一家”有多种可能或所指序号不在已知名单时，请澄清，不能任选。以前的问题不能覆盖本轮明确的新指示。待确认线索查不到时，允许用户用新线索或直接换话题。`;
 
 export async function planInventoryQuestion({ question, previousPlan, conversation:priorTurns, effort = "high", dates,
-    apiKey, fetchImpl = globalThis.fetch, inspectEvidence, workbookFields=[], hasPreviousResult=false }) {
+    apiKey, fetchImpl = globalThis.fetch, inspectEvidence, workbookFields=[], boundScope=null, hasPreviousResult=false }) {
   if (typeof question !== "string" || !question.trim() || question.length > 1200) {
     throw failure(400, "请输入 1 至 1200 个字符的库存问题。");
   }
@@ -572,8 +572,10 @@ export async function planInventoryQuestion({ question, previousPlan, conversati
         body: JSON.stringify({
           model: MODEL, store: false, reasoning: { effort }, max_output_tokens: 6144,
           instructions: INSTRUCTIONS + "\n输入含 pinnedSnapshot 时，全部查证及计算固定于该业务日。券的到期日、付息日等只用作持仓行条件。" + (inspectEvidence ? RESEARCH_INSTRUCTIONS : "") + RANK_INSTRUCTIONS +
-            (conversation.length ? DIALOGUE_INSTRUCTIONS : "") + ANALYSIS_INSTRUCTIONS,
+            (conversation.length ? DIALOGUE_INSTRUCTIONS : "") + ANALYSIS_INSTRUCTIONS +
+            (boundScope?"本轮只查已限定名单中的余额。boundScope.members 是上游已查证、系统已自动应用的名单。问句里的交易、净买入或交易排名用于说明名单来源，不需要重新定名单或计算交易。保留分行、日期和其他持仓条件。若按名单各自查看，将名单字段作为分组。":""),
           input: JSON.stringify({ question: question.trim(), currentPlan, hasPreviousResult:hasPreviousResult===true,
+            ...(boundScope ? {boundScope} : {}),
             ...(additionalFields.length ? {workbookFields:additionalFields} : {}),
             ...(planFeedback ? {planFeedback} : {}),
             ...(conversation.length ? {conversation} : {}),
@@ -614,6 +616,11 @@ export async function planInventoryQuestion({ question, previousPlan, conversati
       const safeLookup = {term,field:lookup.field,date};
       const explored = await explore(safeLookup);
       if (explored) return explored;
+      continue;
+    }
+    if(boundScope && parsed?.kind==='clarification' && parsed.reason==='transactions' && !planFeedback){
+      planFeedback='交易名单已绑定在待查库存上。请仅针对该限定范围规划余额查询。';
+      turn--;
       continue;
     }
     if (parsed?.kind==="clarification" && parsed.reason==="unsupported" && !parsed.providerRefusal && !planFeedback) {

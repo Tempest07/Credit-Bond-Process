@@ -7,9 +7,11 @@ import { isFullLedgerName, readInventoryEvidence } from './inventory-evidence.mj
 import { sourceFields } from './inventory-source-columns.mjs';
 import { readTopIssuer } from './inventory-rank-evidence.mjs';
 
+import {jointAction} from './joint-dialog.mjs';
 import {flowAction} from './flow-dialog.mjs';
 
 const methods = {status:'GET', upload:'POST', ask:'POST', manual:'POST', detail:'GET', export:'GET',
+  'joint-status':'GET','joint-ask':'POST','joint-chat':'GET','joint-chats':'GET','joint-export':'GET',
   'flow-status':'GET','flow-upload':'POST','flow-ask':'POST','flow-chat':'GET','flow-chats':'GET','flow-export':'GET',
   chats:'GET',chat:'GET',answer:'GET',select:'POST'};
 const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -42,8 +44,8 @@ async function jsonInput(request) {
     return input;
   } catch {throw new InventoryError('请求格式无效。')}
 }
-async function query(input, action, {db,bucket,apiKey}, pinned=null) {
-  const snapshots=await listInventory(db);
+export async function queryInventory(input, action, {db,bucket,apiKey}, pinned=null, context={}) {
+  const snapshots=context.snapshots ?? await listInventory(db);
   if(!snapshots.length)return {clarification:'请先上传完整库存快照。'};
   const previous=action==='ask'&&input.previousResultId ? await answerContext(db,input.previousResultId) : null;
   const selected=pinned || (input.snapshotId ? snapshots.find(s=>s.id===input.snapshotId)||(previous?.snapshot.id===input.snapshotId?previous.snapshot:null) : null);
@@ -78,7 +80,7 @@ async function query(input, action, {db,bucket,apiKey}, pinned=null) {
       return readInventoryEvidence({db,bucket},snapshot,request);
     };
     const workbookFields=await sourceFields(db,base,bucket);
-    const outcome=await planInventoryQuestion({hasPreviousResult:Boolean(previous),workbookFields,question:input.question,conversation:input.conversation,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey,inspectEvidence});
+    const outcome=await planInventoryQuestion({boundScope:context.boundScope,hasPreviousResult:Boolean(previous),workbookFields,question:input.question,conversation:input.conversation,previousPlan,effort:input.effort,dates:snapshots.map(s=>s.date),apiKey,inspectEvidence});
     if(outcome.clarification)return outcome;
     plan=outcome.plan;
     subject=outcome.overviewSubject;
@@ -100,6 +102,11 @@ async function query(input, action, {db,bucket,apiKey}, pinned=null) {
     }
   }
   const snapshot=snapshotFor(plan.date);
+  if(context.scopeRows){
+    const allowed=new Set(context.scopeRows);
+    sourceRows=sourceRows?sourceRows.filter(row=>allowed.has(row)):[...allowed];
+    trace.push('按另一份台账查证的名单限定本次持仓范围。');
+  }
   if(Array.isArray(sourceRows))trace.push('从前次查询锁定的 '+sourceRows.length+' 条原表持仓继续计算。');
   const question=action==='manual'?input.identityValue:input.question;
   const answer=await executeInventoryPlan({db,bucket},snapshot,plan,subject,suggested,trace,fixedMembers,sourceRows,scopeRef,question);
@@ -174,9 +181,10 @@ export async function inventoryHttp(request, action, getAccess, allowedOrigins, 
     const access=await getAccess(), {db,apiKey}=access;
     const owner=access.owner || (allowCli ? 'local-inventory-beta' : null);
     const params=new URL(request.url).searchParams;
-    if(action.startsWith('flow-') && action!=='flow-upload'){
-      const out=await flowAction({...access,owner},action,{params,input:action==='flow-ask'?await jsonInput(request):null});
-      if(action==='flow-export')return new Response(out,{headers:{...privateHeaders,'Content-Type':xlsxType,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent('交易流水_'+params.get('id').slice(0,8)+'.xlsx')}});
+    if((action.startsWith('flow-')||action.startsWith('joint-')) && action!=='flow-upload'){
+      const joint=action.startsWith('joint-');
+      const out=await (joint?jointAction:flowAction)({...access,owner},action,{params,input:action.endsWith('-ask')?await jsonInput(request):null});
+      if(action.endsWith('-export'))return new Response(out,{headers:{...privateHeaders,'Content-Type':xlsxType,'Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent((joint?'台账问数_':'交易流水_')+params.get('id').slice(0,8)+'.xlsx')}});
       return json(out);
     }
     if(action==='status')return json({snapshots:await listInventory(db),configured:Boolean(apiKey)});
@@ -219,13 +227,13 @@ export async function inventoryHttp(request, action, getAccess, allowedOrigins, 
     }
     if(action==='select'||['chatId','version','requestId'].some(key=>Object.hasOwn(input,key))){
       await initChats(db,owner);
-      return json(await appendChatTurn({db,owner},input,action,pinned=>query(input,action,access,pinned)));
+      return json(await appendChatTurn({db,owner},input,action,pinned=>queryInventory(input,action,access,pinned)));
     }
     if(input.previousResultId){
       await initChats(db,owner);
       await checkResultOwner(db,owner,input.previousResultId);
     }
-    return json(await query(input,action,access));
+    return json(await queryInventory(input,action,access));
   }catch(e){
     if(e instanceof InventoryError||e.name==='InventoryPlannerError')return json({error:e.message,...(e.details||{})},e.status||400);
     return json({error:action.startsWith('flow-')?'交易问数服务暂时不可用，请稍后重试。':'库存知识库暂时不可用，请稍后重试。'},503);

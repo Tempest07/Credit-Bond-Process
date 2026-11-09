@@ -25,14 +25,15 @@ const obj = properties => ({type:'object', additionalProperties:false, propertie
 const choices = values => ({type:'string', enum:values});
 const list = items => ({type:'array', items});
 const nullable = type => ({type:[type, 'null']});
-function decisionSchema(fields) {
+function decisionSchema(fields,boundScope) {
   const field = choices(fields);
   const filters = list(obj({field, op:choices(['eq','contains','in']), value:{anyOf:[{type:'string'},list({type:'string'})]}}));
   const selections = list(obj({source:choices(['previous','probe1','probe2']), field, indices:list({type:'integer'})}));
   const branch = kind => obj({kind:choices([kind]), direction:choices(directions), start:nullable('string'), end:nullable('string'), filters,
     groupBy:list(field), metric:choices(metrics), order:choices(['desc','asc']), limit:nullable('integer'), selections});
-  return obj({decision:{anyOf:[branch('plan'),branch('probe'),obj({kind:choices(['clarification']),reason:choices(Object.keys(explanations))})]}});
+  return obj({decision:{anyOf:[branch('plan'),branch('probe'),obj({kind:choices(['clarification']),reason:choices(Object.keys(explanations).filter(key=>!boundScope || key!=='inventory'))})]}});
 }
+const boundInstructions = `当输入含 boundScope，本轮是联合查询中已经分配给交易流水的独立步骤。members 是上游按另一份台账查证且由执行器自动施加的成员限制。名单已生效且不需要逐名发送给模型。问句中提到的期末余额、持仓排名或前几家用于说明名单来源。不要再次查名单、猜成员、重新选排名、重放选组步骤或要求去库存页面。只计算这些成员范围内问句所要的交易金额或笔数，保留分行等额外业务筛选。问“各自”“分别”时 groupBy 使用名单所在的交易字段。boundScope.start/end 如有值即交易区间。`;
 function goodDate(date) {
   if (date===null) return true;
   if (typeof date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
@@ -121,7 +122,7 @@ async function askModel(input,schema,{apiKey,effort,fetchImpl,signal}) {
   try {
     response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'manual',signal,
       headers:{Authorization:'Bearer '+apiKey.trim(),'Content-Type':'application/json'},
-      body:JSON.stringify({model:'gpt-6.1-terra',store:false,reasoning:{effort},max_output_tokens:4096,instructions,input:JSON.stringify(input),
+      body:JSON.stringify({model:'gpt-6.1-terra',store:false,reasoning:{effort},max_output_tokens:4096,instructions:input.boundScope?instructions+'\n'+boundInstructions:instructions,input:JSON.stringify(input),
         text:{format:{type:'json_schema',name:'transaction_query',strict:true,schema}}})});
     if (response.ok) payload=await response.json();
   } catch {
@@ -134,13 +135,13 @@ async function askModel(input,schema,{apiKey,effort,fetchImpl,signal}) {
   return readDecision(payload);
 }
 export async function planFlowQuestion({question,effort='high',apiKey,ledgers=[],previousPlan,previousGroups,previousGroupCount,
-    conversation=[],runQuery,fetchImpl=globalThis.fetch,today=new Date(Date.now()+8*3600e3).toISOString().slice(0,10)}) {
+    conversation=[],runQuery,boundScope=null,fetchImpl=globalThis.fetch,today=new Date(Date.now()+8*3600e3).toISOString().slice(0,10)}) {
   if (typeof question!=='string' || !question.trim() || question.length>1200) throw new InventoryError('请输入 1 至 1200 个字符的交易问题。');
   if (!['none','low','medium','high','xhigh','max'].includes(effort)) throw new InventoryError('请选择有效的思考强度。');
   if (!ledgers.length) return {clarification:'请先导入年度增持和减持交易台账。'};
   if (!apiKey?.trim()) throw new InventoryError('尚未配置问数专用 API 密钥。',503);
   const fields=[...new Set([...derivedFields,...ledgers.flatMap(l=>l.headers||[])])];
-  const schema=decisionSchema(fields), sources=new Map();
+  const schema=decisionSchema(fields,boundScope), sources=new Map();
   if (previousPlan && Array.isArray(previousGroups)) sources.set('previous',groupSet(previousPlan,previousGroups,previousGroupCount));
   const coverage=ledgers.map(({year,direction,start,end,asOf})=>({year,direction,firstTradeDate:start,lastTradeDate:end,coveredThrough:asOf}));
   const history=(Array.isArray(conversation)?conversation:[]).slice(-6).map(t=>({question:String(t.question||'').slice(0,1200),
@@ -149,8 +150,12 @@ export async function planFlowQuestion({question,effort='high',apiKey,ledgers=[]
   let feedback;
   for (let attempt=0;attempt<4;attempt++) {
     const sets=Object.fromEntries([...sources].map(([key,s])=>[key,showSet(s)]));
-    const decision=await askModel({question,fields,coverage,today,previous:{plan:safePrior(previousPlan)},conversation:history,
+    const decision=await askModel({question,...(boundScope?{boundScope}:{}),fields,coverage,today,previous:{plan:safePrior(previousPlan)},conversation:history,
       sets,canProbe:Boolean(runQuery)&&!sources.has('probe2')&&attempt<3,feedback},schema,{apiKey,effort,fetchImpl,signal});
+    if(boundScope && decision?.kind==='clarification' && decision.reason==='inventory'){
+      feedback='所指的库存排名已由上游台账完成，请仅计划所选名单内的交易统计。';
+      continue;
+    }
     if (decision?.kind==='clarification' && Object.hasOwn(explanations,decision.reason)) return {clarification:decision.reason==='entity' ? entityReply(sources) : explanations[decision.reason]};
     try {
       if (!decision || !['plan','probe'].includes(decision.kind)) problem('请选择交易查询或澄清问题。');

@@ -113,6 +113,7 @@ function chooseSnapshot(id) {
 }
 function renderControls() {
   showTradeShortcut();
+  if ($("continue-joint")) $("continue-joint").href = state.chat ? "./?" + new URLSearchParams({from:"inventory",id:state.chat.id}) : "./?chat=new";
   const snap = currentSnapshot();
   const busy = Boolean(state.askController) || state.loadingChat;
   $("snapshot-context").textContent = snap
@@ -148,7 +149,7 @@ function renderControls() {
 function currentSnapshot() {
   return state.snapshots.find(s=>s.id===state.selected) || (state.chatSnapshot?.id===state.selected ? state.chatSnapshot : null);
 }
-function showSnapshots() {
+function showSnapshots(onSelect = id => {chooseSnapshot(id); switchTab("ask");}) {
   const select = $("snapshot-picker");
   select.replaceChildren();
   const list = $("snapshot-list");
@@ -158,7 +159,7 @@ function showSnapshots() {
     const opt = node("option", snapshot.date); opt.value = snapshot.id; select.append(opt);
     const item = node("div", null, "snap-row"), info = node("div");
     info.append(node("strong", snapshot.date), node("p", snapshot.filename), node("p", count(snapshot.rowCount) + " 条 · 名义本金 " + billions(snapshot.totalCents) + " 亿元", "meta"));
-    item.append(info, button("用此快照问数", () => { chooseSnapshot(snapshot.id); switchTab("ask"); }));
+    item.append(info, button("用此快照问数", () => onSelect(snapshot.id)));
     list.append(item);
   }
   if (state.chatSnapshot && !state.snapshots.some(s=>s.id===state.chatSnapshot.id)) {
@@ -415,7 +416,7 @@ function renderAnswer(current = state.current, target = $("current-answer"), vie
       const trigger = event.currentTarget;
       trigger.disabled = true;
       try {
-        const whole = await json("answer?" + new URLSearchParams({id:data.resultId,chatId:state.chat.id}));
+        const whole = await json("answer?" + new URLSearchParams({id:data.resultId,chatId:view.chatId || state.chat.id}));
         if (!article.isConnected) return;
         if (whole.resultId !== data.resultId || !Array.isArray(whole.groups) || whole.groups.length !== groupCount)
           throw new Error("历史分组读取不完整，请重试。");
@@ -433,7 +434,7 @@ function renderAnswer(current = state.current, target = $("current-answer"), vie
     rerender();
   }));
   actions.append(button("查看匹配明细", () => openDetail(data, null)));
-  const download = button("下载完整 Excel", () => exportResult(data, download)); actions.append(download); article.append(actions);
+  const download = button("下载完整 Excel", () => view.download ? view.download(download) : exportResult(data, download)); actions.append(download); article.append(actions);
   const source = node("details", null, "source");
   source.append(node("summary", "口径与来源"), node("p", [data.snapshot.filename, data.snapshot.sheet, "快照业务日 " + data.snapshot.date].filter(Boolean).join(" · ")),
     node("p", (filters || "全部匹配范围") + "；人民币元汇总后换算为亿元。"));
@@ -526,10 +527,10 @@ function showSubjectOverview(data, label) {
   }
   $("current-answer").replaceChildren(article);
 }
-function showIdentityChoice(data, label) {
-  state.current = null;
+function showIdentityChoice(data, label, options) {
+  if (!options) state.current = null;
   const article = node("article", null, "answer identity-choice");
-  const snapshot = currentSnapshot();
+  const snapshot = options ? options.snapshot : currentSnapshot();
   const hints = Array.isArray(data.identity.hints) ? data.identity.hints : [];
   article.append(node("p", label, "question"), node("h3", data.identity.fullNameMiss ? "本期未查到该全称的持仓" : hints.length ? "按发行人查看" : "确认主体"));
   const primary = hints.filter(hint => hint.primary);
@@ -541,7 +542,7 @@ function showIdentityChoice(data, label) {
   } else article.append(node("p",data.clarification));
   if (snapshot) article.append(node("p", "库存日期 " + snapshot.date, "meta"));
   appendTrace(article, data.trace);
-  const resolve = (value, scope = {}) => query("manual", { ...data.resume, ...scope, identityValue: value }, label, data.trace);
+  const resolve = options?.resolve || ((value, scope = {}) => query("manual", { ...data.resume, ...scope, identityValue: value }, label, data.trace));
   if (hints.length) {
     const preview = table(["发行人", "券数", "本金（亿元）", "持仓举例", ""], hints.map(hint => {
       const issuer = node("span", hint.name);
@@ -576,7 +577,7 @@ function showIdentityChoice(data, label) {
     if (input.value.trim()) resolve(input.value.trim());
   });
   article.append(form);
-  $("current-answer").replaceChildren(article);
+  (options?.target || $("current-answer")).replaceChildren(article);
 }
 function syncAnswerSnapshot(id) {
   if (id && state.snapshots.some(snapshot => snapshot.id === id)) {
@@ -916,14 +917,16 @@ async function uploadFiles(items,replaceId) {
         } else {item.status="failed";item.detail=error.message;}
       }
     }
-    if (published) await refresh(state.uploads.length===1 ? published.id : undefined);
+    if (published) await refreshAfterUpload(state.uploads.length===1 ? published.id : undefined);
   } finally {
     state.uploading=false;renderUploads();
   }
 }
+let refreshAfterUpload = refresh;
 function showTradeShortcut() {
   $("trade-shortcut").hidden = !/(?:增持|减持|买入|卖出|交易流水|交易量)/.test($("question").value);
 }
+function bindInventoryPage() {
 $("question").addEventListener("input",showTradeShortcut);
 $("trade-draft").addEventListener("click",() => {
   try {sessionStorage.setItem("bond-centre.trade.draft",$("question").value.trim());} catch {}
@@ -947,7 +950,7 @@ $("manual-form").addEventListener("submit", event => {
   query("manual", { group, metric, filters, snapshotId: state.selected }, "手动查询 · " + (filterText(filters) || "全部库存") + " · " + groupNames[group]);
 });
 $("snapshot-picker").addEventListener("change", () => chooseSnapshot($("snapshot-picker").value));
-$("reset").addEventListener("click", () => { newChat(state.snapshots.some(s=>s.id===state.selected) ? state.selected : undefined); $("question").focus(); });
+$("reset").addEventListener("click", () => location.assign("./?chat=new"));
 $("open-chats").addEventListener("click",()=>{ $("chat-dialog").showModal(); loadChatList(); });
 $("more-chats").addEventListener("click",()=>loadChatList(true));
 $("close-chats").addEventListener("click",()=>$("chat-dialog").close());
@@ -960,6 +963,8 @@ $("open-upload").addEventListener("click", () => {
   $("file").click();
 });
 switchTab(location.hash === "#upload-form" ? "data" : "ask");
+}
+function bindInventoryTools() {
 $("upload-year").value=String(currentUploadYear);
 $("upload-year").max=String(currentUploadYear);
 $("folder-controls").hidden=!("webkitdirectory" in $("folder"));
@@ -971,4 +976,20 @@ $("close-detail").addEventListener("click", () => $("detail").close());
 $("detail").addEventListener("close", () => { state.detailController?.abort(); state.detailController = null; });
 $("detail-prev").addEventListener("click", () => { if (state.offsets.length > 1) { state.offsets.pop(); fetchDetail(); } });
 $("detail-next").addEventListener("click", () => { state.offsets.push(state.offsets.at(-1) + state.detailRows); fetchDetail(); });
-initialize();
+}
+
+export function setupJointInventory(onUpload) {
+  refreshAfterUpload = onUpload;
+  bindInventoryTools();
+}
+export function showJointSnapshots(snapshots, selected, onSelect) {
+  state.snapshots = snapshots;
+  state.selected = selected;
+  showSnapshots(onSelect);
+}
+export {renderAnswer as renderInventoryAnswer,showIdentityChoice as renderInventoryIdentity};
+if (document.body.dataset.workspace !== "joint") {
+  bindInventoryPage();
+  bindInventoryTools();
+  initialize().then(()=>{if(location.hash==="#manual") $("manual").open=true;});
+}

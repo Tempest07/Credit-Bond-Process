@@ -12,7 +12,7 @@ function call(action,init={},bindings={}) {
   return onRequest({request:new Request(prod+action,init),params:{action},env:{GATEWAY_AUTH_SECRET:secret,...bindings}});
 }
 test('every inventory route checks production gateway auth before touching cloud bindings',async()=>{
-  for(const action of ['status','upload','manual','ask','detail','export','chats','chat','answer','select','flow-status','flow-upload','flow-ask','flow-chats','flow-chat','flow-export']){
+  for(const action of ['status','upload','manual','ask','detail','export','chats','chat','answer','select','flow-status','flow-upload','flow-ask','flow-chats','flow-chat','flow-export','joint-chat','joint-ask','joint-chats','joint-export','joint-status']){
     const response=await call(action,{headers:{'X-Tempest-User':'admin','X-Tempest-Auth':'forged'}});
     assert.equal(response.status,401);assert.match(response.headers.get('cache-control'),/no-store/);
   }

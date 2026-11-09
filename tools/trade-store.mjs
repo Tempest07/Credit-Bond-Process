@@ -173,7 +173,7 @@ export async function runTradeQuery({db,bucket},plan,versionIds){
  const s=setup(plan,await docs(db,versionIds)),{list,totals}=await aggregate(bucket,s);
  return {plan:s.plan,totals,groups:list.slice(0,s.plan.limit??100),groupCount:list.length,versions:s.relevant.map(pub),warnings:s.warnings};
 }
-export async function exportTradeQuery({db,bucket},plan,versionIds){
+export async function tradeExportSheets({db,bucket},plan,versionIds){
  const s=setup(plan,await docs(db,versionIds)),{totals,list}=await aggregate(bucket,s);
  const sourceHeaders=[...new Set(s.relevant.flatMap(v=>v.headers))];
  async function* detail(){
@@ -183,9 +183,12 @@ export async function exportTradeQuery({db,bucket},plan,versionIds){
  const summaryNumbers=g=>[g.buyCents/100,g.sellCents/100,g.netCents/100,g.grossCents/100,g.rows,g.bonds];
  const dims=s.plan.groupBy.length?s.plan.groupBy:['范围'];
  function* summary(){yield ['全部匹配',...dims.slice(1).map(()=>''),...summaryNumbers(totals)];for(const g of list)yield [...g.values,...summaryNumbers(g)];}
- return exportTradeWorkbook([
+ return [
    {name:'交易汇总',headers:[...dims,'增持本金（元）','减持本金（元）','净增持本金（元）','双向合计（元）','交易笔数','不同券数'],rows:summary()},
    {name:'交易明细',headers:['来源文件','工作表','原表行号','增减方向',...sourceHeaders],rows:detail()},
    {name:'口径与来源',headers:['项目','内容'],rows:[['统计口径','名义本金单位为人民币元；按逐笔交易日期归期。净增持=增持−减持，不等同于库存余额变化。'],['查询条件',JSON.stringify(s.plan)],...s.warnings.map(w=>['覆盖提示',w]),...s.relevant.map(v=>[v.filename,v.id+' / 累计至 '+v.asOf])]}
- ]);
+ ];
+}
+export async function exportTradeQuery(resources,plan,versionIds){
+ return exportTradeWorkbook(await tradeExportSheets(resources,plan,versionIds));
 }

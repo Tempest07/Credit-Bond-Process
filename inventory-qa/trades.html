@@ -7,7 +7,7 @@
   <title>增减持问数 Beta · Bond Centre</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./inventory.css?v=570">
-  <script src="./trades.js?v=570" defer></script>
+  <script type="module" src="./trades.js?v=joint1"></script>
 </head>
 <body>
   <header class="sitebar">
@@ -18,7 +18,7 @@
   <main>
     <div class="workhead">
       <nav aria-label="问数助手导航">
-        <a href="./">库存问数</a>
+        <a href="./?chat=new">台账问数</a>
         <a id="ask-tab" href="#" aria-current="page">增减持问数</a>
         <a id="books-tab" href="#upload-form">交易台账</a>
       </nav>
@@ -31,7 +31,7 @@
     <section id="ask-pane" aria-label="交易流水问数">
       <div class="workspace-heading">
         <div><h1>增减持问数</h1><p class="meta" id="coverage">正在读取交易台账…</p></div>
-        <div class="chat-actions"><button id="open-chats" type="button">历史对话</button><button id="reset" type="button" disabled>新对话</button></div>
+        <div class="chat-actions"><a class="secondary" href="./?chat=new" id="continue-joint">接着联合问</a><button id="open-chats" type="button">历史对话</button><button id="reset" type="button" disabled>新对话</button></div>
       </div>
       <div class="empty" id="empty" hidden><h2>还没有交易台账</h2><p>上传年度累计的增持或减持报表后即可提问。</p><a class="secondary" href="#upload-form">上传交易表</a></div>
       <div id="history" aria-label="本轮问答"></div>

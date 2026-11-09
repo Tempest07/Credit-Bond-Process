@@ -306,7 +306,7 @@ function metadata(zipPart, names=worksheetNames) {
   const relHead = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
   zipPart('_rels/.rels',relHead+'<Relationship Id="rId1" Type="'+rel+'/officeDocument" Target="xl/workbook.xml"/></Relationships>');
   zipPart('xl/workbook.xml','<workbook xmlns="'+ns+'" xmlns:r="'+rel+'"><sheets>'+files.map(s=>'<sheet name="'+s.name+'" sheetId="'+s.number+'" r:id="'+s.id+'"/>').join('')+'</sheets></workbook>');
-  zipPart('xl/_rels/workbook.xml.rels',relHead+files.map(s=>'<Relationship Id="'+s.id+'" Type="'+rel+'/worksheet" Target="worksheets/sheet'+s.number+'.xml"/>').join('')+'<Relationship Id="rId4" Type="'+rel+'/styles" Target="styles.xml"/></Relationships>');
+  zipPart('xl/_rels/workbook.xml.rels',relHead+files.map(s=>'<Relationship Id="'+s.id+'" Type="'+rel+'/worksheet" Target="worksheets/sheet'+s.number+'.xml"/>').join('')+'<Relationship Id="rId'+(files.length+1)+'" Type="'+rel+'/styles" Target="styles.xml"/></Relationships>');
   zipPart('xl/styles.xml',styles);
 }
 function columnName(index) {
@@ -346,6 +346,35 @@ export function analysisMeasureLabel(measure) {
   const operation={distinct:'不同值数',sum:'合计',avg:'均值',min:'最小值',max:'最大值',weightedAvg:'本金加权均值'};
   return label+operation[measure.fn];
 }
+export function inventoryExportSheets(result,rows){
+  const list=[];
+  const {roleEvidence:evidence,snapshot,plan}=result;
+  const hasQueryType=rows.some(row=>Object.hasOwn(row,'queryMarketType'));
+  const hasQueryAccount=rows.some(row=>Object.hasOwn(row,'queryAccount'));
+  const roleLabel=evidence?.basis==='enhancement'?'增信占用':({ledger:'台账列明担保',candidate:'归属候选（待核担保）',attribution:'客户归属',unknown:'无法确认担保'})[evidence?.kind]||'';
+  const analysisFields=[...new Set((plan.analysis??[]).flatMap(step=>[step.field,step.measure?.field,...(step.fields??[])]))];
+  const extraFields=analysisFields.filter(field=>field?.startsWith('原表:'));
+  const roleDetails=Boolean(evidence)||analysisFields.includes('guarantor')||analysisFields.includes('attribution');
+  const byCode=!plan.analysis&&plan.group==='code';
+  const groupHeaders=result.dimensions?(result.dimensions.length?result.dimensions.map(columnLabel):['合计']):plan.rank?[inventoryDimensions[plan.rank.by],inventoryDimensions[plan.group]]:[roleLabel?roleLabel+'分组':'分组'];
+  list.push({name:worksheetNames[0],
+    headers:[...groupHeaders,'名义本金（人民币元）','名义本金（亿元）','持仓行数','不同券数',...(byCode?['券名']:[]),...(result.measure?[analysisMeasureLabel(result.measure)]:[])],widths:[42,...groupHeaders.slice(1).map(()=>23),25,23,14,14,...(byCode?[29]:[]),...(result.measure?[27]:[])],formats:[...groupHeaders.map(()=>0),2,3],
+    rows:result.groups.map(g=>[...(g.labels?(g.labels.length?g.labels:['全部']):plan.rank?[g.rankName,g.bucketName]:[g.name]),g.cents/100,g.cents/1e10,g.count,g.securityCount,...(byCode?[g.securityName]:[]),...(result.measure?[g.measureValue]:[])]),
+    total:evidence?.kind==='unknown'?[result.summary]:[roleLabel?roleLabel+'合计':'全部匹配',...groupHeaders.slice(1).map(()=>''),result.totalCents/100,result.totalCents/1e10,result.rowCount,result.securityCount,...(result.measure?[result.measureTotal]:[])],filter:true,
+  });
+  function* details(){
+    for(const r of rows)yield [r.issuer,r.code,r.name,r.cents/100,r.institution,r.branch,r.portfolio,r.account,r.scope,r.marketType,r.maturity,r.expected,r.legal,r.sourceRow,...(roleDetails?[r.attribution,r.guarantor]:[]),...(hasQueryType?[r.queryMarketType]:[]),...(hasQueryAccount?[r.queryAccount]:[]),...extraFields.map(field=>r[field])];
+  }
+  list.push({name:worksheetNames[1],
+    headers:['发行人','债券代码','债券简称','名义本金（人民币元）','机构','联动分行','交易组合','会计分类','表内/委外','债券类型','到期日期','ABS预计到期日','法定到期日','原表行号',...(roleDetails?['资产端损益还原客户名称','台账列明担保人']:[]),...(hasQueryType?['本次归集品种']:[]),...(hasQueryAccount?['本次会计科目']:[]),...extraFields.map(columnLabel)],
+    widths:[40,19,29,25,22,17,25,15,16,22,18,18,18,12,...(roleDetails?[38,38]:[]),...(hasQueryType?[20]:[]),...(hasQueryAccount?[20]:[]),...extraFields.map(()=>23)],formats:[0,0,0,2],rows:details(),filter:true,
+  });
+  list.push({name:worksheetNames[2],
+    headers:['项目','内容'],widths:[24,94],
+    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],...(result.scopedToPrevious?[['持仓范围','在上轮结果继承的原表持仓行内查询，完整入选行号见持仓明细。']]:[]),['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],...(plan.rank?[['排名口径',result.rankReused?'沿用上次排名的主体名单和顺序，在其中按本轮条件筛选统计。':'按筛选范围内的名义本金从高到低取前 '+plan.rank.limit+' 个'+inventoryDimensions[plan.rank.by]+'，同额按名称顺序取舍。合计仅含入选持仓。']]:[]),['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[]),...(result.trace||[]).map(step=>['查证过程',step])],
+  });
+  return list;
+}
 export async function exportInventoryWorkbook(result, rows) {
   const parts=[]; let length=0;
   const zip=new Zip((error,part)=>{
@@ -356,31 +385,7 @@ export async function exportInventoryWorkbook(result, rows) {
     const entry=new ZipDeflate(name,{level:1});
     zip.add(entry);entry.push(encode.encode(xml+content),true);
   });
-  const {roleEvidence:evidence,snapshot,plan}=result;
-  const hasQueryType=rows.some(row=>Object.hasOwn(row,'queryMarketType'));
-  const hasQueryAccount=rows.some(row=>Object.hasOwn(row,'queryAccount'));
-  const roleLabel=evidence?.basis==='enhancement'?'增信占用':({ledger:'台账列明担保',candidate:'归属候选（待核担保）',attribution:'客户归属',unknown:'无法确认担保'})[evidence?.kind]||'';
-  const analysisFields=[...new Set((plan.analysis??[]).flatMap(step=>[step.field,step.measure?.field,...(step.fields??[])]))];
-  const extraFields=analysisFields.filter(field=>field?.startsWith('原表:'));
-  const roleDetails=Boolean(evidence)||analysisFields.includes('guarantor')||analysisFields.includes('attribution');
-  const byCode=!plan.analysis&&plan.group==='code';
-  const groupHeaders=result.dimensions?(result.dimensions.length?result.dimensions.map(columnLabel):['合计']):plan.rank?[inventoryDimensions[plan.rank.by],inventoryDimensions[plan.group]]:[roleLabel?roleLabel+'分组':'分组'];
-  writeSheet(zip,1,{
-    headers:[...groupHeaders,'名义本金（人民币元）','名义本金（亿元）','持仓行数','不同券数',...(byCode?['券名']:[]),...(result.measure?[analysisMeasureLabel(result.measure)]:[])],widths:[42,...groupHeaders.slice(1).map(()=>23),25,23,14,14,...(byCode?[29]:[]),...(result.measure?[27]:[])],formats:[...groupHeaders.map(()=>0),2,3],
-    rows:result.groups.map(g=>[...(g.labels?(g.labels.length?g.labels:['全部']):plan.rank?[g.rankName,g.bucketName]:[g.name]),g.cents/100,g.cents/1e10,g.count,g.securityCount,...(byCode?[g.securityName]:[]),...(result.measure?[g.measureValue]:[])]),
-    total:evidence?.kind==='unknown'?[result.summary]:[roleLabel?roleLabel+'合计':'全部匹配',...groupHeaders.slice(1).map(()=>''),result.totalCents/100,result.totalCents/1e10,result.rowCount,result.securityCount,...(result.measure?[result.measureTotal]:[])],filter:true,
-  });
-  function* details(){
-    for(const r of rows)yield [r.issuer,r.code,r.name,r.cents/100,r.institution,r.branch,r.portfolio,r.account,r.scope,r.marketType,r.maturity,r.expected,r.legal,r.sourceRow,...(roleDetails?[r.attribution,r.guarantor]:[]),...(hasQueryType?[r.queryMarketType]:[]),...(hasQueryAccount?[r.queryAccount]:[]),...extraFields.map(field=>r[field])];
-  }
-  writeSheet(zip,2,{
-    headers:['发行人','债券代码','债券简称','名义本金（人民币元）','机构','联动分行','交易组合','会计分类','表内/委外','债券类型','到期日期','ABS预计到期日','法定到期日','原表行号',...(roleDetails?['资产端损益还原客户名称','台账列明担保人']:[]),...(hasQueryType?['本次归集品种']:[]),...(hasQueryAccount?['本次会计科目']:[]),...extraFields.map(columnLabel)],
-    widths:[40,19,29,25,22,17,25,15,16,22,18,18,18,12,...(roleDetails?[38,38]:[]),...(hasQueryType?[20]:[]),...(hasQueryAccount?[20]:[]),...extraFields.map(()=>23)],formats:[0,0,0,2],rows:details(),filter:true,
-  });
-  writeSheet(zip,3,{
-    headers:['项目','内容'],widths:[24,94],
-    rows:[['来源文件',snapshot.filename],['工作表',snapshot.sheet],['业务日期',snapshot.date],['快照版本',snapshot.id],['查询编号',result.resultId],['筛选与分组',JSON.stringify(plan)],...(result.scopedToPrevious?[['持仓范围','在上轮结果继承的原表持仓行内查询，完整入选行号见持仓明细。']]:[]),['金额口径','人民币元。数据库按分精确合计，1亿元 = 100,000,000元。'],...(plan.rank?[['排名口径',result.rankReused?'沿用上次排名的主体名单和顺序，在其中按本轮条件筛选统计。':'按筛选范围内的名义本金从高到低取前 '+plan.rank.limit+' 个'+inventoryDimensions[plan.rank.by]+'，同额按名称顺序取舍。合计仅含入选持仓。']]:[]),['覆盖提示',result.warnings.join('；')],...(evidence?[['主体',evidence.entity],['归集依据',evidence.source],['本次结论',result.summary]]:[]),...(result.trace||[]).map(step=>['查证过程',step])],
-  });
+  inventoryExportSheets(result,rows).forEach((spec,i)=>writeSheet(zip,i+1,spec));
   zip.end();
   const bytes=new Uint8Array(length);let offset=0;
   for(const part of parts){bytes.set(part,offset);offset+=part.length;}

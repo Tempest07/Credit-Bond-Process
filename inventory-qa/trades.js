@@ -1,6 +1,8 @@
 "use strict";
 
-const byId = id => document.getElementById(id);
+const joint = document.body.dataset.workspace === "joint";
+const uploadIds = new Set(["file","upload","upload-form","upload-list","upload-notice"]);
+const byId = id => document.getElementById(joint && uploadIds.has(id) ? "trade-"+id : id);
 const nf = new Intl.NumberFormat("zh-CN");
 const formatter = new Intl.NumberFormat("zh-CN", {minimumFractionDigits:2, maximumFractionDigits:2});
 const amount = cents => Number.isSafeInteger(cents) ? formatter.format(cents/1e10) : "—";
@@ -54,6 +56,8 @@ function remember(id) {
   try {localStorage.setItem(chatKey,id);} catch {}
 }
 function controls() {
+  if (joint) return;
+  byId("continue-joint").href = state.chat ? "./?" + new URLSearchParams({from:"trade",id:state.chat.id}) : "./?chat=new";
   const busy = state.loading || state.asking;
   byId("reset").disabled = busy || !state.turns.length;
   byId("open-chats").disabled = busy;
@@ -78,8 +82,10 @@ function renderBooks() {
   const books = [...state.books].sort((a,b) => b.year-a.year || a.direction.localeCompare(b.direction));
   const years = [...new Set(books.map(b => b.year))].reverse();
   const latest = books.map(b => b.asOf || b.end).filter(Boolean).sort().at(-1);
+  if (!joint) {
   byId("empty").hidden = !!books.length;
   byId("coverage").textContent = books.length ? years.join("、") + " 年 · " + books.length + " 份累计台账" + (latest ? " · 最晚一期 " + latest : "") : "暂无已上传的交易台账";
+  }
   byId("book-count").textContent = books.length + " 份";
   byId("book-list").replaceChildren(...books.map(b => {
     const item = el("div",null,"snap-row"), info = el("div");
@@ -109,7 +115,7 @@ function showTurns() {
   });
   controls();
 }
-function renderTurn({question,answer}) {
+function renderTurn({question,answer}, downloadOverride) {
   const article = el("article",null,"answer");
   article.append(el("p",question,"question"));
   if (answer.clarification) article.append(el("p",answer.clarification,"summary"));
@@ -139,7 +145,7 @@ function renderTurn({question,answer}) {
   for (const message of result.warnings || []) article.append(el("p",message,"warning"));
   if (plan.groupBy.length && result.groups.length) article.append(renderGroups(result,plan));
   const commands = el("div",null,"view-actions");
-  const download = action("下载完整 Excel",() => downloadAnswer(answer.id,download));
+  const download = action("下载完整 Excel",() => downloadOverride ? downloadOverride(download) : downloadAnswer(answer.id,download));
   commands.append(download);
   article.append(commands);
   const sources = el("details",null,"source");
@@ -305,7 +311,7 @@ async function uploadFiles(event) {
     }
     const failed = state.files.filter(f=>f.state==="failed").length;
     notice("upload-notice",failed ? failed+" 份未完成，原因见文件列表。" : "本批文件已核对完成。",Boolean(failed));
-    await loadStatus();
+    await refreshAfterTradeUpload();
   } catch(error) {notice("status-error",error.message,true);}
   finally {state.uploading=false;renderUploads();controls();}
 }
@@ -332,13 +338,12 @@ async function initialize() {
   } catch(error) {notice("query-notice",error.message,true);}
   finally {state.loading=false;controls();}
 }
+let refreshAfterTradeUpload = loadStatus;
+function bindTradePage(){
 byId("open-chats").addEventListener("click",()=>openHistory());
 byId("more-chats").addEventListener("click",()=>openHistory(true));
 byId("close-chats").addEventListener("click",()=>byId("chat-dialog").close());
-byId("reset").addEventListener("click",()=>{
-  state.chat=null;state.turns=[];state.retry=null;
-  byId("question").value="";remember("new");showTurns();notice("query-notice");byId("question").focus();
-});
+byId("reset").addEventListener("click",()=>location.assign("./?chat=new"));
 byId("refresh").addEventListener("click",async ()=>{
   state.loading=true;controls();
   try {await loadStatus();} catch(error) {notice("status-error",error.message,true);}
@@ -348,6 +353,8 @@ byId("ask-form").addEventListener("submit",ask);
 byId("question").addEventListener("keydown",event=>{
   if ((event.ctrlKey || event.metaKey) && event.key==="Enter" && !event.isComposing) {event.preventDefault();byId("ask-form").requestSubmit();}
 });
+}
+function bindTradeUpload(){
 byId("file").addEventListener("change",event=>{
   state.files=state.files.filter(f=>f.state==="pending");
   for (const file of event.target.files) {
@@ -357,5 +364,27 @@ byId("file").addEventListener("change",event=>{
   event.target.value="";notice("upload-notice");renderUploads();
 });
 byId("upload-form").addEventListener("submit",uploadFiles);
-window.addEventListener("hashchange",displayTab);
-initialize();
+}
+
+export function setupJointTrades(onUpload) {
+  refreshAfterTradeUpload = onUpload;
+  bindTradeUpload();
+}
+export function showJointLedgers(ledgers) {
+  state.books = ledgers;
+  renderBooks();
+}
+export {renderTurn as renderTradeAnswer};
+
+if (!joint) {
+  const url = new URL(location.href);
+  const id = url.searchParams.get("chat");
+  if (!id || id === "new") {
+    location.replace("./" + (id ? "?chat=new" : "") + (url.hash === "#upload-form" ? "#trade-upload-form" : ""));
+  } else {
+    bindTradePage();
+    bindTradeUpload();
+    window.addEventListener("hashchange",displayTab);
+    initialize();
+  }
+}

@@ -74,27 +74,34 @@ export async function flowAction(resources,action,{input,params,upload,planner=p
   }
   await init(db);
   if(action==='flow-ask')return ask(resources,input,planner);
-  if(action==='flow-chats'){
-    const cursor=params.get('cursor')||'';
-    if(cursor && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\|[\da-f-]{36}$/i.test(cursor))throw new InventoryError('分页参数无效。');
-    const before=cursor?' AND (updatedAt,chat)<(?,?)':'';
-    const {results}=await db.prepare('SELECT t.chat,t.title,t.updatedAt,t.version FROM flow_turns t WHERE owner=? AND NOT EXISTS(SELECT 1 FROM flow_turns b WHERE b.owner=t.owner AND b.chat=t.chat AND b.version>t.version)'+before+' ORDER BY updatedAt DESC,chat DESC LIMIT 51').bind(owner,...(cursor?cursor.split('|'):[])).all();
-    const chats=results.slice(0,50).map(info);return {chats,nextCursor:results.length>50?chats.at(-1).updatedAt+'|'+chats.at(-1).id:null};
-  }
+  if(action==='flow-chats'||action==='flow-chat')return readTurnHistory(db,owner,'flow_turns',action.slice(5),params);
   const id=params.get('id');if(!uuid(id))throw missing();
-  if(action==='flow-chat'){
-    const last=await db.prepare('SELECT chat,title,updatedAt,version FROM flow_turns WHERE owner=? AND chat=? ORDER BY version DESC LIMIT 1').bind(owner,id).first();
-    if(!last)throw missing();
-    const turns=[];while(turns.length<last.version){
-      const {results}=await db.prepare('SELECT question,answer FROM flow_turns WHERE owner=? AND chat=? AND version>? AND version<=? ORDER BY version LIMIT 40').bind(owner,id,turns.length,last.version).all();
-      if(!results.length)throw missing();for(const row of results)turns.push({question:row.question,answer:JSON.parse(row.answer)});
-    }
-    return {chat:info(last),turns};
-  }
   if(action==='flow-export'){
     const row=await db.prepare('SELECT versionIds,answer FROM flow_turns WHERE owner=? AND resultId=?').bind(owner,id).first();
     const result=row&&JSON.parse(row.answer);if(!result?.plan)throw missing();
     return exportTradeQuery(resources,result.plan,JSON.parse(row.versionIds));
+  }
+  throw missing();
+}
+
+export async function readTurnHistory(db,owner,table,action,params){
+  if(!['flow_turns','joint_turns'].includes(table))throw missing();
+  if(action==='chats'){
+    const cursor=params.get('cursor')||'';
+    if(cursor && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\|[\da-f-]{36}$/i.test(cursor))throw new InventoryError('分页参数无效。');
+    const before=cursor?' AND (updatedAt,chat)<(?,?)':'';
+    const {results}=await db.prepare('SELECT t.chat,t.title,t.updatedAt,t.version FROM '+table+' t WHERE owner=? AND NOT EXISTS(SELECT 1 FROM '+table+' b WHERE b.owner=t.owner AND b.chat=t.chat AND b.version>t.version)'+before+' ORDER BY updatedAt DESC,chat DESC LIMIT 51').bind(owner,...(cursor?cursor.split('|'):[])).all();
+    const chats=results.slice(0,50).map(info);return {chats,nextCursor:results.length>50?chats.at(-1).updatedAt+'|'+chats.at(-1).id:null};
+  }
+  const id=params.get('id');if(!uuid(id))throw missing();
+  if(action==='chat'){
+    const last=await db.prepare('SELECT chat,title,updatedAt,version FROM '+table+' WHERE owner=? AND chat=? ORDER BY version DESC LIMIT 1').bind(owner,id).first();
+    if(!last)throw missing();
+    const turns=[];while(turns.length<last.version){
+      const {results}=await db.prepare('SELECT question,answer FROM '+table+' WHERE owner=? AND chat=? AND version>? AND version<=? ORDER BY version LIMIT 40').bind(owner,id,turns.length,last.version).all();
+      if(!results.length)throw missing();for(const row of results)turns.push({question:row.question,answer:JSON.parse(row.answer)});
+    }
+    return {chat:info(last),turns};
   }
   throw missing();
 }

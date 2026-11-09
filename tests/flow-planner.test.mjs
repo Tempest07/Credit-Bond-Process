@@ -57,3 +57,14 @@ test('导入同批文件时区分按交易日的自然年和文件年度，参�
   assert.equal(result.plan.start,null);
   assert.deepEqual(result.plan.filters,[{field:'台账年度',op:'eq',value:'2026'}]);
 });
+test('外部名单已生效时把期末持仓排名作为已知范围，并对旧的库存分流回复重新规划',async()=>{
+ const boundScope={source:'trade',start:'2026-10-01',end:'2026-10-31',members:{field:'发行人全称',count:5,alreadyApplied:true}};
+ const result=await planFlowQuestion({question:'按广州分行期末持仓前五发行人，查10月份对这五家各自净买入多少',ledgers,apiKey:'test',boundScope,
+   fetchImpl:mock((input,n)=>{
+     assert.deepEqual(input.boundScope,boundScope);
+     if(!n)return {kind:'clarification',reason:'inventory'};
+     assert.match(input.feedback,/名单|排名/);
+     return {...base,start:boundScope.start,end:boundScope.end,filters:[{field:'联动分行',op:'eq',value:'广州分行'}]};
+   })});
+ assert.equal(result.plan.metric,'net');assert.deepEqual(result.plan.groupBy,['发行人全称']);
+});

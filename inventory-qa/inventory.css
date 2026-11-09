@@ -142,3 +142,33 @@ dialog::backdrop{background:#15191866}
 @media(max-width:650px){.workhead{align-items:stretch;flex-wrap:wrap;gap:0;padding-top:4px}.workhead nav{gap:16px}.workhead-actions{margin-left:auto}.workhead-actions .quiet{display:none}}
 
 .trade-shortcut{margin:8px 0;font-size:14px}.trade-shortcut a{text-underline-offset:3px}
+#data-pane .upload + .upload,#data-pane .upload:not(:first-of-type){margin-top:16px}
+#origin-context{margin:14px 0}
+.joint-turn{margin:20px 0 30px;scroll-margin-top:76px}
+.user-question{max-width:80%;width:fit-content;margin:0 0 20px auto;padding:8px 14px;border-radius:14px;background:var(--wash);font-size:15px;font-weight:500}
+.joint-summary,.joint-step{min-width:0;padding:18px 0;border-top:1px solid var(--rule)}
+.joint-summary > :is(dl,.flow-scroll){margin-top:10px}
+.joint-summary .meta{margin-top:8px}
+.joint-metrics{display:flex;gap:12px 28px;flex-wrap:wrap;margin:0}
+.joint-metrics dt,.step-type{font-size:13px;color:var(--muted)}
+.joint-metrics dd{font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;margin:2px 0}
+.joint-metrics dd small{font-size:12px;font-weight:400}
+.joint-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:12px 24px}
+.joint-step .answer{margin:0;padding:8px 0 10px;border:0;min-width:0;overflow-x:auto}
+.joint-step .question{display:block;margin:0 0 10px;padding:0;border:0;background:transparent;font-weight:500}
+.joint-step .metric{font-size:clamp(28px,4vw,43px)}
+.joint-step .step-type{font-weight:600}
+.joint-step .view-actions{margin-top:14px}
+.joint-summary table th:first-child{text-align:left}
+@media(max-width:650px){.joint-steps{grid-template-columns:minmax(0,1fr)}.joint-step .bar-row{grid-template-columns:minmax(80px,1fr) minmax(40px,2fr) auto}}
+.joint-step .question:empty{display:none}
+.manual-entry{margin-top:12px}
+.joint-chart{display:grid;gap:12px;padding:8px 0}
+.chart-group h4{font-size:14px;font-weight:600;margin:0 0 3px}
+.chart-series{display:grid;grid-template-columns:minmax(90px,25%) 1fr minmax(64px,auto);align-items:center;gap:10px}
+.chart-series .num{font-size:13px;white-space:nowrap;text-align:right}
+.chart-track{position:relative;height:9px;background:var(--soft);border-radius:3px}
+.chart-axis{position:absolute;width:1px;background:#a0a6a3;top:-2px;bottom:-2px}
+.series-bar{position:absolute;inset-block:0;background:#323c3f;border-radius:2px}
+.series-bar[data-series="1"]{background:#39766f}
+.series-bar[data-series="2"]{background:#8b6a3a}

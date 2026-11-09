@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#ffffff">
   <title>问数助手 Beta · Bond Centre</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./inventory.css?v=570">
-  <script src="./inventory.js?v=570" defer></script>
+  <link rel="stylesheet" href="./inventory.css?v=joint1">
+  <script type="module" src="./joint.js?v=joint1"></script>
 </head>
-<body>
+<body data-workspace="joint">
   <header class="sitebar">
     <a class="brand" href="../" aria-label="返回 Bond Centre">Bond Centre</a>
     <span class="product">问数助手 <span class="beta-label">Beta</span></span>
@@ -18,38 +18,38 @@
   <main>
     <div class="workhead">
       <nav aria-label="问数助手导航">
-        <button type="button" data-tab="ask" aria-current="page">库存问数</button>
-        <a href="./trades.html">增减持问数</a>
+        <button type="button" data-tab="ask" aria-current="page">问数</button>
         <button type="button" data-tab="data">数据台账</button>
       </nav>
       <div class="workhead-actions">
         <button class="quiet" type="button" id="refresh">刷新状态</button>
-        <button class="primary" type="button" id="open-upload">上传库存表</button>
+        <button class="primary" type="button" id="open-upload">上传台账</button>
       </div>
     </div>
     <div class="notice" id="status-error" role="alert" hidden></div>
 
     <section id="ask-pane" aria-label="问数">
       <div class="workspace-heading">
-        <div><h1>库存问数</h1><p class="meta" id="snapshot-context">正在读取库存快照…</p></div>
+        <div><h1>台账问数</h1><p class="meta" id="snapshot-context">正在读取台账…</p></div>
         <div class="chat-actions">
           <button type="button" id="open-chats">历史对话</button>
           <button type="button" id="reset" disabled>新对话</button>
-          <label class="field compact">库存日期<select id="snapshot-picker" disabled><option>待载入</option></select></label>
+          <label class="field compact">参考库存日期<select id="snapshot-picker" disabled><option>待载入</option></select></label>
         </div>
       </div>
       <div class="empty" id="empty" hidden>
-        <h2>还没有库存快照</h2><p>点击上方“上传库存表”，选择完整的余额台账后即可提问。</p>
+        <h2>还没有可查询的台账</h2><p>上传余额台账或年度增减持表后即可提问。</p>
       </div>
       <div id="query-workspace" hidden>
+        <p id="origin-context" class="meta" hidden></p>
         <div id="history" aria-label="本轮问答"></div>
         <div id="current-answer" aria-live="polite"></div>
         <section class="composer" aria-label="提问">
-          <div class="bar-title"><h2 id="compose-heading">向库存提问</h2></div>
+          <div class="bar-title"><h2 id="compose-heading">向台账提问</h2></div>
           <div class="suggestions" id="suggestions" aria-label="示例问题"></div>
           <form id="ask-form">
-            <label class="sr-only" for="question">库存问题</label>
-            <textarea id="question" rows="2" maxlength="1000" placeholder="例如：广州分行的库存按发行人分有多少亿元？" required></textarea>
+            <label class="sr-only" for="question">台账问题</label>
+            <textarea id="question" rows="2" maxlength="1000" placeholder="例如：广州分行 10 月末持仓多少，当月净增持多少？" required></textarea>
             <div class="composer-actions">
               <label class="effort">思考强度<select id="effort">
                 <option value="low">低</option><option value="medium">中</option><option value="high" selected>高</option><option value="xhigh">更高</option>
@@ -57,35 +57,18 @@
               <button type="submit" class="primary" id="submit">提问 <span aria-hidden="true">↑</span></button>
             </div>
           </form>
-          <p class="trade-shortcut" id="trade-shortcut" hidden><a href="./trades.html?chat=new" id="trade-draft">用增减持台账查这句话 →</a></p>
           <p class="meta" id="ai-status" role="status"></p>
+          <p class="meta manual-entry"><a href="./inventory.html?chat=new#manual">手动查库存</a></p>
         </section>
-        <details class="manual" id="manual">
-          <summary>手动查询</summary>
-          <form id="manual-form">
-            <label class="field">联动分行<input name="branch" placeholder="全部"></label>
-            <label class="field">发行人<input name="issuer" placeholder="全部"></label>
-            <label class="field">担保人 / ABS 增信方<input name="guarantor" placeholder="机构全称或简称"></label>
-            <label class="field">损益还原客户<input name="attribution" placeholder="机构全称或简称"></label>
-            <label class="field">持仓范围<select name="scope"><option value="">全部</option><option>表内</option><option>委外</option><option>委外(公募)</option><option>委外(专户)</option></select></label>
-            <label class="field">交易组合<input name="portfolio" placeholder="全部"></label>
-            <label class="field">会计科目<input name="account" placeholder="全部"></label>
-            <label class="field">债券类型<input name="marketType" placeholder="全部"></label>
-            <label class="field">债券代码<input name="code" placeholder="含市场后缀"></label>
-            <label class="field">存续口径<select name="holdingStatus"><option value="">全部持仓</option><option value="存续">正本金且表列到期日在业务日后</option></select></label>
-            <label class="field">分组<select name="group"><option value="issuer">发行人</option><option value="code">逐券</option><option value="branch">联动分行</option><option value="portfolio">交易组合</option><option value="scope">持仓范围</option><option value="account">会计科目</option><option value="marketType">债券类型</option><option value="none">不分组</option></select></label>
-            <label class="field">统计指标<select name="metric"><option value="principal">名义本金</option><option value="count">持仓行数</option><option value="securities">不同券数</option></select></label>
-            <button class="secondary" type="submit">按条件查询</button>
-          </form>
-        </details>
+
       </div>
       <div id="query-notice" class="notice" role="status" hidden></div>
     </section>
 
     <section id="data-pane" aria-label="数据台账" hidden>
-      <div class="workspace-heading"><div><h1>数据台账</h1></div><a class="secondary" href="./trades.html#upload-form">管理增减持台账</a></div>
+      <div class="workspace-heading"><div><h1>数据台账</h1></div></div>
       <form class="upload" id="upload-form" novalidate>
-        <h2>上传库存表</h2>
+        <h2>上传余额台账</h2>
         <p class="meta">每份文件须为一个业务日的全库存余额台账。可分次添加文件，也可从周报文件夹按年份选取。</p>
         <div class="file-actions">
           <label class="file-select"><span>选择 Excel 文件</span><input type="file" id="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="选择库存 Excel 工作簿"></label>
@@ -103,6 +86,17 @@
       </form>
       <div id="upload-notice" class="notice" role="status" hidden></div>
       <ul class="upload-list" id="upload-list" aria-label="本批文件" hidden></ul>
+      <form class="upload" id="trade-upload-form">
+        <h2>上传增减持台账</h2>
+        <p>请选择从年初累计至报表期末的完整 Excel。上传后，同一年度、同一方向以新表为准。</p>
+        <div class="file-actions">
+          <label class="file-select"><span>选择 Excel 文件</span><input type="file" id="trade-file" multiple accept=".xlsx" aria-label="选择增减持 Excel 工作簿"></label>
+          <button class="primary" id="trade-upload" type="submit" disabled>上传并生效</button>
+        </div>
+      </form>
+      <div class="notice" id="trade-upload-notice" role="status" hidden></div>
+      <ul class="upload-list" id="trade-upload-list" aria-label="本批增减持台账" hidden></ul>
+      <section class="snapshots"><div class="bar-title"><h2>增减持累计表</h2><span class="meta" id="book-count"></span></div><div class="flow-register" id="book-list"></div></section>
       <section class="snapshots"><div class="bar-title"><h2>库存快照</h2><span class="meta" id="snapshot-count"></span></div><div id="snapshot-list"></div></section>
     </section>
   </main>
