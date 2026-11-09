@@ -351,3 +351,14 @@ test('a follow-up inherits exact source rows including an empty prior answer, in
   const replacement=await ingestInventory(storage,await sample(12),'修订.xlsx',snapshot.id);
   await assert.rejects(answerSourceRows(db,second.resultId,replacement.id),err=>err.status===409);
 });
+
+test('folder imports check the worksheet business year before publishing or accepting an existing copy',async()=>{
+  const storage=isolatedStore();
+  await initInventory(storage.db);
+  const bytes=await sample(100,'2025-12-31');
+  await assert.rejects(ingestInventory(storage,bytes,'余额台账260101.xlsx','','2026'),e=>e.status===422 && e.message.includes('2025-12-31'));
+  assert.equal(storage.objects.size,0);
+  const existing=await ingestInventory(storage,bytes,'2025年末.xlsx','','2025');
+  await assert.rejects(ingestInventory(storage,bytes,'2026年初.xlsx','','2026'),e=>e.status===422);
+  assert.equal((await listInventory(storage.db))[0].id,existing.id);
+});

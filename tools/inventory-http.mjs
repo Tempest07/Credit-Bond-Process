@@ -164,7 +164,7 @@ export async function inventoryHttp(request, action, getAccess, allowedOrigins, 
       if(!filename||filename.length>200||/[\\/\x00-\x1f]/.test(filename)||!filename.toLowerCase().endsWith('.xlsx'))throw new InventoryError('请选择 .xlsx 文件。');
       if(![xlsxType,'application/octet-stream'].includes(request.headers.get('Content-Type')?.split(';')[0]))throw new InventoryError('请选择 .xlsx 文件。',415);
       const bytes=await limitedBytes(request,15*1024*1024);
-      return json(await ingestInventory(access,bytes,filename,request.headers.get('X-Replace-Id')||''));
+      return json(await ingestInventory(access,bytes,filename,request.headers.get('X-Replace-Id')||'',request.headers.get('X-Inventory-Year')));
     }
     if(action==='detail'||action==='export'){
       await initChats(db,owner);

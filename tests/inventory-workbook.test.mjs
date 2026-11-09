@@ -77,3 +77,23 @@ test('the browser bundle parses and exports inside a pure workerd isolate',async
     assert.equal(wb.getWorksheet('分组汇总').getCell('B2').value,cents/100);
   } finally {await mf.dispose();}
 });
+
+test('distant empty formatted rows do not count as holdings',async()=>{
+  const zip=new PizZip(await makeFixture());
+  const sheet='xl/worksheets/sheet2.xml';
+  zip.file(sheet,zip.file(sheet).asText().replace('</sheetData>','<row r="65000"><c r="A65000" s="1"/></row></sheetData>'));
+  const snap=await parseInventoryWorkbook(zip.generate({type:'uint8array'}));
+  assert.equal(snap.rowCount,2);
+});
+
+test('a named current ledger accepts a proven subset and rejects extra or repeated holdings in another sheet',async()=>{
+  const wb=new ExcelJS.Workbook(),extract=wb.addWorksheet('Sheet1'),ledger=wb.addWorksheet('本期底稿');
+  const row=['中心','北京分行','AFS','组合','表内','001','甲债',20,'甲公司','2026-01-15'];
+  for(const sheet of [extract,ledger]){sheet.addRow(headers);sheet.addRow(row);}
+  ledger.addRow([...row.slice(0,5),'002',...row.slice(6)]);
+  ledger.addRow([...row.slice(0,5),'003',...row.slice(6)]);
+  const snap=await parseInventoryWorkbook(await wb.xlsx.writeBuffer());
+  assert.deepEqual([snap.sheet,snap.rowCount,snap.totalCents],['本期底稿',3,6000]);
+  extract.addRow(row);
+  await assert.rejects(parseInventoryWorkbook(await wb.xlsx.writeBuffer()),e=>e.status===400);
+});

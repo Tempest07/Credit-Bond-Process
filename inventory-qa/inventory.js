@@ -14,7 +14,7 @@ const state = {
   snapshots: [], configured: false, selected: "", current: null, pending: null, conversation: [],
   chat:null, chatSnapshot:null, loadingChat:true, navigation:0, retry:null, currentTurn:null,
   chatListVersion:0, nextCursor:null,
-  statusVersion: 0, askController: null, uploading: false, revision: null, view: "table", expanded: false,
+  statusVersion: 0, askController: null, uploading: false, uploads: [], view: "table", expanded: false,
   detailController: null, detailGroup: null, offsets: [0], detailRows: 0,
 };
 
@@ -821,31 +821,103 @@ async function fetchDetail() {
     }
   }
 }
-function clearRevision() { state.revision = null; $("revision").hidden = true; }
-async function upload(replaceId) {
-  const file = $("file").files[0];
-  if (!file || state.uploading) return;
-  if (!file.name.toLowerCase().endsWith(".xlsx")) { notice("upload-notice","请使用 .xlsx 格式的库存工作簿。",true); return; }
-  state.uploading = true; $("file").disabled = true; $("upload").disabled = true; $("replace").disabled = true; $("open-upload").disabled = true;
-  notice("upload-notice", "正在校验文件并上传至云端知识库…");
+const uploadLabels={pending:"待上传",sending:"正在上传",published:"已发布",reused:"已有相同文件",conflict:"待确认替换",failed:"失败",skipped:"已跳过"};
+const uploadToday=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const currentUploadYear=Number(uploadToday.slice(0,4));
+
+function folderDate(name,year) {
+  const match=/^余额台账[ _-]?(\d{4}|\d{2})(\d{2})(\d{2})\.xlsx$/i.exec(name);
+  if (!match) return "";
+  const yyyy=match[1].length===2 ? "20"+match[1] : match[1];
+  if (Number(yyyy)!==year) return "";
+  const day=[yyyy,match[2],match[3]].join("-");
+  const time=Date.parse(day+"T00:00:00Z");
+  return Number.isFinite(time) && new Date(time).toISOString().startsWith(day) && day<=uploadToday ? day : "";
+}
+function queueFiles(input,year) {
+  if (state.uploading) return;
+  const files=Array.from(input.files);
+  input.value="";
+  if (!files.length) return;
+  let selected=files;
+  if (year!==undefined) {
+    if (!Number.isInteger(year) || year<2000 || year>currentUploadYear) {
+      notice("folder-notice","请输入 2000 至 "+currentUploadYear+" 的年份，再选择文件夹。",true);
+      return;
+    }
+    selected=files.filter(file=>folderDate(file.name,year)).sort((a,b)=>folderDate(a.name,year).localeCompare(folderDate(b.name,year)) || a.webkitRelativePath.localeCompare(b.webkitRelativePath));
+    notice("folder-notice",year+" 年找到 "+selected.length+" 份余额台账，略过 "+(files.length-selected.length)+" 个文件。按“余额台账＋日期.xlsx”选取，其他命名可用“选择 Excel 文件”添加。");
+  } else notice("folder-notice");
+  if (!selected.length) return;
+  if (state.uploads.every(item=>["published","reused","skipped"].includes(item.status))) state.uploads=[];
+  for (const file of selected) state.uploads.push({file,year,status:"pending",detail:""});
+  renderUploads();
+}
+function renderUploads() {
+  const items=state.uploads, totals={};
+  const list=$("upload-list");
+  list.replaceChildren();
+  for (const item of items) {
+    totals[item.status]=(totals[item.status] || 0)+1;
+    const row=node("li",null,"upload-item"), info=node("div"), actions=node("div",null,"inline-actions");
+    row.dataset.state=item.status;
+    info.append(node("strong",item.file.webkitRelativePath || item.file.name),
+      node("p",[uploadLabels[item.status],item.detail].filter(Boolean).join(" · "),"meta"));
+    if (item.status==="conflict") actions.append(button("确认替换",()=>uploadFiles([item],item.conflict.previousId),"primary"));
+    if (item.status==="failed") actions.append(button("重试",()=>uploadFiles([item])));
+    if (["pending","failed","conflict"].includes(item.status)) {
+      actions.append(button(item.status==="pending"?"移除":"跳过",()=>{
+        if (item.status==="pending") state.uploads=state.uploads.filter(other=>other!==item);
+        else {item.status="skipped";item.detail="";}
+        renderUploads();
+      }));
+    }
+    for (const action of actions.children) action.disabled=state.uploading;
+    row.append(info,actions);list.append(row);
+  }
+  list.hidden=!items.length;
+  $("file-name").textContent=items.length ? "本批 "+count(items.length)+" 份" : "尚未选择文件";
+  $("upload").textContent=state.uploading ? "上传中…" : totals.pending>1 ? "上传并发布 "+count(totals.pending)+" 份" : "上传并发布";
+  $("upload").disabled=state.uploading || !totals.pending;
+  $("clear-upload").hidden=!items.length;
+  for (const id of ["file","folder","upload-year","clear-upload","open-upload"]) $(id).disabled=state.uploading;
+  const summary=Object.entries(uploadLabels).filter(([key])=>totals[key]).map(([key,label])=>label+" "+count(totals[key])+" 份");
+  notice("upload-notice",summary.length && (state.uploading || items.some(item=>item.status!=="pending"))
+    ? summary.join(" · ")+(state.uploading?"。上传期间请保持此页打开。":"") : "");
+}
+async function uploadFiles(items,replaceId) {
+  if (state.uploading || !items.length) return;
+  state.uploading=true;
+  let published;
   try {
-    const headers = { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "X-File-Name": encodeURIComponent(file.name) };
-    if (replaceId) headers["X-Replace-Id"] = replaceId;
-    const result = await json("upload", { method: "POST", headers, body: file });
-    const snapshot = result.snapshot || result;
-    clearRevision(); $("file").value = ""; $("file-name").textContent = "尚未选择文件";
-    const outcome = snapshot.reused ? " 已有相同文件，沿用原快照" : " 库存已就绪";
-    notice("upload-notice", snapshot.date + outcome + "，" + count(snapshot.rowCount) + " 条，名义本金 " + billions(snapshot.totalCents) + " 亿元。");
-    await refresh(snapshot.id);
-  } catch (error) {
-    const data = error.data;
-    if (error.status === 409 && data?.code === "revision_required" && data.previousId) {
-      state.revision = data.previousId;
-      $("revision-message").textContent = "现有 " + count(data.previousCount) + " 条 / " + billions(data.previousCents) + " 亿元；新表 " + count(data.nextCount) + " 条 / " + billions(data.nextCents) + " 亿元。仅替换同一业务日的完整快照。";
-      $("revision").hidden = false; notice("upload-notice");
-    } else { clearRevision(); notice("upload-notice", error.message, true); }
+    for (const item of items) {
+      item.status="sending";item.detail="";renderUploads();
+      try {
+        const file=item.file;
+        if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("请选择 .xlsx 格式的库存工作簿。");
+        const headers={"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","X-File-Name":encodeURIComponent(file.name)};
+        if (item.year!==undefined) headers["X-Inventory-Year"]=String(item.year);
+        if (replaceId) headers["X-Replace-Id"]=replaceId;
+        const result=await json("upload",{method:"POST",headers,body:file});
+        const snapshot=result.snapshot || result;
+        if (!snapshot.id || !snapshot.date || !Number.isSafeInteger(snapshot.rowCount) || !Number.isSafeInteger(snapshot.totalCents))
+          throw new Error("无法核对服务器返回的快照，请重试。");
+        item.status=snapshot.reused?"reused":"published";
+        item.detail=snapshot.date+" · "+count(snapshot.rowCount)+" 条 · "+billions(snapshot.totalCents)+" 亿元";
+        item.snapshot=snapshot;
+        published=snapshot;
+      } catch (error) {
+        const d=error.data;
+        if (error.status===409 && d?.code==="revision_required" && d.previousId) {
+          item.status="conflict";item.conflict=d;
+          const date=d.date || state.snapshots.find(s=>s.id===d.previousId)?.date || state.uploads.find(i=>i.snapshot?.id===d.previousId)?.snapshot.date;
+          item.detail=[date,"现有 "+count(d.previousCount)+" 条 / "+billions(d.previousCents)+" 亿元，新表 "+count(d.nextCount)+" 条 / "+billions(d.nextCents)+" 亿元。"].filter(Boolean).join(" · ");
+        } else {item.status="failed";item.detail=error.message;}
+      }
+    }
+    if (published) await refresh(state.uploads.length===1 ? published.id : undefined);
   } finally {
-    state.uploading = false; $("file").disabled = false; $("upload").disabled = !$("file").files.length || Boolean(state.revision); $("replace").disabled = false; $("open-upload").disabled = false;
+    state.uploading=false;renderUploads();
   }
 }
 $("ask-form").addEventListener("submit", event => {
@@ -880,13 +952,13 @@ $("open-upload").addEventListener("click", () => {
   $("file").click();
 });
 switchTab(location.hash === "#upload-form" ? "data" : "ask");
-$("file").addEventListener("change", () => {
-  clearRevision(); notice("upload-notice"); const f = $("file").files[0];
-  $("file-name").textContent = f?.name || "尚未选择文件"; $("upload").disabled = !f;
-});
-$("upload-form").addEventListener("submit", e => { e.preventDefault(); if (!state.revision) upload(); });
-$("replace").addEventListener("click", () => { if (state.revision) upload(state.revision); });
-$("cancel-replace").addEventListener("click", () => { clearRevision(); $("upload").disabled = !$("file").files.length; notice("upload-notice", "已取消，当前快照继续生效。"); });
+$("upload-year").value=String(currentUploadYear);
+$("upload-year").max=String(currentUploadYear);
+$("folder-controls").hidden=!("webkitdirectory" in $("folder"));
+$("file").addEventListener("change",e=>queueFiles(e.currentTarget));
+$("folder").addEventListener("change",e=>queueFiles(e.currentTarget,$("upload-year").valueAsNumber));
+$("clear-upload").addEventListener("click",()=>{state.uploads=[];notice("folder-notice");renderUploads();});
+$("upload-form").addEventListener("submit",e=>{e.preventDefault();uploadFiles(state.uploads.filter(item=>item.status==="pending"));});
 $("close-detail").addEventListener("click", () => $("detail").close());
 $("detail").addEventListener("close", () => { state.detailController?.abort(); state.detailController = null; });
 $("detail-prev").addEventListener("click", () => { if (state.offsets.length > 1) { state.offsets.pop(); fetchDetail(); } });

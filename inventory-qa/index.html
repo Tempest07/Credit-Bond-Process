@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#ffffff">
   <title>问数助手 Beta · Bond Centre</title>
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./inventory.css?v=553">
-  <script src="./inventory.js?v=560" defer></script>
+  <link rel="stylesheet" href="./inventory.css?v=561">
+  <script src="./inventory.js?v=561" defer></script>
 </head>
 <body>
   <header class="sitebar">
@@ -82,21 +82,25 @@
 
     <section id="data-pane" aria-label="数据台账" hidden>
       <div class="workspace-heading"><div><h1>数据台账</h1></div></div>
-      <form class="upload" id="upload-form">
+      <form class="upload" id="upload-form" novalidate>
         <h2>上传库存表</h2>
-        <p class="meta">请上传单一业务日、全库存范围的完整余额台账。同日修订会显示新旧条数和金额，再确认替换。</p>
+        <p class="meta">每份文件须为一个业务日的全库存余额台账。可分次添加文件，也可从周报文件夹按年份选取。</p>
         <div class="file-actions">
-          <label class="file-select"><span>选择 Excel</span><input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="选择库存 Excel 工作簿"></label>
+          <label class="file-select"><span>选择 Excel 文件</span><input type="file" id="file" multiple accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="选择库存 Excel 工作簿"></label>
+          <div class="folder-select" id="folder-controls">
+            <label for="upload-year">文件夹年份</label><input type="number" id="upload-year" min="2000" step="1">
+            <label class="file-select"><span>选择周报文件夹</span><input type="file" id="folder" webkitdirectory multiple aria-label="选择周报文件夹"></label>
+          </div>
+        </div>
+        <p class="meta" id="folder-notice" role="status" hidden></p>
+        <div class="file-actions queue-actions">
           <span id="file-name" class="meta">尚未选择文件</span>
           <button class="primary" type="submit" id="upload" disabled>上传并发布</button>
+          <button type="button" id="clear-upload" hidden>清空列表</button>
         </div>
       </form>
-      <div id="revision" class="notice" hidden>
-        <h3>同日快照已有数据</h3>
-        <p id="revision-message"></p>
-        <div class="inline-actions"><button type="button" class="primary" id="replace">确认替换</button><button type="button" id="cancel-replace">取消</button></div>
-      </div>
       <div id="upload-notice" class="notice" role="status" hidden></div>
+      <ul class="upload-list" id="upload-list" aria-label="本批文件" hidden></ul>
       <section class="snapshots"><div class="bar-title"><h2>库存快照</h2><span class="meta" id="snapshot-count"></span></div><div id="snapshot-list"></div></section>
     </section>
   </main>

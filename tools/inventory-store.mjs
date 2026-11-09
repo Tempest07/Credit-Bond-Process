@@ -115,16 +115,22 @@ async function resolveEntity(db,snapshot,field,query,names,places,codeSource){
   const leads=results.map(row=>row.entity).filter(name=>names.includes(name));
   return askIdentity(field,key,[...suggestions,...leads]);
 }
-export async function ingestInventory({db,bucket}, bytes,filename,replaceId) {
+export async function ingestInventory({db,bucket}, bytes,filename,replaceId,expectedYear) {
+  if(expectedYear!=null && !/^\d{4}$/.test(expectedYear))throw message('请选择四位数的库存年份。',400);
+  const checkYear=date=>{
+    if(expectedYear!=null && date.slice(0,4)!==expectedYear)
+      throw message('表内业务日 '+date+' 与所选年份 '+expectedYear+' 不符。',422);
+  };
   const sha=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
   const identical=await db.prepare('SELECT v.* FROM inventory_versions v JOIN inventory_current a ON a.version=v.id WHERE v.sha=?').bind(sha).first();
-  if(identical)return {...publicVersion(identical),reused:true};
+  if(identical){checkYear(identical.date);return {...publicVersion(identical),reused:true};}
   const workbook=await parseInventoryWorkbook(bytes);
   const {date,sheet,rowCount,totalCents,rows}=workbook;
+  checkYear(date);
   const before=await active(db,date);
   if(before?.sha===sha)return {...publicVersion(before),reused:true};
   const conflict=current=>message('同一业务日已有其他版本，请核对金额和行数后确认替换。',409,{
-    code:'revision_required',previousId:current?.id,previousCount:current?.rowCount,previousCents:current?.totalCents,nextCount:rowCount,nextCents:totalCents});
+    code:'revision_required',date,previousId:current?.id,previousCount:current?.rowCount,previousCents:current?.totalCents,nextCount:rowCount,nextCents:totalCents});
   if((before?.id||'')!==(replaceId||''))throw conflict(before);
   const id=crypto.randomUUID(),createdAt=new Date().toISOString();
   const key='inventory/'+date+'/'+id+'.xlsx';

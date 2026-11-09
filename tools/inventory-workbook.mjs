@@ -40,8 +40,9 @@ function amount(value, sourceRow) {
   if (!Number.isSafeInteger(cents)) throw new InventoryError('名义本金超出可精确统计范围。');
   return negative ? -cents : cents;
 }
-const maxExpanded = 100 * 1024 * 1024;
-const malformed = () => new InventoryError('请上传可读取的 .xlsx 库存台账（解压后上限 100 MB）。');
+const maxPartBytes = 100 * 1024 * 1024;
+const maxWorkbookBytes = 128 * 1024 * 1024;
+const malformed = () => new InventoryError('请上传可读取的 .xlsx 库存台账（解压后整表上限 128 MB，单个内部文件上限 100 MB）。');
 
 // PizZip indexes the central directory. Inflate one part in small chunks so the
 // worksheet XML, its object tree and the user rows are never held in memory together.
@@ -60,7 +61,7 @@ function readPart(zip, path, handlers) {
   }
   function consume(chunk) {
     expanded += chunk.length;
-    if (expanded > entry.uncompressedSize || expanded > maxExpanded) throw malformed();
+    if (expanded > entry.uncompressedSize || expanded > maxPartBytes) throw malformed();
     parser.write(decoder.decode(chunk, { stream: true }));
   }
   const compressed = entry.getCompressedContent();
@@ -135,7 +136,7 @@ const requiredHeader = '每次需有一张可识别的库存明细工作表，�
 function snapshotSheet(zip, sheet, strings, epoch1904, sourceKeys) {
   let sourceFields = [], projected = [];
   let sourceRow = 0, column = 0, cellType = '', value = '', capture = false, inCell = false, phonetic = false;
-  let values = new Map(), header = null, headerRow = 0, date = '', totalCents = 0, absoluteCents = 0;
+  let values = new Map(), header = null, date = '', totalCents = 0, absoluteCents = 0;
   let guarantorHeader = '';
   const headerMissing = Symbol('skip worksheet');
   const rows = [];
@@ -163,14 +164,13 @@ function snapshotSheet(zip, sheet, strings, epoch1904, sourceKeys) {
         projected = sourceFields.filter(({key})=>sourceKeys.has(key));
       }
       guarantorHeader = text(values.get(idx.guarantor));
-      headerRow = sourceRow;
       return;
     }
-    if (sourceRow - headerRow > 30000) throw new InventoryError('单个库存快照上限为 30,000 条。');
     if (!values.size) return;
     const read = name => values.get(header[name]);
     if (!text(read('code')) && !text(read('name')) && [...values.values()].some(v => /^(合计|小计|总计)$/.test(text(v)))) return;
     if (!text(read('code'))) throw new InventoryError('第 '+sourceRow+' 行缺少债券代码，请核对明细或汇总行。');
+    if (rows.length>=30000) throw new InventoryError('单个库存快照上限为 30,000 条。');
     const rowDate = dateOf(read('date'), epoch1904);
     if (!rowDate || date && date !== rowDate) throw new InventoryError('库存表必须是同一业务日的完整快照，请核对第 '+sourceRow+' 行的日期。');
     date = rowDate;
@@ -244,18 +244,42 @@ function snapshotSheet(zip, sheet, strings, epoch1904, sourceKeys) {
     ...(sourceKeys ? {sourceFields:sourceFields.map(field=>field.key)} : {}),
     guarantorHeader, hasAttribution: 'attribution' in header };
 }
+// Some weekly workbooks retain a smaller, visible extract of the current ledger.
+function holdingKey(row) {
+  return JSON.stringify([row.code,row.name,row.cents,row.portfolio,row.institution,row.branch,row.account,row.scope,row.issuer]);
+}
+function isLedgerExtract(ledger,candidate) {
+  if (ledger.sheet.trim()!=='本期底稿' || ledger.date!==candidate.date || ledger.rowCount<=candidate.rowCount) return false;
+  const needed=new Map();
+  for (const row of candidate.rows) {
+    const key=holdingKey(row);
+    needed.set(key,(needed.get(key) || 0)+1);
+  }
+  for (const row of ledger.rows) {
+    const key=holdingKey(row), n=needed.get(key);
+    if (n===1) needed.delete(key);
+    else if (n>1) needed.set(key,n-1);
+    if (!needed.size) break;
+  }
+  return !needed.size;
+}
 export async function parseInventoryWorkbook(bytes, sourceKeys) {
   try {
     const zip = new PizZip(bytes);
     const entries = Object.values(zip.files);
     const expanded = entries.reduce((sum,e) => sum + (e._data?.uncompressedSize || 0),0);
-    if (entries.length>3000 || expanded>maxExpanded || entries.some(e=>/vbaProject\.bin$/i.test(e.name))) throw malformed();
+    if (entries.length>3000 || expanded>maxWorkbookBytes || entries.some(e=>/vbaProject\.bin$/i.test(e.name))) throw malformed();
     const parts = relationships(zip), { sheets, epoch1904 } = workbookInfo(zip, parts), strings = sharedStrings(zip, parts);
     let found = null;
-    for (const sheet of sheets) {
+    // Validate the designated ledger before accepting other recognized sheets as extracts.
+    const ordered=[...sheets].sort((a,b)=>Number(b.name.trim()==='本期底稿')-Number(a.name.trim()==='本期底稿'));
+    for (const sheet of ordered) {
       const candidate = snapshotSheet(zip, sheet, strings, epoch1904, sourceKeys);
       if (!candidate) continue;
-      if (found) throw new InventoryError(requiredHeader);
+      if (found) {
+        if (isLedgerExtract(found,candidate)) continue;
+        throw new InventoryError(requiredHeader);
+      }
       found = candidate;
     }
     if (!found) throw new InventoryError(requiredHeader);
