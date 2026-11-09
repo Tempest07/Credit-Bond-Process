@@ -91,6 +91,10 @@ th{font-size:13px;color:var(--muted);font-weight:500}
 .identity-form .field{width:min(100%,24rem)}
 .identity-choice .view-actions button{max-width:100%;overflow-wrap:anywhere}
 .identity-preview{max-width:100%;overflow:auto}
+.rank-table{max-width:100%;overflow-x:auto}
+.rank-table th,.rank-table td{white-space:nowrap}
+.rank-table caption{text-align:left;color:var(--muted);font-size:13px;padding:6px 0}
+.rank-table tfoot td{font-weight:600;border-top:1px solid var(--rule)}
 .identity-preview table{min-width:560px}
 .identity-preview small{display:block;color:var(--muted);font-size:12px}
 .source{margin:12px 0;font-size:13px}

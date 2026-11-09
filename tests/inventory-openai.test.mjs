@@ -225,6 +225,56 @@ test("ordinary branch totals remain a single call without an evidence read",asyn
   assert.equal(result.plan.filters.branch,"甲分行");assert.equal(agent.bodies.length,1);assert.deepEqual(result.trace,[]);
 });
 
+test("ranked breakdown preserves a previous branch, can change buckets, and can remove the ranking",async()=>{
+  const previousPlan={date:"2026-04-30",group:"issuer",metric:"principal",filters:{branch:"北京分行"}};
+  const question="前五大发行人，分别在不同的会计科目分类的持仓多少？";
+  const conversation=[{question:"北京分行按发行人的库存有多少？",dimension:"issuer"},
+    {question,reply:"当前 beta 可按已导入库存的日期、分行、发行人、组合等条件汇总名义本金、记录数或券数。这个问题还需要其他数据或指标。"}];
+  const ranked=outcome([{field:"rank",value:{by:"issuer",limit:5,orderBy:"principal"}},{field:"group",value:"account"}]);
+  const noLookup=()=>assert.fail("ranking is compiled against the snapshot and needs no issuer lookup");
+  const selected=await planInventoryQuestion({...base,question,previousPlan,conversation,...scripted([ranked],noLookup).options});
+  assert.deepEqual(selected.plan.rank,{by:"issuer",limit:5});
+  assert.equal(selected.reuseRank,undefined);
+  assert.equal(selected.plan.group,"account");
+  assert.equal(selected.plan.filters.branch,"北京分行");
+  const regrouped=await planInventoryQuestion({...base,question:"这几家再按券种拆",previousPlan:selected.plan,
+    ...scripted([outcome([{field:"group",value:"marketType"}])],noLookup).options});
+  assert.deepEqual(regrouped.plan.rank,selected.plan.rank);
+  assert.equal(regrouped.reuseRank,true);
+  const afs={field:"account",value:"AFS"};
+  for(const [question,changes,reuse] of [
+    ["这五家里只看 AFS",[afs],true],
+    ["在 AFS 内重新排名，各家按券种列",[afs,{field:"rank",value:{by:"issuer",limit:5,orderBy:"principal"}}],undefined],
+    ["看看 4 月 15 日那期",[ {field:"date",value:"2026-04-15"} ],undefined],
+  ]){
+    const follow=await planInventoryQuestion({...base,previousPlan:regrouped.plan,question,
+      ...scripted([outcome(changes)],noLookup).options});
+    assert.deepEqual(follow.plan.rank,selected.plan.rank);
+    assert.equal(follow.reuseRank,reuse);
+    assert.equal(follow.plan.filters.branch,"北京分行");
+  }
+  const cleared=await planInventoryQuestion({...base,question:"不要排名，统计全部发行人",previousPlan:regrouped.plan,
+    ...scripted([outcome([{field:"rank",value:null},{field:"group",value:"issuer"}])],noLookup).options});
+  assert.equal(cleared.plan.rank,undefined);
+  assert.equal(cleared.plan.filters.branch,"北京分行");
+});
+
+test("invalid order or limits cannot become a principal ranking, and ranked explanations retain the scope",async()=>{
+  for(const value of [{by:"issuer",limit:5,orderBy:"securities"},{by:"issuer",limit:51,orderBy:"principal"},
+    {by:"sql",limit:5,orderBy:"principal"},{by:"issuer",limit:-3,orderBy:"principal"}]){
+    const reply=await planInventoryQuestion({...base,fetchImpl:respond(outcome([{field:"rank",value},{field:"group",value:"account"}]))});
+    assert.equal(reply.plan,undefined);assert.match(reply.clarification,/排名/);
+  }
+  const previousPlan={date:"2026-04-30",group:"account",metric:"principal",filters:{branch:"北京分行"},rank:{by:"issuer",limit:5}};
+  const method=await planInventoryQuestion({...base,previousPlan,question:"刚才是怎么计算的？",
+    ...scripted([{kind:"explain",reason:"method",changes:[],lookup:null}],()=>assert.fail()).options});
+  assert.match(method.clarification,/北京分行.+发行人全称.+前5名.+会计科目/);
+  const held=await planInventoryQuestion({...base,previousPlan:{...previousPlan,rankReused:true,
+    filters:{...previousPlan.filters,account:"AFS"}},question:"为什么是这五家？",
+    ...scripted([{kind:"explain",reason:"method",changes:[],lookup:null}],()=>assert.fail()).options});
+  assert.match(held.clarification,/沿用上次.+名单内.+AFS/);
+});
+
 test("look up top issuer in scope, verify it by name, and keep the same branch in the final query",async()=>{
   const name="甲公司",question="广州分行持仓最多的发行人，我们持有它哪些债？";
   const steps=missing=>[lookup("广州分行","topIssuer"),lookup(name, "issuer"),

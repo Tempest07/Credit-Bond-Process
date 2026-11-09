@@ -1,4 +1,5 @@
-const exactFields = new Set(['branch', 'scope', 'portfolio', 'account', 'code']);
+import {accountLabel,accountSql} from './inventory-account.mjs';
+const exactFields = new Set(['branch', 'scope', 'portfolio', 'code']);
 const genericWords = new Set(['公司', '集团', '有限', '有限公司', '股份', '债券', '发行人']);
 const codePattern = /^[a-z0-9]+\.(?:IB|SH|SZ|HK)$/i;
 
@@ -12,6 +13,9 @@ function scopeFor(snapshot, filters, subject) {
       bindings.push(snapshot.date);
     } else if (field === 'scope' && value === '委外') {
       predicates.push("scope LIKE '委外%'");
+    } else if (field === 'account') {
+      predicates.push(accountSql + '=?');
+      bindings.push(value === '未填写' ? '' : accountLabel(value));
     } else if (exactFields.has(field)) {
       predicates.push(field + '=?');
       bindings.push(value === '未填写' ? '' : value);

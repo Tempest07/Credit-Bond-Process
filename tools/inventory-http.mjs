@@ -45,10 +45,11 @@ async function query(input, action, {db,bucket,apiKey}, pinned=null) {
   const selected=pinned || (input.snapshotId ? snapshots.find(s=>s.id===input.snapshotId)||(previous?.snapshot.id===input.snapshotId?previous.snapshot:null) : null);
   if(input.snapshotId&&!selected)throw new InventoryError('所选库存快照已修订，请刷新数据台账。',409);
   const base=selected||previous?.snapshot||snapshots[0];
-  let plan, subject, trace=[], suggested=[];
+  let plan, subject, fixedMembers, trace=[], suggested=[];
   const snapshotFor = date => date===base.date ? base : snapshots.find(s=>s.date===date);
   if(action==='manual'){
-    plan={date:base.date,group:input.group||'issuer',metric:input.metric||'principal',filters:input.filters||{}};
+    plan={date:base.date,group:input.group||'issuer',metric:input.metric||'principal',filters:input.filters||{},
+      ...(input.rank ? {rank:input.rank} : {})};
     if(input.identityValue!==undefined){
       if(typeof input.identityValue!=='string'||!input.identityValue.trim()||input.identityValue.length>160||
           !['overviewSubject','issuer','guarantor','attribution'].includes(input.field))
@@ -57,7 +58,8 @@ async function query(input, action, {db,bucket,apiKey}, pinned=null) {
       else plan.filters={...plan.filters,[input.field]:input.identityValue.trim()};
     }
   }else{
-    const previousPlan=previous?{...previous.plan,date:base.date}:{date:base.date,group:'none',metric:'principal',filters:{}};
+    const previousPlan=previous?{...previous.plan,date:base.date,...(previous.rankReused?{rankReused:true}:{})}:
+      {date:base.date,group:'none',metric:'principal',filters:{}};
     const inspectEvidence=async request=>{
       const snapshot=snapshotFor(request.date);
       if(!snapshot)throw new InventoryError('所选日期没有可用快照。');
@@ -70,19 +72,24 @@ async function query(input, action, {db,bucket,apiKey}, pinned=null) {
     subject=outcome.overviewSubject;
     trace=outcome.trace||[];
     suggested=outcome.candidateNames||[];
+    if(outcome.reuseRank && Array.isArray(previous?.rankMembers) && previous.snapshot.id===snapshotFor(plan.date)?.id &&
+        plan.rank?.by===previous.plan.rank?.by && plan.rank?.limit===previous.plan.rank?.limit) {
+      fixedMembers=previous.rankMembers;
+      trace.push('沿用上次按本金排名选出的名单，在名单内应用本次筛选与分组。');
+    }
   }
   const snapshot=snapshotFor(plan.date);
-  const answer=await executeInventoryPlan({db,bucket},snapshot,plan,subject,suggested,trace);
+  const answer=await executeInventoryPlan({db,bucket},snapshot,plan,subject,suggested,trace,fixedMembers);
   return trace.length ? {...answer,trace} : answer;
 }
-async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, suggested, trace) {
+async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, suggested, trace, fixedMembers) {
   const identityReply=async(query,field,filters,candidates)=>{
     candidates=[...new Set([...candidates,...suggested])].slice(0,12);
     const hints=['issuer','overviewSubject'].includes(field)?await issuerHints(db,snapshot,query,filters,candidates):[];
     return {clarification:hints.length?'按本期库存的发行人和券简称，找到以下相关持仓。':
       candidates.length?'请从本期台账的主体全称中选择。':'本期台账无法从这个称呼确认主体，请补充全称或相关券码。',
       identity:{query,field,candidates,hints},
-      resume:{snapshotId:snapshot.id,group:plan.group,metric:plan.metric,filters,field}};
+      resume:{snapshotId:snapshot.id,group:plan.group,metric:plan.metric,filters,field,...(plan.rank?{rank:plan.rank}:{})}};
   };
   if(subject){
       const filters={...plan.filters};
@@ -108,7 +115,7 @@ async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, sugges
     const field=['guarantor','attribution','issuer'].find(key=>plan.filters[key]);
     if(field)return identityReply(plan.filters[field],field,plan.filters,suggested);
   }
-  const result=await newInventoryAnswer(db,snapshot,plan,bucket,trace);
+  const result=await newInventoryAnswer(db,snapshot,plan,bucket,trace,fixedMembers);
   if(result.identity)return identityReply(result.identity.query,result.identity.field,plan.filters,result.identity.candidates);
   return result;
 }

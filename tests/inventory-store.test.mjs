@@ -61,6 +61,41 @@ test('bad workbook and staging failure leave published version effective',async(
   assert.equal((await listInventory(storage.db))[0].id,original.id);assert.equal(storage.objects.size,1);
 });
 
+test('rank issuers within the branch first, then split by ledger account, preserving that cohort in detail, Excel and follow-ups',async()=>{
+  const {db,bucket}=isolatedStore();
+  await initInventory(db);
+  const wb=new ExcelJS.Workbook(), sheet=wb.addWorksheet('本期底稿');
+  sheet.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','数据业务日期']);
+  for(const [issuer,account,yuan,branch='北京分行'] of [
+    ['A','公募',79.01],['A','委外（公募）',1],['A','Receivable',20],['B','TRADING',91],['C','AFS',90],['C','AFS',999,'广州分行']
+  ])sheet.addRow(['中心',branch,account,'组合','表内',issuer+'.IB','样例债',yuan,issuer,'中票','2026-10-29']);
+  const snap=await ingestInventory({db,bucket},await wb.xlsx.writeBuffer(),'样例.xlsx');
+  const plan={date:snap.date,group:'account',rank:{by:'issuer',limit:2},metric:'principal',filters:{branch:'北京分行'}};
+  const answer=await newInventoryAnswer(db,snap,plan,bucket);
+  assert.deepEqual(answer.groups.map(({rankName,bucketName,cents,rankPosition})=>[rankName,bucketName,cents,rankPosition]),
+    [['A','委外（公募）',8001,1],['A','Receivable',2000,1],['B','Trading',9100,2]]);
+  assert.equal(answer.totalCents,19101);assert.equal(answer.rowCount,4);assert.equal(answer.securityCount,2);
+  const detail=await answerDetails(db,answer.resultId,{group:answer.groups[0].name});
+  assert.equal(detail.total,2);assert.deepEqual(detail.rows.map(x=>x.queryAccount),['委外（公募）','委外（公募）']);
+  assert.deepEqual(detail.rows.map(x=>x.account),['公募','委外（公募）']);
+  assert.deepEqual((await readInventoryAnswer(db,answer.resultId)).groups,answer.groups);
+  const {result,rows}=await exportData(db,answer.resultId);
+  const file=new ExcelJS.Workbook();await file.xlsx.load(await exportInventoryWorkbook(result,rows));
+  const summary=file.getWorksheet('分组汇总');
+  assert.equal(summary.getCell('A2').value,'A');assert.equal(summary.getCell('B2').value,'委外（公募）');
+  assert.equal(summary.getCell('C5').value,191.01);assert.equal(file.getWorksheet('持仓明细').rowCount,5);
+  const filtered=await newInventoryAnswer(db,snap,{...plan,filters:{branch:'北京分行',account:'AFS'}},bucket,[],['A','B']);
+  assert.equal(filtered.rowCount,0);assert.equal(filtered.rankReused,true);
+  assert.equal((await readInventoryAnswer(db,filtered.resultId)).rankReused,true);
+  const account=await newInventoryAnswer(db,snap,{...plan,rank:null,filters:{branch:'北京分行',account:'委外(公募)'}},bucket);
+  assert.equal(account.totalCents,8001);
+  const legacy=crypto.randomUUID();
+  await db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(legacy,snap.id,JSON.stringify({...plan,rank:null,typeRules:1}),new Date().toISOString()).run();
+  const old=await readInventoryAnswer(db,legacy);
+  assert.ok(old.groups.some(g=>g.name==='公募' && g.cents===7901));
+  await assert.rejects(newInventoryAnswer(db,snap,{...plan,rank:{by:'issuer;--',limit:2}},bucket),e=>e.status===400);
+});
+
 async function roleFixture(entries,withAttribution=true) {
   const wb=new ExcelJS.Workbook(), s=wb.addWorksheet('本期底稿');
   s.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','到期日期','数据业务日期','保证人全称',...(withAttribution?['资产端损益还原客户名称']:[])]);
