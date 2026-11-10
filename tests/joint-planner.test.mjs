@@ -58,3 +58,42 @@ test('rejects forward references and permits single-source questions without the
   })});
   assert.equal(flow.steps[0].source,'trade');
 });
+
+const dated={...data,snapshots:[{date:'2025-12-31'},...data.snapshots],ledgers:[]};
+const portfolio=(metric,options={})=>({source:'portfolio',question:'按指定口径查询组合指标',period:'yearToDate',
+  spec:{metric,start:null,end:null,account:null,threshold:null,branch:null,...options}});
+const decision=steps=>({kind:'steps',comparison:'none',steps});
+test('portfolio YTD uses the previous year close for risk and January 1 for period averages',async()=>{
+  const plan=await planJointQuestion({...dated,question:'对比本年久期并列出周均持仓规模',fetchImpl:mock(()=>decision([
+    portfolio('modifiedDuration',{account:'oci',branch:'北京分行'}),portfolio('weeklyMean'),
+  ]))});
+  assert.deepEqual(plan.steps[0].spec,{metric:'modifiedDuration',start:'2025-12-31',end:dated.selectedDate,
+    account:'AFS',threshold:null,branch:'北京分行'});
+  assert.deepEqual(plan.steps[1].spec,{metric:'weeklyMean',start:'2026-01-01',end:dated.selectedDate,
+    account:null,threshold:null,branch:null});
+  const absent=await planJointQuestion({...data,question:'比较年初至今久期',fetchImpl:mock(()=>decision([portfolio('modifiedDuration')]))});
+  assert.match(absent.clarification,/2025-12-31.*快照/);
+});
+test('portfolio follow-ups receive only the prior parameters; cutoff and threshold can change',async()=>{
+  const first=portfolio('impliedRatingShare',{account:'AFS',branch:'北京分行',threshold:'AA(2)',end:'2026-10-29'});
+  const history=[{question:'之前小于等于AA(2)的占比',steps:[{...first,spec:{...first.spec,start:'2025-12-31',marketPins:{internal:'secret-object'}}}]}];
+  const plan=await planJointQuestion({...dated,selectedDate:null,question:'只看深圳，改到AA−档',history,fetchImpl:mock(input=>{
+    assert.equal(input.selectedDate,'2026-10-29');
+    assert.equal(input.history[0].steps[0].spec.threshold,'AA(2)');
+    assert.equal(JSON.stringify(input).includes('secret-object'),false);
+    return decision([portfolio('impliedRatingShare',{account:'AFS',branch:'深圳分行',threshold:'AA−'})]);
+  })});
+  assert.equal(plan.steps[0].spec.threshold,'AA-');
+  assert.equal(plan.steps[0].spec.end,'2026-10-29');
+});
+test('portfolio validation refuses absent dates, unknown restrictions and reusing a metric as a member list',async()=>{
+  const extra=portfolio('weeklyMean',{issuer:'某集团'});
+  const invalid=await planJointQuestion({...dated,question:'查某集团每周余额',fetchImpl:mock(()=>decision([extra]))});
+  assert.match(invalid.clarification,/组合指标/);
+  const missingDate=await planJointQuestion({...dated,question:'12月末久期',fetchImpl:mock(()=>decision([
+    {...portfolio('modifiedDuration',{end:'2026-12-31'}),period:'asOf'}]))});
+  assert.match(missingDate.clarification,/2026-12-31/);
+  const rank=await planJointQuestion({...dated,question:'用之前的名单查快照',fetchImpl:mock(()=>decision([
+    portfolio('weeklyMean'),step('inventory','查这些券',{selection:{from:'s1',field:'code',limit:null,indices:[]}})]))});
+  assert.match(rank.clarification,/组合指标.*名单/);
+});

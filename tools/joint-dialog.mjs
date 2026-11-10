@@ -6,6 +6,7 @@ import {flowAction,readTurnHistory} from './flow-dialog.mjs';
 import {planJointQuestion} from './joint-planner.mjs';
 import {executeJointPlan} from './joint-execute.mjs';
 import {jointExcel} from './joint-export.mjs';
+import {getPortfolioMarketPins} from './portfolio-facts.mjs';
 
 const uuid=v=>typeof v==='string' && /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(v);
 const fail=(message,status=400,details={})=>{throw new InventoryError(message,status,details)};
@@ -67,7 +68,10 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
     const id=params.get('id');if(!uuid(id))notFound();
     const row=await db.prepare('SELECT t.question,t.answer,f.pins FROM joint_turns t JOIN joint_turns f ON f.owner=t.owner AND f.chat=t.chat AND f.version=1 WHERE t.owner=? AND t.resultId=?').bind(owner,id).first();
     if(!row)notFound();
-    return jointExcel(resources,row.question,JSON.parse(row.answer),JSON.parse(row.pins).ledgers,params.get('step'));
+    const answer=JSON.parse(row.answer),pins=JSON.parse(row.pins),chosen=params.get('step');
+    const usesPortfolio=answer.steps.some(s=>s.source==='portfolio'&&(!chosen||s.id===chosen));
+    const snapshots=usesPortfolio?await snapshotsById(db,pins.snapshots):[];
+    return jointExcel(resources,row.question,answer,pins.ledgers,chosen,{snapshots,marketPins:pins.marketPins||{}});
   }
   if(action!=='joint-ask')notFound();
   const {chatId,version,requestId,effort='high',snapshotId=null,originChat=null}=input;
@@ -95,18 +99,21 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
   if(!snapshots.length&&!ledgers.length)fail('请先上传余额台账或增减持台账。',409);
   const prior=(await db.prepare('SELECT question,answer FROM joint_turns WHERE owner=? AND chat=? ORDER BY version DESC LIMIT 8').bind(owner,chatId).all()).results.reverse().map(r=>({question:r.question,answer:JSON.parse(r.answer)}));
   const history=[...(pins.seed||[]),...prior].slice(-8);
-  const recentDate=history.map(t=>t.answer?.steps?.filter(s=>s.source==='inventory').at(-1)?.data?.snapshot?.date||t.answer?.referenceDate).filter(Boolean).at(-1);
+  const recentDate=history.map(t=>t.answer?.steps?.map(s=>s.data?.snapshot?.date||s.spec?.end).filter(Boolean).at(-1)||t.answer?.referenceDate).filter(Boolean).at(-1);
   const selected=snapshots.find(s=>s.id===snapshotId);
   if(snapshotId&&!selected)fail('该快照不在本对话锁定的版本中，请新建对话查询修订后的台账。',409);
   const selectedDate=selected?.date||recentDate||snapshots.find(s=>s.id===pins.selectedId)?.date||snapshots[0]?.date;
   const args={question,effort,snapshots,ledgers,selectedDate};
-  const plan=await planner({...args,apiKey,history:history.map(t=>({question:t.question,steps:(t.answer?.steps||[]).map(s=>({id:s.id,source:s.source,question:s.question,groupBy:s.data?.plan?.groupBy||s.data?.dimensions||s.data?.plan?.group,snapshotDate:s.data?.snapshot?.date||s.snapshotDate,start:s.data?.plan?.start||s.start,end:s.data?.plan?.end||s.end})),clarification:t.answer?.clarification}))});
-  const result=plan.clarification?{clarification:plan.clarification,steps:[]}:await execute(resources,{...args,history,steps:plan.steps,comparison:plan.comparison});
+  const plan=await planner({...args,apiKey,history:history.map(t=>({question:t.question,steps:(t.answer?.steps||[]).map(s=>({id:s.id,source:s.source,question:s.question,groupBy:s.data?.plan?.groupBy||s.data?.dimensions||s.data?.plan?.group,snapshotDate:s.data?.snapshot?.date||s.snapshotDate,start:s.data?.plan?.start||s.start,end:s.data?.plan?.end||s.end,...(s.spec?{spec:s.spec}:{})})),clarification:t.answer?.clarification}))});
+  const pinMarket= !pins.marketPins && plan.steps?.some(s=>s.source==='portfolio'&&s.spec?.metric!=='weeklyMean');
+  if(pinMarket)pins.marketPins=await getPortfolioMarketPins(resources,snapshots);
+  const result=plan.clarification?{clarification:plan.clarification,steps:[]}:await execute(resources,{...args,history,marketPins:pins.marketPins||{},steps:plan.steps,comparison:plan.comparison});
   const answer={...result,referenceDate:selectedDate||null,id:crypto.randomUUID(),steps:(result.steps||[]).map(s=>({...s,data:s.source==='inventory'?compact(s.data):s.data}))};
   const next=version+1,title=last?.title||Array.from(question).slice(0,55).join(''),updatedAt=new Date().toISOString();
   const [saved]=await db.batch([
     db.prepare('INSERT OR IGNORE INTO joint_turns(owner,chat,version,requestId,digest,resultId,title,question,updatedAt,pins,answer) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
       .bind(owner,chatId,next,requestId,digest,answer.id,title,question,updatedAt,last?null:JSON.stringify(pins),JSON.stringify(answer)),
+    ...(last&&pinMarket?[db.prepare('UPDATE joint_turns SET pins=? WHERE owner=? AND chat=? AND version=1 AND EXISTS(SELECT 1 FROM joint_turns WHERE owner=? AND resultId=?)').bind(JSON.stringify(pins),owner,chatId,owner,answer.id)]:[]),
     ...[...new Set(answer.steps.flatMap(inventoryIds))].map(id=>db.prepare('INSERT OR IGNORE INTO inventory_chat_results(result,owner,chat) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM joint_turns WHERE owner=? AND resultId=?)')
       .bind(id,owner,chatId,owner,answer.id)),
   ]);

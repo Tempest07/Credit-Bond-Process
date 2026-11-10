@@ -10,7 +10,7 @@ function yi(cents){
 }
 const key = "bond-centre.joint.last-chat";
 const state = {snapshots:[],ledgers:[],selected:"",configured:false,turns:[],chat:null,origin:null,selectedManually:false,busy:true,retry:null};
-const newExamples = ["广州分行 10 月末持仓多少，当月净增持多少？","按发行人列出最新库存前五名","按年比较增持和减持"];
+const newExamples = ["按发行人列出最新库存前五名","广州分行上月净增持多少？","OCI 组合久期较年初变化多少？","今年全账户的周均规模是多少？"];
 const followExamples = ["只看广州分行","按会计科目拆分","把涉及的债券逐只列出"];
 const types = {joint:"台账问数",inventory:"库存问数",trade:"增减持问数"};
 const routes = {joint:"joint-",inventory:"",trade:"flow-"};
@@ -61,7 +61,9 @@ function controls() {
   $("compose-heading").textContent=follow?"继续追问":"向台账提问";
   $("submit").textContent=busy?"处理中…":follow?"追问 ↑":"提问 ↑";
   $("ai-status").textContent=!busy && !state.configured?"问数专用 API Key 待配置。":"";
-  $("suggestions").replaceChildren(...(follow?followExamples:newExamples).map(q=>{
+  const last=state.turns.at(-1)?.answer.steps?.at(-1);
+  const examples=last?.source==="portfolio"?["只看广州分行","用全账户重新计算"]:(follow?followExamples:newExamples);
+  $("suggestions").replaceChildren(...examples.map(q=>{
     const b=button(q,()=>draft(q)); b.disabled=$("question").disabled;return b;
   }));
   if (state.origin) {
@@ -217,6 +219,51 @@ function stockView(data,title,card,actions,chatId,mayContinue){
     const sub=el("section");sub.append(el("h3",item.title));stockView(item.result,item.title,sub,actions,chatId,mayContinue);card.append(sub);
   }
 }
+function portfolioView(data,card,stepDownload){
+  if(data.clarification)card.append(el("p",data.clarification,"summary"));
+  if(!data.headline)return;
+  card.append(el("p",data.headline,"summary"));
+  const {rows=[],columns=[],notes=[]}=data;
+  if(rows.length && columns.length){
+    const weekly=data.spec?.metric==="weeklyMean";
+    const wrap=el("div",null,"rank-table");
+    const table=el("table"),head=table.createTHead().insertRow(),body=table.createTBody();
+    for(const column of columns){const th=el("th",column);th.scope="col";head.append(th);}
+    function renderRows(items){
+      body.replaceChildren();
+      for(const cells of items){
+        const tr=body.insertRow();
+        cells.forEach((value,i)=>{
+          const numeric=typeof value==="number"||typeof value==="string"&&/^[+-]?[\d,]+(?:\.\d+)?$/.test(value);
+          const cell=el(i?"td":"th",value??"—",numeric?"num":undefined);
+          if(!i)cell.scope="row";
+          tr.append(cell);
+        });
+      }
+    }
+    const preview=weekly?rows.slice(-5):rows.slice(0,5);
+    renderRows(preview);
+    wrap.append(table);card.append(wrap);
+    if(preview.length<rows.length){
+      let expanded=false;
+      const expandLabel="查看全部 "+rows.length+(weekly?" 周":" 行");
+      const more=button(expandLabel,()=>{
+        expanded=!expanded;renderRows(expanded?rows:preview);
+        more.setAttribute("aria-expanded",String(expanded));
+        more.textContent=expanded?"收起":expandLabel;
+      });
+      more.setAttribute("aria-expanded","false");card.append(more);
+    }
+  }
+  if(notes.length){
+    const evidence=el("details",null,"record");evidence.append(el("summary","计算口径与来源"));
+    for(const note of notes)evidence.append(el("p",note,"meta"));
+    card.append(evidence);
+  }
+  const actions=el("div",null,"view-actions");
+  const exportButton=button("下载完整 Excel",()=>stepDownload(exportButton));
+  actions.append(exportButton);card.append(actions);
+}
 function turnView({question,answer},mayContinue){
   const box=el("article",null,"joint-turn");
   box.append(el("h2",question,"user-question"));
@@ -224,19 +271,20 @@ function turnView({question,answer},mayContinue){
   if(answer.comparison)box.append(compareBlock(answer.comparison));
   if(answer.alignment)box.append(alignedBlock(answer.alignment));
   const steps=answer.steps||[];
-  const downloadable=steps.some(s=>s.data && (s.data.result||s.data.resultId||s.data.overview?.some(p=>p.result.resultId)));
+  const downloadable=steps.some(s=>s.data && (s.data.result||s.data.resultId||s.data.overview?.some(p=>p.result.resultId)||s.source==="portfolio"&&s.data.headline));
   if(steps.length>1 && downloadable){
     const b=button("下载完整联合 Excel",()=>download(answer.id,null,b),"secondary");box.append(b);
   }
   const grid=el("div",null,"joint-steps");
   for(const step of steps){
     const card=el("section",null,"joint-step");
-    const type=step.source==="inventory"?"余额台账":"增减持流水";
+    const type={inventory:"余额台账",trade:"增减持流水",portfolio:"组合指标"}[step.source];
     card.append(el("h3",type,"step-type"));
     const subquestion=step.question===question && steps.length===1?"":step.question;
     const data=step.data,stepDownload=trigger=>download(answer.id,step.id,trigger);
     if(!data)card.append(el("p",step.question));
     else if(step.source==="inventory")stockView(data,subquestion,card,stepDownload,state.chat.id,mayContinue);
+    else if(step.source==="portfolio")portfolioView(data,card,stepDownload);
     else card.append(renderTradeAnswer({question:subquestion,answer:data},stepDownload));
     grid.append(card);
   }
@@ -252,8 +300,8 @@ function renderTurns(){
   });
 }
 function syncReference(answer) {
-  const dates=(answer?.steps||[]).filter(s=>s.source==="inventory")
-    .map(s=>s.data?.snapshot||s.data?.overview?.find(o=>o.result?.snapshot)?.result.snapshot)
+  const dates=(answer?.steps||[]).map(s=>s.source==="portfolio" ? {date:s.spec?.end||s.data?.spec?.end}
+    : s.data?.snapshot||s.data?.overview?.find(o=>o.result?.snapshot)?.result.snapshot)
     .filter(Boolean);
   const snap=dates.at(-1), day=snap?.date||answer?.referenceDate;
   if(!day)return;

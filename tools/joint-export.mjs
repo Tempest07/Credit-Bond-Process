@@ -2,12 +2,13 @@ import {InventoryError,inventoryExportSheets} from './inventory-workbook.mjs';
 import {exportData} from './inventory-store.mjs';
 import {tradeExportSheets} from './trade-store.mjs';
 import {exportTradeWorkbook} from './trade-workbook.mjs';
+import {portfolioMetrics} from './portfolio-metrics.mjs';
 
-export async function jointExcel(resources,question,answer,tradeIds,chosen){
+export async function jointExcel(resources,question,answer,tradeIds,chosen,portfolio={}){
   const toYuan=n=>Number.isSafeInteger(n)?n/100:'';
   const steps=chosen?answer.steps.filter(s=>s.id===chosen):answer.steps;
   if(!steps?.length)throw new InventoryError('没有可下载的查询步骤。',404);
-  const info=[['问题',question],['口径','余额为快照时点持仓；增减持为交易日期间流水。金额均为人民币元。']];
+  const info=[['问题',question],['口径','余额取快照时点持仓，增减持取交易日期间流水。金额单位见各表列名。']];
   const sheets=[{name:'问答口径',headers:['项目','内容'],rows:info}];
   if(!chosen && answer.comparison){
     const c=answer.comparison;
@@ -22,15 +23,20 @@ export async function jointExcel(resources,question,answer,tradeIds,chosen){
     if(a.note)info.push(['分组说明',a.note]);
   }
   for(const [i,s] of steps.entries()){
-    info.push([s.source==='inventory'?'库存':'交易',s.question]);
+    info.push([{inventory:'库存',trade:'交易',portfolio:'组合指标'}[s.source],s.question]);
     if(s.data?.clarification)info.push(['核对说明',s.data.clarification]);
-    let n=0;const add=specs=>{
+    let sheetNumber=0;
+    const add=specs=>{
       for(const spec of specs){
         const rows=spec.total?(function*(){yield* spec.rows;yield spec.total;})():spec.rows;
-        sheets.push({...spec,name:(i+1)+'-'+(n+1)+' '+spec.name,rows});
-      }n++;
+        sheets.push({...spec,name:(i+1)+'-'+(++sheetNumber)+' '+spec.name,rows});
+      }
     };
-    if(s.source==='inventory'){
+    if(s.source==='portfolio'&&s.data?.headline){
+      const data=await portfolioMetrics(resources,{...s.spec,marketPins:portfolio.marketPins},portfolio.snapshots,{details:true});
+      info.push(['组合指标',s.data.headline],...(s.data.notes||[]).map(n=>['计算口径',n]));
+      add([{name:'指标汇总',headers:s.data.columns,rows:s.data.rows},...(data.detailSheets||[])]);
+    }else if(s.source==='inventory'){
       const values=s.data?.overview?.map(item=>item.result)||[s.data];
       for(const v of values){if(!v?.resultId)continue;
         const {result,rows}=await exportData(resources.db,v.resultId);
