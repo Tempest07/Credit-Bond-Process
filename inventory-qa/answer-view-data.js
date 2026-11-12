@@ -1,5 +1,9 @@
+import {ordinaryPresentation} from './answer-summary.js?v=5.5.3-ui2';
+import {memberListViews} from './answer-list-comparison.js?v=5.5.3-ui2';
+
 // Adapters for the saved inventory, flow and joint answer contracts. All values
 // come from the answer being displayed, including its original data vintage.
+import {reportDisplayLead} from './answer-report-lead.js?v=5.5.3-ui2';
 const labels = {
   issuer: '发行人', branch: '联动分行', account: '会计科目', portfolio: '交易组合',
   scope: '持仓范围', marketType: '债券类型', sourceMarketType: '原表债券类型',
@@ -216,6 +220,19 @@ function flowValue(r,key) {
 }
 function trade(d) {
   const {plan:p,result:r}=d;
+  if(p?.metric==='dateRange' && r?.completeCoverage===true && r.groups?.length===1 && r.totals?.rows>0 && !r.warnings?.length){
+    const dates=r.totals.dates;
+    if(dates && ['firstTrade','lastTrade','firstSettlement','lastSettlement'].every(k=>typeof dates[k]==='string' && /^\d{4}-\d{2}-\d{2}$/.test(dates[k])) &&
+        Number.isSafeInteger(dates.missingSettlement) && dates.missingSettlement>=0){
+      const columns=[field('type','日期类型'),field('first','最早日期','date'),field('last','最晚日期','date')];
+      const rows=[{type:'成交',first:dates.firstTrade,last:dates.lastTrade},{type:'交割',first:dates.firstSettlement,last:dates.lastSettlement}];
+      const caption=[range(p.start,p.end),r.totals.rows+' 笔交易'].filter(Boolean).join(' · ');
+      const missing=dates.missingSettlement?'有 '+dates.missingSettlement+' 笔缺少交割日，交割区间仅按已记录日期列示。':'';
+      return {shortTitle:'成交与交割日期',answer:caption,source:list(d.sources).map(s=>s.filename).filter(Boolean).join('、'),
+        displayLead:{title:caption,notes:missing?[missing]:[],showOriginal:false},
+        result:{dimensions:columns,measures:[],columns,rows,coverage:'complete',defaultTable:true}};
+    }
+  }
   if(!p || !r?.totals || !Object.hasOwn(flowMetrics,p.metric))return null;
   const m=flowMetrics[p.metric];
   const partial=r.completeCoverage===false || (r.completeCoverage==null && /仅覆盖至|尚未导入|尚未覆盖|缺少.*台账/u.test(notes(r.warnings)));
@@ -524,8 +541,10 @@ function modelsFrom(input) {
     return model?[model]:[];
   }
   const steps=a.steps;
-  if(a.memberSets || steps.some(s=>!s?.data || uncertainRole(s.data) ||
+  if(steps.some(s=>!s?.data || uncertainRole(s.data) ||
     list(s.data.overview).some(p=>uncertainRole(p?.result))))return [];
+  if(a.memberSets)return !a.clarification && !a.arithmetic && !a.comparison && !a.alignment && !list(a.methodNotes).length ?
+    memberListViews(a.memberSets,steps) : [];
   if(a.clarification) {
     if(!steps.length && /未覆盖|缺少.*台账|覆盖至|未导入|未齐|不覆盖/u.test(a.clarification)){
       return [scalar('数据覆盖',a.clarification,'本次台账查询',measure('value','查询结果',''),null,{note:a.clarification})];
@@ -580,9 +599,64 @@ function modelsFrom(input) {
     const aligned=a.alignment && alignment(a.alignment,steps);
     return [cmp,aligned].filter(Boolean);
   }
+  if(!candidate && steps.length===2 && steps.every(s=>s.source==='inventory')){
+    const [first,second]=steps.map(s=>s.data);
+    const union=list(first.overview).find(p=>p.role==='union')?.result;
+    if(first.clarification && union?.resultId && second.scopedToPrevious && second.resultId &&
+        union.snapshot?.date && union.snapshot.date===second.snapshot?.date && Number.isSafeInteger(union.totalCents) &&
+        union.totalCents===second.totalCents && second.analysisMetric==='principalCents'){
+      const breakdown=inventory(second), roles=overview(first);
+      if(breakdown && roles){
+        const warnings=[...new Set(first.overview.flatMap(p=>list(p.result?.warnings)).map(w=>typeof w==='string'?w:w?.message).filter(Boolean))];
+        const overlap=first.clarification.match(/两类重叠\s*\d+\s*条持仓/u)?.[0];
+        const enhanced=first.overview.find(p=>p.role==='enhancement')?.result.roleEvidence;
+        const unit=outputMoneyUnit(input.question)||'亿元';
+        const amount=union.totalCents/(100*currencyScale[unit]);
+        const displayLead=overlap && enhanced?.entity && roles.result.coverage==='complete' ?
+          {title:enhanced.entity,metrics:[{label:'合并敞口（按持仓行去重）',value:amount,unit,
+            digits:amount.toLocaleString('en-US',{maximumFractionDigits:10,useGrouping:false}).split('.')[1]?.length||0}],notes:[overlap+'。',...warnings]} :
+          {title:first.clarification,notes:warnings,showOriginal:false};
+        return [{...breakdown,answer:first.clarification, displayLead,
+          result:{...breakdown.result,defaultTable:true}},roles];
+      }
+    }
+    if(first.resultId && first.scopedToPrevious && second.clarification && Object.keys(second).every(k=>k==='clarification'||k==='trace')){
+      const breakdown=inventory(first);
+      if(breakdown)return [{...breakdown, displayLead:{title:breakdown.answer,notes:[second.clarification],showOriginal:false}}];
+    }
+  }
   // A sequence may have been produced solely to collect evidence for a list,
   // clarification or a further calculation. Do not promote an arbitrary step.
   return candidate?[candidate]:[];
+}
+
+function issuerShareChart(answer, question) {
+  const report=answer.ledgerReport;
+  if(!/占全行|全行.{0,8}占比/u.test(question) || !/图/u.test(question) || report?.title!=='具名发行人本金排名' ||
+    !report.rows?.length || answer.arithmetic?.missing)return null;
+  const shares=list(answer.arithmetic?.rows);
+  if(shares.length!==report.rows.length || shares.some(s=>s?.op!=='share' || s.unit!=='%' || !finite(s.value) ||
+    s.inputs?.length!==2 || !s.inputs.every(i=>i && typeof i.label==='string' && finite(i.value))))return null;
+  const whole=shares[0].inputs[1];
+  const ledger=list(answer.steps).map(s=>s.data).find(d=>d?.resultId && d.plan?.metric==='principal' && d.plan.group==='none' &&
+    d.plan.filters && !Object.keys(d.plan.filters).length && !d.scopedToPrevious && !d.roleEvidence && !d.plan.analysis && yi(d.totalCents)===whole.value);
+  if(!ledger?.snapshot?.date || whole.unit!=='亿元' || !(whole.value>0))return null;
+  const rows=[];
+  for(const entry of report.rows){
+    if(typeof entry?.name!=='string' || !entry.name || !finite(entry.principal))return null;
+    const found=shares.filter(s=>s.inputs[0].label?.split(' / ').at(-1)===entry.name+' 的本金');
+    if(found.length!==1)return null;
+    const s=found[0], [part,base]=s.inputs;
+    if(part.unit!==whole.unit || part.value!==entry.principal || base.value!==whole.value || base.unit!==whole.unit ||
+        base.label!==whole.label || Math.abs(100*part.value/base.value-s.value)>1e-9 || s.value<0 || s.value>100)return null;
+    rows.push({issuer:entry.name,share:s.value,principal:entry.principal});
+  }
+  if(new Set(rows.map(r=>r.issuer)).size!==rows.length)return null;
+  const share=measure('share','占全行本金','%',{digits:2});
+  const source=report.source || ledgerSource(ledger);
+  const denominator='分母为'+ledger.snapshot.date+'全行在账本金 '+shown(whole.value)+' 亿元。';
+  return sample('发行人占全行本金比例',denominator,source,[field('issuer','发行人')],[share,principal],rows,
+    {orderedBy:{key:'share',direction:'desc'},note:report.note});
 }
 
 // A question may specify display units independently of ledger units. A filter
@@ -715,7 +789,8 @@ function displayPrecision(model,question){
     return precise.toLocaleString('zh-CN',{minimumFractionDigits:digits,maximumFractionDigits:digits})+(unit==='%'?'':' ')+unit;
   });
   const columns=result.columns?.map(c=>({...c,digits:measures.find(m=>m.key===c.key)?.digits}));
-  return {...model,answer,result:{...result,measures,...(columns?{columns}:{})}};
+  const metrics=model.displayLead?.metrics?.map(m=>units.has(m.unit)?{...m,digits}:m);
+  return {...model,answer,...(metrics?{displayLead:{...model.displayLead,metrics}}:{}),result:{...result,measures,...(columns?{columns}:{})}};
 }
 
 function contextAnswer(question,steps){
@@ -847,8 +922,11 @@ export function answerViewModels(input) {
   }
   const report=reportModel(a?.ledgerReport);
   if(report) models.unshift(report);
+  const shareChart=report && issuerShareChart(a,question);
+  if(shareChart)models.unshift(shareChart);
   const flowSpec=list(a.steps).length===1 && a.steps[0].data?.flowMatrixSpec;
-  if(report && flowSpec && /走势|趋势|折线|曲线/u.test(question))models.unshift(...monthlyCharts(a.ledgerReport,flowSpec));
+  const reportTrends=report && flowSpec && /走势|趋势|折线|曲线/u.test(question)?monthlyCharts(a.ledgerReport,flowSpec):[];
+  models.unshift(...reportTrends);
   if(!models.length)return models;
   if(/(?:只|仅).{0,10}(?:第一名|榜首|首位)/u.test(question)){
     const model=models[0],r=model.result;
@@ -862,7 +940,10 @@ export function answerViewModels(input) {
   const comparison=!report && (rowComparison(a.arithmetic,question,models[0])||flowTotalRow(list(a.steps),question));
   if(comparison)models.unshift(comparison);
   const explanation=contextAnswer(question,list(a.steps));
-  if(explanation)models[0]={...models[0],answer:explanation+' '+models[0].answer};
+  if(explanation){
+    const original=models[0], display=original.displayLead;
+    models[0]={...original,answer:explanation+' '+original.answer,...(display?{displayLead:{...display,notes:[explanation,...(display.notes||[])]}}:{})};
+  }
   const unit=outputMoneyUnit(question);
   if(unit) models=models.map(model=>requestedUnitModel(model,unit));
   models=models.map(model=>displayPrecision(model,question));
@@ -873,7 +954,8 @@ export function answerViewModels(input) {
     list(r.inputs).length && r.inputs.every(input=>input?.label && (input.value===null || finite(input.value))));
   if(calculations.length)models[0]={...models[0],calculations};
   const wantsTable=/(?:做成|列成|整理成|做一张|放在一张|给我一张|用)\s*(?:明细|汇总|对照|数据|可排序的)?表(?:格)?|(?:本金|金额|笔数|发行人|券码)(?:明细|汇总|排名)?表(?:格)?(?=[，。？！\s]|$)|打开分析台/u.test(question);
-  if(wantsTable||/(?:给我|做|整理|出)一张[^，。？！]{1,80}的表(?:格)?[，。？！\s]/u.test(question+'。'))
+  const tableEdit=/(?:这张表|分月表|月度表|明细表).{0,24}(?:多一列|加一列|排序|只留|按.+排)|(?:列出|给我看|展开).{0,50}(?:持仓|交易)明细/u.test(question);
+  if(wantsTable||tableEdit||/(?:给我|做|整理|出)一张[^，。？！]{1,80}的表(?:格)?[，。？！\s]/u.test(question+'。'))
     models[0]={...models[0],result:{...models[0].result,defaultTable:true}};
   if(/(?:表后|表尾|表底|表末|最后一行|最后加|加一行).{0,12}(?:总计|合计)|(?:合计|总计).{0,6}(?:行|放表尾)/u.test(question)){
     const r=models[0].result;
@@ -902,10 +984,21 @@ export function answerViewModels(input) {
       warnings.add(date+text);
     }
   }
+  if(report){
+    const table=models.find(m=>m.shortTitle===report.shortTitle && m.result.columns);
+    const reportOnly=explanation?displayPrecision(unit?requestedUnitModel(report,unit):report,question):table;
+    const displayLead=reportDisplayLead(a.ledgerReport,reportOnly,list(a.steps),unit,question);
+    if(displayLead)models=models.map(m=>{
+      const trend=reportTrends.some(t=>t.shortTitle===m.shortTitle)&&m.result.preferTrend;
+      if(m!==table && !trend)return m;
+      const notes=explanation && m===models[0]?[explanation,...(displayLead.notes||[])]:displayLead.notes;
+      return {...m,displayLead:{...displayLead,notes,foldNote:!trend && displayLead.foldNote}};
+    });
+  }
   if(warnings.size)models[0]={...models[0],cautions:[...warnings]};
   if(models.length===1 && !report && !explanation){
     const balanceChange=balanceChangeSummary(a,models[0]);
     if(balanceChange)models[0]={...models[0],balanceChange};
   }
-  return models;
+  return report || models[0].displayLead ? models : ordinaryPresentation(models,a,question,explanation,unit);
 }

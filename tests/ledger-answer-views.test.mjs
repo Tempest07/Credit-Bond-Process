@@ -3,6 +3,34 @@ import assert from 'node:assert/strict';
 import {answerViewModels} from '../inventory-qa/answer-view-data.js';
 import {chooseAnswerView} from '../inventory-qa/answer-views.js';
 
+test('two account lists display verified distinct counts and retain each complete group',()=>{
+  const date='2022-07-01';
+  const steps=['AFS','Receivable'].map(account=>({source:'inventory',data:{snapshot:{date},plan:{filters:{account}}}}));
+  const sets={dimension:'code',field:'券码',labels:['前者','后者'],both:['b'],leftOnly:['a'],rightOnly:[],total:2};
+  const views=answerViewModels({steps,memberSets:sets});
+  assert.deepEqual(views[0].displayLead.metrics.map(m=>m.value),[2,1,1,2]);
+  assert.deepEqual(views.map(m=>m.result.rows.map(r=>r.member)),[['b'],['a'],[]]);
+  assert.equal(views.at(-1).result.coverage,'complete');
+  assert.equal(answerViewModels({steps,memberSets:{...sets,rightOnly:['b'],total:3}}).length,0);
+});
+
+test('a share chart matches named numerators to the full ledger before publishing percentages',()=>{
+  const date='2021-09-10', names=['发行人甲','发行人乙'];
+  const rows=names.map((name,i)=>({rank:i+1,name,principal:2-i}));
+  const ledgerReport={title:'具名发行人本金排名',summary:'按本金排序',rows,source:'原表',
+    columns:[{key:'name',kind:'category',label:'发行人'},{key:'principal',kind:'number',label:'本金',unit:'亿元'}]};
+  const arithmetic={rows:rows.map(r=>({label:r.name+'占比',op:'share',value:r.principal*10,unit:'%',
+    inputs:[{label:'入选成员 / '+r.name+' 的本金',value:r.principal,unit:'亿元'},{label:'全行本金',value:10,unit:'亿元'}]}))};
+  const data=snapshot(date,1e11);
+  data.plan.filters={};
+  const input={question:'两家各占全行本金多少？给我图。',answer:{ledgerReport,arithmetic,steps:[{source:'inventory',data}]}};
+  const [chart]=answerViewModels(input);
+  assert.equal(chooseAnswerView(chart.result),'ranking');
+  assert.deepEqual(chart.result.rows.map(r=>r.share),[20,10]);
+  arithmetic.rows[1].inputs[1].value=4;
+  assert.equal(answerViewModels(input)[0].shortTitle,'具名发行人本金排名');
+});
+
 test('explicit currency display uses the unrounded balance and scales its matrix without mutating the answer',()=>{
   const data=snapshot('2026-06-30',540501234321);
   data.summary='名义本金 54.05 亿元';

@@ -1,6 +1,6 @@
 "use strict";
 
-import {presentAnswer} from "./answer-presentation.js?v=5.5.3-ui1";
+import {presentAnswer} from "./answer-presentation.js?v=5.5.3-ui2";
 
 const $ = (id) => document.getElementById(id);
 const api = "../api/inventory/";

@@ -1,6 +1,6 @@
-import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.3-ui1";
-import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.3-ui1";
-import {presentAnswer} from "./answer-presentation.js?v=5.5.3-ui1";
+import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.3-ui2";
+import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.3-ui2";
+import {presentAnswer} from "./answer-presentation.js?v=5.5.3-ui2";
 
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -270,6 +270,38 @@ function portfolioView(data,card,stepDownload){
 function canDownload(steps){
   return steps.some(s=>s.data && (s.data.result||s.data.resultId||s.data.overview?.some(p=>p.result?.resultId)||s.source==="portfolio"&&s.data.headline));
 }
+function showHoldingRows(panel,data){
+  const preview=el("section",null,"answer-views holding-preview"), body=el("div",null,"av-body");
+  preview.append(el("h3","原表持仓明细","av-toolbar"),body);panel.prepend(preview);
+  const summary=panel.querySelector(".answer-views:not(.holding-preview)");
+  async function loadRows(){
+    body.replaceChildren(el("p","正在读取这份台账的持仓行…","meta"));
+    try{
+      const page=await json("detail?"+new URLSearchParams({id:data.resultId,offset:"0"}));
+      if(!Array.isArray(page.rows) || !page.rows.length || page.total!==data.rowCount)throw Error("原表行数与这次回答不一致，请重新读取。");
+      const caption=el("p",data.snapshot.date+" · "+page.total+" 条持仓，"+data.securityCount+" 只券","av-result-title");
+      const wrap=el("div",null,"av-scroll"), table=el("table"), head=table.createTHead().insertRow();
+      for(const label of ["原表行号","券码 / 简称","本金（元）"]){const th=el("th",label);th.scope="col";head.append(th);}
+      const rows=table.createTBody();
+      for(const item of page.rows.slice(0,5)){
+        const row=rows.insertRow();
+        row.append(el("th",item.sourceRow),el("td",item.code));
+        if(item.name)row.lastChild.append(el("small",item.name));
+        row.append(el("td",Number.isSafeInteger(item.cents)?(item.cents/100).toLocaleString("zh-CN",{maximumFractionDigits:2}):"待核","num"));
+      }
+      wrap.append(table);body.replaceChildren(caption,wrap);
+      const openAll=panel.querySelector(".view-actions .holding-detail-action");
+      if(page.total>5 && openAll){
+        openAll.textContent="查看全部 "+page.total+" 条持仓";openAll.classList.add("quiet");body.append(openAll);
+      }
+      if(summary){
+        const detail=el("details",null,"holding-groups");
+        detail.append(el("summary","查看按券码汇总"));summary.replaceWith(detail);detail.append(summary);
+      }
+    }catch(error){body.replaceChildren(el("p",error.message,"warning"),button("重新读取明细",loadRows));}
+  }
+  loadRows();
+}
 function turnView({question,answer},mayContinue){
   const box=el("article",null,"joint-turn");
   box.append(el("h2",question,"user-question"));
@@ -277,8 +309,9 @@ function turnView({question,answer},mayContinue){
   const panel=presentAnswer({question,answer},()=>{
     const controls=[];
     const step=steps.length===1?steps[0]:null;
-    if(step?.source==="inventory" && step.data?.resultId){
-      controls.push(button("查看匹配明细",()=>openInventoryDetail(step.data,null)));
+    const match=step || (steps.length===2 && steps[0].data?.scopedToPrevious && steps[1].data?.clarification && !steps[1].data?.resultId ? steps[0] : null);
+    if(match?.source==="inventory" && match.data?.resultId){
+      controls.push(button("查看匹配明细",()=>openInventoryDetail(match.data,null),"holding-detail-action"));
     }
     if(canDownload(steps)){
       const b=button(step?"下载完整 Excel":"下载完整联合 Excel",()=>download(answer.id,null,b),"secondary");
@@ -286,10 +319,14 @@ function turnView({question,answer},mayContinue){
     }
     return controls;
   },()=>turnEvidence(question,answer,mayContinue));
-  box.append(panel||turnEvidence(question,answer,mayContinue));
+  const data=steps.length===1 && steps[0].source==="inventory" && steps[0].data;
+  if(panel && data?.resultId && data.snapshot?.date && data.plan?.group==="code" && data.rowCount>0 && !answer.ledgerReport &&
+      !answer.arithmetic && !answer.comparison && !answer.alignment && !answer.memberSets &&
+      /持仓明细|逐条持仓|逐笔持仓|原表行号/u.test(question) && /明细|逐条|逐笔|列出/u.test(question))showHoldingRows(panel,data);
+  box.append(panel||turnEvidence(question,answer,mayContinue,true));
   return box;
 }
-function turnEvidence(question,answer,mayContinue){
+function turnEvidence(question,answer,mayContinue,primary=false){
   const box=el("div");
   const report=answer.ledgerReport;
   if(Array.isArray(report?.columns) && Array.isArray(report.rows)){
@@ -349,23 +386,33 @@ function turnEvidence(question,answer,mayContinue){
   if(answer.comparison)box.append(compareBlock(answer.comparison));
   if(answer.alignment)box.append(alignedBlock(answer.alignment));
   const steps=answer.steps||[];
-  if(steps.length>1 && canDownload(steps)){
-    const b=button("下载完整联合 Excel",()=>download(answer.id,null,b),"secondary");box.append(b);
+  const portfolioComparison=primary && steps.length>1 && steps.every(s=>s.source==="portfolio" && s.data?.headline && !s.data.clarification);
+  if(portfolioComparison){
+    const overview=el("section",null,"joint-summary joint-portfolio-comparison");
+    for(const step of steps)overview.append(el("p",step.data.headline));
+    box.append(overview);
   }
   const grid=el("div",null,"joint-steps");
   for(const step of steps){
     const card=el("section",null,"joint-step");
     const type={inventory:"余额台账",trade:"增减持流水",portfolio:"组合指标"}[step.source];
     card.append(el("h3",type,"step-type"));
-    const subquestion=step.question===question && steps.length===1?"":step.question;
+    const subquestion=steps.length===1 && (primary || step.question===question)?"":step.question;
     const data=step.data,stepDownload=trigger=>download(answer.id,step.id,trigger);
     if(!data)card.append(el("p",step.question));
     else if(step.source==="inventory")stockView(data,subquestion,card,stepDownload,state.chat.id,mayContinue);
     else if(step.source==="portfolio")portfolioView(data,card,stepDownload);
     else card.append(renderTradeLedger({question:subquestion,answer:data},stepDownload));
-    grid.append(card);
+    if(portfolioComparison){
+      const detail=el("details",null,"record");
+      detail.append(el("summary",step.question||"逐项明细"),card);grid.append(detail);
+    }else grid.append(card);
   }
-  box.append(grid);return box;
+  if(grid.childElementCount)box.append(grid);
+  if(steps.length>1 && canDownload(steps)){
+    const b=button("下载完整联合 Excel",()=>download(answer.id,null,b),"secondary");box.append(b);
+  }
+  return box;
 }
 function renderTurns(){
   const history=$("history");history.replaceChildren();$("current-answer").replaceChildren();

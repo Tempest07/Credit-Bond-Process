@@ -171,13 +171,16 @@ function matrix(result, state, redraw) {
     if (cap > 0) for (const m of comparable) caps.set(m.key, cap);
   }
   const scroll = element("div", "av-scroll");
+  if (rows.length > 6) scroll.classList.add("av-long-table");
   scroll.tabIndex = 0;
   scroll.setAttribute("role", "region");
   scroll.setAttribute("aria-label", "数据表");
   const table = element("table");
+  if (fields.length >= 4) table.className = "av-wide";
   const head = table.createTHead().insertRow();
   fields.forEach((field, i) => {
     const th = element("th");
+    if (metrics.has(field.key)) th.classList.add("av-numeric-heading");
     th.scope = "col";
     const sorted = state.sort === i;
     if (sorted) th.setAttribute("aria-sort", state.ascending ? "ascending" : "descending");
@@ -199,6 +202,7 @@ function matrix(result, state, redraw) {
       const cell = tr.insertCell(), v = row[field.key], metric = metrics.has(field.key);
       const label = metric ? format(v,field.digits) : String(v ?? "缺数");
       if (metric) cell.className = "av-number";
+      else if (field.kind === "date") cell.className = "av-date";
       let value;
       if (i === 0) {
         const key = "row" + index;
@@ -208,6 +212,9 @@ function matrix(result, state, redraw) {
         });
         value.className = "av-row-link";
         value.setAttribute("aria-expanded", String(index === state.expanded));
+      } else if (field.key === "members" && !metric && label.length > 35 && label.includes("、")) {
+        value = element("details", "av-members");
+        value.append(element("summary", "", "查看名单"), element("p", "", label));
       } else value = element("span", "", label);
       if (caps.has(field.key) && finite(v)) {
         value.classList.add("av-cell");
@@ -311,7 +318,7 @@ function barChart(result, measure, items, state, kind, redraw, showUnit = false)
     fill.style.left = (split ? value < 0 ? 50 - width : 50 : 0) + "%";
     track.append(fill);
     const sign=result.netComposition?.key===measure.key && value>0?"+":"";
-    const text = !finite(value) ? "缺数" : shared ? format(share,measure.digits) + "%" : sign+format(value,measure.digits);
+    const text = !finite(value) ? "缺数" : shared ? format(share,measure.digits) + "%" : sign+format(value,measure.digits)+(measure.unit==="%"?"%":"");
     const end = element("span", "av-end", text);
     if (showUnit && finite(value) && measure.unit) end.append(element("small", "av-bar-unit", measure.unit));
     b.append(track, end);
@@ -409,7 +416,15 @@ function timeChart(result, measure, items, state, redraw) {
     path.setAttribute("d",segments.join(" "));path.setAttribute("vector-effect","non-scaling-stroke");
     if(j)path.setAttribute("stroke-dasharray",styles[j]);
     const title=document.createElementNS(svgNS,"title");title.textContent=m.label;path.append(title);svg.append(path);
-    if(series.length>1)legend.append(element("span","av-series-"+j,m.label+"（"+["实线","长虚线","点线","点划线"][j]+"）"));
+    path.dataset.series=String(j);
+    if(series.length>1){
+      const label=element("span","av-legend-item");
+      const sample=document.createElementNS(svgNS,"svg");
+      sample.setAttribute("viewBox","0 0 25 8");sample.setAttribute("aria-hidden","true");
+      const line=document.createElementNS(svgNS,"path");line.setAttribute("d","M1 4 H24");
+      line.dataset.series=String(j);if(j)line.setAttribute("stroke-dasharray",styles[j]);
+      sample.append(line);label.append(sample,document.createTextNode(m.label));legend.append(label);
+    }
   }
   plot.append(svg);
   const points = items.map((item, i) => ({ item, i })).filter(({ i }) => finite(values[i]));
@@ -438,6 +453,7 @@ function timeChart(result, measure, items, state, redraw) {
     plot.append(b);
   });
   [0, Math.floor((items.length - 1) / 2), items.length - 1].forEach((i, j) => {
+    if(j===1 && (i===0 || i===items.length-1))return;
     const tick = element("time", "av-time-" + j, items[i].row[d]);
     tick.style.left = x(i) + "%";
     if(j===1 && (x(i)-x(0)<23 || x(items.length-1)-x(i)<23)){
@@ -449,7 +465,14 @@ function timeChart(result, measure, items, state, redraw) {
   box.append(plot);
   const content = element("div", "av-trend");
   if(legend.childElementCount)content.append(legend);
-  content.append(box, readout(result, current, measure));
+  content.append(box);
+  if(series.length===1)content.append(readout(result,current,measure));
+  else {
+    const reading=element("div","av-series-reading");
+    reading.append(element("time","",current.row[d]));
+    for(const m of series)reading.append(element("span","",m.label+" "+format(current.row[m.key],m.digits)+(finite(current.row[m.key])&&m.unit?" "+m.unit:"")));
+    content.append(reading);
+  }
   return content;
 }
 
@@ -461,19 +484,42 @@ function isModel(model) {
     r.rows.every(row => row && typeof row === "object");
 }
 
+function resultLead(lead) {
+  const box = element("div", "av-result-lead");
+  if (lead.title) box.append(element("p", "av-result-title", lead.title));
+  if (lead.metrics?.length) {
+    const metrics = element("dl", "av-result-metrics");
+    for (const item of lead.metrics) {
+      const pair = element("div", "av-result-metric");
+      const label = element("dt", "", item.label);
+      const value = element("dd");
+      const text = typeof item.value === "number" ? format(item.value, item.digits) : item.value ?? "待核";
+      value.append(element("strong", "", text));
+      if (item.unit && item.value != null) value.append(element("small", "", item.unit));
+      pair.append(label, value); metrics.append(pair);
+    }
+    box.append(metrics);
+  }
+  for (const note of lead.notes || []) box.append(element("p", "av-result-note", note));
+  return box;
+}
+
 // Model selection, the current metric, pagination and keyboard focus belong to this
 // message only. No dependencies on the enclosing chat, stored answers or network.
 export function createAnswerViews(models) {
   const root = element("section", "answer-views");
   const list = Array.isArray(models) ? models.filter(isModel) : [];
   if (!list.length) return root;
-  let selected = 0, mode = list[0].result.defaultTable ? 1 : 0;
+  let selected = 0;
   const states = list.map(model => ({
     metric: Math.max(0, model.result.measures.findIndex(m => model.result.rows.some(row => finite(row[m.key])))),
-    picked: null, expanded: null, sort: null, ascending: false, page: 0, barPage: 0,
+    mode: model.result.defaultTable ? 1 : 0, picked: null, expanded: null, sort: null, ascending: false, page: 0, barPage: 0,
   }));
   function draw(focusKey) {
     const model = list[selected], result = model.result, state = states[selected];
+    const mode = state.mode;
+    const priorScroll = focusKey?.startsWith("row") && root.querySelector(".av-scroll");
+    const offset = priorScroll && [priorScroll.scrollLeft, priorScroll.scrollTop];
     const measure = result.measures[state.metric];
     const kind = chooseAnswerView(result, measure?.key);
     const balance = kind === "comparison" && model.balanceChange;
@@ -483,11 +529,15 @@ export function createAnswerViews(models) {
     }));
     else if (model.shortTitle) toolbar.append(element("h3", "av-title", balance ? balance.subject : model.shortTitle));
     const hasData = result.coverage !== "missing" && result.rows.length > 0;
-    if (hasData) toolbar.append(choice("回答视图", ["图览", "分析台"], mode, "mode", (i, key) => { mode = i; draw(key); }));
+    if (hasData && kind !== "table") toolbar.append(choice("回答视图", ["图览", "分析台"], mode, "mode", (i, key) => { state.mode = i; draw(key); }));
     const content = element("div", "av-body");
     const scalarValue = kind === "scalar" ? result.rows[0][measure.key] : undefined;
-    const lead = !balance && model.answer && answerLead(model.answer, measure, model.directionalMagnitude?Math.abs(scalarValue):scalarValue, result.headline);
-    if (lead) content.append(lead.box);
+    const display = !balance && model.displayLead;
+    const shownScalar = kind === "scalar" && display?.metrics?.some(item => item.unit === measure.unit &&
+      (item.value === scalarValue || model.directionalMagnitude && item.value === Math.abs(scalarValue)));
+    const lead = !balance && !display && model.answer && answerLead(model.answer, measure, model.directionalMagnitude?Math.abs(scalarValue):scalarValue, result.headline);
+    if (display) content.append(resultLead(display));
+    else if (lead) content.append(lead.box);
     for(const line of model.ratingCoverage||[])content.append(element("p","av-caption",line));
     const hasMeasure = result.measures.some(m => result.rows.some(row => finite(row[m.key])));
     if (result.coverage === "missing" || !result.rows.length) {
@@ -506,7 +556,7 @@ export function createAnswerViews(models) {
           tools.append(choice("选择指标", result.measures.map(unitLabel), state.metric, "metric", (i, key) => {
             state.metric = i; state.picked = null; state.barPage = 0; draw(key);
           }));
-        } else if (kind !== "missing" && !(kind === "scalar" && lead?.includesScalar)) {
+        } else if (kind !== "missing" && !(kind === "scalar" && (lead?.includesScalar || shownScalar))) {
           tools.append(element("span", "av-measure", unitLabel(measure)));
         }
         if (tools.childElementCount) content.append(tools);
@@ -515,8 +565,8 @@ export function createAnswerViews(models) {
         } else {
           const items = chartRows(result, measure, kind);
           if (kind === "scalar") {
-            if (!lead?.includesScalar) content.append(readout(result, items[0], measure, true));
-            else {
+            if (!shownScalar && !lead?.includesScalar) content.append(readout(result, items[0], measure, true));
+            else if (lead?.includesScalar) {
               const label=scope(result,items[0].row);
               if(label&&!model.answer.includes(label))content.append(element("p","av-caption",label));
             }
@@ -526,11 +576,12 @@ export function createAnswerViews(models) {
         }
       }
     }
-    if(result.columns && result.note) content.append(element("p","av-caption",result.note));
+    if(result.columns && result.note && !display?.foldNote && result.coverage!=="partial") content.append(element("p","av-caption",result.note));
     const parts = toolbar.childElementCount ? [toolbar, content] : [content];
+    const disclosures = element("div", "av-disclosures");
     if(model.calculations?.length){
       const details=element("details","av-source");
-      details.open=state.calculationsOpen ?? model.calculations.reduce((n,c)=>n+c.inputs.length,0)<=6;
+      details.open=state.calculationsOpen ?? (!display && model.calculations.reduce((n,c)=>n+c.inputs.length,0)<=6);
       details.append(element("summary","","计算取数"));
       for(const row of model.calculations){
         const inputs=row.inputs.map((input,i)=>{
@@ -543,7 +594,7 @@ export function createAnswerViews(models) {
         line.title=row.inputs.map(input=>input.label).join("；");details.append(line);
       }
       details.addEventListener("toggle",()=>{if(details.isConnected)state.calculationsOpen=details.open;});
-      parts.push(details);
+      disclosures.append(details);
     }
     if (model.cautions?.length) {
       const cautions = element("details", "av-source");
@@ -552,7 +603,7 @@ export function createAnswerViews(models) {
       cautions.append(element("summary", "", redemption ? "部分 ABS 实际兑付待核" : "部分持仓的兑付或归属待核"));
       for (const text of model.cautions) cautions.append(element("p", "", text));
       cautions.addEventListener("toggle", () => { if (cautions.isConnected) state.cautionsOpen = cautions.open; });
-      parts.push(cautions);
+      disclosures.append(cautions);
     }
     const sourceNote = result.note && !result.columns && result.coverage !== "partial" && result.note !== model.answer;
     if (model.source || sourceNote) {
@@ -562,9 +613,20 @@ export function createAnswerViews(models) {
       if (model.source) details.append(element("p", "", model.source));
       if (sourceNote) details.append(element("p", "", result.note));
       details.addEventListener("toggle", () => { if (details.isConnected) state.sourceOpen = details.open; });
-      parts.push(details);
+      disclosures.append(details);
     }
+    if (display && ((model.answer && display.showOriginal !== false) || (result.note && display.foldNote))) {
+      const original = element("details", "av-source av-original");
+      original.open = Boolean(state.originalOpen);
+      original.append(element("summary", "", "完整回答"));
+      if (model.answer) original.append(element("p", "", model.answer));
+      if (display.foldNote && result.note && result.note !== model.answer) original.append(element("p", "", result.note));
+      original.addEventListener("toggle", () => { if (original.isConnected) state.originalOpen = original.open; });
+      disclosures.append(original);
+    }
+    if (disclosures.childElementCount) parts.push(disclosures);
     root.replaceChildren(...parts);
+    if (offset) root.querySelector(".av-scroll")?.scrollTo(...offset);
     if (focusKey) {
       const next = Array.from(root.querySelectorAll("[data-av-control]")).find(b => b.dataset.avControl === focusKey && !b.disabled);
       next?.focus({ preventScroll: true });
