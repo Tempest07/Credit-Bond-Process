@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {collectMeasures,evaluateOperations} from '../tools/joint-arithmetic.mjs';
+import {collectMeasures,deriveAnswer,evaluateOperations} from '../tools/joint-arithmetic.mjs';
 import {jointExcel} from '../tools/joint-export.mjs';
 import ExcelJS from 'exceljs';
 
@@ -51,6 +51,31 @@ test('an incomplete trade period cannot supply a denominator',()=>{
   assert.deepEqual(collectMeasures([step]),[]);
   step.data.result.completeCoverage=true;
   assert.equal(collectMeasures([step]).some(f=>f.label.endsWith('买入本金')),true);
+});
+
+test('a date basis scopes monthly totals and genuine daily breakdown or other incomplete calculations survive',async()=>{
+  const step={source:'trade',question:'五月全账户按交割发生日期的净买入',data:{
+    plan:{direction:'both',start:null,end:null,groupBy:[],filters:[{field:'交易交割日',op:'between',value:['2026-05-01','2026-05-31']}]},
+    result:{completeCoverage:true,totals:{buyCents:8e10,sellCents:2e10,netCents:6e10},groups:[],groupCount:0}}};
+  const calculate=(question,request)=>deriveAnswer({question,steps:[step],fetchImpl:async(_,options)=>{
+    const input=JSON.parse(JSON.parse(options.body).input);
+    assert.deepEqual(input.rendered[0].settlementDateRange,['2026-05-01','2026-05-31']);
+    const net=input.facts.find(f=>f[2].endsWith('净买入本金'))[0];
+    const reply={operations:[{label:'五月净买入',op:'value',args:[net],show:true}],missing:[
+      {kind:'dailyBreakdown',request,detail:'缺少每个交割日的买入卖出本金。'},
+      {kind:'calculation',request:'投资收益',detail:'缺少利息和估值等投资收益依据。'}]};
+    return Response.json({output:[{content:[{type:'output_text',text:JSON.stringify(reply)}]}]});
+  }});
+  const aggregate=await calculate('五月按交割发生日期给买、卖、净三个数，再算投资收益。','按交割发生日期');
+  assert.equal(aggregate.rows[0].value,6);
+  assert.equal(aggregate.missing,'缺少利息和估值等投资收益依据。');
+  const daily=await calculate('五月按交割发生日期归期并列出每个交易日净买入，再算投资收益。','每个交易日净买入');
+  assert.match(daily.missing,/每个交割日/);
+  assert.match(daily.missing,/投资收益/);
+  const misquoted=await calculate('五月按交割发生日期逐日给出净额，再算投资收益。','每一交割日的净金额');
+  assert.equal(misquoted.rows[0].value,6);
+  assert.match(misquoted.missing,/每个交割日/);
+  assert.match(misquoted.missing,/投资收益/);
 });
 
 test('explicit effective-rating share uses the verified denominator of the requested date and account',()=>{
