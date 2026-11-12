@@ -269,9 +269,9 @@ function turnView({question,answer},mayContinue){
   box.append(el("h2",question,"user-question"));
   if(answer.clarification)box.append(el("p",answer.clarification,"summary"));
   for(const note of answer.methodNotes||[])box.append(el("p",note,"summary"));
-  if(answer.arithmetic){
+  if(answer.arithmetic?.rows?.length || answer.arithmetic?.missing){
     const section=el("section",null,"joint-summary");section.append(el("h3","计算结果"));
-    for(const row of answer.arithmetic.rows){
+    for(const row of answer.arithmetic.rows||[]){
       const value=row.value===null?"无法计算（分母为零或上一步无有效值）":row.value.toLocaleString("zh-CN",{maximumFractionDigits:6})+" "+row.unit;
       section.append(el("p",row.label+"："+value,"summary"));
       if(row.flowDirection && row.value!==null){
