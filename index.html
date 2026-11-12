@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.5.2">
-  <meta name="application-build-version" content="5.5.2">
+  <meta name="application-version" content="5.5.3">
+  <meta name="application-build-version" content="5.5.3">
   <meta name="application-build" content="20261112v551">
-  <title>Bond Centre 5.5.2 - Tempest07</title>
+  <title>Bond Centre 5.5.3 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
@@ -60,13 +60,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.5.2">v5.5.2</span>
+      <span class="header-version" aria-label="当前版本 5.5.3">v5.5.3</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.5.2 · 2026-11-12">v5.5.2</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.5.3 · 2026-11-12">v5.5.3</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1704,6 +1704,12 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.5.3</strong><time datetime="2026-11-12">2026 / 11 / 12</time></div>
+      <section><h3>问数助手 · 追问、表图与历史下载</h3><ul>
+        <li>追问可沿用上一轮入选的发行人、分行或券码，在同一名单内查买卖、重新排名，并核对占比的分子和分母。</li>
+        <li>净买入和净卖出在零轴两侧展示。比较两个余额时点时仅画两期实际值，周度数据缺报时保留断点。</li>
+        <li>可按成交日和交割日核对跨期差额，并追到原交易。历史对话和 Excel 沿用锁定的台账版本，新上传的余额台账可核对上传账号。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.5.2</strong><time datetime="2026-11-12">2026 / 11 / 12</time></div>
       <section><h3>问数助手 · 图览与分析台</h3><ul>
         <li>问数结果可按数据自动展示走势、排名、占比或正负净额。单一数值直接显示，流水缺报时提示覆盖范围。</li>

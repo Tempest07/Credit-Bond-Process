@@ -1,6 +1,6 @@
-import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.2";
-import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.2";
-import {presentAnswer} from "./answer-presentation.js?v=5.5.2";
+import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.3";
+import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.3";
+import {presentAnswer} from "./answer-presentation.js?v=5.5.3";
 
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
