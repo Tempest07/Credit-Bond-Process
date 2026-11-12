@@ -221,7 +221,7 @@ function readDecision(payload) {
     return JSON.parse(parts.filter(p=>p.type==='output_text').map(p=>p.text).join('')).decision;
   } catch { throw new InventoryError('交易查询计划未能读取，请重试。',502); }
 }
-async function askModel(input,schema,{apiKey,effort,fetchImpl,signal}) {
+async function askModel(input,schema,{apiKey,effort,fetchImpl,signal},retryTransport=true) {
   let response,payload;
   try {
     response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'manual',signal,
@@ -229,8 +229,9 @@ async function askModel(input,schema,{apiKey,effort,fetchImpl,signal}) {
       body:JSON.stringify({model:'gpt-6.1-terra',store:false,reasoning:{effort},max_output_tokens:4096,instructions:[instructions,ledgerInstructions,fieldInstructions,summaryInstructions,'若要求每组至少有若干笔交易，minGroupRows 填该正整数，未限定时为 null。执行器在完整交易范围逐组检查笔数门槛，然后按所问指标排序、取前 N。逐组笔均用 average。上轮展示名单不能代替这个完整范围。',...(input.boundScope?[boundInstructions]:[])].join('\n'),input:JSON.stringify(input),
         text:{format:{type:'json_schema',name:'transaction_query',strict:true,schema}}})});
     if (response.ok) payload=await response.json();
-  } catch {
+  } catch (err) {
     if (signal.aborted) throw new InventoryError('交易问数超时，请重试或降低思考强度。',504);
+    if(retryTransport && err instanceof TypeError)return askModel(input,schema,{apiKey,effort,fetchImpl,signal},false);
     throw new InventoryError('无法连接交易问数服务，请稍后重试。',502);
   }
   if (response.status===429) throw new InventoryError('问数 API 已达额度或频率上限，请稍后重试。',429);
@@ -264,6 +265,13 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
       groupBy:[dateField],metric:'rows',limit:null,order:'asc'}};
   }
   const pair=await checkSecurityPair(originalQuestion,periodHint,runQuery,fields);
+  const codeLiterals=[...new Set(originalQuestion.toUpperCase().match(/[A-Z0-9-]+\.[A-Z]{2,6}\b/g)||[])];
+  const auditCodes=codeLiterals.length===1&&/标准(?:券码|代码)/.test(originalQuestion)&&/债券代码|原始?券码/.test(originalQuestion)&&
+    /一(?:行|条)|两(?:列|栏)|重复|几遍|去重/.test(originalQuestion);
+  const auditHint=auditCodes?{codeAudit:{code:codeLiterals[0],execution:'双券码原表行核对已支持。根据原问限制方向和期间，按券码 eq 筛选；每个方向统计 rows。合同、原行和两个代码列由执行器作为源行明细返回，不用全部放入 groupBy。'}}:{};
+  const dailyDetail=/逐日|每天|每日|交易日|成交日/.test(originalQuestion)&&/原(?:始)?(?:交易|流水)|逐笔|哪几笔/.test(originalQuestion);
+  const extreme=dailyDetail&&/净(卖出|减持|买入|增持)(?:额|本金)?(?:最多|最大|最高)/.exec(originalQuestion);
+  const dateExtreme=extreme?(['卖出','减持'].includes(extreme[1])?'sell':'buy'):null;
   const schema=decisionSchema(fields,boundScope,!!lookupIssuer), sources=new Map(), issuerEvidence=new Map();
   if (previousPlan && Array.isArray(previousGroups)) sources.set('previous',groupSet(previousPlan,previousGroups,previousGroupCount));
   const coverage=ledgers.map(({year,direction,start,end,asOf,filename})=>({year,direction,category:ledgerCategory(filename),firstTradeDate:start,lastTradeDate:end,coveredThrough:asOf}));
@@ -305,7 +313,7 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
   let feedback;
   for (let attempt=0;attempt<4;attempt++) {
     const sets=Object.fromEntries([...sources].map(([key,s])=>[key,showSet(s)]));
-    const decision=await askModel({question,...(lockedIssuer?{issuerScope:{...lockedIssuer,alreadyApplied:true}}:{}),...(pair?{securityEvidence:{code:pair.code,observedNames:pair.names.slice(0,12),confirmedNames:pair.confirmed}}:{}),...(boundScope?{boundScope}:{}),...(periodHint?{periodHint}:{}),fields,coverage,today,previous:{plan:safePrior(previousPlan)},conversation:history,
+    const decision=await askModel({question,...auditHint,...(dateExtreme?{dateExtreme:{side:dateExtreme,execution:'支持同时查看整期逐日买卖净额和最高净买入或净卖出日的逐笔原表。直接提交整个期间 direction=both、metric=net、groupBy=[交易日期]，limit=null，保留所问其它过滤条件。不要先探查单日或要求澄清。'}}:{}),...(lockedIssuer?{issuerScope:{...lockedIssuer,alreadyApplied:true}}:{}),...(pair?{securityEvidence:{code:pair.code,observedNames:pair.names.slice(0,12),confirmedNames:pair.confirmed}}:{}),...(boundScope?{boundScope}:{}),...(periodHint?{periodHint}:{}),fields,coverage,today,previous:{plan:safePrior(previousPlan)},conversation:history,
       sets,canProbe:Boolean(runQuery)&&!sources.has('probe2')&&attempt<3,feedback},schema,{apiKey,effort,fetchImpl,signal});
     if(decision?.kind==='verifyIssuer'&&lookupIssuer){
       const alias=decision.alias?.trim();
@@ -338,8 +346,18 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
     if (decision?.kind==='clarification' && Object.hasOwn(explanations,decision.reason)) return {clarification:decision.reason==='entity' ? entityReply(sources) : explanations[decision.reason]};
     try {
       if (!decision || !['plan','probe'].includes(decision.kind)) problem('请选择交易查询或澄清问题。');
-      let plan=makePlan(decision,fields,sources,previousPlan);
+      const lineFields=['增减方向','交易日期','交易交割日','合同号','券码','债券代码','债券标准代码','债券简称','债券全称','发行人全称','名义本金'];
+      const auditRows=decision.kind==='plan' && auditCodes && Array.isArray(decision.groupBy) && decision.groupBy.every(f=>lineFields.includes(f)) &&
+        !/逐日|逐月|分月|每天|按(?:发行人|债券简称|合同号|交易日期)分组/.test(originalQuestion);
+      let plan=makePlan(auditRows?{...decision,groupBy:['增减方向'],metric:'rows',limit:null}:decision,fields,sources,previousPlan);
+      if(auditRows)plan.auditCodeRows=true;
       plan.filters=plan.filters.map(filter=>normalizeTradeFilter(ledgerFilter(filter,originalQuestion,coverage),originalQuestion));
+      if(auditRows){
+        const [code]=codeLiterals;
+        plan.filters=plan.filters.filter(f=>!bondCodeFields.includes(f.field)||!['eq','in','contains'].includes(f.op)||
+          ![].concat(f.value).every(v=>[code,code.split('.')[0]].includes(v.toUpperCase())));
+        plan.filters.push({field:'券码',op:'eq',value:code});
+      }
       plan.filters=plan.filters.map(filter=>{
         if(filter.field!=='券码'||!['eq','in'].includes(filter.op))return filter;
         const qualify=value=>{
@@ -357,6 +375,10 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
       if (decision.kind==='plan') {
         const grainQuestion=/(?:按|以)(?:实际)?(?:交易|成交)日/.test(originalQuestion)?originalQuestion:question;
         plan=resultGrain(plan,grainQuestion);
+        if(dateExtreme && plan.direction==='both' && plan.groupBy.every(f=>['交易日期','增减方向'].includes(f))){
+          plan={...plan,groupBy:['交易日期'],metric:'net',order:dateExtreme==='sell'?'asc':'desc',dateExtreme};
+          delete plan.limit;
+        }
         if(plan.metric==='rows' && plan.direction==='both' && !plan.limit && decision.share!=='matched' && plan.groupBy.length<5 && !plan.groupBy.includes('增减方向') &&
             /(?:分别|各自|各)[^。？！]{0,24}(?:买入|增持)[^。？！]{0,12}(?:卖出|减持)|(?:买入|增持)[^。？！]{0,10}(?:卖出|减持)[^。？！]{0,6}(?:各|分别)/.test(question)){
           plan.groupBy=[...plan.groupBy,'增减方向'];
@@ -364,7 +386,10 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
         const mismatch=applySecurityPair(plan,pair);
         if(mismatch)return {clarification:mismatch};
         verifyIdentities(plan,previousPlan,sources,{texts:[originalQuestion,...priorUserQuestions],bound:statedCodes});
-        if(decision.share==='matched'||(/占比|各占|占(?:全部|总|全账户)|百分比/.test(question)&&plan.groupBy.length)){
+        const signedAlternative=plan.metric==='net' && /饼图|构成图|环形图/.test(originalQuestion) &&
+          /能用吗|能否|合适|适合|能不能|替代|另一种|给一种|看出谁|正负/.test(originalQuestion);
+        if(signedAlternative)plan.describeNetComposition=true;
+        if(!signedAlternative&&(decision.share==='matched'||(/占比|各占|占(?:全部|总|全账户)|百分比/.test(question)&&plan.groupBy.length))){
           if(!['buy','sell','gross','rows'].includes(plan.metric)||plan.groupBy.length!==1)problem('占比需要明确的本金或笔数，以及一个用于展示的分组字段。');
           const values=decision.showGroups??[];
           if(!Array.isArray(values)||values.length>100||!values.every(textValue))problem('请使用有限的实际类别作为展示名单。');

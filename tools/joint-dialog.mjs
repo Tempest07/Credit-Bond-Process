@@ -8,7 +8,7 @@ import {planJointQuestion} from './joint-planner.mjs';
 import {executeJointPlan} from './joint-execute.mjs';
 import {jointExcel} from './joint-export.mjs';
 import {getPortfolioMarketPins} from './portfolio-facts.mjs';
-import {durationCoverageReport} from './portfolio-metrics.mjs';
+import {durationCoverageReport,ratingDenominatorReport} from './portfolio-metrics.mjs';
 
 const uuid=v=>typeof v==='string' && /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(v);
 const fail=(message,status=400,details={})=>{throw new InventoryError(message,status,details)};
@@ -69,6 +69,26 @@ function describeMissingBranches(question,data){
   }
   if(amounts.size<=15)data.summary=(data.summary||'')+'。未填写联动分行的本金分别为'+[...amounts].map(([name,cents])=>
     name+' '+(cents/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8})+' 亿元').join('、')+'。';
+}
+function operatingRow(steps,note){
+  const data=steps.filter(s=>s.source==='trade').map(s=>s.data);
+  if(!data.length)return;
+  let buy=null,sell=null,source;
+  const seen=new Set();
+  for(const d of data){
+    if(d.flowMatrixSpec?.series?.length===1)continue;
+    if(!d.plan||!d.result?.totals)continue;
+    const p=d.plan;seen.add(JSON.stringify([p.start,p.end,p.filters||[]]));
+    if(d.result.completeCoverage!==true)continue;
+    if(p.direction!=='sell')buy=d.result.totals.buyCents/1e10;
+    if(p.direction!=='buy')sell=d.result.totals.sellCents/1e10;
+    source=[p.start+' 至 '+p.end,...(d.sources||[]).map(s=>s.filename)].join(' · ');
+  }
+  if(seen.size!==1||buy===null&&sell===null)return;
+  return {title:'期间经营数据',source,summary:'按已报交易本金核实买入、卖出和净买入。实际投资收益率待核。',
+    note,columns:[{key:'buy',label:'买入本金',unit:'亿元',kind:'number'},{key:'sell',label:'卖出本金',unit:'亿元',kind:'number'},
+      {key:'net',label:'净买入',unit:'亿元',kind:'number'},{key:'returns',label:'实际投资收益率',kind:'category'}],
+    rows:[{buy,sell,net:buy===null||sell===null?null:buy-sell,returns:'待核：需期初期末估值、交易价款、付息还本现金流及费用'}]};
 }
 
 export async function jointAction(resources,action,{input,params,planner=planJointQuestion,execute=executeJointPlan}={}){
@@ -151,9 +171,14 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
     return execute(resources,{...args,history,marketPins:pins.marketPins||{},steps:planned.steps,comparison:planned.comparison});
   }
   let result=await runPlan(plan);
-  const durationReport=durationCoverageReport(result.steps||[],question);
+  const durationReport=durationCoverageReport(result.steps||[],question)||ratingDenominatorReport(result.steps||[],question);
   if(durationReport)result.ledgerReport=durationReport;
-  if(plan.derive && result.steps?.length && !durationReport){
+  const memberReportComplete=plan.steps?.length===1 && plan.steps[0].operation==='memberAnalysis' &&
+    ['newOnly','commonOnly','leaderShares'].includes(plan.steps[0].analysisMode) && result.ledgerReport;
+  const signedComposition=result.steps?.length===1 && result.steps[0].data?.plan?.describeNetComposition &&
+    result.steps[0].data?.result?.highlights?.length && !/逐(?:项|家|行)(?:计算|列出|给出).{0,8}(?:占比|比例)/u.test(question);
+  if(plan.derive && result.steps?.length && !durationReport && !memberReportComplete && !signedComposition &&
+      result.ledgerReport?.kind!=='selectedScopeShare'){
     try{
       const calculate=(steps,reused)=>deriveAnswer({question,steps,apiKey,effort,history:reused?
         [{question:history.at(-1).question,answer:{arithmetic:history.at(-1).answer.arithmetic}}]:history});
@@ -171,10 +196,19 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
   }
   if(plan.basisNotes?.includes('investmentReturn')){
     result.methodNotes=['净买入按买卖名义本金计算，余额变化按两期在账名义本金相减，单凭这两个数不能确定投资收益。核算期间投资收益还需要期初、期末估值或公允价值，逐笔买卖价款、应计利息、付息与还本现金流及相关费用；发生划转时也要核对划转记录。'];
+    if(/一行|同一表|依次|一张表/u.test(question)){
+      const report=operatingRow(result.steps||[],result.methodNotes[0]);
+      if(report)result.ledgerReport=report;
+      else if(result.ledgerReport?.rows?.length===1){
+        result.ledgerReport={...result.ledgerReport,columns:[...result.ledgerReport.columns,{key:'returns',label:'实际投资收益率',kind:'category'}],
+          rows:result.ledgerReport.rows.map(r=>({...r,returns:'待核：需期初期末估值、交易价款、付息还本现金流及费用'}))};
+      }
+    }
   }
   if(plan.basisNotes?.includes('flowVsBalance')){
     result.methodNotes=['交易对库存的净流入或净流出按期间买入本金减卖出本金计算。实际在账余额的变动需另用期初、期末两期余额台账核对，期间还可能有兑付或划转。'];
   }
+  if(plan.basisNotes?.includes('endpointTrend'))(result.methodNotes??=[]).push('按题目限定的两个余额时点，只能核实两端余额和净变化。开始下降的月份或期间走势需要逐月实际快照，不能从两端插值确定。');
   for(const s of result.steps||[])if(s.source==='inventory')describeMissingBranches(question,s.data);
   const answer={...result,referenceDate:selectedDate||null,id:crypto.randomUUID(),steps:(result.steps||[]).map(s=>({...s,data:s.source==='inventory'?compact(s.data):s.data}))};
   const next=version+1,title=last?.title||Array.from(question).slice(0,55).join(''),updatedAt=new Date().toISOString();

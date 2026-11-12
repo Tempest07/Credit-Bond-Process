@@ -5,6 +5,25 @@ import {planFlowQuestion} from '../tools/flow-planner.mjs';
 const ledgers=['buy','sell'].map(direction=>({year:2026,direction,start:'2026-01-05',end:'2026-10-30',
   headers:['发行人全称','会计分类','交易组合','债券简称','联动分行','债券代码','交易日期']}));
 const base={kind:'plan',direction:'both',start:'2026-01-01',end:'2026-10-31',filters:[],groupBy:['发行人全称'],metric:'net',limit:null,order:'desc',selections:[]};
+test('the planner recovers from one network disconnect without restarting the chat',async()=>{
+ let calls=0;const succeed=mock(()=>base);
+ const answer=await planFlowQuestion({question:'今年按发行人统计净买入',ledgers,apiKey:'test',fetchImpl:(...args)=>{
+   if(++calls===1)throw new TypeError('fetch failed');
+   return succeed(...args);
+ }});
+ assert.equal(calls,2);assert.deepEqual(answer.plan.groupBy,['发行人全称']);
+});
+test('signed net alternatives and daily extreme drilldown use verified rows without turning net into unsigned shares',async()=>{
+ const net=await planFlowQuestion({question:'按分行列净买入，全行净买入作饼图能用吗？给一种能看出谁净买谁净卖的展示。',ledgers,apiKey:'test',fetchImpl:mock(()=>({...base,groupBy:['联动分行'],share:'matched'}))});
+ assert.equal(net.plan.share,undefined);assert.equal(net.plan.metric,'net');
+ const date=await planFlowQuestion({question:'逐日看买卖和净额，查净卖出最多那天的原交易',ledgers,apiKey:'test',fetchImpl:mock(input=>{
+   assert.equal(input.dateExtreme.side,'sell');return {...base,groupBy:['交易日期'],metric:'gross',limit:1};
+ })});
+ assert.equal(date.plan.dateExtreme,'sell');assert.equal(date.plan.metric,'net');assert.equal(date.plan.limit,undefined);
+ const code=await planFlowQuestion({question:'查148787.SZ的买卖笔数，如果债券代码和标准代码都在同一行会算几遍？',ledgers,apiKey:'test',fetchImpl:mock(()=>({...base,
+   groupBy:['交易日期','增减方向','合同号','债券简称','债券代码','债券标准代码'],filters:[]}))});
+ assert.deepEqual(code.plan.groupBy,['增减方向']);assert.deepEqual(code.plan.filters,[{field:'券码',op:'eq',value:'148787.SZ'}]);assert.equal(code.plan.auditCodeRows,true);
+});
 test('same-record transaction date inspection keeps the exact period, direction and account',async()=>{
  const previousPlan={direction:'sell',start:'2026-06-01',end:'2026-06-30',filters:[{field:'会计分类',op:'eq',value:'Receivable'}],groupBy:[],metric:'rows',order:'desc'};
  const result=await planFlowQuestion({previousPlan,question:'列出卖出交易明细及原始交易日期',originalQuestion:'这批卖出的原始成交日有哪些？',ledgers,apiKey:'test',fetchImpl:()=>assert.fail('does not need replanning')});

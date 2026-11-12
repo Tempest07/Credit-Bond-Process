@@ -45,6 +45,18 @@ test('source category composition preserves missing labels and computes signed a
   assert.equal(report.rows.find(r=>r.name==='未填写').lastShare,50);
   assert.equal(report.rows.find(r=>r.name==='未填写').difference,-60/1e10);
 });
+test('restricted member reports use full population denominators and new-only members have no growth percentage',()=>{
+  const spec={field:'code',limit:0};
+  const common=buildMemberReport({...spec,analysisMode:'commonOnly'},[early,late]);
+  assert.equal(common.rows.length,3);
+  const n=(300+150+230+100+200+270),d=early.totalCents+late.totalCents;
+  assert.ok(common.summary.includes((100*n/d).toFixed(6)+'%'));
+  const additions=buildMemberReport({...spec,analysisMode:'newOnly'},[early,late]);
+  assert.deepEqual(additions.rows.map(r=>[r.name,r.first,r.last,r.growth]),[['F',0,31/1e10,'不适用（期初为零）']]);
+  const leaders=buildMemberReport({...spec,analysisMode:'leaderShares',limit:2},[early,late]);
+  assert.deepEqual(leaders.rows.map(r=>r.amount),[530/1e10,470/1e10,370/1e10]);
+  assert.deepEqual(leaders.rows.map(r=>r.denominator),[early.totalCents/1e10,late.totalCents/1e10,late.totalCents/1e10]);
+});
 test('settlement reconciliation requires an exact settlement-only interval and matching non-date filters',()=>{
   const stock=d=>({source:'inventory',data:{...d,plan:{...d.plan,filters:{account:'AFS'}}}});
   const dateFilter={field:'交易交割日',op:'between',value:['2026-10-01','2026-11-05']};
@@ -57,6 +69,16 @@ test('settlement reconciliation requires an exact settlement-only interval and m
   delete data.plan.start;
   dateFilter.value[0]='2026-10-02';
   assert.equal(run().gapCents,undefined);
+});
+test('a reference net from a wider scope cannot replace the matching net used for a branch reconciliation',()=>{
+  const stock=r=>({source:'inventory',data:{...r,plan:{...r.plan,filters:{branch:'测试分行'}}}});
+  const flow=(id,filters,netCents)=>({id,source:'trade',question:id,data:{plan:{direction:'both',metric:'net',
+    start:'2026-10-01',end:'2026-11-05',filters},result:{completeCoverage:true,totals:{netCents}},
+    sources:['buy','sell'].map(direction=>({direction,year:2026,asOf:'2026-11-10'}))}});
+  const broad=flow('全范围',[],172),narrow=flow('同分行',[{field:'联动分行',op:'eq',value:'测试分行'}],14);
+  const c=compareJointSteps([stock(early),broad,stock(late),narrow],'reconcile');
+  assert.equal(c.flowId,narrow.id);assert.equal(c.netCents,14);assert.equal(c.referenceFlow.netCents,172);
+  assert.equal(c.gapCents,late.totalCents-early.totalCents-14);
 });
 test('a missing valuation cohort and a verified empty cohort give distinct downstream messages',async()=>{
   const date='2026-06-30';

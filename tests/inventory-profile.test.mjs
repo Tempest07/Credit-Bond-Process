@@ -48,3 +48,26 @@ test('rank actual names after aggregating all rows, preserve cutoff ties and kee
   assert.deepEqual(filtered.rows.map(r=>r.name),['甲城投','乙城投']);
   assert.throws(()=>validateProfile({...spec,membersContain:''},assert.ok));
 });
+test('explicit original names match literally and preserve source rows, including the zero denominator case',()=>{
+  const input=[{sourceRow:12,code:'001.IB',name:'系列1A',issuer:'甲控股',account:'AFS',cents:25},
+    {sourceRow:24,code:'001.IB',name:'系列1A',issuer:'甲控股',account:'Receivable',cents:75},
+    {sourceRow:25,code:'002.IB',name:'另系列1A',issuer:'甲控股集团',account:'AFS',cents:30}];
+  const spec={type:'textMatch',field:'name',compare:'prefix',text:'系列',stat:'list',account:null};
+  const list=buildProfile(spec,input,snapshot);
+  assert.deepEqual(list.rows.map(v=>[v.code,v.name,v.sourceRows]),[['001.IB','系列1A','12、24']]);
+  const byIssuer={...spec,field:'issuer',compare:'equals',stat:'accountShare',account:'OCI',text:'甲控股'};
+  assert.equal(buildProfile(byIssuer,input,snapshot).rows[0].share,25);
+  const empty=buildProfile({...byIssuer,text:'甲'},input,snapshot);
+  assert.equal(empty.rows[0].share,null);assert.match(empty.summary,/分母为零/);
+  assert.match(buildProfile({...byIssuer,stat:'count',text:'甲'},input,snapshot).summary,/0 只不同券码、0 条/);
+});
+test('group counts sort by numeric unique securities, and ordinal gaps use the exact two ledger subtotals',()=>{
+  const input=[{issuer:'A',code:'1',cents:4000000001},{issuer:'A',code:'2',cents:5},
+    {issuer:'B',code:'3',cents:3999999999},{issuer:'C',code:'4',cents:3999999999}];
+  const sorted=buildProfile({type:'groups',stat:'counts',by:'issuer',order:'codesAsc'},input,snapshot);
+  assert.deepEqual(sorted.rows.map(r=>r.codes),[1,1,2]);
+  const ranked=buildProfile({type:'groups',stat:'ranking',by:'issuer',limit:2,rankGap:[1,2]},input,snapshot);
+  assert.deepEqual(ranked.rows.map(r=>r.rank),[1,2,2]);assert.match(ranked.summary,/第 2 名并列/);
+  assert.match(ranked.summary,/差额为 0.07 元/);
+  assert.throws(()=>validateProfile({type:'groups',stat:'ranking',by:'issuer',limit:2,rankGap:[1,3]},assert.ok));
+});

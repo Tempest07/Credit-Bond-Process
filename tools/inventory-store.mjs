@@ -161,7 +161,7 @@ async function resolveEntity(db,snapshot,field,query,names,places,codeSource){
   const leads=results.map(row=>row.entity).filter(name=>names.includes(name));
   return askIdentity(field,key,[...suggestions,...leads]);
 }
-export async function ingestInventory({db,bucket}, bytes,filename,replaceId,expectedYear) {
+export async function ingestInventory({db,bucket,owner}, bytes,filename,replaceId,expectedYear) {
   if(expectedYear!=null && !/^\d{4}$/.test(expectedYear))throw message('请选择四位数的库存年份。',400);
   const checkYear=date=>{
     if(expectedYear!=null && date.slice(0,4)!==expectedYear)
@@ -182,7 +182,8 @@ export async function ingestInventory({db,bucket}, bytes,filename,replaceId,expe
   const key='inventory/'+date+'/'+id+'.xlsx';
   let publishAttempted=false;
   try {
-    await bucket.put(key,bytes,{httpMetadata:{contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}});
+    await bucket.put(key,bytes,{httpMetadata:{contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
+      ...(typeof owner==='string'&&owner.length<=200?{customMetadata:{uploadedBy:owner}}:{})});
     await db.prepare('INSERT INTO inventory_versions VALUES (?,?,?,?,?,?,?,?)').bind(id,date,filename,sheet,rowCount,totalCents,sha,createdAt).run();
     // Each SQL statement imports a bounded JSON array, well below the D1 bound-parameter limit.
     const selectFields=['sourceRow','cents',...fieldNames];

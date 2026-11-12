@@ -25,6 +25,16 @@ async function sample(side,extra=0,end='2024-12-31'){
  return new Uint8Array(await w.xlsx.writeBuffer());
 }
 const plan={direction:'both',metric:'net',start:'2024-01-01',end:'2024-12-31',groupBy:['发行人全称'],limit:1};
+test('daily signed net extremes drill through to matching immutable ledger rows, including tied dates',async()=>{
+ const r=isolated();await ingestTradeLedger(r,await sample('buy'),buy);
+ const w=new ExcelJS.Workbook();await w.xlsx.load(await sample('sell'));
+ w.worksheets[0].getCell('A2').value='2024-02-04';w.worksheets[0].getCell('G2').value=100;
+ await ingestTradeLedger(r,new Uint8Array(await w.xlsx.writeBuffer()),sell);
+ const hit=await runTradeQuery(r,{...plan,limit:null,groupBy:['交易日期'],dateExtreme:'sell'});
+ assert.equal(hit.groupCount,3);
+ assert.match(hit.ledgerReport.summary,/2024-01-02、2024-02-04/);
+ assert.deepEqual(hit.ledgerReport.rows.map(x=>[x.side,x.source,x.sheet,x.sourceRow,x.principal]),[['减持',sell,'流水',2,1e-6],['减持',sell,'流水',3,1e-6]]);
+});
 test('minimum group rows narrows complete groups before average ranking; exports distinguish the entire source from qualifying groups',async()=>{
  const r=isolated(),w=new ExcelJS.Workbook();await w.xlsx.load(await sample('buy'));
  w.worksheets[0].getCell('G4').value=999;
@@ -155,6 +165,20 @@ test('seasonal filters, blank exclusions and actual settlement bounds survive Ex
  const summary=book.getWorksheet('交易汇总'),headers=summary.getRow(1).values;
  assert.equal(summary.getCell(3,headers.indexOf('最后交割日')).value,'2024-04-02');
  await assert.rejects(runTradeQuery(r,{...qp,filters:[{field:'会计分类',op:'eq',value:'公某'}]}),/已见取值包括/);
+});
+test('a single verified security counts once across both raw identifiers while source columns remain available',async()=>{
+ const r=isolated(),w=new ExcelJS.Workbook(),s=w.addWorksheet('流水');
+ s.addRow(['交易日期','交易交割日','合同号','发行人全称','债券代码','债券标准代码','名义本金','买入收益率','数据业务日期','债券简称']);
+ for(const [i,raw,standard] of [[1,'T1.SZ','T1.SZ'],[2,'OTHER.SZ','T1.SZ'],[3,'T1.SZ','']])s.addRow(['2024-05-01','2024-05-02',String(i),'甲',raw,standard,10,0.02,'2024-12-31','测试券']);
+ await ingestTradeLedger(r,new Uint8Array(await w.xlsx.writeBuffer()),buy);
+ for(const filter of [{field:'券码',op:'eq',value:'T1.SZ'},{field:'券码',op:'in',value:['T1.SZ']}]){
+   const hit=await runTradeQuery(r,{...plan,direction:'buy',metric:'rows',groupBy:['券码'],filters:[filter],limit:null});
+   assert.equal(hit.totals.rows,3);assert.equal(hit.totals.bonds,1);
+   assert.deepEqual(hit.groups.map(g=>[g.values[0],g.rows,g.bonds]),[['T1.SZ',3,1]]);
+ }
+ const audit=await runTradeQuery(r,{...plan,direction:'buy',metric:'rows',groupBy:['增减方向'],filters:[{field:'券码',op:'eq',value:'T1.SZ'}],limit:null,auditCodeRows:true});
+ assert.match(audit.ledgerReport.summary,/买入 3 笔/);
+ assert.deepEqual(audit.ledgerReport.rows.map(x=>[x.sourceRow,x.raw,x.standard]),[[2,'T1.SZ','T1.SZ'],[3,'OTHER.SZ','T1.SZ'],[4,'T1.SZ','']]);
 });
 test('cross-column code lookup keeps exchange suffix, rejects ambiguity and verifies genuinely empty scopes',async()=>{
  const r=isolated(),w=new ExcelJS.Workbook(),sheet=w.addWorksheet('流水');

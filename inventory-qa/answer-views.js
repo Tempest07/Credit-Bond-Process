@@ -86,6 +86,18 @@ function numericSort(a, b, ascending) {
 function chartRows(result, measure, kind) {
   const items = result.rows.map((row, index) => ({ row, index }));
   const dim = result.dimensions[0];
+  if(result.netComposition?.key===measure.key){
+    const named=items.filter(item=>item.index!==result.netComposition.blankIndex);
+    if(!named.length)return items;
+    const positive=named.filter(item=>item.row[measure.key]>0).sort((a,b)=>b.row[measure.key]-a.row[measure.key]);
+    const negative=named.filter(item=>item.row[measure.key]<0).sort((a,b)=>a.row[measure.key]-b.row[measure.key]);
+    const ordered=[];
+    for(let i=0;i<Math.max(positive.length,negative.length);i++){
+      if(positive[i])ordered.push(positive[i]);
+      if(negative[i])ordered.push(negative[i]);
+    }
+    return ordered.concat(named.filter(item=>item.row[measure.key]===0));
+  }
   if (dim?.kind === "date" && (kind === "trend" || kind === "comparison")) {
     items.sort((a, b) => dateValue(a.row[dim.key]) - dateValue(b.row[dim.key]));
   } else if (result.orderedBy?.key === measure.key) {
@@ -211,6 +223,17 @@ function matrix(result, state, redraw) {
       cell.append(list);
     }
   }
+  if(result.footer){
+    const tr=table.createTFoot().insertRow();
+    fields.forEach((f,i)=>{
+      const cell=tr.insertCell();
+      if(!i)cell.append(element("strong","","全表合计"));
+      if(f.key===result.footer.measureKey){
+        cell.className="av-number";
+        cell.append(element("strong","",format(result.footer.value,f.digits)));
+      }
+    });
+  }
   scroll.append(table); box.append(scroll);
   const pages = pager(rows.length, pageSize, state.page, "matrix", n => { state.page = n; redraw("matrix" + (n === 0 ? "next" : "prev")); });
   if (pages) box.append(pages);
@@ -287,7 +310,8 @@ function barChart(result, measure, items, state, kind, redraw) {
     fill.style.width = width + "%";
     fill.style.left = (split ? value < 0 ? 50 - width : 50 : 0) + "%";
     track.append(fill);
-    const text = !finite(value) ? "缺数" : shared ? format(share,measure.digits) + "%" : format(value,measure.digits);
+    const sign=result.netComposition?.key===measure.key && value>0?"+":"";
+    const text = !finite(value) ? "缺数" : shared ? format(share,measure.digits) + "%" : sign+format(value,measure.digits);
     b.append(track, element("span", "av-end", text));
     b.title = measure.label + "　" + (finite(value) ? value + " " + (measure.unit || "") : "缺数");
     box.append(b);

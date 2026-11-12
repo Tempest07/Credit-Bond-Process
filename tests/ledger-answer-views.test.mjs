@@ -115,6 +115,18 @@ test('side-by-side compares value operands with labeled columns while keeping th
   assert.deepEqual(models[0].result.rows,[{v0:2,v1:1}]);
   assert.equal(models[1].result.rows.length,3);
 });
+test('a reconciled signed flow breakdown survives an optional ratio failure and discloses the empty group separately',()=>{
+  const amounts=[{name:'甲',net:4},{name:'乙',net:-3},{name:'（未填）',net:-2}];
+  const data={plan:{metric:'net',direction:'both',groupBy:['联动分行'],describeNetComposition:true,start:'2026-05-01',end:'2026-05-31'},
+    result:{totals:{netCents:-1e10},groupCount:3,completeCoverage:true,groups:amounts.map(r=>({values:[r.name],netCents:r.net*1e10}))}};
+  const a={steps:[{source:'trade',data}],arithmetic:{rows:[],missing:'派生项未得到结果'}};
+  const [m]=answerViewModels(a);
+  assert.equal(chooseAnswerView(m.result),'diverging');
+  assert.deepEqual(m.result.netComposition,{key:'net',blankIndex:2});
+  assert.deepEqual(m.result.rows.map(r=>r.net),[4,-3,-2]);
+  assert.match(m.answer,/负份额.*未填写联动分行净额 -2 亿元/);
+  data.result.groupCount=5;assert.equal(answerViewModels(a).length,0);
+});
 test('signed trade differences preserve the sign in the matrix and use the magnitude after a flow direction',()=>{
   const [m]=answerViewModels({steps:[],arithmetic:{rows:[{label:'买入减卖出',flowDirection:'净流出',value:-3,unit:'亿元',op:'difference'}]}});
   assert.match(m.answer,/净流出 3 亿元/);
@@ -133,6 +145,23 @@ test('month matrix plots the dated observations, skips totals, and preserves unk
   assert.match(plot.result.note,/2026-10、2026-11/);
   assert.equal(table.result.rows.at(-1).month,'期间合计');
   assert.equal(answerViewModels({question:'按月给我核对表',answer})[0].shortTitle,'流水表');
+});
+test('a requested table footer requires a full reconciliation across all pages',()=>{
+  const data={...snapshot('2026-04-30',10e10),groups:[{name:'甲',cents:6e10},{name:'',cents:4e10}]};
+  data.plan.group='branch';const show=()=>answerViewModels({question:'按分行拆分，表后给合计。',answer:{steps:[{source:'inventory',data}]}})[0];
+  assert.deepEqual(show().result.footer,{measureKey:'principal',value:10});
+  assert.equal(show().result.defaultTable,true);
+  data.groupsTruncated=true;assert.equal(show().result.footer,undefined);
+  data.groupsTruncated=false;data.groups.pop();assert.equal(show().result.footer,undefined);
+});
+test('a two-snapshot explanation shows only verified endpoint bars with its scope caveat',()=>{
+  const early=snapshot('2025-12-31',4e10),late=snapshot('2026-11-05',3e10);
+  const overview=[early,late].map(result=>({title:result.snapshot.date+' AFS',result}));
+  const saved={steps:[{source:'inventory',data:{overview}}],methodNotes:['仅有两端余额，不能判定开始下降的月份。']};
+  const [m]=answerViewModels(saved);
+  assert.equal(chooseAnswerView(m.result),'comparison');
+  assert.deepEqual(m.result.rows.map(row=>[row.date,row.s0]),[['2025-12-31',4],['2026-11-05',3]]);
+  assert.match(m.answer,/不能判定开始下降的月份/);
 });
 
 test('the same inventory result renders on its own, in a saved turn and in a joint answer',()=>{

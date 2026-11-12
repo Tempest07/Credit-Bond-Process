@@ -92,6 +92,30 @@ test('city shorthand uses the current snapshot branch label and preserves an exa
   await store.db.prepare("UPDATE inventory_rows SET branch='广州市分行' WHERE version=? AND branch='广州'").bind(snap.id).run();
   assert.match((await newInventoryAnswer(store.db,snap,plan)).clarification,/可能指/);
 });
+test('the combined share of ranked branches divides their own filtered holdings by their own complete holdings',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await sample(),'库存.xlsx');
+  await store.db.prepare("UPDATE inventory_rows SET account='Receivable' WHERE version=? AND portfolio='交易组合B'").bind(snap.id).run();
+  const prior={source:'inventory',id:'s1',question:'上期具名分行首位',data:{rankedMembers:{field:'branch',names:['广州分行']}}};
+  const steps=[{account:'AFS'},{}].map((filters,i)=>({id:'s'+(i+1),operation:'memberSummary',source:'inventory',
+    question:'沿用首位分行',snapshotDate:snap.date,metric:'principal',selection:{from:'previous1',field:'branch',limit:1},filters}));
+  const answer=await executeJointPlan(store,{steps,question:'这一组的本金合计有多少比例在OCI？',snapshots:[snap],
+    history:[{question:prior.question,answer:{steps:[prior]}}]});
+  assert.equal(answer.ledgerReport.kind,'selectedScopeShare');
+  const [row]=answer.ledgerReport.rows;
+  assert.equal(row.num,10000/1e10);assert.equal(row.den,41012/1e10);assert.equal(row.ratio,10000/41012*100);
+});
+
+test('a request for pinned provenance keeps explicitly requested branch totals in the visible report',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await sample(),'库存.xlsx');
+  const step={id:'s1',operation:'snapshotEvidence',source:'inventory',question:'确认来源',request:'source',examples:0,
+    snapshotDate:snap.date,filters:{},group:'none'};
+  const answer=await executeJointPlan(store,{steps:[step],question:'按分行列给我，附合计和原表',snapshots:[snap]});
+  const rows=answer.ledgerReport.rows;
+  assert.deepEqual(new Set(rows.map(r=>r.name)),new Set(['北京分行','广州分行','合计']));
+  assert.equal(rows.at(-1).count,3);assert.equal(answer.steps[0].data.sourceEvidence.id,snap.id);
+});
 
 test('bad workbook and staging failure leave published version effective',async()=>{
   const storage=isolatedStore();await initInventory(storage.db);

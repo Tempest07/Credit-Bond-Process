@@ -125,10 +125,11 @@ function inventory(d) {
   // rows from totalCents, so it cannot establish the original denominator.
   const narrowed = list(d.plan.analysis).some(s => ['take','having','expand'].includes(s.op));
   const shareOfPrincipal=d.measure?.fn==='principalShare';
+  const reconciled=!rank && !tail && !narrowed && !restricted && Number.isSafeInteger(d.totalCents) &&
+    d.groups.every(g=>Number.isSafeInteger(g.cents)) && d.groups.reduce((n,g)=>n+BigInt(g.cents),0n)===BigInt(d.totalCents);
+  if(reconciled && m.key==='principal')extra.reconciledTotal={measureKey:'principal',value:yi(d.totalCents)};
   if (fields.length === 1 && ['account','scope','marketType','sourceMarketType'].includes(fields[0]) &&
-      (m.key === 'principal' || shareOfPrincipal) && !rank && !tail && !narrowed && !restricted && yi(d.totalCents)>0 &&
-      d.groups.every(g => Number.isSafeInteger(g.cents) && g.cents >= 0) &&
-      d.groups.reduce((n,g) => n + BigInt(g.cents),0n) === BigInt(d.totalCents)) {
+      (m.key === 'principal' || shareOfPrincipal) && reconciled && yi(d.totalCents)>0 && d.groups.every(g=>g.cents>=0)) {
     if(shareOfPrincipal){
       const principalIndex=measures.findIndex(x=>x.key===principal.key);
       if(principalIndex>=0)measures.splice(principalIndex,1);
@@ -244,7 +245,20 @@ function trade(d) {
   }
   if(p.limit && dims.length===1 && ['asc','desc'].includes(p.order))extra.orderedBy={key:m.key,direction:p.order};
   const scoped=rows.length<=3 || extra.orderedBy ? summaryRows(rows,dims,m) : '';
-  const answer=[partial && '以下为已覆盖部分。',dates,scoped||text, reduced && '本次列出 '+rows.length+' 组，共 '+r.groupCount+' 组。'].filter(Boolean).join('　');
+  let answer=[partial && '以下为已覆盖部分。',dates,scoped||text, reduced && '本次列出 '+rows.length+' 组，共 '+r.groupCount+' 组。'].filter(Boolean).join('　');
+  if(p.describeNetComposition && m.key==='net' && dims.length===1 && dims[0].kind==='category' &&
+    !partial && !reduced && !p.limit && !p.minGroupRows && !list(p.showGroups).length &&
+    Number.isSafeInteger(r.totals.netCents) && groups.every(g=>Number.isSafeInteger(g.netCents)) &&
+    groups.reduce((acc,g)=>acc+BigInt(g.netCents),0n)===BigInt(r.totals.netCents)){
+    const blankIndex=groups.findIndex(g=>g.values[0]==null || ['', '（未填）','未填写'].includes(g.values[0]));
+    const positive=groups.reduce((acc,g)=>acc+Math.max(0,g.netCents),0);
+    const negative=groups.reduce((acc,g)=>acc+Math.min(0,g.netCents),0);
+    extra.netComposition={key:'net',blankIndex};
+    const reason=total===0?'全范围净额为零，无法作为构成饼图分母。':positive>0 && negative<0 ?
+      '分组净额正负相抵，用净额作饼图分母会产生负份额。':'各组净额同向，可以核对各组份额。';
+    const blank=blankIndex<0?'': '未填写'+dims[0].label+'净额 '+shown(rows[blankIndex].net)+' 亿元，计入合计，在分析台单列。';
+    answer=[dates+'　'+text+'。',reason,'净买入组共 +'+shown(yi(positive))+' 亿元，净卖出组共 '+shown(yi(negative))+' 亿元。',blank].filter(Boolean).join(' ');
+  }
   return sample(dims.map(x=>x.label).join('和')+'的'+m.label, answer, source, dims, measures, rows, extra);
 }
 
@@ -510,7 +524,7 @@ function modelsFrom(input) {
     return model?[model]:[];
   }
   const steps=a.steps;
-  if(a.memberSets || list(a.methodNotes).length || steps.some(s=>!s?.data || uncertainRole(s.data) ||
+  if(a.memberSets || steps.some(s=>!s?.data || uncertainRole(s.data) ||
     list(s.data.overview).some(p=>uncertainRole(p?.result))))return [];
   if(a.clarification) {
     if(!steps.length && /未覆盖|缺少.*台账|覆盖至|未导入|未齐|不覆盖/u.test(a.clarification)){
@@ -519,6 +533,18 @@ function modelsFrom(input) {
     return [];
   }
   const candidate=steps.length===1?oneStep(steps[0]):inventoryPeriods(steps)||weeklyPeriods(steps);
+  if(list(a.methodNotes).length){
+    // Older saved turns retain the caution as text, without the planner's
+    // note type. Only two complete, comparable observations can form this chart.
+    const endpoint=a.comparison?.kind==='balanceChange'?comparison(a.comparison,steps):candidate;
+    const r=endpoint?.result;
+    if(!a.arithmetic && steps.every(s=>s.source==='inventory') && r?.dimensions.length===1 &&
+      r.dimensions[0].kind==='date' && r.measures.length===1 && r.rows.length===2 &&
+      r.rows.every(row=>finite(row[r.measures[0].key]))){
+      return [{...endpoint,answer:notes(a.methodNotes)+' '+endpoint.answer}];
+    }
+    return [];
+  }
   if(a.arithmetic?.rows?.length){
     const answer=arithmetic(a.arithmetic,candidate,steps);
     if(!answer)return [];
@@ -542,7 +568,12 @@ function modelsFrom(input) {
     // overview, or separate same-scope steps. Keep the conclusion with its chart.
     return periodCalculations(candidate,answer,a.arithmetic) || [answer];
   }
-  if(a.arithmetic?.missing)return [];
+  if(a.arithmetic?.missing){
+    // A saved answer can carry a failed optional ratio calculation even when
+    // all original signed groups independently reconcile to the reported net.
+    if(candidate?.result.netComposition)return [{...candidate,result:{...candidate.result,note:[candidate.result.note,a.arithmetic.missing].filter(Boolean).join(' ')}}];
+    return [];
+  }
   if(a.comparison || a.alignment){
     const cmp=a.comparison && comparison(a.comparison,steps);
     if(a.comparison && !cmp)return [];
@@ -596,6 +627,7 @@ function requestedUnitModel(model,unit) {
   const result={...r,measures,rows};
   if(r.whole)result.whole=scaleRef(r.whole);
   if(r.headline)result.headline=scaleRef(r.headline);
+  if(r.reconciledTotal)result.reconciledTotal=scaleRef(r.reconciledTotal);
   const answer=model.answer.replace(/([+\-−]?[\d,]+(?:\.\d+)?)\s*(亿元|万元|元)(?![年月])/g,(raw,num,original)=>{
     if(original===unit)return raw;
     const n=Number(num.replaceAll(',','').replace('−','-'));
@@ -693,9 +725,12 @@ function contextAnswer(question,steps){
     flows.some(d=>d.plan.metric==='net')){
     return '净买入本金＝买入本金－卖出本金。正数表示买入较多，负数表示卖出较多，零表示买卖本金相等。';
   }
-  if(/哪(?:个|一[个天]|天).*业务日|哪(?:个|一[个天]|天).*日期|用的?是?哪(?:一)?天/u.test(question)){
+  if(/哪(?:个|一[个天]|天).*业务日|哪(?:个|一[个天]|天).*日期|用的?是?哪(?:一)?天|业务日(?:期)?.{0,8}(?:写上|列出|报出|注明|标明)|(?:写明|注明|标注).{0,8}业务日/u.test(question)){
     const dates=[...new Set(inventories.map(d=>d.snapshot?.date).filter(Boolean))];
     if(dates.length)return '此次使用的余额台账业务日为 '+dates.join('、')+'。';
+  }
+  if(inventories.some(d=>d?.resultId) && /市值/.test(question) && /(?:直接|可否|能否|能不能|能.*当|等于|视作|当作|作为|替代)/u.test(question)){
+    return '台账的在账本金是名义本金。要报当日市值，还需同日价格及相应计价口径，不能直接用本金替代。';
   }
   if(/哪(?:一)?(?:张|份|个).{0,12}(?:台账|表)|哪份.*核/u.test(question) && flows.length){
     const files=[...new Set(flows.flatMap(d=>list(d.sources)).filter(s=>s.filename)
@@ -723,11 +758,28 @@ function rowComparison(arithmetic,question,original){
     source:original.source,columns,rows:[row]});
 }
 
+function flowTotalRow(steps,question){
+  if(steps.length!==1 || !/一行|并排|并列|放在旁边/.test(question) || !/本金|金额/.test(question) || !/笔数|多少笔|几笔/.test(question))return null;
+  const d=steps[0]?.data, p=d?.plan, totals=d?.result?.totals;
+  if(steps[0].source!=='trade'||!totals||!['sell','buy'].includes(p?.direction)||d.result.completeCoverage===false||list(p.groupBy).length)return null;
+  const side=p.direction,amount=flowValue(totals,side),count=flowValue(totals,'rows');
+  if(amount===null||count===null)return null;
+  const action=side==='buy'?'买入':'卖出';
+  return reportModel({title:'期间成交汇总',summary:range(p.start,p.end)+'　'+action+'本金 '+shown(amount)+' 亿元，'+action+' '+count+' 笔。',
+    source:list(d.sources).map(s=>s.filename).filter(Boolean).join('、'),columns:[
+      {key:'amount',label:action+'本金',kind:'number',unit:'亿元'},{key:'count',label:action+'笔数',kind:'number',unit:'笔'}],rows:[{amount,count}]});
+}
+
 /** Project saved results into chart inputs. [] keeps the existing full answer visible. */
 export function answerViewModels(input) {
   const a=input?.answer ?? input?.data ?? input;
   const question=input?.question || input?.label || '';
   let models=modelsFrom(input);
+  const signedStep=list(a.steps).length===1 && a.steps[0].source==='trade' && a.steps[0].data?.plan?.describeNetComposition? a.steps[0]:null;
+  if(signedStep && !models[0]?.result.netComposition){
+    const signed=trade(signedStep.data);
+    if(signed?.result.netComposition)models.unshift(signed);
+  }
   // A concentration calculation may use the subtotal of a ranked step as
   // one operand. That operand holds an amount, while its source retains the
   // members and their values. Keep the verified breakdown available.
@@ -764,7 +816,7 @@ export function answerViewModels(input) {
         result:{...r,rows:top,whole:undefined}};
     }
   }
-  const comparison=!report && rowComparison(a.arithmetic,question,models[0]);
+  const comparison=!report && (rowComparison(a.arithmetic,question,models[0])||flowTotalRow(list(a.steps),question));
   if(comparison)models.unshift(comparison);
   const explanation=contextAnswer(question,list(a.steps));
   if(explanation)models[0]={...models[0],answer:explanation+' '+models[0].answer};
@@ -778,7 +830,21 @@ export function answerViewModels(input) {
     list(r.inputs).length && r.inputs.every(input=>input?.label && (input.value===null || finite(input.value))));
   if(calculations.length)models[0]={...models[0],calculations};
   const wantsTable=/(?:做成|列成|整理成|做一张|放在一张|给我一张|用)\s*(?:明细|汇总|对照|数据|可排序的)?表(?:格)?|(?:本金|金额|笔数|发行人|券码)(?:明细|汇总|排名)?表(?:格)?(?=[，。？！\s]|$)|打开分析台/u.test(question);
-  if(wantsTable) models[0]={...models[0],result:{...models[0].result,defaultTable:true}};
+  if(wantsTable||/(?:给我|做|整理|出)一张[^，。？！]{1,80}的表(?:格)?[，。？！\s]/u.test(question+'。'))
+    models[0]={...models[0],result:{...models[0].result,defaultTable:true}};
+  if(/(?:表后|表尾|表底|表末|最后一行|最后加|加一行).{0,12}(?:总计|合计)|(?:合计|总计).{0,6}(?:行|放表尾)/u.test(question)){
+    const r=models[0].result;
+    let footer=r.reconciledTotal;
+    const data=list(a.steps).length===1 && a.steps[0].data;
+    if(!footer && report && data?.profileSpec?.stat==='counts' && Number.isSafeInteger(data.totalCents)){
+      const amounts=a.ledgerReport.rows.map(row=>Number.isFinite(row.principal)?Math.round(row.principal*1e10):null);
+      const m=r.measures.find(v=>v.key==='principal');
+      if(m && Object.hasOwn(currencyScale,m.unit) && amounts.every(Number.isSafeInteger) &&
+        amounts.reduce((acc,n)=>acc+BigInt(n),0n)===BigInt(data.totalCents))
+        footer={measureKey:m.key,value:data.totalCents/(100*currencyScale[m.unit])};
+    }
+    if(footer)models[0]={...models[0],result:{...r,footer,defaultTable:true}};
+  }
   const datasets=Array.isArray(a.steps)?a.steps.filter(s=>s.source==='inventory').map(s=>s.data):[a];
   const warnings=new Set();
   const parts=datasets.flatMap(d=>d?.overview?list(d.overview).map(p=>p?.result):[d]);

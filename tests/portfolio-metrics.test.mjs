@@ -110,6 +110,14 @@ test('anchored excluded securities are valued at the requested holdings date',as
     metric:'valuationAudit',subset:'excluded'},snapshots);
   assert.match(unavailable.headline,/没有锁定/);
 });
+test('single-day missing and exact rating lists state the full audited population and distinguish duration coverage',async()=>{
+  const {resources,spec}=await setup();
+  const base={...spec,start:dates[1],end:dates[1],referenceDate:dates[1],metric:'valuationAudit'};
+  const exact=await portfolioMetrics(resources,{...base,subset:'ratedExact',threshold:'AA(2)'},snapshots);
+  assert.match(exact.headline,/债项隐含评级核验全部 3 只，其中已覆盖 2 只，待核 0 只，明确剔除 1 只/);
+  const durations=await portfolioMetrics(resources,{...base,subset:'unknown',auditBasis:'duration'},snapshots);
+  assert.match(durations.columns.join('|'),/修正久期/);assert.match(durations.headline,/修正久期核验全部 3 只/);
+});
 test('weekly comparisons use the calculated mean prior to display rounding',()=>{
   const step=(start,end,mean)=>({source:'portfolio',spec:{metric:'weeklyMean',start,end},data:{headline:'计算结果。',mean}});
   const a=step('2026-01-01','2026-03-31',30.0049),b=step('2026-04-01','2026-06-30',20.0052);

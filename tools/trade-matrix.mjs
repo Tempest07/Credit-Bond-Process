@@ -98,6 +98,13 @@ export function buildTradeMatrix(spec,series){
     }
   }
   let summary=series.map(s=>s.label+'（'+s.start+' 至 '+s.end+'）'+metrics.map(k=>metricLabels[k]+' '+format(s.total[k],k)).join('、')).join('；')+'。';
+  if(/最大|最高|最多|最活跃/u.test(spec.question||'')){
+    for(const s of series)for(const k of metrics){
+      const observed=s.cells.filter(c=>Number.isSafeInteger(c[k]));if(!observed.length)continue;
+      const max=Math.max(...observed.map(c=>c[k]));
+      summary+=(observed.length===s.cells.length?'':'已核月份内，')+s.label+metricLabels[k]+'最高为 '+observed.filter(c=>c[k]===max).map(c=>c.month).join('、')+'，'+format(max,k)+'。';
+    }
+  }
   if(compare!=='none'){
     const [a,b]=series;
     for(const k of metrics){
@@ -115,5 +122,5 @@ export async function tradeMatrix(resources,step,ctx,query=runTradeQuery){
   const ids=ctx.ledgers.map(v=>v.id),cache=new Map();
   const series=await Promise.all(step.series.map(s=>readSeries(resources,s,step,ids,query,cache)));
   return {flowPlans:series.flatMap(s=>s.plans),flowMatrixSpec:{layout:step.layout,metrics:step.metrics,direction:step.direction,series:step.series,shares:step.shares,compare:step.compare},
-    ledgerReport:buildTradeMatrix(step,series)};
+    ledgerReport:buildTradeMatrix({...step,question:ctx.question||step.question},series)};
 }

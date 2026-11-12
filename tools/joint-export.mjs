@@ -61,6 +61,9 @@ export async function jointExcel(resources,question,answer,tradeIds,chosen,portf
   for(const [i,s] of steps.entries()){
     info.push([{inventory:'库存',trade:'交易',portfolio:'组合指标'}[s.source],s.question]);
     if(s.data?.clarification)info.push(['核对说明',s.data.clarification]);
+    if(s.data?.sourceEvidence){
+      const e=s.data.sourceEvidence;info.push(['业务日',e.date],['来源文件',e.file],['锁定的快照版本',e.id],['上传账号',e.uploadedBy||'旧版本未记录']);
+    }
     let sheetNumber=0;
     const add=(specs,section='')=>{
       for(const spec of specs){

@@ -69,6 +69,25 @@ function rankAcrossDates(spec,left,right,labels) {
     columns:[category('name',names[spec.field]),category('category','榜单归属'),number('firstRank',labels[0]+'榜内名次','名'),
       number('first',labels[0]+'本金','亿元'),number('lastRank',labels[1]+'榜内名次','名'),number('last',labels[1]+'本金','亿元')],rows};
 }
+function leaderShares(spec,groups,labels,results) {
+  const ordered=groups.map(group=>sorted(group,'cents'));
+  const leaders=ordered.map(ordered=>ordered.slice(0,spec.limit));
+  const [opening,closing]=leaders.map(list=>new Set(list.map(r=>r.name)));
+  const entered=[...closing].filter(name=>!opening.has(name)),exited=[...opening].filter(name=>!closing.has(name));
+  const requests=[[0,0],[1,1],[0,1]];
+  const rows=requests.map(([rankDate,balanceDate])=>{
+    const list=leaders[rankDate],data=groups[balanceDate],denominator=results[balanceDate].totalCents;
+    const cents=exact(list.reduce((n,r)=>n+(data.get(r.name)?.cents??0),0));
+    return {basis:labels[rankDate]+' 前 '+spec.limit+' 名',period:labels[balanceDate],
+      members:list.map(r=>r.name).join('、'),amount:yi(cents),denominator:yi(denominator),ratio:denominator?cents/denominator*100:null};
+  });
+  return {title:'当期前列与固定名单的占比',summary:rows.map(r=>r.basis+' 在 '+r.period+' 占 '+(r.ratio==null?'不适用':r.ratio.toFixed(6)+'%')).join('；')+
+    '。当期新进：'+(entered.join('、')||'无')+'；掉出：'+(exited.join('、')||'无')+'。',
+    note:['分子取所列名单在实际计量日的本金；分母取计量日本范围全部本金，包含未填写成员。',
+      ...ordered.map((list,i)=>boundaryNote(list,spec.limit,'cents',labels[i]))].filter(Boolean).join(' '),
+    columns:[category('basis','取榜范围'),category('period','余额计量范围'),category('members',names[spec.field]+'名单'),
+    number('amount','名单本金','亿元'),number('denominator','全部本金','亿元'),number('ratio','占比','%')],rows};
+}
 export function heldMemberReport(result,field,selectedCount,limit) {
   const groups=sorted(namedGroups(result),'cents');
   const chosen=groups.slice(0,limit);
@@ -124,6 +143,17 @@ function compareBalances(spec,left,right,labels,results) {
   const change=exact(last-first);
   const common='共同'+names[spec.field]+' '+same.length+' 个；共同成员在 '+labels[0]+' 的本金 '+show(first)+' 亿元，在 '+
     labels[1]+' 的本金 '+show(last)+' 亿元，相差 '+show(change)+' 亿元（后减前）。';
+  if(spec.analysisMode==='commonOnly'){
+    const numerator=exact(first+last),denominator=exact(results[0].totalCents+results[1].totalCents);
+    return {title:'共同持仓按成员的本金及占比',summary:common+' 共同成员两边本金合计 '+show(numerator)+
+      ' 亿元，两边全部本金合计 '+show(denominator)+' 亿元，'+(denominator?'占 '+(100*numerator/denominator).toFixed(6)+'%。':'分母为零，占比不适用。'),
+      note:'仅列两边均有持仓的具名成员。分子是共同成员在两边的本金之和，分母是两份所选范围各自全额本金之和。',
+      columns:[...columns,number('combined','两边本金合计','亿元')],rows:same.map(r=>({...r,combined:yi(exact(left.get(r.name).cents+right.get(r.name).cents))}))};
+  }
+  if(spec.analysisMode==='newOnly')return {title:'本期新增持仓',summary:labels[1]+' 相对 '+labels[0]+' 新增 '+added.length+' 个'+names[spec.field]+
+    '，期末本金合计 '+show(addedCents)+' 亿元。新增成员在期初没有持仓；以期初为分母的增幅不适用。',
+    note:'只列在期初完整范围没有任何持仓行、期末有持仓行的成员。增幅的分母为零，列示本金绝对变化。',
+    columns:[...columns,category('growth','相对期初增幅')],rows:added.map(r=>({...r,growth:'不适用（期初为零）'}))};
   if(spec.analysisMode==='commonMovers') {
     // Sort by cents before formatting for display, including when two large yuan values round to the same number.
     const delta=r=>right.get(r.name).cents-left.get(r.name).cents;
@@ -154,6 +184,7 @@ export function buildMemberReport(spec,results) {
   const groups=results.map(r=>namedGroups(r,spec.analysisMode==='groupDifferences')),labels=results.map(scope);
   let report;
   if(spec.analysisMode==='rankOverlap')report=rankOverlap(spec,groups[0]);
+  else if(spec.analysisMode==='leaderShares')report=leaderShares(spec,groups,labels,results);
   else if(spec.analysisMode==='groupDifferences')report=groupDifferences(spec,groups,labels,results);
   else if(['rankChanges','trackedLeaders'].includes(spec.analysisMode))report=rankAcrossDates(spec,...groups,labels);
   else report=compareBalances(spec,...groups,labels,results);

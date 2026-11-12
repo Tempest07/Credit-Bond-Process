@@ -115,6 +115,9 @@ function setup(plan,all,verifiedMembers){
  if(plan.showGroups!=null&&(!plan.share||!Array.isArray(plan.showGroups)||plan.showGroups.length>100||!plan.showGroups.every(v=>typeof v==='string'&&v.trim()&&v.length<=250)))error('交易占比的展示分组无效。');
  if(!Array.isArray(groupBy)||groupBy.length>6||new Set(groupBy).size!==groupBy.length||!Array.isArray(filters)||filters.length>16||(limit!==null&&(!Number.isInteger(limit)||limit<1||limit>100))||!['asc','desc'].includes(order))error('交易分组、排序或筛选条件无效。');
  if(plan.minGroupRows!=null&&(!groupBy.length||!Number.isSafeInteger(plan.minGroupRows)||plan.minGroupRows<1))error('分组最低交易笔数无效。');
+ if(plan.dateExtreme!=null&&(!['buy','sell'].includes(plan.dateExtreme)||plan.metric!=='net'||!start||!end||
+    groupBy.length!==1||groupBy[0]!=='交易日期'||limit||plan.minGroupRows))error('查证单日原始流水须对完整期间按交易日期计算买卖净额。');
+ if(plan.auditCodeRows&&(!filters.some(f=>f?.field==='券码'&&['eq','in'].includes(f.op))||groupBy.length!==1||groupBy[0]!=='增减方向'||plan.metric!=='rows'))error('逐行双栏核对须限定券码并按增减方向统计交易笔数。');
  if(filters.some(f=>{
    if(f?.op==='between')return !validTradeDateRange(f.field,f.value);
    return !f||!['eq','contains','in','notEmpty'].includes(f.op)||(f.op==='notEmpty'?f.value!=='':f.op==='in'?(!Array.isArray(f.value)||!f.value.length||!withinListLimit(f)||f.value.some(x=>typeof x!=='string'||x.length>1024)):(typeof f.value!=='string'||!f.value.trim()||f.value.length>1024));
@@ -172,9 +175,12 @@ function setup(plan,all,verifiedMembers){
    warnings.push(v.filename+' 有 '+v.outOfPeriodRows+' 笔跨期交易（'+(v.outOfPeriodCents/100).toLocaleString('zh-CN')+' 元）；按逐笔交易日期归期。');
  }
  const codeFilters=filters.filter(f=>f.field==='券码');
- if(codeFilters.length)warnings.push('按债券代码和债券标准代码逐行核对，含市场后缀的券码保持市场限定。');
- return {plan:{direction:plan.direction,start,end,filters,groupBy,metric:plan.metric,limit,order,...(plan.minGroupRows==null?{}:{minGroupRows:plan.minGroupRows}),...(plan.share?{share:plan.share,showGroups:plan.showGroups??[]}: {})},relevant,available,warnings,completeCoverage,
-   codeLookup:codeFilters.length?tradeCodeLookup(codeFilters):null};
+ const single=codeFilters.find(f=>f.op==='eq'||f.op==='in'&&f.value.length===1);
+ const identity=single?String([].concat(single.value)[0]).trim().toUpperCase():'';
+ const fixedSecurity=/^[\w-]+\.[A-Z]{2,6}$/.test(identity)?identity:null;
+ if(codeFilters.length)warnings.push('按债券代码和债券标准代码逐行核对，含市场后缀的券码保持市场限定；同一条原始流水命中两栏也只计一笔、本金计一次。');
+ return {plan:{direction:plan.direction,start,end,filters,groupBy,metric:plan.metric,limit,order,...(plan.dateExtreme?{dateExtreme:plan.dateExtreme}:{}),...(plan.auditCodeRows?{auditCodeRows:true}:{}),...(plan.describeNetComposition===true&&plan.metric==='net'?{describeNetComposition:true}:{}),...(plan.minGroupRows==null?{}:{minGroupRows:plan.minGroupRows}),...(plan.share?{share:plan.share,showGroups:plan.showGroups??[]}: {})},relevant,available,warnings,completeCoverage,
+   codeLookup:codeFilters.length?tradeCodeLookup(codeFilters):null,fixedSecurity};
 }
 function getter(v,f){
  const i=v.headers.indexOf(f),di=v.headers.indexOf('交易日期');
@@ -205,7 +211,7 @@ async function* matches(bucket,scope,observed){
        for(const [get,set] of samples){const value=String(get(row)??'').trim();if(value&&set.size<200)set.add(value);}
        if(lookup&&!lookup.test(row[ci],row[si]))continue;
        if(!tests.every(t=>t(row)))continue;
-       yield {v,row,cents:row[ai],code:row[ci]};
+       yield {v,row,cents:row[ai],code:scope.fixedSecurity||row[ci]};
      }
    }
  }
@@ -312,7 +318,8 @@ function addEmptyGroups(scope,groups){
  if(bondCodeFields.includes(field)&&scope.codeLookup&&filters.some(f=>f.field==='券码'&&f.op==='in')){
    const codeCriteria=filters.filter(f=>f.field===field||f.field==='券码');
    const sets=codeCriteria.filter(f=>['eq','in'].includes(f.op)).map(f=>{
-     const labels=[].concat(f.value).flatMap(value=>f.field==='券码'?[...scope.codeLookup.groupLabels(value,field)]:[value]);
+     const labels=[].concat(f.value).flatMap(value=>field==='券码'&&scope.fixedSecurity&&[scope.fixedSecurity,scope.fixedSecurity.split('.')[0]].includes(value.trim().toUpperCase())?[scope.fixedSecurity]:
+       f.field==='券码'?[...scope.codeLookup.groupLabels(value,field)]:[value]);
      return new Set(labels.map(label=>String(label).trim().normalize('NFKC').toUpperCase()));
    });
    const existing=new Set(Array.from(groups.values(),g=>norm(g.values[0])));
@@ -351,7 +358,7 @@ function periodHighlights(scope,list,field){
  return results;
 }
 async function aggregate(bucket,s){
- const t=counter(),groups=new Map(),getters=new Map(s.relevant.map(v=>[v.id,s.plan.groupBy.map(f=>getter(v,f))]));
+ const t=counter(),groups=new Map(),getters=new Map(s.relevant.map(v=>[v.id,s.plan.groupBy.map(f=>f==='券码'&&s.fixedSecurity?()=>s.fixedSecurity:getter(v,f))]));
  const observed=new Map(s.plan.filters.filter(f=>['表内/委外','会计分类','会计科目','债券类型','交易市场(一级/二级)'].includes(f.field)&&f.op!=='notEmpty').map(f=>[f.field,new Set()]));
  const dayColumns=s.plan.metric==='dateRange'?new Map(s.relevant.map(v=>[v.id,['交易日期','交易交割日'].map(f=>v.headers.indexOf(f))])):null;
  const average=s.plan.metric==='average';
@@ -395,6 +402,11 @@ async function aggregate(bucket,s){
      else sold+=group.netCents;
    }
    if(![bought,sold,bought+sold].every(Number.isSafeInteger) || bought+sold!==totals.netCents)error('交易分组净额未与全范围合计对齐。');
+   if(s.plan.describeNetComposition){
+     if(totals.netCents===0)s.warnings.push('所有分组的净额合计为零，无法作为占比分母；可按有符号的净买入金额比较各组。');
+     else if(bought>0&&sold<0)s.warnings.push('分组净额有正有负。用全行净额作饼图分母会出现负份额；有符号的净买入金额保留净买入为正、净卖出为负的方向。');
+     else s.warnings.push('所查分组净额同向，占净额合计的份额可核对；有符号净额显示各组实际方向。');
+   }
    highlights.push({label:'净买入的'+key+'合计贡献',value:bought,unit:'分'},
      {label:'净卖出的'+key+'合计抵消（有符号）',value:sold,unit:'分'},
      {label:'两类分组净额合计（含未填写组）',value:bought+sold,unit:'分'});
@@ -421,12 +433,83 @@ async function aggregate(bucket,s){
  }
  return {totals,list,highlights};
 }
+const originFields=[['day','交易日期'],['side','交易方向'],['source','原表文件'],['sheet','工作表'],['sourceRow','原表行号','行']];
+const evidenceColumns=fields=>fields.map(([key,label,unit])=>({key,label,kind:unit?'number':'category',...(unit?{unit}:{})}));
+async function originalTrades(bucket,scope,dates){
+ const rows=[],days=dates&&[...dates].sort();
+ if(days&&!days.length)return rows;
+ const narrowed=days?{...scope,plan:{...scope.plan,start:days[0],end:days.at(-1)}}:scope;
+ const lookups=new Map(scope.relevant.map(v=>[v.id,['交易日期','券码','债券简称','债券代码','债券标准代码'].map(f=>getter(v,f))]));
+ for await(const {v,row,cents} of matches(bucket,narrowed)){
+   const [day,code,name,raw,standard]=lookups.get(v.id);
+   if(dates&&!dates.has(day(row)))continue;
+   rows.push({day:day(row),side:dirName(v.direction),source:v.filename,sheet:v.sheet,sourceRow:row.at(-1),code:code(row),name:name(row),raw:raw(row)||'',standard:standard(row)||'',principal:cents/1e10});
+   if(rows.length===150)break;
+ }
+ return rows;
+}
+async function dayTradeEvidence(bucket,scope,list){
+ const buy=scope.plan.dateExtreme==='buy',label=buy?'净买入':'净卖出';
+ const extreme=list.reduce((a,g)=>buy?Math.max(a,g.netCents):Math.min(a,g.netCents),0);
+ const dates=new Set(extreme===0?[]:list.filter(g=>g.netCents===extreme).map(g=>g.values[0]));
+ const selected=list.filter(g=>dates.has(g.values[0])),count=selected.reduce((n,g)=>n+g.rows,0);
+ const columns=evidenceColumns([...originFields,['code','券码'],['name','债券简称'],['principal','名义本金','亿元']]);
+ const rows=scope.completeCoverage?await originalTrades(bucket,scope,dates):[];
+ const summary=!scope.completeCoverage?'所问期间的增减持流水覆盖不完整，无法确认全期'+label+'最多的交易日。':dates.size?
+   '按 '+list.length+' 个成交日比较，'+[...dates].sort().join('、')+' 的'+label+'最多，为 '+(Math.abs(extreme)/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8})+' 亿元。所列日期共有 '+count+' 笔原始交易。':
+   '该期间没有'+label+'的交易日。';
+ return {title:label+'最多交易日的原始流水',summary,source:scope.relevant.map(v=>v.filename).join('、'),columns,rows,
+   note:'净额为买入本金减卖出本金。按文件、工作表及原表行号定位每笔交易。'+(count>rows.length&&scope.completeCoverage?'页面列出前 '+rows.length+' 笔，完整交易明细可下载后按上述日期筛选。':'')};
+}
+async function codeTradeEvidence(bucket,scope,list,totals){
+ const rows=totals.rows?await originalTrades(bucket,scope):[];
+ const sides=scope.plan.direction==='both'?['buy','sell']:[scope.plan.direction];
+ const summary=sides.map(side=>{
+   const group=list.find(g=>g.values[0]===dirName(side)),value=group?.[side+'Cents']??0;
+   return (side==='buy'?'买入':'卖出')+' '+(group?.rows??0)+' 笔、'+(value/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8})+' 亿元';
+ }).join('；');
+ return {title:'逐笔券码核对',summary:(scope.completeCoverage?'所问范围':'已覆盖流水内')+'，'+summary+'。同一原表行两列都命中也只计一次。',
+   note:'以原表文件、工作表和行号定位。'+(!scope.completeCoverage?'台账覆盖不完整，无法确认全期实际笔数和本金。':'')+
+     (totals.rows>rows.length?'页面仅列前 '+rows.length+' 笔，完整匹配流水可下载。':''),
+   source:scope.relevant.map(v=>v.filename).join('、'),columns:evidenceColumns([...originFields,['raw','债券代码'],['standard','债券标准代码'],['principal','名义本金','亿元']]),rows};
+}
 export async function runTradeQuery({db,bucket},plan,versionIds,{collectMembers=false,verifiedMembers}={}){
  const s=setup(plan,await docs(db,versionIds),verifiedMembers),{list,totals,highlights}=await aggregate(bucket,s);
- return {plan:s.plan,totals,completeCoverage:s.completeCoverage,
+ const ledgerReport=s.plan.dateExtreme?await dayTradeEvidence(bucket,s,list):s.plan.auditCodeRows?await codeTradeEvidence(bucket,s,list,totals):null;
+ return {plan:s.plan,totals,completeCoverage:s.completeCoverage,...(ledgerReport?{ledgerReport}:{}),
    ...(collectMembers?{memberNames:list.filter(group=>group.rows>0).map(group=>group.values[0]),
      memberAmounts:list.filter(group=>group.rows>0).map(group=>({name:group.values[0],buy:group.buyCents,sell:group.sellCents}))}:{}),
    groups:list.slice(0,s.plan.limit??100),groupCount:list.length,versions:s.relevant.map(pub),warnings:s.warnings,highlights};
+}
+export async function tradeDateBridge({db,bucket},start,end,filters,versionIds){
+ const common={direction:'both',groupBy:[],metric:'net'},versions=await docs(db,versionIds);
+ const scopes=[setup({...common,start,end,filters},versions),setup({...common,start:null,end:null,filters:[...filters,{field:'交易交割日',op:'between',value:[start,end]}]},versions)];
+ const totals=[],rows=[];
+ let crossedCents=0;
+ for(const [i,s] of scopes.entries()){
+   let net=0;
+   for await(const {v,row} of matches(bucket,s)){
+     const read=key=>row[v.headers.indexOf(key)],buy=v.direction==='buy';
+     const principal=read('名义本金'),signed=(buy?1:-1)*principal;
+     net+=signed;
+     const trade=read('交易日期'),settlement=read('交易交割日'),other=i===0?settlement:trade;
+     if(other&&other>=start&&other<=end)continue;
+     const contribution=i===0?-signed:signed;
+     crossedCents+=contribution;
+     rows.push({direction:buy?'买入':'卖出',trade,settlement:settlement||null,code:read('债券代码'),principal:principal/1e10,
+       contribution:contribution/1e10,source:v.filename,sourceRow:row.at(-1),scope:i===0?'仅按成交日计入':'仅按交割日计入'});
+   }
+   totals.push(net);
+ }
+ const complete=scopes.every(s=>s.completeCoverage),delta=totals[1]-totals[0];
+ const n=x=>(x/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8});
+ if(![...totals,delta,crossedCents].every(Number.isSafeInteger)||crossedCents!==delta)error('跨期原流水与归期差额未能勾稽。');
+ const columns=[['scope','归属'],['direction','交易方向'],['code','券码'],['trade','原成交日'],['settlement','原交割日'],['principal','名义本金','亿元'],
+   ['contribution','交割减成交的净额贡献','亿元'],['source','原文件'],['sourceRow','原表行号','行']].map(([key,label,unit])=>({key,label,kind:unit?'number':'category',...(unit?{unit}:{})}));
+ return {flowPlans:scopes.map(s=>s.plan),ledgerReport:{title:'成交日与交割日的净买入对账',columns,rows,
+   summary:(complete?'':'已报流水内，')+start+' 至 '+end+' 按成交日净买入 '+n(totals[0])+' 亿元，按交割日净买入 '+n(totals[1])+' 亿元。交割减成交 '+n(delta)+' 亿元，由表中 '+rows.length+' 笔单边计入的原交易构成。',
+   source:[...new Set(scopes.flatMap(s=>s.relevant.map(v=>v.filename)))].join('、'),note:'同时计入两侧的交易贡献为零。空交割日保留为待核，不作为已知跨月日期。'+
+     (complete?'':scopes.flatMap(s=>s.warnings).join(' '))}};
 }
 export async function tradeExportSheets({db,bucket},plan,versionIds,verifiedMembers){
  const s=setup(plan,await docs(db,versionIds),verifiedMembers),{totals,list,highlights}=await aggregate(bucket,s);
