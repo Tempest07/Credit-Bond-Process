@@ -284,7 +284,7 @@ function answerLead(text, measure, scalarValue, headline) {
   return {box, includesScalar:Boolean(scalarMatch)};
 }
 
-function barChart(result, measure, items, state, kind, redraw) {
+function barChart(result, measure, items, state, kind, redraw, showUnit = false) {
   const box = element("div", "av-bars");
   const shared = kind === "share";
   const split = !shared && (measure.signed || items.some(({ row }) => row[measure.key] < 0));
@@ -312,7 +312,9 @@ function barChart(result, measure, items, state, kind, redraw) {
     track.append(fill);
     const sign=result.netComposition?.key===measure.key && value>0?"+":"";
     const text = !finite(value) ? "缺数" : shared ? format(share,measure.digits) + "%" : sign+format(value,measure.digits);
-    b.append(track, element("span", "av-end", text));
+    const end = element("span", "av-end", text);
+    if (showUnit && finite(value) && measure.unit) end.append(element("small", "av-bar-unit", measure.unit));
+    b.append(track, end);
     b.title = measure.label + "　" + (finite(value) ? value + " " + (measure.unit || "") : "缺数");
     box.append(b);
   }
@@ -326,6 +328,25 @@ function barChart(result, measure, items, state, kind, redraw) {
     if (item) box.append(readout(result, item, measure));
   }
   return box;
+}
+
+function balanceChangeView(model, measure, state, mode, redraw) {
+  const {subject, metric, delta, note} = model.balanceChange;
+  const section = element("div", "av-balance");
+  const summary = element("div", "av-balance-stat");
+  const direction = delta > 0 ? "增加" : delta < 0 ? "减少" : "持平";
+  summary.append(element("span", "av-balance-label", metric + direction));
+  const value = element("div", "av-balance-value");
+  value.append(element("strong", "", format(Math.abs(delta), measure.digits)), element("small", "", measure.unit));
+  summary.append(value);
+  const result = {...model.result, measures:[{...measure, label:metric}]};
+  const plot = mode === 1 ? matrix(result, state, redraw)
+    : barChart(result, result.measures[0], chartRows(result, measure, "comparison"), state, "comparison", redraw, true);
+  plot.classList.add(mode === 1 ? "av-balance-table" : "av-balance-plot");
+  plot.setAttribute("aria-label", subject + " · " + unitLabel({label:metric, unit:measure.unit}));
+  section.append(summary, plot);
+  if (note) section.append(element("p", "av-balance-note", note));
+  return section;
 }
 
 function adjacentDates(left, right, leftTime, rightTime, result) {
@@ -455,22 +476,26 @@ export function createAnswerViews(models) {
     const model = list[selected], result = model.result, state = states[selected];
     const measure = result.measures[state.metric];
     const kind = chooseAnswerView(result, measure?.key);
+    const balance = kind === "comparison" && model.balanceChange;
     const toolbar = element("div", "av-toolbar");
     if (list.length > 1) toolbar.append(choice("选择查询结果", list.map((m, i) => m.shortTitle || "结果 " + (i + 1)), selected, "model", (i, key) => {
       selected = i; draw(key);
     }));
-    else if (model.shortTitle) toolbar.append(element("h3", "av-title", model.shortTitle));
+    else if (model.shortTitle) toolbar.append(element("h3", "av-title", balance ? balance.subject : model.shortTitle));
     const hasData = result.coverage !== "missing" && result.rows.length > 0;
     if (hasData) toolbar.append(choice("回答视图", ["图览", "分析台"], mode, "mode", (i, key) => { mode = i; draw(key); }));
     const content = element("div", "av-body");
     const scalarValue = kind === "scalar" ? result.rows[0][measure.key] : undefined;
-    const lead = model.answer && answerLead(model.answer, measure, model.directionalMagnitude?Math.abs(scalarValue):scalarValue, result.headline);
+    const lead = !balance && model.answer && answerLead(model.answer, measure, model.directionalMagnitude?Math.abs(scalarValue):scalarValue, result.headline);
     if (lead) content.append(lead.box);
     for(const line of model.ratingCoverage||[])content.append(element("p","av-caption",line));
     const hasMeasure = result.measures.some(m => result.rows.some(row => finite(row[m.key])));
     if (result.coverage === "missing" || !result.rows.length) {
       if (!model.answer) content.append(element("p", "av-empty", result.note || "当前数据不足以回答这个问题。"));
       if (result.columns?.length || result.coverage === "missing" && result.rows.length) content.append(matrix(result, state, draw));
+    } else if (balance) {
+      if (list.length > 1) content.append(element("h3", "av-balance-subject", balance.subject));
+      content.append(balanceChangeView(model, measure, state, mode, draw));
     } else {
       if (result.coverage === "partial") content.append(element("p", "av-caption", result.note || "当前仅覆盖部分记录。"));
       if (mode === 1 || kind === "table" || !measure) {

@@ -177,3 +177,26 @@ dialog::backdrop{background:#15191866}
 .answer-evidence{margin:12px 0;color:var(--ink)}
 .answer-evidence>summary{width:fit-content;padding:4px 0;color:var(--muted);font-size:14px;cursor:pointer}
 .answer-evidence[open]>summary{margin-bottom:8px}
+.answer-presentation{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px 10px}
+.answer-presentation>.answer-views{grid-column:1 / -1}
+.answer-presentation>.view-actions{grid-column:2;grid-row:2;margin:0;justify-content:flex-end}
+.answer-presentation>.view-actions button{font-size:13px;min-height:34px;padding:4px 8px;border-color:transparent;color:#39665a;background:transparent}
+.answer-presentation>.view-actions button:hover{background:#f0f4f2}
+.answer-presentation>.answer-evidence{grid-column:1;grid-row:2;margin:0}
+.answer-presentation>.answer-evidence>summary{font-size:13px;line-height:26px}
+.answer-presentation>.answer-evidence[open]{grid-column:1/-1;grid-row:3}
+.has-conversation .workspace-heading{margin-block:20px 16px}
+.has-conversation .workspace-heading h1{font-size:clamp(24px,3vw,30px)}
+.has-conversation .composer{display:flex;flex-direction:column;margin-top:20px}
+.has-conversation .composer .bar-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.has-conversation .composer #ask-form{order:0;border-color:#bacbc3}
+.has-conversation .composer #ask-form:focus-within{border-color:#357563}
+.has-conversation .composer textarea{min-height:38px;height:44px}
+.has-conversation .composer #ai-status{order:1}
+.has-conversation .composer .suggestions{order:2;margin:7px 0 0}
+.has-conversation .composer .manual-entry{order:3}
+@media(max-width:480px){
+  .answer-presentation{grid-template-columns:minmax(0,1fr)}
+  .answer-presentation>.answer-evidence,.answer-presentation>.answer-evidence[open],.answer-presentation>.view-actions{grid-column:1;grid-row:auto}
+  .answer-presentation>.view-actions{justify-content:flex-start}
+}

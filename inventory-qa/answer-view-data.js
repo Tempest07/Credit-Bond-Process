@@ -758,6 +758,49 @@ function rowComparison(arithmetic,question,original){
     source:original.source,columns,rows:[row]});
 }
 
+// Only replace an overview's narrative when every line states an endpoint or
+// their difference. Older saved turns can also carry set or coverage findings.
+function onlyBalanceLines(overview, text){
+  if(!text)return true;
+  const titles=overview.map(p=>p.title).sort((a,b)=>b.length-a.length);
+  let remaining=text;
+  for(const title of new Set(titles))remaining=remaining.replaceAll(title,'◆');
+  const amount='[+\\-−]?[\\d,]+(?:\\.\\d+)?\\s*亿元';
+  const statement=new RegExp('^◆\\s*(?:[：:]\\s*'+amount+'|比\\s*◆\\s*(?:(?:多|少)\\s*'+amount+'|相同，差额为零))$','u');
+  return remaining.split(/[。\n]+/u).map(s=>s.trim()).filter(Boolean).every(s=>statement.test(s));
+}
+
+function balanceChangeSummary(answer,model){
+  const {dimensions,measures,rows,coverage,defaultTable}=model.result;
+  if(coverage!=='complete'||defaultTable||dimensions.length!==1||dimensions[0].kind!=='date'||
+    measures.length!==1||rows.length!==2||!Object.hasOwn(currencyScale,measures[0].unit))return;
+  const steps=answer.steps??[{source:'inventory',data:answer}];
+  if(!steps.every(s=>s.source==='inventory'&&!s.appliedSelection) || answer.arithmetic || answer.alignment ||
+    (answer.comparison && answer.comparison.kind!=='balanceChange'))return;
+  const bundle=steps.length===1 && steps[0].data;
+  const overview=bundle?.overview;
+  if(overview && (list(overview).length!==2 || bundle.codeComparisons?.length || bundle.ledgerReport ||
+    !onlyBalanceLines(overview,bundle.clarification)))return;
+  const parts=overview?overview.map(p=>p.result):steps.map(s=>s.data);
+  if(parts.length!==2||parts.some(d=>!d?.resultId||d.plan?.metric!=='principal'||d.plan.group!=='none'||
+    d.measure||d.plan.rank||list(d.plan.analysis).length||d.scopedToPrevious||d.roleEvidence||
+    !Number.isSafeInteger(d.totalCents)))return;
+  const [first,last]=parts.sort((a,b)=>a.snapshot.date.localeCompare(b.snapshot.date));
+  if(first.snapshot.date===last.snapshot.date)return;
+  const {key,unit}=measures[0],dateKey=dimensions[0].key;
+  const factor=currencyScale['亿元']/currencyScale[unit];
+  if([first,last].some((d,i)=>rows[i][dateKey]!==d.snapshot.date||rows[i][key]!==yi(d.totalCents)*factor))return;
+  const filters=Object.entries(first.plan.filters||{}), other=last.plan.filters||{};
+  if(filters.length!==Object.keys(other).length||filters.some(([k,v])=>typeof v!=='string'||other[k]!==v))return;
+  const deltaCents=last.totalCents-first.totalCents;
+  if(!Number.isSafeInteger(deltaCents)||(answer.comparison && answer.comparison.changeCents!==deltaCents))return;
+  const subject=filters.map(([key,value])=>{
+    if(key==='account')return {AFS:'OCI（AFS）',RECEIVABLE:'AC（Receivable）'}[value.toUpperCase()]||value;
+    return ['issuer','branch','portfolio','name','code'].includes(key)?value:label(key)+' '+value;
+  }).join(' · ')||'全部持仓';
+  return {subject,metric:principal.label,delta:deltaCents/(100*currencyScale[unit]),note:notes(answer.methodNotes)};
+}
+
 function flowTotalRow(steps,question){
   if(steps.length!==1 || !/一行|并排|并列|放在旁边/.test(question) || !/本金|金额/.test(question) || !/笔数|多少笔|几笔/.test(question))return null;
   const d=steps[0]?.data, p=d?.plan, totals=d?.result?.totals;
@@ -860,5 +903,9 @@ export function answerViewModels(input) {
     }
   }
   if(warnings.size)models[0]={...models[0],cautions:[...warnings]};
+  if(models.length===1 && !report && !explanation){
+    const balanceChange=balanceChangeSummary(a,models[0]);
+    if(balanceChange)models[0]={...models[0],balanceChange};
+  }
   return models;
 }

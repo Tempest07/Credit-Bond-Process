@@ -1,6 +1,6 @@
 "use strict";
 
-import {presentAnswer} from "./answer-presentation.js?v=5.5.3";
+import {presentAnswer} from "./answer-presentation.js?v=5.5.3-ui1";
 
 const joint = document.body.dataset.workspace === "joint";
 const uploadIds = new Set(["file","upload","upload-form","upload-list","upload-notice"]);

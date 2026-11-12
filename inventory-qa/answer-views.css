@@ -1,6 +1,6 @@
 .answer-views {
-  --av-rule: var(--rule, #dedfdd);
-  --av-focus: var(--focus, #295e71);
+  --av-rule: #dbe3e0;
+  --av-focus: #1c6059;
   color: var(--ink, #161616);
   border: 1px solid var(--av-rule);
   border-radius: 14px;
@@ -14,20 +14,38 @@
 .av-toolbar, .av-tools, .av-choice, .av-pager, .av-readout, .av-total {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
 }
-.av-toolbar {padding: 14px 19px; gap: 10px 16px; justify-content: space-between; border-bottom: 1px solid var(--av-rule)}
-.av-title {font-size: 16px; overflow-wrap: anywhere; min-width: 0}
-.av-choice {padding: 2px; gap: 2px; max-width: 100%; border: 1px solid var(--av-rule); border-radius: 9px; background: var(--wash, #f5f5f3)}
+.av-toolbar {padding: 13px 20px; gap: 10px 16px; justify-content: space-between; border-bottom: 1px solid var(--av-rule)}
+.av-title {flex: 1 1 12em; font-size: 16px; line-height: 1.45; color: #173831; overflow-wrap: anywhere; min-width: 0}
+.av-choice {padding: 2px; gap: 2px; max-width: 100%; border: 1px solid transparent; border-radius: 8px; background: #f1f4f3}
 .av-choice button {min-height: 31px; min-width: 0; padding: 4px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; font-size: 13px; white-space: normal; overflow-wrap: anywhere}
-.av-choice button[aria-pressed=true] {background: #fff; border-color: #a7b4ba; color: #264c5a; font-weight: 600}
+.av-choice button[aria-pressed=true] {background: #fff; border-color: #cedad6; color: #214b43; font-weight: 600}
 .av-select {max-width: 100%; min-height: 35px; padding: 5px 8px; border: 1px solid var(--av-rule); border-radius: 7px; background: #fff; color: inherit}
 .av-body {min-width: 0; padding: 16px 19px}
-.av-answer {max-width: 65em; margin: 0 0 14px; font-size: clamp(17px, 2vw, 21px); font-weight: 600; line-height: 1.55; letter-spacing: -.02em; overflow-wrap: anywhere}
+.av-answer {max-width: 60em; margin: 0 0 14px; font-size: 15px; font-weight: 400; line-height: 1.65; color: #344440; overflow-wrap: anywhere}
 .av-answer:only-child {margin: 0}
 .av-key-value, .av-inline-value {display: inline-block; color: #161616; white-space: nowrap}
 .av-key-value strong {font-size: clamp(31px, 4.3vw, 46px); font-weight: 650; letter-spacing: -.045em; line-height: 1.15}
 .av-key-value small {font-size: .8em; font-weight: 600}
 .av-inline-value strong {font-weight: 700; letter-spacing: -.025em}
 .av-inline-value small {font: inherit}
+.av-balance {display: grid; grid-template-columns: minmax(135px,.85fr) minmax(230px,1.65fr); gap: 16px 28px; align-items: center; padding-block: 6px}
+.av-balance-stat {min-width: 0}
+.av-balance-label {font-size: 14px; font-weight: 500; color: #495e57}
+.av-balance-value {display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; color: #174c41; margin-top: 4px; line-height: 1.15}
+.av-balance-value strong {font-size: clamp(32px, 3.7vw, 46px); font-weight: 650; letter-spacing: -.045em; overflow-wrap: anywhere}
+.av-balance-value small {font-size: 15px; font-weight: 500}
+.av-balance-subject {font-size: 15px; color: #29433a; margin-bottom: 8px}
+.av-balance-plot, .av-balance-table {min-width: 0; padding-left: 24px; border-left: 1px solid var(--av-rule)}
+.av-balance .av-balance-plot {gap: 8px}
+.av-balance-plot .av-bar {display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "date value" "track track"; gap: 5px 8px; padding: 3px 5px; width: 100%}
+.av-balance-plot .av-bar-name {grid-area: date; color: #496159; font-size: 13px}
+.av-balance-plot .av-end {grid-area: value; font-size: 16px; font-weight: 600; line-height: 1.2; color: #213c33}
+.av-bar-unit {margin-left: 4px; font-size: 11px; color: #576c64; font-weight: 400}
+.av-balance-plot .av-track {grid-area: track; height: 8px; background: #f0f4f2; border-radius: 2px}
+.av-balance-plot .av-fill {background: #90a9a0}
+.av-balance-plot .av-bar:last-of-type .av-fill {background: #277563}
+.av-balance-plot .av-zero {display: block; font-size: 11px; text-align: center}
+.av-balance-note {grid-column: 1/-1; font-size: 13px; line-height: 1.6; color: #53655e}
 .av-tools {margin-bottom: 12px}
 .av-measure, .av-caption, .av-datum, .av-pager span {color: var(--muted, #5b605e); font-size: 13px}
 .av-caption {margin: 6px 0 12px; overflow-wrap: anywhere}
@@ -83,7 +101,7 @@
 .av-cell::before {content: ""; position: absolute; left: 0; top: 1px; bottom: 1px; width: var(--av-extent); background: #e9e9e9; border-radius: 2px; z-index: -1}
 .av-exact {display: grid; grid-template-columns: minmax(54px, auto) minmax(0, 1fr); gap: 3px 14px; padding: 8px 12px; margin: 0; border-left: 2px solid #888; background: var(--wash, #f5f5f3)}
 .av-exact dd {margin: 0; text-align: left}
-.av-source {padding: 10px 19px; border-top: 1px solid var(--av-rule); color: var(--muted, #5b605e); font-size: 13px}
+.av-source {padding: 8px 19px; border-top: 1px solid var(--av-rule); color: var(--muted, #5b605e); font-size: 13px}
 .av-source summary {width: fit-content; cursor: pointer}
 .av-source p {overflow-wrap: anywhere; margin: 6px 0 0}
 .answer-views :is(button, summary, select, [tabindex]):focus-visible {outline: 2px solid var(--av-focus); outline-offset: 1px}
@@ -93,9 +111,17 @@
   .av-bar, .av-scroll th, .av-scroll td {font-size: 13px}
   .av-source {padding: 9px 12px}
   .av-time {padding-left: 48px}
+  .av-balance {grid-template-columns: minmax(0,1fr); gap: 14px; padding: 2px}
+  .av-balance-plot, .av-balance-table {padding: 0; border-left: 0}
+  .av-balance-plot .av-bar {padding-inline: 0}
+  .av-balance-plot .av-end {font-size: 15px}
+  .av-title {flex-basis: 10em; font-size: 15px}
 }
 @media (max-width: 420px) {
   .av-plot .av-time-1 {display: none}
+  .av-toolbar {gap: 6px; padding-block: 10px}
+  .av-title {font-size: 14px; text-wrap: balance}
+  .av-choice button {padding-inline: 7px}
 }
 @media (prefers-reduced-motion: no-preference) {
   .av-fill {transition: width .18s ease}

@@ -1,6 +1,6 @@
-import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.3";
-import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.3";
-import {presentAnswer} from "./answer-presentation.js?v=5.5.3";
+import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.3-ui1";
+import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.3-ui1";
+import {presentAnswer} from "./answer-presentation.js?v=5.5.3-ui1";
 
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -59,7 +59,9 @@ function controls() {
   $("reset").disabled=busy||!state.chat&&!state.origin;
   $("refresh").disabled=busy;
   const follow=state.turns.length>0 || state.origin;
+  $("ask-pane").classList.toggle("has-conversation",Boolean(follow));
   $("compose-heading").textContent=follow?"继续追问":"向台账提问";
+  $("question").placeholder=follow?"继续追问…":"例如：广州分行 10 月末持仓多少，当月净增持多少？";
   $("submit").textContent=busy?"处理中…":follow?"追问 ↑":"提问 ↑";
   $("ai-status").textContent=!busy && !state.configured?"问数专用 API Key 待配置。":"";
   const last=state.turns.at(-1)?.answer.steps?.at(-1);

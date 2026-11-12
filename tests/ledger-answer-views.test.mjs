@@ -58,6 +58,29 @@ function snapshot(date, cents) {
     totalCents:cents,rowCount:1,securityCount:1,groups:[{name:'全部',cents,count:1,securityCount:1}]};
 }
 
+test('the same two dated principal observations present one scoped change across saved answer shapes',()=>{
+  const issuer='示例制造股份有限公司';
+  const first=snapshot('2024-06-30',23e9),last=snapshot('2024-09-30',81e9);
+  for(const d of [first,last])d.plan.filters={issuer};
+  const parts=[first,last].map(result=>({title:result.snapshot.date+' 发行人 '+issuer,result}));
+  const body={overview:parts,clarification:parts[0].title+'：2.3 亿元。\n'+parts[1].title+'：8.1 亿元。\n'+
+    parts[1].title+' 比 '+parts[0].title+' 多 5.8 亿元。'};
+  const steps=[first,last].map(data=>({source:'inventory',data}));
+  const cmp={kind:'balanceChange',openingCents:first.totalCents,closingCents:last.totalCents,changeCents:58e9};
+  for(const answer of [body,{steps:[{source:'inventory',data:body}]},{steps},{steps,comparison:cmp}]){
+    const [m]=answerViewModels({question:'看这两期在账本金',answer});
+    assert.deepEqual(m.balanceChange,{subject:issuer,metric:'在账本金',delta:5.8,note:''});
+    assert.deepEqual(m.result.rows.map(r=>r[m.result.measures[0].key]),[2.3,8.1]);
+  }
+  const [scaled]=answerViewModels({question:'以万元为单位',answer:body});
+  assert.equal(scaled.result.measures[0].unit,'万元');assert.equal(scaled.balanceChange.delta,58000);
+  assert.equal(answerViewModels({question:'给我一张对照表',answer:body})[0].balanceChange,undefined);
+  assert.equal(answerViewModels({...body,clarification:body.clarification+'\n另有3只券退出。'})[0].balanceChange,undefined);
+  assert.equal(answerViewModels({steps,comparison:{...cmp,changeCents:0}})[0].balanceChange,undefined);
+  last.plan.filters={issuer:'另一发行人'};
+  assert.equal(answerViewModels(body)[0].balanceChange,undefined);
+});
+
 test('a ranked subtotal used directly by a share retains its members beside the calculated answer',()=>{
   const d=snapshot('2026-04-30',3e10);
   d.dimensions=['issuer'];
@@ -162,6 +185,8 @@ test('a two-snapshot explanation shows only verified endpoint bars with its scop
   assert.equal(chooseAnswerView(m.result),'comparison');
   assert.deepEqual(m.result.rows.map(row=>[row.date,row.s0]),[['2025-12-31',4],['2026-11-05',3]]);
   assert.match(m.answer,/不能判定开始下降的月份/);
+  assert.equal(m.balanceChange.note,'仅有两端余额，不能判定开始下降的月份。');
+  assert.equal(m.balanceChange.delta,-1);
 });
 
 test('the same inventory result renders on its own, in a saved turn and in a joint answer',()=>{
