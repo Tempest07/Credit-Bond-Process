@@ -25,6 +25,29 @@ async function sample(side,extra=0,end='2024-12-31'){
  return new Uint8Array(await w.xlsx.writeBuffer());
 }
 const plan={direction:'both',metric:'net',start:'2024-01-01',end:'2024-12-31',groupBy:['发行人全称'],limit:1};
+test('minimum group rows narrows complete groups before average ranking; exports distinguish the entire source from qualifying groups',async()=>{
+ const r=isolated(),w=new ExcelJS.Workbook();await w.xlsx.load(await sample('buy'));
+ w.worksheets[0].getCell('G4').value=999;
+ await ingestTradeLedger(r,new Uint8Array(await w.xlsx.writeBuffer()),buy);
+ const p={...plan,direction:'buy',metric:'average',minGroupRows:2};
+ const hit=await runTradeQuery(r,p);
+ assert.equal(hit.groupCount,1);assert.equal(hit.totals.rows,3);
+ assert.deepEqual(hit.groups.map(g=>[g.values[0],g.rows,g.buyAverageCents]),[['甲',2,5010]]);
+ assert.match(hit.warnings.join(''),/全部 2 组[\s\S]*至少 2 笔/);
+ const book=new ExcelJS.Workbook();await book.xlsx.load(await exportTradeQuery(r,p));
+ assert.equal(book.getWorksheet('交易汇总').getCell('A3').value,'甲');assert.equal(book.getWorksheet('交易汇总').rowCount,3);
+ assert.equal(book.getWorksheet('交易明细').rowCount,4);
+ assert.equal((await runTradeQuery(r,{...p,minGroupRows:3})).groupCount,0);
+});
+test('complete covered calendar periods contain both transaction sides for a security with zero trades; incomplete book cannot establish zeros',async()=>{
+ const r=isolated();await ingestTradeLedger(r,await sample('buy'),buy);
+ const p={...plan,end:'2024-03-31',metric:'rows',limit:null,groupBy:['交易月份','增减方向'],filters:[{field:'券码',op:'eq',value:'000001.SZ'}]};
+ await assert.rejects(runTradeQuery(r,p),/不完整/);
+ await ingestTradeLedger(r,await sample('sell'),sell);
+ const hit=await runTradeQuery(r,p);assert.equal(hit.totals.rows,0);
+ assert.deepEqual(hit.groups.map(g=>g.values.join('/')).sort(),['01','02','03'].flatMap(m=>['增持','减持'].map(d=>'2024-'+m+'/'+d)).sort());
+ assert.ok(hit.groups.every(g=>g.rows===0));assert.match(hit.warnings.join(''),/两个券码列均已检查/);
+});
 test('net contribution by category reconciles all positive and negative groups including unnamed rows',async()=>{
  const r=isolated();await ingestTradeLedger(r,await sample('buy'),buy);
  const edit=new ExcelJS.Workbook();await edit.xlsx.load(await sample('sell'));
@@ -34,6 +57,10 @@ test('net contribution by category reconciles all positive and negative groups i
  assert.deepEqual(full.highlights.map(h=>h.value),[12520,-10000,2520,-10000]);
  const cut=await runTradeQuery(r,{...plan,groupBy:['联动分行'],limit:1});
  assert.equal(cut.highlights.some(h=>h.label.includes('合计贡献')),false);
+ const rows=edit.worksheets[0];rows.getCell('A2').value='2024-01-02';rows.getCell('J2').value='深圳';
+ await ingestTradeLedger(r,new Uint8Array(await edit.xlsx.writeBuffer()),sell);
+ const named=await runTradeQuery(r,{...plan,groupBy:['联动分行'],limit:null});
+ assert.deepEqual(named.highlights.at(-1),{label:'具名联动分行中净卖出最多 · 深圳',value:-3000,unit:'分'});
 });
 test('account aliases keep the full-share denominator and label the direction of ungrouped net principal',async()=>{
  const r=isolated();

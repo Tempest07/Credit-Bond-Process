@@ -13,7 +13,12 @@ const iso=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite
 export function validateProfile(p,check){
   check(p&&typeof p==='object','请指定分组或日期核对方式。');
   if(p.type==='groups'){
-    check(safeText(p.by,groupFields)&&['counts','concentration','threshold','breakdown'].includes(p.stat),'请选择已知的分组与统计口径。');
+    check(safeText(p.by,groupFields)&&['counts','concentration','threshold','breakdown','ranking','withinRanking'].includes(p.stat),'请选择已知的分组与统计口径。');
+    if(['ranking','withinRanking'].includes(p.stat)){
+      check(Number.isInteger(p.limit)&&p.limit>=1&&p.limit<=100,'请选择 1 至 100 的排名上限。');
+      if(p.stat==='withinRanking')check(safeText(p.within,groupFields)&&p.by!==p.within,'请选择不同的组别和组内排名维度。');
+      if(p.membersContain!=null)check(typeof p.membersContain==='string'&&p.membersContain.trim().length>0&&p.membersContain.length<=200,'请指定要匹配的名称片段。');
+    }
     if(p.stat==='breakdown')check(safeText(p.within,groupFields)&&p.within!==p.by&&
       (p.limit==null||Number.isInteger(p.limit)&&p.limit>=1&&p.limit<=100),'请选择第二级分组和有效的一级排名数量。');
     if(p.stat==='concentration')check(safeText(p.within,groupFields)&&p.within!==p.by&&Number.isInteger(p.minMembers)&&p.minMembers>=1,'请指定子分组和有效成员数量。');
@@ -41,8 +46,47 @@ function buckets(rows,field){
   }
   return groups;
 }
+function rankNames(groups,limit,contains) {
+  const ordered=[...groups].filter(([name])=>name.trim()&&(!contains||name.includes(contains))).sort((a,b)=>
+    b[1].cents-a[1].cents || a[0].localeCompare(b[0],'zh-CN'));
+  let lastAmount,rank=0;
+  const rows=[];
+  for(const [i,[name,g]] of ordered.entries()){
+    if(lastAmount!==g.cents)rank=i+1;
+    if(rank>limit)break;
+    rows.push({rank,name,principal:yuan(g.cents)});
+    lastAmount=g.cents;
+  }
+  return rows;
+}
+function rankingReport(p,grouped) {
+  const child=groupFields[p.within], parent=groupFields[p.by];
+  const nested=p.stat==='withinRanking', entity=nested?child:parent;
+  const columns=[...(nested?[cat('group',parent)]:[]),num('rank','名次',''),cat('name',entity),num('principal','在账本金','亿元')];
+  let rows,summary,missing=0;
+  if(nested){
+    rows=[];
+    const groups=[...grouped].sort(([a],[b])=>a&&b?a.localeCompare(b,'zh-CN'):a?-1:b?1:0);
+    for(const [group,g] of groups){
+      const members=buckets(g.records,p.within);
+      missing+=members.get('')?.cents||0;
+      for(const r of rankNames(members,p.limit,p.membersContain))rows.push({group:group||'未填写',...r});
+    }
+    summary='从本次筛选的全部持仓出发，在 '+groups.length+' 个'+parent+'分组内分别列出本金前 '+p.limit+' 名具名'+entity+'。';
+    if(grouped.has(''))summary+='未填写'+parent+'单列为一组。';
+  }else{
+    rows=rankNames(grouped,p.limit,p.membersContain);
+    missing=grouped.get('')?.cents||0;
+    summary=rows.length?'具名'+entity+'本金前 '+p.limit+' 名中，第一名为'+rows.filter(r=>r.rank===1)
+      .map(r=>r.name).join('、')+'，本金 '+show(rows[0].principal)+' 亿元。':'当前范围没有具名'+entity+'。';
+  }
+  const note='先按原表持仓行汇总人民币名义本金，再按金额降序排列；并列使用同一名次，保留边界并列项。'+
+    (p.membersContain?'仅纳入'+entity+'名称包含“'+p.membersContain+'”的具名成员。':'未填写'+entity+'本金 '+show(yuan(missing))+' 亿元，单列在排名之外。');
+  return {title:nested?'各'+parent+'的'+entity+'排名':'具名'+entity+'本金排名',summary,note,columns,rows};
+}
 function groupReport(p,records){
   const grouped=buckets(records,p.by), title=groupFields[p.by];
+  if(['ranking','withinRanking'].includes(p.stat))return rankingReport(p,grouped);
   let rows=[],columns=[cat('name',title)],summary,note='';
   if(p.stat==='counts'){
     columns.push(num('principal','在账本金','亿元'),num('count','持仓行数','条'),num('codes','不同券数','只'),num('extra','行数减不同券数','条'));
@@ -135,6 +179,7 @@ export async function inventoryProfile({db,bucket},step,ctx){
   const full=buildProfile(step.profile,rows,snapshot);
   const cap=150;
   const ledgerReport=full.rows.length>cap?{...full,rows:full.rows.slice(0,cap),note:full.note+' 页面列出前 '+cap+' 项，共 '+full.rows.length+' 项，完整结果可下载。'}:full;
-  return {...data,profileSpec:step.profile,ledgerReport};
+  const rankedMembers=step.profile.stat==='ranking'?{field:step.profile.by,names:full.rows.map(r=>r.name)}:null;
+  return {...data,profileSpec:step.profile,ledgerReport,...(rankedMembers?{rankedMembers}:{})};
 }
 

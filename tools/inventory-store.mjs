@@ -447,6 +447,15 @@ export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixed
       listedMembers.some(name=>typeof name!=='string'||!name.trim())||new Set(listedMembers).size!==listedMembers.length))
     throw message('用于分组的台账名单无效，请重新取名单。',409);
   if(!snapshot||snapshot.date!==plan.date)throw message('指定日期没有可用库存快照。',404);
+  const branch=plan.filters.branch;
+  if(branch&&branch!=='未填写'&&!branch.endsWith('分行')){
+    const city=branch.replace(/市$/,'');
+    const candidates=await db.prepare('SELECT DISTINCT branch FROM inventory_rows WHERE version=? AND branch IN (?,?,?)')
+      .bind(snapshot.id,branch,city+'分行',city+'市分行').all();
+    const values=candidates.results.map(r=>r.branch);
+    if(!values.includes(branch)&&values.length>1)return {clarification:'这期台账中“'+branch+'”可能指 '+values.join('、')+'，请指定分行全称。'};
+    if(!values.includes(branch)&&values.length===1)plan.filters.branch=values[0];
+  }
   const code=plan.filters.code;
   if(code && code!=='未填写'){
     const hits=await lookupInventorySecurity(db,snapshot,code);

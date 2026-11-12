@@ -30,3 +30,21 @@ test('rank primary groups before breaking them down and retain the missing dimen
   assert.deepEqual(result.rows.map(x=>[x.name,x.child]),[['甲','A'],['甲','未填写'],['乙','B']]);
   assert.match(result.summary,/乙.*未填写联动分行 0 亿元/);
 });
+test('rank actual names after aggregating all rows, preserve cutoff ties and keep missing member balances separate',()=>{
+  const rows=[
+    {branch:'A',issuer:'甲城投',cents:70},{branch:'A',issuer:'乙城投',cents:50},{branch:'A',issuer:'甲城投',cents:5},
+    {branch:'A',issuer:'丙',cents:50},{branch:'B',issuer:'丙',cents:80},{branch:'',issuer:'甲城投',cents:500},
+    {branch:'B',issuer:'',cents:200},{branch:'C',issuer:'丙',cents:280},
+  ];
+  const spec={type:'groups',stat:'ranking',by:'branch',limit:2};
+  const named=buildProfile(spec,rows,snapshot);
+  assert.deepEqual(named.rows.map(r=>[r.name,r.rank]),[['B',1],['C',1]]);
+  assert.match(named.note,/未填写联动分行/);
+  const within=buildProfile({...spec,stat:'withinRanking',within:'issuer'},rows,snapshot);
+  assert.deepEqual(within.rows.filter(r=>r.group==='A').map(r=>r.rank),[1,2,2]);
+  assert.deepEqual(within.rows.filter(r=>r.group==='B').map(r=>r.name),['丙']);
+  assert.equal(within.rows.at(-1).group,'未填写');
+  const filtered=buildProfile({...spec,by:'issuer',membersContain:'城投'},rows,snapshot);
+  assert.deepEqual(filtered.rows.map(r=>r.name),['甲城投','乙城投']);
+  assert.throws(()=>validateProfile({...spec,membersContain:''},assert.ok));
+});

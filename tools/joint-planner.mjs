@@ -27,6 +27,12 @@ const object = properties => ({type:'object',properties,additionalProperties:fal
 const enumOf = values => ({type:'string',enum:values});
 const nullable = schema => ({anyOf:[schema,{type:'null'}]});
 const strings = {type:'string'};
+const historyInstructions=`
+沿用之前的券/发行人排名，问“各占全行/本账户本金多少”“每个各列一行”，选 memberShares，一次引用排名 selection，limit 为明确要求的行数，filters 指定全行或本账户等分母条件。每个成员本金分别与同范围全部持仓比较，不能拿名单合计代替逐个分子。
+多范围交易流水需要一张表，特别是跨年同期、不同分行按月透视、科目逐月差额或同比，用 trade/flowMatrix 并设 derive=false。每个系列给名称、实际起止日期及明确账户/分行筛选，无筛选用空数组。方向若需买入和卖出用 both，指标可有 buy/sell/net/rows。当期及去年同期买卖各两列简单对照用 periodRows；分行作行、月份作列用 seriesRows；月份为行、各分行/账户/年份为列用 monthsRows。用户要各月占该分行期间合计时 shares=true，转置后保持上轮值。要账户甲减账户乙或同比时依次列甲、乙，或本年、去年，compare=difference 或 growth。沿用原有矩阵的后续改范围、方向、行列，按上轮 matrix 重新提交。单笔均额至少几笔后排名属新 trade 普通步骤，逐一筛完整交易分组后再按均笔排名，不能对上次截短的榜单计算。
+两期共同持仓的评级进入或离开某一精确档位，选 portfolio/ratingTransitions，period=range，起止使用两期快照、threshold为准确档位。筛缺任一期评级的共同券时仍用同一指标和日期，subset=unknown。询问久期覆盖的金额或券数、比率，查询 modifiedDuration 获取覆盖及待核；两个账户合并时在同日同分行分别查两个 modifiedDuration，按各自已覆盖本金加权。确保有资料部分与待核金额都能交付。
+上文的步骤编号区分轮次，明确“之前第一张榜”“刚才第一张表的第二家”须引用产生那张榜的历史 id（例如 earlier2step1），indices 为实际名次，继续沿用追问指定的账户。若追问上一步的某只券原表代码、简称、原持仓行和对应本金，选 inventory/holdingRows，selection 引用排名原步骤的 code，indices 指名次，metric=principal，filters 保留同一账户；由原行给出代码、简称和行号，无需用户重输券码。问买卖原始成交日用 trade 日期分组及原交易，保留上轮条件。
+某指标与另一指标的差额按所述先后计算前者减后者并说明方向；明确问绝对差距时才取绝对值。`;
 const selectionSchema = object({
   from:strings,field:enumOf(['issuer','code','branch','account']),
   limit:nullable({type:'integer'}),indices:{type:'array',items:{type:'integer'}},
@@ -35,8 +41,9 @@ const stepSchema = object({
   source:enumOf(['inventory','trade']),question:strings,snapshotDate:nullable(strings),
   start:nullable(strings),end:nullable(strings),selection:nullable(selectionSchema),
 });
-const memberSchema=object({source:enumOf(['inventory']),operation:enumOf(['memberSummary']),question:strings,
+const memberSchema=object({source:enumOf(['inventory']),operation:enumOf(['memberSummary','holdingRows','memberShares']),question:strings,
   snapshotDate:nullable(strings),selection:selectionSchema,metric:enumOf(['principal','count','securities']),
+  heldTop:nullable({type:'integer'}),
   filters:{type:'array',items:object({field:enumOf(sliceFields),value:strings})}});
 const regroupDimensions=analysisFields.filter(k=>k!=='cents');
 const calculationSchema=object({source:enumOf(['inventory']),operation:enumOf(['calculate']),question:strings,
@@ -59,7 +66,7 @@ ${creditScopeInstruction}
 valuationAudit 返回按本金从大到小的明确券码名单，之后可以 selection.field=code 引用，引用前几只填limit。限定两三个已知分行或科目比较两个时点时，用 calculate 把日期与每个条件各列一个 slice，derive=true，分别相减并合计。如果还问比例变化，子问题写明所需的相对基期的增减幅或当期构成占比变化；若只看所选类别且口语未区分两者，一并给出。完整取得各时点、各类别的本金即可；有明确全账户分母时才另查全账户。只在需要自动发现所有分组时用 balanceChange。同一问句给出券简称和券码，询问是否同券并汇总期间交易时，用一个 trade 步骤，保留两个原始标识及交易方向、期间，委托流水核对后按原表行去重。derive=true 启用最后一步按真实数值做算术。当用户明示或暗示需要算占比、比重、份额、成数、每笔金额、均值、贡献、加权值或跨组算术，设置 derive=true。最后一步能引用各步合计、分组本金、交易笔数、券数、组合剔除/覆盖/全额本金、逐券核对名单本金。你负责先取得分子和正确分母，保留用户的统计范围，必要时另开一步取分母。单纯问有多少、排第几且不需要二次计算时 derive=false。比较合计要拿到两个期间同口径的结果。跨来源求占比或问其中几成，同样必须取得两侧，不能因单源不能算百分比就澄清。计算单券估值时支持 valuationAudit 的 code 参数，填用户原话的券码或债券简称。指定单券核对评级/本金/来源/对比例贡献时，subset=rated（所有已核验评级），code填精确简称或代码，threshold为门槛或null，程序会返回单券及同日组合分母。指定不同门槛时每个门槛单独一个步骤。精确评级可用 valuationAudit subset=ratedExact 和 threshold；对于评级占比，分母是当期剔除违约且有当日评级的本金，而问其占全部在账本金时分母含剔除券。交易分组占全部时，可请求按目标维度完整分组并保留全部匹配交易合计；不能用只含目标组的小计充当全账户总额。`;
 const regroupSchema=object({source:enumOf(['inventory']),operation:enumOf(['regroup']),question:strings,
   from:strings,dimensions:{type:'array',items:enumOf(regroupDimensions)},metric:enumOf(['principal','count','securities'])});
-const portfolioMetrics = ['modifiedDuration','impliedRatingShare','weeklyMean','valuationAudit'];
+const portfolioMetrics = ['modifiedDuration','impliedRatingShare','weeklyMean','valuationAudit','ratingTransitions'];
 const portfolioKeys = ['metric','start','end','account','threshold','branch','subset','referenceDate','code'];
 const portfolioSchema = object({
   source:enumOf(['portfolio']),question:strings,period:enumOf(['asOf','range','yearToDate']),
@@ -67,14 +74,20 @@ const portfolioSchema = object({
     account:nullable(strings),threshold:nullable(strings),branch:nullable(strings),subset:nullable(enumOf(['csi','cdc','excluded','unknown','ratedExact','rated'])),referenceDate:nullable(strings),code:nullable(strings)}),
 });
 const memberFilters={type:'array',items:object({field:strings,value:strings})};
+const flowMatrixSchema=object({source:enumOf(['trade']),operation:enumOf(['flowMatrix']),question:strings,
+  direction:enumOf(['buy','sell','both']),metrics:{type:'array',items:enumOf(['buy','sell','net','rows'])},
+  layout:enumOf(['monthsRows','seriesRows','periodRows']),shares:{type:'boolean'},compare:enumOf(['none','difference','growth']),
+  series:{type:'array',items:object({label:strings,start:strings,end:strings,filters:{type:'array',items:object({field:enumOf(['branch','account']),value:strings})}})}});
 const memberAnalysisSchema=object({source:enumOf(['inventory']),operation:enumOf(['memberAnalysis']),question:strings,
-  analysisMode:enumOf(['commonBalances','rankOverlap','commonMovers']),field:enumOf(['code','issuer','branch','account']),
+  analysisMode:enumOf(['commonBalances','rankOverlap','commonMovers','rankChanges','trackedLeaders','groupDifferences']),field:enumOf(['code','issuer','branch','account','marketType','sourceMarketType']),
   slices:{type:'array',items:object({date:nullable(strings),filters:memberFilters})},limit:{type:'integer'}});
 const groupField=enumOf(['issuer','branch','account','portfolio','code','sourceMarketType']);
 const dateField=enumOf(['legal','expected','maturity']);
 const profileSchema=object({source:enumOf(['inventory']),operation:enumOf(['profile']),question:strings,
   snapshotDate:nullable(strings),filters:memberFilters,profile:{anyOf:[
     object({type:enumOf(['groups']),stat:enumOf(['counts']),by:groupField}),
+    object({type:enumOf(['groups']),stat:enumOf(['ranking']),by:groupField,limit:{type:'integer'},membersContain:nullable(strings)}),
+    object({type:enumOf(['groups']),stat:enumOf(['withinRanking']),by:groupField,within:groupField,limit:{type:'integer'}}),
     object({type:enumOf(['groups']),stat:enumOf(['breakdown']),by:groupField,within:groupField,limit:nullable({type:'integer'})}),
     object({type:enumOf(['groups']),stat:enumOf(['concentration']),by:groupField,within:groupField,minMembers:{type:'integer'}}),
     object({type:enumOf(['groups']),stat:enumOf(['threshold']),by:groupField,thresholdYuan:{type:'number'},compare:enumOf(['gt','gte'])}),
@@ -82,9 +95,13 @@ const profileSchema=object({source:enumOf(['inventory']),operation:enumOf(['prof
     object({type:enumOf(['dates']),stat:enumOf(['differentYears']),field:dateField,other:dateField}),
   ]}});
 const profileInstructions=`
+问名称明确包含某个字面片段的具名实体并按本金排名（如发行人全称中含某词），使用 groups/ranking，by 为名称维度，membersContain 原样写明所要求的字串。没有包含条件时 membersContain=null，不能把账户、日期、排名范围猜作字串。保持原表完整名称，不把名称片段当成精确发行人过滤。
+问具名分行本金最大的几家，用 profile 的 groups/ranking，by=branch，limit 为名次数；追问只要榜首，把 limit 改为1，保留日期、来源和账户过滤。问每个分组内部的前几名，用 groups/withinRanking：by 是外层维度，within 是要排名的实体，limit 是每组名次。从同日同账户全部源行按组分别排名，不能只拆上轮全行前几名。未填写分行单列，空实体不占具名名次，边界并列保留。上述排名直接返回，请用 derive=false。
 库存支持 profile 做可核的日期和分组明细，不用 derive 再计算同一项。问法定、预计或表列到期日落在期间内的券码或到期先后时，用 dates/inRange 并把区间转换为含首尾的实际日期；如果按期间内到期本金排名发行人并比较各自全部持仓，则 rankIssuers 指定名次，否则 null。比较同一持仓两个日期的年份不同或需要列日期缺失金额时，用 dates/differentYears。追问“这批最早到期”时保留原筛选与日期范围。问每个科目的持仓行数、不同券数与两者差额选 groups/counts。问累计本金达到某门槛的发行人家数与合计，选 groups/threshold，先按 by 归集，thresholdYuan 为人民币元。组内头部集中度用 groups/concentration，例如各交易组合的最大发行人占本组合余额，by=portfolio、within=issuer，最少具名发行人个数填 minMembers。所有源筛选只放 filters，日期空值和未填写项由引擎核查。不要因为这些复杂分组或日期比较要求澄清。
 在同一张库存表先按某维度选本金前几大再按第二个维度拆分、问其最大去向和空值金额，用 profile 的 groups/breakdown。by 为一级维度，within 为二级维度，limit 为一级排名上限，无排名则 null；同时保留账户等 filters。引擎从源行计算未填写项及各组主要归属。
 需要按共同券或主体计算两边本金、新增退出或留存成员的变动贡献，用 inventory memberAnalysis/commonBalances，两个 slices 顺序是起初与期末，或题目给出的两个账户。共同券的增加榜和减少榜用 commonMovers，两期快照按先后顺序，limit 是每个方向的名次。按本金和按不同券数分别排名再核对榜单重合，用 rankOverlap 和一个日期范围，limit 是每榜名次。不限定名次的共同本金用 limit=0。成员字段用 field，通常为 code 或 issuer。这些操作直接给出计算表，derive=false。
+两期各自排名、对照谁新进或掉出，用 memberAnalysis/rankChanges。固定首期前几名追踪两期余额用 trackedLeaders。两种模式都写两期 slices 和名次 limit；直接给出一张两期对照表。问已选名单中在新日期仍持有的家数及余额前几名，用 memberSummary，heldTop 填新日期的排名数，selection.limit=null（先用完整原名单）。只要仍持有家数时 heldTop=0，仅按原名单逐项查余额时 heldTop=null。
+比较两个筛选范围（如两个分行）各分类的本金构成、占比或找哪类差额最大，用 memberAnalysis/groupDifferences，slices 顺序按问题中的先后。用 marketType 表示标准化分类，sourceMarketType 表示原表填写的类型。所有类别或最大差额连同其余比较时 limit=0；只要前几项就填该名次。已核实自发与增信两类的合并敞口后，追问合并后分账户、分行等明细必须使用 regroup from=previous1 等角色并集库存结果，dimensions 写所问维度，不必再重复查询两类；若同一轮同时求两角色和并集分组则首步查两角色、第二步regroup from=s1。
 交易流水问双边、只买、只卖的名单、家数或各组本金时，用 kind=memberSets，两个 operand 为相同期间与筛选的买、卖两侧，系统按完整买卖集合计算各组金额并对总流水。只做一次双向全行汇总无法回答。`;
 const memberOperand={anyOf:[
   object({source:enumOf(['inventory']),question:strings,snapshotDate:nullable(strings),filters:memberFilters}),
@@ -92,7 +109,7 @@ const memberOperand={anyOf:[
 ]};
 const responseSchema = object({decision:{anyOf:[
   object({kind:enumOf(['previousCalculation']),from:{type:'array',items:strings},flowVsBalance:{type:'boolean'}}),
-  object({kind:enumOf(['steps']),steps:{type:'array',items:{anyOf:[stepSchema,regroupSchema,memberSchema,calculationSchema,portfolioSchema,profileSchema,memberAnalysisSchema]}},comparison:enumOf(['none','balanceChange','reconcile']),derive:{type:'boolean'},basisNotes:{type:'array',items:enumOf(['investmentReturn'])}}),
+  object({kind:enumOf(['steps']),steps:{type:'array',items:{anyOf:[stepSchema,regroupSchema,memberSchema,calculationSchema,portfolioSchema,profileSchema,memberAnalysisSchema,flowMatrixSchema]}},comparison:enumOf(['none','balanceChange','reconcile']),derive:{type:'boolean'},basisNotes:{type:'array',items:enumOf(['investmentReturn'])}}),
   object({kind:enumOf(['memberSets']),field:enumOf(['issuer','code','branch','account']),left:memberOperand,right:memberOperand}),
   object({kind:enumOf(['clarification']),clarification:strings}),
 ]}});
@@ -110,13 +127,16 @@ function nextDay(day) {
 }
 
 function historyInput(history) {
-  return history.slice(-8).map(turn=>({
+  const turns=history.slice(-8);
+  return turns.map((turn,turnIndex)=>({
     question:String(turn.question||'').slice(0,1200),
     ...(turn.memberSets?{memberSets:turn.memberSets}:{}),
     steps:(turn.steps||[]).slice(0,5).filter(step=>sources.has(step.source)).map((step,index)=>({
-      id:'previous'+(index+1),source:step.source,question:String(step.question||'').slice(0,1200),
+      id:turnIndex===turns.length-1?'previous'+(index+1):'earlier'+(turns.length-turnIndex)+'step'+(index+1),
+      source:step.source,question:String(step.question||'').slice(0,1200),
       snapshotDate:step.snapshotDate||null,start:step.start||null,end:step.end||null,
       ...(step.source==='inventory'&&step.profileSpec?{profile:step.profileSpec,filters:step.filters||{}}:{}),
+      ...(step.matrix?{matrix:step.matrix}:{}),
       ...(step.source==='trade'&&step.settlementRange?.length===2&&step.settlementRange.every(isDate)?{settlementRange:step.settlementRange}:{}),
       ...(step.availableTradeTotals?.length?{availableTradeTotals:step.availableTradeTotals.filter(k=>Object.hasOwn({buyCents:1,sellCents:1,netCents:1,rows:1},k))}:{}),
       ...(step.source==='portfolio' && step.spec ? {spec:Object.fromEntries(portfolioKeys.map(k=>[k,step.spec[k]??null]))}:{}),
@@ -139,7 +159,7 @@ class InvalidStep extends Error {}
 function check(ok,message) {
   if(!ok)throw new InvalidStep(message);
 }
-function validateSelection(selection,completed,previous,previousSets) {
+function validateSelection(selection,completed,previous,previousSets,olderSteps) {
   if(selection==null)return null;
   const {from,field,limit,indices=[]}=selection;
   if(['previousBoth','previousLeftOnly','previousRightOnly','previousUnion'].includes(from)){
@@ -148,8 +168,8 @@ function validateSelection(selection,completed,previous,previousSets) {
   }
   const match=/^(s|previous)([1-9]\d*)$/.exec(from||'');
   const choices=match?.[1]==='s'?completed:previous;
-  check(match && Number(match[2])<=choices.length,'请从已经完成的同轮步骤或上轮的实际步骤选择名单。');
-  const selectedStep=choices[Number(match[2])-1];
+  const selectedStep=match?choices[Number(match[2])-1]:olderSteps?.get(from);
+  check(selectedStep,'请按历史中给出的实际步骤编号引用已完成的名单。');
   check(selectedStep.source!=='portfolio'||selectedStep.spec?.metric==='valuationAudit'&&field==='code','组合指标中只有逐券核验明细可以提供券码名单。');
   check(fields.has(field),'跨台账查询需要按发行人、券码、联动分行或会计科目的单一名单核对。');
   check(limit===null || Number.isInteger(limit)&&limit>=1&&limit<=100,'跨台账名单可取前 1 至 100 项。');
@@ -180,7 +200,7 @@ function portfolioSpec(step,context) {
   const {account,branch,threshold}=raw;
   for(const [field,length] of [[account,80],[branch,100]])check(field==null || validText(field,length),'请明确一个会计分类或联动分行。');
   let level=null;
-  if(raw.metric==='impliedRatingShare' || raw.metric==='valuationAudit' && threshold!=null){
+  if(['impliedRatingShare','ratingTransitions'].includes(raw.metric) || raw.metric==='valuationAudit' && threshold!=null){
     check(validText(threshold,12),'请指定债项隐含评级及以下的门槛。');
     level=threshold.normalize('NFKC').toUpperCase().trim().replace(/−/g,'-').replace(/^AA2$/,'AA(2)');
     check(/^(?:AA\(2\)|(?:AAA|AA|A|BBB|BB|B)[+-]?|CCC|CC|C|D)$/.test(level),'请指定可识别的债项隐含评级门槛。');
@@ -188,6 +208,10 @@ function portfolioSpec(step,context) {
   const label=account?.trim();
   const normalizedAccount=label?accountLabel(label):null;
   const spec={metric:raw.metric,start,end,account:normalizedAccount,threshold:level,branch:branch?.trim()??null};
+  if(raw.metric==='ratingTransitions'){
+    check(start<end && (raw.subset==null||raw.subset==='unknown')&&!raw.code&&!raw.referenceDate,'两期评级进出需指定起止快照、账户及一个准确档位。');
+    return {...spec,subset:raw.subset||null};
+  }
   if(raw.metric==='valuationAudit'){
     check(['excluded','unknown','cdc','csi','ratedExact','rated'].includes(raw.subset||'rated') && start===end,'请指定要核对的名单和单个持仓日期。');
     const referenceDate=raw.referenceDate||end;
@@ -237,25 +261,44 @@ function validateDecision(decision,context) {
   for(const step of steps){
     check(step && sources.has(step.source) && validText(step.question,1200),'每个台账步骤都需要明确可执行的单源问题。');
     const s={id:'s'+(result.length+1),source:step.source,question:step.question.trim(),snapshotDate:null,start:null,end:null,selection:null};
-    s.selection=validateSelection(step.selection,result,context.previous,context.previousSets);
-    if(step.operation==='calculate'){
+    s.selection=validateSelection(step.selection,result,context.previous,context.previousSets,context.olderSteps);
+    if(step.operation==='flowMatrix'){
+      const {layout,compare,metrics,direction,shares}=step;
+      check(s.source==='trade'&&context.hasLedgers&&['monthsRows','seriesRows','periodRows'].includes(layout)&&['none','difference','growth'].includes(compare),'请指定流水对照的期间和行列。');
+      check(['buy','sell','both'].includes(direction)&&Array.isArray(metrics)&&metrics.length>=1&&metrics.length<=4&&new Set(metrics).size===metrics.length&&
+        metrics.every(k=>['buy','sell','net','rows'].includes(k)&&(k==='rows'||direction==='both'||k===direction)),'对照表的指标必须与买卖方向一致。');
+      check(Array.isArray(step.series)&&step.series.length>=1&&step.series.length<=6&&(compare==='none'||step.series.length===2),'比较须给出两个可核的流水范围。');
+      const series=step.series.map(p=>{
+        check(validText(p.label,90)&&isDate(p.start)&&isDate(p.end)&&p.start<=p.end&&Date.parse(p.end)-Date.parse(p.start)<=367*864e5,'请给出一年以内的准确对照期间。');
+        check(Array.isArray(p.filters)&&p.filters.length<=2&&new Set(p.filters.map(f=>f.field)).size===p.filters.length,'请核对分行和账户筛选。');
+        const filters=p.filters.map(f=>{check(['branch','account'].includes(f.field)&&validText(f.value,100)&&
+          (f.field==='account'||context.userTerms.some(q=>q.includes(f.value.replace(/分行$/u,'')))),'对照表只能使用已明确的分行和会计科目。');
+          return {field:f.field==='branch'?'联动分行':'会计分类',op:'eq',value:f.field==='account'?accountLabel(f.value):f.value};});
+        return {label:p.label.trim(),start:p.start,end:p.end,filters};
+      });
+      Object.assign(s,{operation:'flowMatrix',direction,metrics,layout,shares:shares===true,compare,series});
+    }else if(step.operation==='calculate'){
       check(s.source==='inventory' && Object.keys(step).every(k=>Object.hasOwn(calculationSchema.properties,k)),'库存范围计算有不能应用的附加条件。');
       Object.assign(s,normalizeSlices(step,context,check));
       s.snapshotDate=s.slices.at(-1).date;
-    }else if(step.operation==='memberSummary'){
+    }else if(['memberSummary','holdingRows','memberShares'].includes(step.operation)){
       check(s.source==='inventory' && s.selection && Object.keys(step).every(k=>Object.hasOwn(memberSchema.properties,k)),'按名单核对库存必须引用已验证的名单。');
       check(Array.isArray(step.filters)&&step.filters.every(f=>sliceFields.includes(f.field)),'按名单核对只支持原库存筛选字段。');
       const {slices}=normalizeSlices({metric:step.metric,slices:[{date:step.snapshotDate,filters:step.filters}],calculations:[]},context,check);
       check(!Object.hasOwn(slices[0].filters,s.selection.field),'名单范围已从前一步取定，请勿另填同一字段。');
-      Object.assign(s,{operation:'memberSummary',metric:step.metric,snapshotDate:slices[0].date,filters:slices[0].filters});
+      check(step.heldTop==null || s.source==='inventory'&&step.operation==='memberSummary'&&Number.isInteger(step.heldTop)&&step.heldTop>=0&&step.heldTop<=100,'请指定有效的在账成员排名上限。');
+      Object.assign(s,{operation:step.operation,metric:step.metric,snapshotDate:slices[0].date,filters:slices[0].filters,
+        ...(step.heldTop!=null?{heldTop:step.heldTop}:{})});
     }else if(step.operation==='memberAnalysis'){
       const {analysisMode,field,limit}=step;
-      check(s.source==='inventory'&&fields.has(field)&&['rankOverlap','commonMovers','commonBalances'].includes(analysisMode),'请选择已支持的库存名单比较。');
-      check(Number.isInteger(limit)&&limit>=(analysisMode==='commonBalances'?0:1)&&limit<=100,'请指定有效的名单名次上限。');
+      const allowedField=analysisMode==='groupDifferences'?memberAnalysisSchema.properties.field.enum.includes(field):fields.has(field);
+      check(s.source==='inventory'&&allowedField&&memberAnalysisSchema.properties.analysisMode.enum.includes(analysisMode),'请选择已支持的库存名单比较。');
+      check(Number.isInteger(limit)&&limit>=(['commonBalances','groupDifferences'].includes(analysisMode)?0:1)&&limit<=100,'请指定有效的名单名次上限。');
       check(Array.isArray(step.slices)&&step.slices.length===(analysisMode==='rankOverlap'?1:2)&&
         step.slices.every(x=>Array.isArray(x?.filters)&&x.filters.every(f=>f&&sliceFields.includes(f.field))),'请按所选比较列出需要的快照和库存筛选。');
       const {slices}=normalizeSlices({metric:'principal',slices:step.slices,calculations:[]},context,check);
-      if(analysisMode==='commonMovers')check(slices[0].date<slices[1].date,'共同成员变动须按先后指定两期余额快照。');
+      if(['commonMovers','rankChanges','trackedLeaders'].includes(analysisMode))
+        check(slices[0].date<slices[1].date,'成员变动须按先后指定两期余额快照。');
       Object.assign(s,{operation:'memberAnalysis',analysisMode,field,limit,slices,snapshotDate:slices.at(-1).date});
     }else if(step.operation==='profile'){
       check(s.source==='inventory' && Array.isArray(step.filters) && step.filters.every(f=>sliceFields.includes(f.field)),'核对表需要明确的库存筛选。');
@@ -298,8 +341,15 @@ function validateDecision(decision,context) {
     check(result.map(s=>s.source).join(',')===expected,'余额变化须按期初和期末顺序取两个快照；对账还应查对应期间的净买入。');
     const [opening,closing,flow]=result;
     check(opening.snapshotDate<closing.snapshotDate,'比较所用的两个快照必须为不同日期，且按期初、期末排列。');
-    if(flow)check(flow.start===nextDay(opening.snapshotDate) && flow.end===closing.snapshotDate,
-      '对账的净买入必须从期初快照次日起，统计至期末快照当天。');
+    if(flow){
+      const start=nextDay(opening.snapshotDate),end=closing.snapshotDate;
+      // Scalar balances are the independently verifiable operands; transaction causes
+      // can only be investigated after the two endpoint balances have succeeded.
+      for(const endpoint of [opening,closing])endpoint.question+='（本步先核该快照指定范围的在账本金；无需从到期日或单期持仓推断变动成因。）';
+      const settlementOnly=!flow.start&&!flow.end&&/交割|结算日/.test(flow.question);
+      check(settlementOnly || flow.start===start&&flow.end===end,'对账的净买入必须从期初快照次日起，统计至期末快照当天。');
+      if(settlementOnly)flow.question+='（按交割日闭区间 '+start+' 至 '+end+'，不另加交易日范围。）';
+    }
   }
   return {steps:result,comparison,...(decision.basisNotes?.includes('investmentReturn')?{basisNotes:['investmentReturn']}:{}),...(decision.derive===true?{derive:true}:{})};
 }
@@ -310,7 +360,7 @@ async function callModel(input,{fetchImpl,effort,apiKey,signal}) {
     response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'manual',signal,
       headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},
       body:JSON.stringify({model:'gpt-6.1-terra',store:false,reasoning:{effort},max_output_tokens:5000,
-        instructions:instructions+calculationInstructions+arithmeticInstructions+profileInstructions,input:JSON.stringify(input),text:{format:{type:'json_schema',name:'joint_ledger_steps',strict:true,schema:responseSchema}}}),
+        instructions:instructions+calculationInstructions+arithmeticInstructions+profileInstructions+historyInstructions,input:JSON.stringify(input),text:{format:{type:'json_schema',name:'joint_ledger_steps',strict:true,schema:responseSchema}}}),
     });
   }catch{
     throw new InventoryError(signal.aborted?'联合问数规划超时，请重试。':'无法连接台账问数服务。',signal.aborted?504:502);
@@ -341,7 +391,8 @@ export async function planJointQuestion({question,userQuestion=question,effort='
   if(selected && !dates.includes(selected))throw new InventoryError('所选库存日期不在本次对话的数据范围内。',409);
   const input={today,selectedDate:selected,snapshots:dates,...(retained?{retainedTradeRange:retained}:{}),
     ledgers:ledgers.map(({year,direction,asOf})=>({year,direction,asOf})),history:turns,question};
-  const context={snapshots:dates,selectedDate:selected,hasLedgers:ledgers.length>0,previous,previousSets:turns.at(-1)?.memberSets,userTerms:[question,...turns.map(t=>t.question)],retainedTradeRange:retained};
+  const context={snapshots:dates,selectedDate:selected,hasLedgers:ledgers.length>0,previous,previousSets:turns.at(-1)?.memberSets,
+    olderSteps:new Map(turns.slice(0,-1).flatMap(t=>t.steps.map(s=>[s.id,s]))),userTerms:[question,...turns.map(t=>t.question)],retainedTradeRange:retained};
   const options={fetchImpl,effort,apiKey:apiKey.trim(),signal:AbortSignal.timeout(90000)};
   for(let attempt=0;attempt<2;attempt++){
     let decision;

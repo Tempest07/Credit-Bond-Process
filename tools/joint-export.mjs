@@ -5,6 +5,7 @@ import {exportTradeWorkbook} from './trade-workbook.mjs';
 import {portfolioMetrics} from './portfolio-metrics.mjs';
 import {buildProfile} from './inventory-profile.mjs';
 import {exportMemberReport} from './inventory-member-analysis.mjs';
+import {holdingRowsReport} from './inventory-row-report.mjs';
 
 export async function jointExcel(resources,question,answer,tradeIds,chosen,portfolio={}){
   const toYuan=n=>Number.isSafeInteger(n)?n/100:'';
@@ -19,7 +20,7 @@ export async function jointExcel(resources,question,answer,tradeIds,chosen,portf
   if(!chosen && answer.ledgerReport){
     const report=answer.ledgerReport;
     info.push(['分析结果',report.summary],['来源',report.source],['说明',report.note||'']);
-    if(!steps.some(s=>s.data?.profileSpec||s.data?.memberReportSpec))sheets.push(reportSheet(report));
+    if(!steps.some(s=>s.data?.profileSpec||s.data?.memberReportSpec||s.data?.holdingRowReport))sheets.push(reportSheet(report));
   }
   if(!chosen){
     for(const note of answer.methodNotes||[])info.push(['指标口径',note]);
@@ -81,10 +82,13 @@ export async function jointExcel(resources,question,answer,tradeIds,chosen,portf
         if(!v?.resultId)continue;
         const {result,rows}=await exportData(resources.db,v.resultId);
         if(v.profileSpec)add([reportSheet(buildProfile(v.profileSpec,rows,result.snapshot))]);
+        if(v.holdingRowReport)add([reportSheet(holdingRowsReport(rows,result.snapshot))]);
         const section={issuer:'自发债',enhancement:'增信ABS',union:'去重合计'}[role]||
           (title==='自己发行的债券'?'自发债':title==='占用其授信的 ABS'?'增信ABS':'');
         add(inventoryExportSheets(result,rows),section);
       }
+    }else if(s.data?.flowPlans){
+      for(const plan of s.data.flowPlans)add(await tradeExportSheets(resources,plan,tradeIds));
     }else if(s.data?.result && s.data.plan){
       const selection=s.appliedSelection;
       const field=selection&&{issuer:'发行人全称',branch:'联动分行',code:'券码',account:'会计分类'}[selection.field];

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {portfolioMetrics,explainPortfolioDifferences} from '../tools/portfolio-metrics.mjs';
+import {portfolioMetrics,explainPortfolioDifferences,durationCoverageReport} from '../tools/portfolio-metrics.mjs';
 import {factsDigest, factsObjectKey} from '../tools/portfolio-facts.mjs';
 
 const dates=['2025-12-31','2026-01-16'];
@@ -71,6 +71,21 @@ test('unknown eligibility or missing source date never yields a complete portfol
   assert.equal(noData.rows[0][1],'—');
   await assert.rejects(()=>portfolioMetrics(resources,{...spec,metric:'modifiedDuration',start:'2025-12-30'},snapshots),/缺少/);
   await assert.rejects(()=>portfolioMetrics(resources,{...spec,metric:'impliedRatingShare',threshold:'市场评级'},snapshots),/门槛/);
+});
+test('rating transitions match common codes, exclude credit events and separate a missing valuation period',async()=>{
+  const {resources,spec}=await setup();
+  const params={...spec,metric:'ratingTransitions',threshold:'AA(2)'};
+  const actual=await portfolioMetrics(resources,params,snapshots);
+  assert.deepEqual(actual.ledgerReport.rows.map(r=>[r.code,r.status,r.first,r.last]),[['B','进入','AA-','AA(2)']]);
+  assert.match(actual.headline,/已明确剔除 1 只/);
+  const unknown=await portfolioMetrics(resources,{...params,marketPins:{[dates[1]]:spec.marketPins[dates[1]]},subset:'unknown'},snapshots);
+  assert.deepEqual(unknown.ledgerReport.rows.map(r=>r.code),['A','B']);
+});
+test('combine partial durations with their effective weights while keeping unverified principal explicit',()=>{
+  const steps=[['AFS',1,4,0],['Receivable',3,8,2]].map(([account,n,d,u])=>({spec:{metric:'modifiedDuration',account,branch:'广州'},
+    data:{values:[{date:dates[1],coveredCount:2,covered:n*yi,unknown:u*yi,coveredDuration:d}]}}));
+  const report=durationCoverageReport(steps,'这两个账户合起来的修正久期？');
+  assert.deepEqual(report.rows.map(r=>[r.duration,r.weight,r.unknown]),[[4,25,0],[8,75,2],[7,100,2]]);
 });
 test('weekly mean picks each last available snapshot before cutoff, crosses year boundary and skips empty weeks',async()=>{
   const all=[['2025-12-30',8],['2025-12-31',7],['2026-01-01',9],['2026-01-02',0],['2026-01-16',3],['2026-01-19',6],['2026-01-21',20]]

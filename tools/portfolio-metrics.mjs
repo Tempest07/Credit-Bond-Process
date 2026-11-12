@@ -166,6 +166,7 @@ function marketResult(spec, periods, filter, details) {
       if(period.note)headline+=' '+period.note;
       if(period.unknownCount)headline+=' '+period.date+' 有 '+period.unknownCount+' 只在账券、'+shown(yi(period.unknown))+' 亿元待核。';
       if(!duration && period.covered>0)headline+=' '+period.date+' 仅按有有效评级的 '+shown(yi(period.covered))+' 亿元核算，门槛内 '+shown(yi(period.target))+' 亿元，占 '+shown(period.value,digits)+'%。';
+      if(duration && period.covered>0)headline+=' '+period.date+' 在可核久期的 '+shown(yi(period.covered))+' 亿元内，本金加权修正久期为 '+shown(period.value,6)+' 年。';
     }
   } else if (periods.length === 1) {
     headline = periods[0].date + ' ' + filter.label + title + '为 ' + shown(periods[0].value, digits) + unit + '。';
@@ -202,7 +203,8 @@ function marketResult(spec, periods, filter, details) {
     rows: periods.flatMap(p => p.exportRows)}] : null;
   return {spec,headline,columns,rows,notes,values:periods.map(p=>({date:p.date,gross:p.gross,covered:p.covered,excluded:p.excluded,
     value:p.unknownCount?null:p.value,target:p.unknownCount?null:p.target,
-    ...(!duration?{coveredTarget:p.target,coveredShare:p.value,unknown:p.unknown}:{})})),...(details ? {detailSheets} : {})};
+    unknown:p.unknown,coveredCount:p.used,excludedCount:p.excludedCount,unknownCount:p.unknownCount,
+    ...(duration?{coveredDuration:p.value}:{coveredTarget:p.target,coveredShare:p.value})})),...(details ? {detailSheets} : {})};
 }
 
 async function auditHoldings(resources, spec, snapshots, filter, details) {
@@ -217,7 +219,8 @@ async function auditHoldings(resources, spec, snapshots, filter, details) {
   }
   const facts=await readPortfolioFacts(resources,anchor,spec.marketPins);
   const columns=['债券代码','债券简称','持仓本金（亿元）','名单核验日','采用隐含评级','来源或剔除依据'];
-  if(!facts.byCode.size)return {spec,headline:facts.note,columns,rows:[],notes:[]};
+  if(!facts.byCode.size&&spec.subset!=='unknown')return {spec,headline:facts.note,columns,rows:[],notes:[],
+    memberCoverage:{complete:false,referenceDate:anchor.date,note:facts.note||'名单核验日缺少逐券估值与信用事件资料，无法确认成员。'}};
   const sql='SELECT upper(trim(code)) AS code, MIN(name) AS name, SUM(cents) AS amount FROM inventory_rows WHERE version=?'+filter.sql+' GROUP BY upper(trim(code))';
   const read=snapshot=>resources.db.prepare(sql).bind(snapshot.id,...filter.bindings).all();
   const anchored=await read(anchor), positions=anchor.id===current.id?anchored:await read(current);
@@ -246,12 +249,50 @@ async function auditHoldings(resources, spec, snapshots, filter, details) {
     headline+=' 同范围另有 '+excludedCount+' 只、'+shown(yi(cents(excludedPrincipal)))+' 亿元因已确认违约或实质展期剔除。';
   const detailSheets=details?[{name:'名单逐券',headers:['债券代码','债券简称','持仓本金（人民币元）','持仓日','名单核验日','隐含评级','依据'],rows:picked.map((r,i)=>
     [r.code,r.name,r.amount/100,current.date,anchor.date,rows[i][4],rows[i][5]])}]:undefined;
-  return {spec,headline,auditCents:unavailable?null:amount,grossCents:cents(positions.results.reduce((sum,r)=>sum+r.amount,0)),ratingCoveredCents:anchor.id===current.id?cents(ratingDenominator):null,columns,rows,notes:['按名单核验日的逐券记录筛选，再按券码匹配持仓日余额。'],...(details?{detailSheets}:{})};
+  return {spec,headline,auditCents:unavailable?null:amount,grossCents:cents(positions.results.reduce((sum,r)=>sum+r.amount,0)),ratingCoveredCents:anchor.id===current.id?cents(ratingDenominator):null,columns,rows,
+    memberCoverage:{complete:spec.subset==='unknown'||!unavailable,referenceDate:anchor.date,note:unavailable?anchor.date+' 有 '+unavailable+' 只持仓缺核验资料，无法确认完整名单。':''},
+    notes:['按名单核验日的逐券记录筛选，再按券码匹配持仓日余额。'],...(details?{detailSheets}:{})};
+}
+
+async function ratingTransitions(resources,spec,snapshots,filter,details){
+  async function period(date){
+    const snapshot=snapshots.find(s=>s.date===date);
+    if(!snapshot)throw new InventoryError('缺少 '+date+' 的余额快照。',422);
+    const [holdings,facts]=await Promise.all([
+      resources.db.prepare('SELECT upper(trim(code)) AS code,MIN(name) AS name,SUM(cents) AS amount FROM inventory_rows WHERE version=?'+
+        filter.sql+' GROUP BY upper(trim(code))').bind(snapshot.id,...filter.bindings).all(),
+      readPortfolioFacts(resources,snapshot,spec.marketPins)]);
+    return {snapshot,byCode:new Map(holdings.results.filter(r=>r.code).map(r=>[r.code,r])),facts:facts.byCode};
+  }
+  const [before,after]=await Promise.all([period(spec.start),period(spec.end)]);
+  const counts={entered:0,left:0,unchanged:0,unknown:0,excluded:0},rows=[];
+  const grade=f=>f?.excluded===false && ratingOrder.includes(ratingLabel(f.rating))?ratingLabel(f.rating):null;
+  const labels={entered:'进入',left:'离开',unknown:'缺资料待核',excluded:'信用事件剔除',unchanged:'未进出'};
+  for(const [code,a] of before.byCode){
+    const b=after.byCode.get(code);if(!b)continue;
+    const f=before.facts.get(code),g=after.facts.get(code),x=grade(f),y=grade(g);
+    const status=f?.excluded||g?.excluded?'excluded':!x||!y?'unknown':x===spec.threshold&&y!==spec.threshold?'left':
+      x!==spec.threshold&&y===spec.threshold?'entered':'unchanged';
+    counts[status]++;
+    if(spec.subset==='unknown'?status==='unknown':['entered','left'].includes(status))rows.push({code,name:b.name||a.name,status:labels[status],
+      first:x,last:y,firstPrincipal:yi(a.amount),lastPrincipal:yi(b.amount)});
+  }
+  rows.sort((a,b)=>a.status.localeCompare(b.status,'zh-CN')||a.code.localeCompare(b.code));
+  const columns=[['code','券码'],['name','简称'],['status','两期比较'],['first',spec.start+'评级'],['last',spec.end+'评级'],
+    ['firstPrincipal',spec.start+'本金','亿元'],['lastPrincipal',spec.end+'本金','亿元']].map(([key,label,unit])=>({key,label,kind:unit?'number':'category',...(unit?{unit}:{})}));
+  const summary=filter.label+' 两期共有持仓中，进入 '+spec.threshold+' 的有 '+counts.entered+' 只，离开 '+counts.left+' 只，可比且未进出 '+counts.unchanged+
+    ' 只；缺任一期评级或信用事件资料待核 '+counts.unknown+' 只，已明确剔除 '+counts.excluded+' 只。';
+  const report={title:spec.subset==='unknown'?'缺期评级的共同券':'共同持仓评级进出',summary,source:[before,after].map(p=>p.snapshot.date+' '+p.snapshot.filename).join(' / '),
+    note:'按相同券码匹配。任一日确认违约或实质展期先剔除；仅在两日均核实信用事件且取得有效隐含评级时判断是否进出。',columns,rows};
+  const values=rows.map(r=>columns.map(c=>r[c.key]??''));
+  return {spec,headline:summary,columns:columns.map(c=>c.label+(c.unit?'（'+c.unit+'）':'')),rows:values,notes:[report.note],
+    ledgerReport:report,...(details?{detailSheets:[{name:'共同券评级核对',headers:columns.map(c=>c.label+(c.unit?'（'+c.unit+'）':'')),rows:values}]}:{})};
 }
 
 export async function portfolioMetrics(resources, spec, snapshots, {details=false}={}) {
   if (parseDate(spec.start) > parseDate(spec.end)) throw new InventoryError('起始日期应早于或等于结束日期。', 422);
   const filter = scopeFilter(spec);
+  if(spec.metric==='ratingTransitions')return ratingTransitions(resources,spec,snapshots,filter,details);
   if (spec.metric === 'valuationAudit') return auditHoldings(resources,spec,snapshots,filter,details);
   if (spec.metric === 'weeklyMean') return weeklyResult(resources, spec, snapshots, filter, details);
   if (spec.metric !== 'modifiedDuration' && spec.metric !== 'impliedRatingShare') throw new InventoryError('不支持该组合指标。', 422);
@@ -267,6 +308,35 @@ export async function portfolioMetrics(resources, spec, snapshots, {details=fals
   });
   const periods = await Promise.all(selected.map(snapshot=>valuationPeriod(resources, spec, snapshot, filter, details)));
   return marketResult(spec, periods, filter, details);
+}
+
+export function durationCoverageReport(steps,question){
+  const parts=steps.filter(s=>s.spec?.metric==='modifiedDuration'&&s.data?.values?.length===1).map(s=>({spec:s.spec,v:s.data.values[0]}));
+  if(!parts.length||parts.length!==steps.length||parts.some(p=>!Number.isSafeInteger(p.v.coveredCount)))return;
+  const number=(key,label,unit)=>({key,label,unit,kind:'number'}),category=(key,label)=>({key,label,kind:'category'});
+  if(parts.length===1 && /覆盖率|按券数.*覆盖|按本金.*覆盖/u.test(question)){
+    const [{spec,v}]=parts,total=v.coveredCount+v.unknownCount+v.excludedCount;
+    const portion=(a,b)=>b>0?100*a/b:null;
+    const rows=[{basis:'名义本金',unit:'亿元',covered:yi(v.covered),total:yi(v.gross),rate:portion(v.covered,v.gross)},
+      {basis:'不同券数',unit:'只',covered:v.coveredCount,total,rate:portion(v.coveredCount,total)}];
+    return {title:'修正久期资料覆盖率',source:[v.date,spec.branch,spec.account||'全账户'].filter(Boolean).join(' · '),
+      summary:rows.map(x=>x.basis+'覆盖 '+shown(x.covered,4)+' / '+shown(x.total,4)+' '+x.unit+'，覆盖率 '+(x.rate===null?'待核':shown(x.rate,4)+'%')).join('；')+'。',
+      note:'本金覆盖率按每只券的在账本金加权，券数覆盖率按券码一券一票。两项均以该范围全部在账持仓为分母；没有可用久期资料时两项均为零，实际久期仍待核。',
+      columns:[category('basis','覆盖口径'),category('unit','原数单位'),number('covered','有有效久期资料',''),number('total','全部在账',''),number('rate','覆盖率','%')],rows};
+  }
+  if(parts.length<2||!/(?:合并|合起来|合在一起|加权合计|合算|两个账户.*(?:一起|合计))/u.test(question)||
+    parts.some(({spec,v})=>!spec.account||v.date!==parts[0].v.date||spec.branch!==parts[0].spec.branch)||
+    new Set(parts.map(x=>x.spec.account)).size!==parts.length)return;
+  const covered=parts.reduce((s,p)=>s+p.v.covered,0);
+  if(!covered||parts.some(({v})=>v.covered>0&&!Number.isFinite(v.coveredDuration)))return;
+  const weighted=parts.reduce((sum,{v})=>sum+(v.coveredDuration??0)*v.covered,0)/covered;
+  const rows=parts.map(({spec,v})=>({account:spec.account,duration:v.coveredDuration,base:yi(v.covered),weight:100*v.covered/covered,unknown:yi(v.unknown)}));
+  const unknown=rows.reduce((s,p)=>s+p.unknown,0);
+  return {title:'合并账户的有效本金与修正久期',source:[parts[0].v.date,parts[0].spec.branch,...rows.map(x=>x.account)].filter(Boolean).join(' · '),
+    summary:'按各账户有效本金加权，已覆盖 '+shown(yi(covered),6)+' 亿元的合并修正久期为 '+shown(weighted,6)+' 年。待核本金 '+shown(unknown,6)+' 亿元。',
+    note:'权重等于各账户有效本金除以所列账户有效本金合计，待核本金未进入权重。',
+    columns:[category('account','会计科目'),number('duration','已覆盖修正久期','年'),number('base','有效本金','亿元'),number('weight','有效本金权重','%'),number('unknown','待核本金','亿元')],
+    rows:[...rows,{account:'合并',duration:weighted,base:yi(covered),weight:100,unknown}]};
 }
 
 

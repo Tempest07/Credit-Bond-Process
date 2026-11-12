@@ -8,6 +8,7 @@ import {planJointQuestion} from './joint-planner.mjs';
 import {executeJointPlan} from './joint-execute.mjs';
 import {jointExcel} from './joint-export.mjs';
 import {getPortfolioMarketPins} from './portfolio-facts.mjs';
+import {durationCoverageReport} from './portfolio-metrics.mjs';
 
 const uuid=v=>typeof v==='string' && /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(v);
 const fail=(message,status=400,details={})=>{throw new InventoryError(message,status,details)};
@@ -126,6 +127,7 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
       const availableTradeTotals=trade?.completeCoverage===true?['buyCents','sellCents','netCents','rows']
         .filter(k=>Number.isFinite(trade.totals[k])&&(plan.direction==='both'||k==='rows'||k===plan.direction+'Cents')):[];
       return {id:s.id,source:s.source,question:s.question,availableTradeTotals,
+        ...(s.data?.flowMatrixSpec?{matrix:s.data.flowMatrixSpec}:{}),
         ...(s.data?.profileSpec?{profileSpec:s.data.profileSpec,filters:plan?.filters}:{}),
         settlementRange:trade?plan?.filters?.find(f=>f.field==='交易交割日'&&f.op==='between')?.value:undefined,
         groupBy:s.data?.securityMembers?.length?['code']:plan?.groupBy||s.data?.dimensions||plan?.group,
@@ -149,7 +151,9 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
     return execute(resources,{...args,history,marketPins:pins.marketPins||{},steps:planned.steps,comparison:planned.comparison});
   }
   let result=await runPlan(plan);
-  if(plan.derive && result.steps?.length){
+  const durationReport=durationCoverageReport(result.steps||[],question);
+  if(durationReport)result.ledgerReport=durationReport;
+  if(plan.derive && result.steps?.length && !durationReport){
     try{
       const calculate=(steps,reused)=>deriveAnswer({question,steps,apiKey,effort,history:reused?
         [{question:history.at(-1).question,answer:{arithmetic:history.at(-1).answer.arithmetic}}]:history});

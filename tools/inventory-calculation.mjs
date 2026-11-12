@@ -134,9 +134,10 @@ export async function calculateInventory({db,bucket},step,snapshots){
     }else if(op==='share'){
       const [num,den]=await Promise.all([rowsFor(a),rowsFor(b)]);
       if([...num].some(row=>!den.has(row)))clarify('分子包含分母以外的持仓，需确认这两个库存范围。');
-      if(!bv){lines.push(a.title+' 占 '+b.title+' 的比例无法计算，分母为零。');continue;}
-      const ratio=av/bv*100;
-      shares.push({title:a.title,ratio});
+      const ratio=bv?av/bv*100:null;
+      const scale=step.metric==='principal'?1e10:1;
+      shares.push({numerator:a.title,denominator:b.title,top:av/scale,bottom:bv/scale,ratio});
+      if(ratio===null){lines.push(a.title+' 占 '+b.title+' 的比例无法计算，分母为零。');continue;}
       lines.push(a.title+' 占 '+b.title+' 的 '+pct(ratio)+'%。');
     }else{
       const before=new Set(a.result.groups.map(g=>g.name)),after=new Set(b.result.groups.map(g=>g.name));
@@ -147,10 +148,18 @@ export async function calculateInventory({db,bucket},step,snapshots){
         (datesOrdered?'期末新出现 ':'仅后者 ')+(after.size-shared)+' 只，'+(datesOrdered?'期末不再持有 ':'仅前者 ')+(before.size-shared)+' 只。');
     }
   }
-  if(shares.length>1){
-    const max=Math.max(...shares.map(s=>s.ratio)),winners=shares.filter(s=>s.ratio===max);
-    lines.push('占比最高：'+winners.map(s=>s.title).join('、')+'（'+pct(max)+'%）。');
+  const validShares=shares.filter(s=>s.ratio!==null);
+  if(validShares.length>1 && new Set(validShares.map(s=>s.denominator)).size===1){
+    const max=Math.max(...validShares.map(s=>s.ratio)),winners=validShares.filter(s=>s.ratio===max);
+    lines.push('占比最高：'+winners.map(s=>s.numerator).join('、')+'（'+pct(max)+'%）。');
   }
+  const ledgerReport=shares.length>1?{title:'占比与分母对照',summary:lines.join(' '),
+    source:[...new Set(parts.map(p=>p.result.snapshot.filename))].join(' / '),
+    note:'分子和分母使用同一快照，按持仓行核对包含关系。分母为零时占比留空。',
+    columns:[{key:'numerator',label:'分子范围',kind:'category'},{key:'top',label:'分子',unit,kind:'number'},
+      {key:'denominator',label:'分母范围',kind:'category'},{key:'bottom',label:'分母',unit,kind:'number'},
+      {key:'ratio',label:'占比',unit:'%',kind:'number'}],rows:shares}:null;
   return {clarification:lines.join('\n'),overview:displayParts,snapshot:parts.at(-1).result.snapshot,
+    ...(ledgerReport?{ledgerReport}:{}),
     ...(codeComparisons.length?{codeComparisons}:{}),...(securityMembers?{securityMembers}:{})};
 }

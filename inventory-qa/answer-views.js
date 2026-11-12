@@ -6,8 +6,9 @@ const day = 86400000;
 const pageSize = 15;
 const barPageSize = 8;
 
-function format(value) {
+function format(value, digits) {
   if (!finite(value)) return "缺数";
+  if(Number.isInteger(digits))return value.toLocaleString("zh-CN",{minimumFractionDigits:digits,maximumFractionDigits:digits});
   return (value !== 0 && Math.abs(value) < 0.01 ? small : number).format(value);
 }
 
@@ -65,7 +66,7 @@ export function chooseAnswerView(result, measureKey) {
   if (labels.some(v => v == null || v === "") || new Set(labels).size !== rows.length) return "table";
   if (dim.kind === "date") {
     if (!labels.every(v => finite(dateValue(v)))) return "table";
-    return rows.length > 2 ? "trend" : "comparison";
+    return rows.length > 2 || (result.preferTrend && rows.length>=2) ? "trend" : "comparison";
   }
   if (usableWhole(result, measure)) return "share";
   if (measure.signed || rows.some(r => finite(r[measure.key]) && r[measure.key] < 0)) return "diverging";
@@ -184,7 +185,7 @@ function matrix(result, state, redraw) {
     const tr = body.insertRow();
     fields.forEach((field, i) => {
       const cell = tr.insertCell(), v = row[field.key], metric = metrics.has(field.key);
-      const label = metric ? format(v) : String(v ?? "缺数");
+      const label = metric ? format(v,field.digits) : String(v ?? "缺数");
       if (metric) cell.className = "av-number";
       let value;
       if (i === 0) {
@@ -220,7 +221,7 @@ function readout(result, item, measure, large = false) {
   const box = element("div", large ? "av-total" : "av-readout");
   const label = scope(result, item.row);
   if (label) box.append(element("span", "av-datum", label));
-  box.append(element("strong", "", format(item.row[measure.key])));
+  box.append(element("strong", "", format(item.row[measure.key],measure.digits)));
   if (measure.unit) box.append(element("small", "", measure.unit));
   return box;
 }
@@ -286,7 +287,7 @@ function barChart(result, measure, items, state, kind, redraw) {
     fill.style.width = width + "%";
     fill.style.left = (split ? value < 0 ? 50 - width : 50 : 0) + "%";
     track.append(fill);
-    const text = !finite(value) ? "缺数" : shared ? format(share) + "%" : format(value);
+    const text = !finite(value) ? "缺数" : shared ? format(share,measure.digits) + "%" : format(value,measure.digits);
     b.append(track, element("span", "av-end", text));
     b.title = measure.label + "　" + (finite(value) ? value + " " + (measure.unit || "") : "缺数");
     box.append(b);
@@ -295,7 +296,7 @@ function barChart(result, measure, items, state, kind, redraw) {
     state.barPage = n; state.picked = null; redraw("bars" + (n === 0 ? "next" : "prev"));
   });
   if (pages) box.append(pages);
-  if (shared) box.append(element("p", "av-caption", "分母为" + result.whole.label + " " + format(result.whole.value) + " " + (measure.unit || "")));
+  if (shared) box.append(element("p", "av-caption", "分母为" + result.whole.label + " " + format(result.whole.value,measure.digits) + " " + (measure.unit || "")));
   if (state.picked != null) {
     const item = items.find(it => it.index === state.picked);
     if (item) box.append(readout(result, item, measure));
@@ -341,7 +342,7 @@ function timeChart(result, measure, items, state, redraw) {
   const grid = value => {
     const node = element("span", "av-grid");
     node.style.top = y(value) + "%";
-    node.append(element("span", "", format(value)));
+    node.append(element("span", "", format(value,measure.digits)));
     plot.append(node);
   };
   [hi, (hi + lo) / 2, lo].forEach(grid);
@@ -375,7 +376,7 @@ function timeChart(result, measure, items, state, redraw) {
     const b = button("", key, () => { state.picked = item.index; redraw(key); }, item.index === current.index);
     b.className = "av-point";
     b.tabIndex = item.index === current.index ? 0 : -1;
-    b.title = item.row[d] + "　" + measure.label + " " + format(values[i]) + " " + (measure.unit || "");
+    b.title = item.row[d] + "　" + measure.label + " " + format(values[i],measure.digits) + " " + (measure.unit || "");
     b.setAttribute("aria-label", b.title);
     b.style.left = x(i) + "%"; b.style.top = y(values[i]) + "%";
     b.addEventListener("keydown", e => {
@@ -439,7 +440,7 @@ export function createAnswerViews(models) {
     if (hasData) toolbar.append(choice("回答视图", ["图览", "分析台"], mode, "mode", (i, key) => { mode = i; draw(key); }));
     const content = element("div", "av-body");
     const scalarValue = kind === "scalar" ? result.rows[0][measure.key] : undefined;
-    const lead = model.answer && answerLead(model.answer, measure, scalarValue, result.headline);
+    const lead = model.answer && answerLead(model.answer, measure, model.directionalMagnitude?Math.abs(scalarValue):scalarValue, result.headline);
     if (lead) content.append(lead.box);
     for(const line of model.ratingCoverage||[])content.append(element("p","av-caption",line));
     const hasMeasure = result.measures.some(m => result.rows.some(row => finite(row[m.key])));
@@ -466,6 +467,10 @@ export function createAnswerViews(models) {
           const items = chartRows(result, measure, kind);
           if (kind === "scalar") {
             if (!lead?.includesScalar) content.append(readout(result, items[0], measure, true));
+            else {
+              const label=scope(result,items[0].row);
+              if(label&&!model.answer.includes(label))content.append(element("p","av-caption",label));
+            }
           }
           else if (kind === "trend") content.append(timeChart(result, measure, items, state, draw));
           else content.append(barChart(result, measure, items, state, kind, draw));

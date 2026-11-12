@@ -78,6 +78,20 @@ test('account aliases find the original ledger rows and old answers keep their s
   await store.db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind('legacy-program',snap.id,JSON.stringify(priorAnalysis),'2026-11-11').run();
   assert.equal((await readInventoryAnswer(store.db,'legacy-program')).rowCount,0);
 });
+test('city shorthand uses the current snapshot branch label and preserves an exact label when both exist',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await sample(),'库存.xlsx');
+  const plan={date:snap.date,group:'marketType',metric:'principal',filters:{branch:'广州'}};
+  const short=await newInventoryAnswer(store.db,snap,plan);
+  assert.equal(short.plan.filters.branch,'广州分行');
+  assert.equal(short.totalCents,41012);
+  await store.db.prepare("UPDATE inventory_rows SET branch='广州' WHERE version=? AND branch='北京分行'").bind(snap.id).run();
+  const literal=await newInventoryAnswer(store.db,snap,plan);
+  assert.equal(literal.plan.filters.branch,'广州');
+  assert.equal(literal.totalCents,-220);
+  await store.db.prepare("UPDATE inventory_rows SET branch='广州市分行' WHERE version=? AND branch='广州'").bind(snap.id).run();
+  assert.match((await newInventoryAnswer(store.db,snap,plan)).clarification,/可能指/);
+});
 
 test('bad workbook and staging failure leave published version effective',async()=>{
   const storage=isolatedStore();await initInventory(storage.db);

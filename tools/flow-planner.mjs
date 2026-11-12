@@ -35,7 +35,7 @@ function decisionSchema(fields,boundScope,canVerifyIssuer) {
   const selections = list(obj({source:choices(['previous','probe1','probe2']), field, indices:list({type:'integer'})}));
   const branch = kind => obj({kind:choices([kind]), direction:choices(directions), start:nullable('string'), end:nullable('string'), filters,
     groupBy:list(field), metric:choices(metrics), order:choices(['desc','asc']), limit:nullable('integer'), selections,
-    share:choices(['none','matched']),showGroups:list({type:'string'})});
+    share:choices(['none','matched']),showGroups:list({type:'string'}),minGroupRows:nullable('integer')});
   return obj({decision:{anyOf:[branch('plan'),branch('probe'),...(canVerifyIssuer?[obj({kind:choices(['verifyIssuer']),alias:{type:'string'}})]:[]),obj({kind:choices(['clarification']),reason:choices(Object.keys(explanations).filter(key=>!boundScope || key!=='inventory'))})]}});
 }
 const ledgerInstructions = `若输入有 issuerScope，余额台账已确定唯一发行人且会自动施加精确筛选；无需探查或等用户给全称，直接按要求规划日期、交易方向和分组。已核名的发行人期内可零成交。先区分机构是要筛选的已知条件还是要从数据中选出的结果。“买入最多的几家/哪几家/排前几家”的家指发行人，先按发行人全称分组排名，无需机构名单；如果给出未覆盖周期的备用期间，按已覆盖期间计算排名。若简称在流水中未出现，可用 verifyIssuer 请求从余额台账核对，alias 必须是用户自己的连续文字，勿自行改写简称。核实身份后照常查询交易，即使为零也分期输出。coverage.category 是累计台账文件标示的业务范围。“信用债买入/卖出”在信用债台账中代表整份信用债流水，可使用“台账类别＝信用债”，不能将“债券类型”列限定为“信用债”。短融、公司债、中票、ABS 等具体券种，或用户明确指定原表债券类型列取值时，仍要筛选原列。“全账户”代表无账户筛选。已给出范围、买卖方向和本金的单期总额可直接 plan，无须比较对象。比较两年差额时按交易年份分组，两年都保留，不设 limit；要求逐期金额、区间极值及合计时，用单一交易年份、季度或月份分组并保留全量。执行器从完整分组计算差额与极值。逐券、逐发行人分别列出买入和卖出笔数时，使用 both、rows 并同时按所问成员字段和“增减方向”分组。`;
@@ -48,8 +48,8 @@ function goodDate(date) {
 }
 const fieldInstructions=`按交易日或交易日期归期是统计依据。只在要求“逐日/每天分别列出”等日明细时按交易日期分组。两月各多少、哪一月更多等按交易月份分组；某期间内哪几个分行、科目最大，只按目标维度分组。OCI/AFS、AC/Receivable、Trading、公募/委外公募、专户/委外专户均属“会计分类”，公募与专户分别取“委外（公募）”与“委外（专户）”。“表内/委外”表示粗粒度业务范围。忽略空白使用 notEmpty，value 置为空字符串。交易季度完整值如 2025Q1，同季跨年可用 Q1 并按交易年份或交易季度分组。同月跨年可用 M03。若询问台账内最早或最晚交易日、交割日，使用 dateRange，可以按“台账年度”“增减方向”分组。累计表覆盖日和实际最晚交割日、交易日分别报告。缺期间流水时仍提交真实起止日，执行器检查覆盖，余额变动不可替代净买入。`;
 function resultGrain(plan,question){
-  if(!plan.groupBy.includes('交易日期')||!/(?:按|以)(?:实际)?交易日(?:期)?/.test(question)||
-      /逐日|每日|每天|各交易日|每[个一]?交易日|逐个交易日|每天明细/.test(question))return plan;
+  if(!plan.groupBy.includes('交易日期')||!/(?:按|以)(?:实际)?(?:交易|成交)日(?:期)?/.test(question)||
+      /逐日|每日|每天|各交易日|每[个一]?交易日|逐个交易日|每天明细|(?:交易|成交)日(?:期)?(?:逐项|为行|分组)/.test(question))return plan;
   const grouped=plan.groupBy.filter(f=>f!=='交易日期');
   if(grouped.length)return {...plan,groupBy:grouped};
   const target=/哪(?:一|个)?(月|年|季度)|(?:两|各|每)个?(月|年|季度)(?:份)?(?:各|分别|更多|多少|比较)/.exec(question);
@@ -57,6 +57,12 @@ function resultGrain(plan,question){
   return period?{...plan,groupBy:[{月:'交易月份',年:'交易年份',季度:'交易季度'}[period]]}:plan;
 }
 function ledgerFilter(filter,question,coverage){
+  if(filter.field==='债券类型'&&['eq','in'].includes(filter.op)&&!/(?:原表|原始).{0,8}(?:品种|债券类型)|(?:债券类型|券种).{0,5}(?:等于|原值|精确)/.test(question)){
+    const aliases=[['短融','短期融资券','短期融资债券','CP'],['超短融','超短期融资券','超短期融资债券','SCP'],['中票','中期票据','MTN'],['ABS','资产支持证券','资产证券化']];
+    const requested=[].concat(filter.value);
+    const values=[...new Set(requested.flatMap(value=>aliases.find(group=>group.includes(String(value).toUpperCase()) && question.toUpperCase().includes(group[0]))||[value]))];
+    if(values.length>requested.length)return {...filter,op:'in',value:values};
+  }
   if(!['债券类型','台账类别'].includes(filter.field))return filter;
   const category=filter.op==='in'&&filter.value.length===1?filter.value[0]:filter.value;
   if(typeof category!=='string'||category==='未标明'||!coverage.some(book=>book.category===category)||!question.includes(category))return filter;
@@ -74,6 +80,7 @@ function makePlan(decision, fields, sources, previous) {
   if (!goodDate(start) || !goodDate(end) || (start && end && end<start)) problem('交易日期范围无效。');
   if (!Array.isArray(groupBy) || groupBy.length>5 || new Set(groupBy).size!==groupBy.length || !groupBy.every(field=>fields.includes(field))) problem('请按已导入的交易字段分组。');
   if (limit!==null && (!Number.isInteger(limit) || limit<1 || limit>100)) problem('排名可取前 1 至 100 组。');
+  if(decision.minGroupRows!=null && (!groupBy.length || !Number.isSafeInteger(decision.minGroupRows) || decision.minGroupRows<1))problem('分组最低笔数应为正整数，并须明确分组字段。');
   if (!Array.isArray(decision.filters) || decision.filters.length>16) problem('请简化交易筛选条件。');
   const filters = decision.filters.map(({field,op,value})=>{
     const ref = typeof value==='string' && /^@filter:(\d+)$/.exec(value);
@@ -99,12 +106,19 @@ function makePlan(decision, fields, sources, previous) {
     filters.push({field,op:'in',value:[...new Set(picks.map(i=>set.values[i-1][0]))]});
   }
   if (filters.length>16) problem('请将筛选条件限制在 16 项以内。');
-  return {direction,start,end,filters,groupBy,metric,order,...(limit==null?{}:{limit})};
+  return {direction,start,end,filters,groupBy,metric,order,...(limit==null?{}:{limit}),...(decision.minGroupRows==null?{}:{minGroupRows:decision.minGroupRows})};
 }
 // Don't accept a guessed legal name or bond code as a final filter. A lookup may
 // explore a candidate, but the final identifier needs the user or ledger as its source.
 const identityFields = new Set(['发行人全称',...bondCodeFields,'债券简称','资产端损益还原客户名称']);
 const compatibleIdentityField=(a,b)=>a===b||bondCodeFields.includes(a)&&bondCodeFields.includes(b);
+// A user-supplied exchange is part of the identifier even when spoken separately.
+function explicitMarketCodes(question){
+  const codes=[];
+  const markets={深交所:'SZ',深市:'SZ',上交所:'SH',沪市:'SH',银行间:'IB'};
+  for(const match of question.matchAll(/(深交所|深市|上交所|沪市|银行间)(?:的|市场|代码|券码|\s)*([0-9]{5,12})(?![A-Za-z0-9.])/g))codes.push(match[2]+'.'+markets[match[1]]);
+  return codes;
+}
 // Only propose clues copied verbatim from the user. A plausible expansion alone
 // cannot authenticate a zero in the trade ledger: the independent lookup must
 // return exactly the proposed issuer across the pinned inventory snapshot.
@@ -212,7 +226,7 @@ async function askModel(input,schema,{apiKey,effort,fetchImpl,signal}) {
   try {
     response=await fetchImpl('https://api.openai.com/v1/responses',{method:'POST',redirect:'manual',signal,
       headers:{Authorization:'Bearer '+apiKey.trim(),'Content-Type':'application/json'},
-      body:JSON.stringify({model:'gpt-6.1-terra',store:false,reasoning:{effort},max_output_tokens:4096,instructions:[instructions,ledgerInstructions,fieldInstructions,summaryInstructions,...(input.boundScope?[boundInstructions]:[])].join('\n'),input:JSON.stringify(input),
+      body:JSON.stringify({model:'gpt-6.1-terra',store:false,reasoning:{effort},max_output_tokens:4096,instructions:[instructions,ledgerInstructions,fieldInstructions,summaryInstructions,'若要求每组至少有若干笔交易，minGroupRows 填该正整数，未限定时为 null。执行器在完整交易范围逐组检查笔数门槛，然后按所问指标排序、取前 N。逐组笔均用 average。上轮展示名单不能代替这个完整范围。',...(input.boundScope?[boundInstructions]:[])].join('\n'),input:JSON.stringify(input),
         text:{format:{type:'json_schema',name:'transaction_query',strict:true,schema}}})});
     if (response.ok) payload=await response.json();
   } catch {
@@ -231,10 +245,24 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
   if (!ledgers.length) return {clarification:'请先导入年度增持和减持交易台账。'};
   const latest=ledgers.map(v=>v.asOf).filter(Boolean).sort().at(-1);
   if(latest&&periodHint?.start>latest&&goodDate(periodHint.start)&&goodDate(periodHint.end)){
-    return {clarification:'现有增减持流水累计至 '+latest+'，未覆盖 '+periodHint.start+' 至 '+(periodHint.end||'所问截止日')+'，无法确定该期间的实际交易额。余额变动还受兑付、摊还和划转影响，不能代替净买入。'};
+    return {clarification:'现有增减持流水累计至 '+latest+'，未覆盖 '+periodHint.start+' 至 '+(periodHint.end||'所问截止日')+'。该期间的实际交易笔数和交易额均未知，无法认定为零笔或零本金。余额变动还受兑付、摊还和划转影响，不能代替净买入。'};
   }
   if (!apiKey?.trim()) throw new InventoryError('尚未配置问数专用 API 密钥。',503);
   const fields=[...new Set([...derivedFields,...ledgers.flatMap(l=>l.headers||[])])];
+  const statedCodes=[...selectedCodes,...explicitMarketCodes(originalQuestion)];
+  if(/这只|该券|这支|同一只/.test(originalQuestion)&&!statedCodes.length)statedCodes.push(...explicitMarketCodes(priorUserQuestions.at(-1)||''));
+  // A request to see the dates of the very same ungrouped records changes
+  // only presentation. Keep the saved filters and the original date basis.
+  const datesOnly=/^(?:请|给我|能否|能让我|可以|看到|列出|看看|查下|\s)*(?:这批|这些|这组|上述|刚才那批|上轮的?|上一问的?)(?:买入|卖出|增持|减持|交易|流水|记录|的|按)*(?:原始|原表|每笔|逐笔|实际)(?:交易|成交|交割)(?:日期|日)(?:明细|有哪些|各是什么|列一下|吗|呢|[\s，,。？！?!])*$/;
+  const dateField=originalQuestion.includes('交割')?'交易交割日':'交易日期';
+  const opposite=previousPlan?.direction==='buy'?/(?:卖出|减持)/:previousPlan?.direction==='sell'?/(?:买入|增持)/:null;
+  if(datesOnly.test(originalQuestion) && !opposite?.test(originalQuestion) && !boundScope &&
+    previousPlan?.groupBy?.length===0 && !previousPlan.limit && !previousPlan.showGroups?.length &&
+    fields.includes(dateField) && (!periodHint?.start || !previousPlan.start || previousPlan.start===periodHint.start) &&
+    (!periodHint?.end || !previousPlan.end || previousPlan.end===periodHint.end)){
+    return {plan:{direction:previousPlan.direction,start:previousPlan.start,end:previousPlan.end,filters:previousPlan.filters||[],
+      groupBy:[dateField],metric:'rows',limit:null,order:'asc'}};
+  }
   const pair=await checkSecurityPair(originalQuestion,periodHint,runQuery,fields);
   const schema=decisionSchema(fields,boundScope,!!lookupIssuer), sources=new Map(), issuerEvidence=new Map();
   if (previousPlan && Array.isArray(previousGroups)) sources.set('previous',groupSet(previousPlan,previousGroups,previousGroupCount));
@@ -312,6 +340,14 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
       if (!decision || !['plan','probe'].includes(decision.kind)) problem('请选择交易查询或澄清问题。');
       let plan=makePlan(decision,fields,sources,previousPlan);
       plan.filters=plan.filters.map(filter=>normalizeTradeFilter(ledgerFilter(filter,originalQuestion,coverage),originalQuestion));
+      plan.filters=plan.filters.map(filter=>{
+        if(filter.field!=='券码'||!['eq','in'].includes(filter.op))return filter;
+        const qualify=value=>{
+          const options=[...new Set(statedCodes.filter(code=>code.split('.')[0]===value&&code.includes('.')))];
+          return options.length===1?options[0]:value;
+        };
+        return {...filter,value:Array.isArray(filter.value)?filter.value.map(qualify):qualify(filter.value)};
+      });
       if(lockedIssuer){
         // The single-issuer scope was independently verified before planning.
         plan.filters=plan.filters.filter(f=>f.field!=='发行人全称');
@@ -319,14 +355,15 @@ export async function planFlowQuestion({question,originalQuestion=question,prior
       }
       await attestIssuerFilters(plan.filters);
       if (decision.kind==='plan') {
-        plan=resultGrain(plan,question);
+        const grainQuestion=/(?:按|以)(?:实际)?(?:交易|成交)日/.test(originalQuestion)?originalQuestion:question;
+        plan=resultGrain(plan,grainQuestion);
         if(plan.metric==='rows' && plan.direction==='both' && !plan.limit && decision.share!=='matched' && plan.groupBy.length<5 && !plan.groupBy.includes('增减方向') &&
             /(?:分别|各自|各)[^。？！]{0,24}(?:买入|增持)[^。？！]{0,12}(?:卖出|减持)|(?:买入|增持)[^。？！]{0,10}(?:卖出|减持)[^。？！]{0,6}(?:各|分别)/.test(question)){
           plan.groupBy=[...plan.groupBy,'增减方向'];
         }
         const mismatch=applySecurityPair(plan,pair);
         if(mismatch)return {clarification:mismatch};
-        verifyIdentities(plan,previousPlan,sources,{texts:[originalQuestion,...priorUserQuestions],bound:selectedCodes});
+        verifyIdentities(plan,previousPlan,sources,{texts:[originalQuestion,...priorUserQuestions],bound:statedCodes});
         if(decision.share==='matched'||(/占比|各占|占(?:全部|总|全账户)|百分比/.test(question)&&plan.groupBy.length)){
           if(!['buy','sell','gross','rows'].includes(plan.metric)||plan.groupBy.length!==1)problem('占比需要明确的本金或笔数，以及一个用于展示的分组字段。');
           const values=decision.showGroups??[];

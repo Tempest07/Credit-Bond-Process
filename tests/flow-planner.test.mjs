@@ -5,6 +5,25 @@ import {planFlowQuestion} from '../tools/flow-planner.mjs';
 const ledgers=['buy','sell'].map(direction=>({year:2026,direction,start:'2026-01-05',end:'2026-10-30',
   headers:['发行人全称','会计分类','交易组合','债券简称','联动分行','债券代码','交易日期']}));
 const base={kind:'plan',direction:'both',start:'2026-01-01',end:'2026-10-31',filters:[],groupBy:['发行人全称'],metric:'net',limit:null,order:'desc',selections:[]};
+test('same-record transaction date inspection keeps the exact period, direction and account',async()=>{
+ const previousPlan={direction:'sell',start:'2026-06-01',end:'2026-06-30',filters:[{field:'会计分类',op:'eq',value:'Receivable'}],groupBy:[],metric:'rows',order:'desc'};
+ const result=await planFlowQuestion({previousPlan,question:'列出卖出交易明细及原始交易日期',originalQuestion:'这批卖出的原始成交日有哪些？',ledgers,apiKey:'test',fetchImpl:()=>assert.fail('does not need replanning')});
+ assert.deepEqual(result.plan,{...previousPlan,groupBy:['交易日期'],order:'asc',limit:null});
+});
+test('bond class shorthand, raw literal values, group eligibility and inherited exchange qualifier',async()=>{
+ const books=ledgers.map(l=>({...l,headers:[...l.headers,'债券类型']}));
+ const raw={field:'债券类型',op:'eq',value:'短融'};
+ const opts={ledgers:books,apiKey:'test',fetchImpl:mock(()=>({...base,filters:[raw]}))};
+ const short=await planFlowQuestion({...opts,question:'请汇总短融的交易'});
+ assert.ok(short.plan.filters[0].value.includes('短期融资券'));assert.equal(short.plan.filters[0].op,'in');
+ const exact=await planFlowQuestion({...opts,question:'原表债券类型等于短融的交易'});
+ assert.deepEqual(exact.plan.filters,[raw]);
+ const rank=await planFlowQuestion({...opts,question:'按笔均查询，至少4笔',fetchImpl:mock(()=>({...base,direction:'buy',metric:'average',minGroupRows:4,limit:5}))});
+ assert.equal(rank.plan.minGroupRows,4);
+ const scoped=await planFlowQuestion({...opts,question:'只看这只券的流水',priorUserQuestions:['深交所148787在哪些账户？'],
+   fetchImpl:mock(()=>({...base,filters:[{field:'券码',op:'eq',value:'148787'}]}))});
+ assert.deepEqual(scoped.plan.filters,[{field:'券码',op:'eq',value:'148787.SZ'}]);
+});
 function mock(resolve) {
   let calls=0;
   return async (url,request)=>{
@@ -42,6 +61,9 @@ test('业务口径、目标粒度、非空及跨年季度转为实际可执行�
  assert.equal((await plan('两类另行核对',{filters:[{field:'会计分类',op:'eq',value:'AFS(Trading)'}]})).filters[0].value,'AFS(Trading)');
  assert.deepEqual((await plan('按交易日统计，这两个月哪一月更多？',{groupBy:['交易日期']})).groupBy,['交易月份']);
  assert.deepEqual((await plan('以交易日期统计哪个科目最多？',{groupBy:['交易日期','会计分类']})).groupBy,['会计分类']);
+ const restated=await planFlowQuestion({question:'按成交日逐日统计买卖两边本金',originalQuestion:'按成交日分别列AC的买入和卖出本金',ledgers:books,apiKey:'test',
+   fetchImpl:mock(()=>({...base,metric:'gross',groupBy:['交易日期','增减方向']}))});
+ assert.deepEqual(restated.plan.groupBy,['增减方向']);
  assert.deepEqual((await plan('按交易日列出每日各科目的买入明细',{groupBy:['交易日期','会计分类']})).groupBy,['交易日期','会计分类']);
 });
 test('交割日归期的子步骤可提交独立日期闭区间，歧义反馈可恢复到实际流水查询',async()=>{

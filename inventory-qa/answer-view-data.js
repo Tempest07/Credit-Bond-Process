@@ -383,8 +383,9 @@ function arithmetic(a, preferred, steps) {
   const missing=a.missing || (computed.some(r=>r.value===null)?'部分计算缺少有效值或分母为零。':'');
   const rowText=r=>{
     if(r.value===null)return r.label+' 无法计算';
+    const amount=r.flowDirection==='净流出'||r.flowDirection==='净流入'?Math.abs(r.value):r.value;
     const short=['亿元','%','个百分点'].includes(r.unit) && Math.abs(r.value)>=0.01;
-    const value=short?r.value.toLocaleString('zh-CN',{maximumFractionDigits:2}):shown(r.value);
+    const value=short?amount.toLocaleString('zh-CN',{maximumFractionDigits:2}):shown(amount);
     return [r.label,r.flowDirection].filter(Boolean).join(' · ')+' '+value+(r.unit==='%'?'':' ')+r.unit;
   };
   const derived=computed.filter(r=>r.op!=='value');
@@ -437,8 +438,9 @@ function arithmetic(a, preferred, steps) {
   const extra={coverage:missing?'partial':'complete',note:missing};
   if(computed.length===1){
     const row=computed[0];
-    const label=[row.label,row.flowDirection].filter(Boolean).join(' · ');
-    return scalar(row.label,answer,source,measure('value',label,row.unit),row.value,extra);
+    const signed=row.value<0 && row.flowDirection==='净流出';
+    const label=signed?row.label:[row.label,row.flowDirection].filter(Boolean).join(' · ');
+    return {...scalar(row.label,answer,source,measure('value',label,row.unit),row.value,extra),...(signed?{directionalMagnitude:true}:{})};
   }
   if(units.length===1)return sample('计算结果',answer,source,[field('item','计算项')],
     [measure('value','计算结果',units[0])],computed.map(r=>({item:[r.label,r.flowDirection].filter(Boolean).join(' · '),value:r.value})),extra);
@@ -624,6 +626,29 @@ function reportModel(report) {
       coverage:'complete',note:report.note||'',defaultTable:true}};
 }
 
+function monthlyCharts(report,spec){
+  if(spec?.layout!=='monthsRows' || !report.columns.some(c=>c.key==='month'))return [];
+  const observations=report.rows.filter(r=>r.month!=='期间合计');
+  if(observations.length<2 || observations.some(r=>!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(r.month)))return [];
+  const byMonth=new Map(observations.map(r=>[r.month,r]));
+  if(byMonth.size!==observations.length)return [];
+  const dates=[...byMonth.keys()].sort(), first=new Date(dates[0]+'-01T00:00:00Z');
+  const units=new Map();
+  for(const c of report.columns.filter(c=>c.kind==='number')){
+    if(!units.has(c.unit))units.set(c.unit,[]);
+    units.get(c.unit).push(measure(c.key,c.label,c.unit||''));
+  }
+  const months=[];
+  for(const cursor=first;cursor.toISOString().slice(0,7)<=dates.at(-1);cursor.setUTCMonth(cursor.getUTCMonth()+1))months.push(cursor.toISOString().slice(0,7));
+  return [...units].map(([unit,measures])=>{
+    const rows=months.map(month=>({month,...Object.fromEntries(measures.map(m=>[m.key,byMonth.get(month)?.[m.key]??null]))}));
+    const gaps=rows.filter(r=>measures.some(m=>!finite(r[m.key]))).map(r=>r.month);
+    const note=gaps.length?'部分序列在 '+gaps.join('、')+' 缺少可核数值，图中留空。':'';
+    return sample(measures.length===1?measures[0].label+'月度走势':'月度走势（'+unit+'）',report.summary,report.source,
+      [field('month','月份','date')],measures,rows,{cadence:'monthly',preferTrend:true,coverage:gaps.length?'partial':'complete',note});
+  });
+}
+
 function ratingCoverage(data, unit='亿元') {
   if(data?.spec?.metric!=='impliedRatingShare')return [];
   const countIndex=Object.fromEntries(['已覆盖','已剔除','待核'].map(label=>
@@ -639,6 +664,63 @@ function ratingCoverage(data, unit='亿元') {
     });
     return parts.length?[[v.date,data.spec.account,data.spec.branch].filter(Boolean).join(' ')+'　'+parts.join('，')+'。']:[];
   });
+}
+
+function displayPrecision(model,question){
+  const request=question.match(/(?:保留|只留|显示|取)(?:到)?(?:小数点后|小数后)?\s*([零一二两三四五六七八0-8])\s*位(?:小数)?/u);
+  if(!request)return model;
+  const digits=Number.isNaN(Number(request[1]))?'零一二三四五六七八'.indexOf(request[1].replace('两','二')):Number(request[1]);
+  const {result}=model;
+  const measures=result.measures.map(m=>!m.unit||['笔','只','条','个','家'].includes(m.unit)?m:{...m,digits});
+  const units=new Set(measures.filter(m=>m.digits===digits).map(m=>m.unit));
+  const answer=model.answer.replace(/([+\-−]?[\d,]+(?:\.\d+)?)\s*(亿元|万元|元|年|%|个百分点)/g,(raw,num,unit)=>{
+    if(!units.has(unit) || (unit==='年' && /^\d{4}$/.test(num)))return raw;
+    const from=Number(num.replaceAll(',','').replace('−','-'));
+    const tolerance=0.5*10**(-(num.split('.')[1]||'').length)+Math.abs(from)*Number.EPSILON;
+    const observations=new Set(measures.filter(m=>m.unit===unit).flatMap(m=>result.rows.map(r=>r[m.key]))
+      .filter(v=>finite(v) && Math.abs(v-from)<=tolerance));
+    const precise=observations.size===1?[...observations][0]:from;
+    return precise.toLocaleString('zh-CN',{minimumFractionDigits:digits,maximumFractionDigits:digits})+(unit==='%'?'':' ')+unit;
+  });
+  const columns=result.columns?.map(c=>({...c,digits:measures.find(m=>m.key===c.key)?.digits}));
+  return {...model,answer,result:{...result,measures,...(columns?{columns}:{})}};
+}
+
+function contextAnswer(question,steps){
+  const inventories=steps.filter(s=>s.source==='inventory').flatMap(s=>s.data?.overview?.map(v=>v.result)||[s.data]).filter(Boolean);
+  const flows=steps.filter(s=>s.source==='trade'&&s.data?.plan).map(s=>s.data);
+  if(/(?:正号|负号|正数|负数|正负).*(?:代表|表示|含义|意思|买|卖)|(?:代表|表示).*(?:买多|卖多)/u.test(question) &&
+    flows.some(d=>d.plan.metric==='net')){
+    return '净买入本金＝买入本金－卖出本金。正数表示买入较多，负数表示卖出较多，零表示买卖本金相等。';
+  }
+  if(/哪(?:个|一[个天]|天).*业务日|哪(?:个|一[个天]|天).*日期|用的?是?哪(?:一)?天/u.test(question)){
+    const dates=[...new Set(inventories.map(d=>d.snapshot?.date).filter(Boolean))];
+    if(dates.length)return '此次使用的余额台账业务日为 '+dates.join('、')+'。';
+  }
+  if(/哪(?:一)?(?:张|份|个).{0,12}(?:台账|表)|哪份.*核/u.test(question) && flows.length){
+    const files=[...new Set(flows.flatMap(d=>list(d.sources)).filter(s=>s.filename)
+      .map(s=>(s.direction==='buy'?'增持（买入）':s.direction==='sell'?'减持（卖出）':'交易')+'表《'+s.filename+'》'))];
+    if(files.length)return '可在'+files.join('、')+'按“交易日期”筛选所问期间，按“名义本金”核对金额。';
+  }
+  if(/(?:全行|全账|全账户).{0,12}还是|还是.{0,14}(?:内|里面|全行)|(?:这个|此次|这次|刚才).{0,12}(?:什么|哪个)范围/u.test(question)){
+    const labels={AFS:'OCI（原表 AFS）',RECEIVABLE:'AC（原表 Receivable）'};
+    const scopes=[...new Set(inventories.filter(d=>d.snapshot&&d.plan).map(d=>{
+      const ac=d.plan.filters?.account, branch=d.plan.filters?.branch;
+      return [d.snapshot.date,ac?(labels[ac.toUpperCase()]||ac):'全部会计科目',branch].filter(Boolean).join(' ');
+    }))];
+    if(scopes.length)return '此次统计在 '+scopes.join('、')+' 范围内进行。';
+  }
+  return '';
+}
+
+function rowComparison(arithmetic,question,original){
+  if(!/(?:摆|放)在旁边|并排|并列|同一行|摆在一行/u.test(question))return null;
+  const operands=list(arithmetic?.rows).filter(r=>r.op==='value');
+  if(operands.length<2||operands.length>8||operands.some(r=>!finite(r.value)||!r.label||!r.unit))return null;
+  const columns=operands.map((r,i)=>({key:'v'+i,label:r.label,kind:'number',unit:r.unit}));
+  const row=Object.fromEntries(operands.map((r,i)=>['v'+i,r.value]));
+  return reportModel({title:'并列对照',summary:operands.map(r=>r.label+' '+shown(r.value)+' '+r.unit).join('，')+'。',
+    source:original.source,columns,rows:[row]});
 }
 
 /** Project saved results into chart inputs. [] keeps the existing full answer visible. */
@@ -670,9 +752,25 @@ export function answerViewModels(input) {
   }
   const report=reportModel(a?.ledgerReport);
   if(report) models.unshift(report);
+  const flowSpec=list(a.steps).length===1 && a.steps[0].data?.flowMatrixSpec;
+  if(report && flowSpec && /走势|趋势|折线|曲线/u.test(question))models.unshift(...monthlyCharts(a.ledgerReport,flowSpec));
   if(!models.length)return models;
+  if(/(?:只|仅).{0,10}(?:第一名|榜首|首位)/u.test(question)){
+    const model=models[0],r=model.result;
+    if(r.orderedBy?.direction==='desc' && r.dimensions.length===1 && r.rows.length){
+      const key=r.orderedBy.key,highest=r.rows[0][key],top=r.rows.filter(row=>row[key]===highest);
+      const m=r.measures.find(x=>x.key===key),d=r.dimensions[0];
+      if(m && finite(highest))models[0]={...model,answer:'第一名为'+top.map(row=>row[d.key]).join('、')+'，'+entryText(m,highest)+'。',
+        result:{...r,rows:top,whole:undefined}};
+    }
+  }
+  const comparison=!report && rowComparison(a.arithmetic,question,models[0]);
+  if(comparison)models.unshift(comparison);
+  const explanation=contextAnswer(question,list(a.steps));
+  if(explanation)models[0]={...models[0],answer:explanation+' '+models[0].answer};
   const unit=outputMoneyUnit(question);
   if(unit) models=models.map(model=>requestedUnitModel(model,unit));
+  models=models.map(model=>displayPrecision(model,question));
   const indicators=Array.isArray(a.steps)?a.steps.filter(s=>s.source==='portfolio').map(s=>s.data):[a];
   const coverage=[...new Set(indicators.flatMap(d=>ratingCoverage(d,unit)))];
   if(coverage.length)models[0]={...models[0],ratingCoverage:coverage};

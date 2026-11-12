@@ -96,6 +96,45 @@ test('verified group shares retain a composition view when arithmetic also inclu
   assert.notEqual(chooseAnswerView(answerViewModels(a)[0].result),'share');
 });
 
+test('explicit decimal precision uses the original values and preserves them for sorting and evidence',()=>{
+  const data=snapshot('2026-04-30',12344900000);
+  data.summary='名义本金 1.23 亿元';
+  const [m]=answerViewModels({question:'只留小数点后一位。',answer:{steps:[{source:'inventory',data}]}});
+  assert.equal(m.result.measures[0].digits,1);
+  assert.equal(m.result.rows[0].principal,1.23449);
+  assert.match(m.answer,/1\.2 亿元/);
+  const [raw]=answerViewModels(data);
+  assert.equal(raw.result.measures[0].digits,undefined);
+});
+
+test('side-by-side compares value operands with labeled columns while keeping the full calculation available',()=>{
+  const amounts={rows:[{label:'买入本金',op:'value',value:2,unit:'亿元'},
+    {label:'卖出本金',op:'value',value:1,unit:'亿元'},{label:'差额',op:'difference',value:1,unit:'亿元'}]};
+  const models=answerViewModels({question:'金额并排给我',answer:{steps:[],arithmetic:amounts}});
+  assert.deepEqual(models[0].result.columns.map(c=>c.label),['买入本金','卖出本金']);
+  assert.deepEqual(models[0].result.rows,[{v0:2,v1:1}]);
+  assert.equal(models[1].result.rows.length,3);
+});
+test('signed trade differences preserve the sign in the matrix and use the magnitude after a flow direction',()=>{
+  const [m]=answerViewModels({steps:[],arithmetic:{rows:[{label:'买入减卖出',flowDirection:'净流出',value:-3,unit:'亿元',op:'difference'}]}});
+  assert.match(m.answer,/净流出 3 亿元/);
+  assert.equal(m.result.rows[0].value,-3);
+  assert.equal(m.result.measures[0].label,'买入减卖出');
+});
+
+test('month matrix plots the dated observations, skips totals, and preserves unknown months as gaps',()=>{
+  const report={title:'流水表',summary:'按月核对',source:'增持与减持表',columns:[{key:'month',label:'月份',kind:'category'},
+    {key:'a',label:'甲',kind:'number',unit:'亿元'},{key:'b',label:'乙',kind:'number',unit:'亿元'}],rows:[
+      {month:'2026-09',a:20,b:-5},{month:'2026-11',a:null,b:0},{month:'期间合计',a:null,b:-5}]};
+  const answer={ledgerReport:report,steps:[{source:'trade',data:{flowMatrixSpec:{layout:'monthsRows'}}}]};
+  const [plot,table]=answerViewModels({question:'画每月净买入走势',answer});
+  assert.equal(chooseAnswerView(plot.result),'trend');
+  assert.deepEqual(plot.result.rows,[{month:'2026-09',a:20,b:-5},{month:'2026-10',a:null,b:null},{month:'2026-11',a:null,b:0}]);
+  assert.match(plot.result.note,/2026-10、2026-11/);
+  assert.equal(table.result.rows.at(-1).month,'期间合计');
+  assert.equal(answerViewModels({question:'按月给我核对表',answer})[0].shortTitle,'流水表');
+});
+
 test('the same inventory result renders on its own, in a saved turn and in a joint answer',()=>{
   const data=snapshot('2026-05-29',13000000000);
   const single=answerViewModels(data);

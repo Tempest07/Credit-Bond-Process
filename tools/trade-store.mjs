@@ -114,6 +114,7 @@ function setup(plan,all,verifiedMembers){
  if(plan.share!=null&&(plan.share!=='matched'||groupBy.length!==1||!['buy','sell','gross','rows'].includes(plan.metric)))error('交易占比的指标或分组无效。');
  if(plan.showGroups!=null&&(!plan.share||!Array.isArray(plan.showGroups)||plan.showGroups.length>100||!plan.showGroups.every(v=>typeof v==='string'&&v.trim()&&v.length<=250)))error('交易占比的展示分组无效。');
  if(!Array.isArray(groupBy)||groupBy.length>6||new Set(groupBy).size!==groupBy.length||!Array.isArray(filters)||filters.length>16||(limit!==null&&(!Number.isInteger(limit)||limit<1||limit>100))||!['asc','desc'].includes(order))error('交易分组、排序或筛选条件无效。');
+ if(plan.minGroupRows!=null&&(!groupBy.length||!Number.isSafeInteger(plan.minGroupRows)||plan.minGroupRows<1))error('分组最低交易笔数无效。');
  if(filters.some(f=>{
    if(f?.op==='between')return !validTradeDateRange(f.field,f.value);
    return !f||!['eq','contains','in','notEmpty'].includes(f.op)||(f.op==='notEmpty'?f.value!=='':f.op==='in'?(!Array.isArray(f.value)||!f.value.length||!withinListLimit(f)||f.value.some(x=>typeof x!=='string'||x.length>1024)):(typeof f.value!=='string'||!f.value.trim()||f.value.length>1024));
@@ -172,7 +173,7 @@ function setup(plan,all,verifiedMembers){
  }
  const codeFilters=filters.filter(f=>f.field==='券码');
  if(codeFilters.length)warnings.push('按债券代码和债券标准代码逐行核对，含市场后缀的券码保持市场限定。');
- return {plan:{direction:plan.direction,start,end,filters,groupBy,metric:plan.metric,limit,order,...(plan.share?{share:plan.share,showGroups:plan.showGroups??[]}: {})},relevant,available,warnings,completeCoverage,
+ return {plan:{direction:plan.direction,start,end,filters,groupBy,metric:plan.metric,limit,order,...(plan.minGroupRows==null?{}:{minGroupRows:plan.minGroupRows}),...(plan.share?{share:plan.share,showGroups:plan.showGroups??[]}: {})},relevant,available,warnings,completeCoverage,
    codeLookup:codeFilters.length?tradeCodeLookup(codeFilters):null};
 }
 function getter(v,f){
@@ -247,6 +248,17 @@ function addEmptyGroups(scope,groups){
  // If every non-period label is fixed, one verified, complete time series is
  // still defined even when none of the rows matched in some or all periods.
  const periodIndex=groupBy.findIndex(field=>timeFields.includes(field));
+ const sideIndex=groupBy.indexOf('增减方向');
+ if(groupBy.length===2&&periodIndex>=0&&sideIndex>=0&&start&&end&&!filters.some(f=>f.field==='台账年度')){
+   const sides=scope.plan.direction==='both'?['增持','减持']:[dirName(scope.plan.direction)];
+   const permitted=filters.filter(f=>f.field==='增减方向').map(predicate);
+   for(const period of calendarGroups(groupBy[periodIndex],start,end,filters))for(const side of sides){
+     if(!permitted.every(check=>check(side)))continue;
+     const values=periodIndex===0?[period,side]:[side,period],key=JSON.stringify(values);
+     if(!groups.has(key))groups.set(key,{values,c:counter()});
+   }
+   return;
+ }
  if(groupBy.length>1 && periodIndex>=0 && groupBy.filter(field=>timeFields.includes(field)).length===1 &&
      start && end && !filters.some(f=>f.field==='台账年度')){
    const dimensions=groupBy.map((field,index)=>{
@@ -364,7 +376,9 @@ async function aggregate(bucket,s){
  const field=s.plan.metric==='dateRange'?'rows':['bonds','rows'].includes(s.plan.metric)?s.plan.metric:s.plan.metric+'Cents';
  const totals=finish(t,average),groupKey=v=>canonical({field:s.plan.groupBy[0],op:'eq'},v);
  const wanted=new Set((s.plan.showGroups||[]).map(groupKey));
- const list=Array.from(groups.values(),({values,c})=>({values,...finish(c,average)})).filter(g=>!wanted.size||wanted.has(groupKey(g.values[0])));
+ const list=Array.from(groups.values(),({values,c})=>({values,...finish(c,average)})).filter(g=>
+   (!s.plan.minGroupRows||g.rows>=s.plan.minGroupRows)&&(!wanted.size||wanted.has(groupKey(g.values[0]))));
+ if(s.plan.minGroupRows)s.warnings.push('在全部 '+groups.size+' 组中，逐组至少 '+s.plan.minGroupRows+' 笔交易后有 '+list.length+' 组入选展示范围。全部匹配交易合计和原始明细含门槛筛选前的全部记录。');
  if(s.plan.share)for(const g of list)g.share=totals[field]?g[field]/totals[field]:null;
  if(wanted.size){
    for(const name of s.plan.showGroups)if(!list.some(g=>groupKey(g.values[0])===groupKey(name)))s.warnings.push('展示范围内没有“'+name+'”的匹配交易。');
@@ -373,7 +387,7 @@ async function aggregate(bucket,s){
  const highlights=periodHighlights(s,list,field);
  const {limit,metric}=s.plan;
  if(metric==='net' && s.completeCoverage && s.plan.groupBy.length===1 &&
-    !timeFields.includes(s.plan.groupBy[0]) && !wanted.size && !limit){
+    !timeFields.includes(s.plan.groupBy[0]) && !wanted.size && !limit && !s.plan.minGroupRows){
    const key=s.plan.groupBy[0];
    let bought=0,sold=0;
    for(const group of list){
@@ -385,7 +399,14 @@ async function aggregate(bucket,s){
      {label:'净卖出的'+key+'合计抵消（有符号）',value:sold,unit:'分'},
      {label:'两类分组净额合计（含未填写组）',value:bought+sold,unit:'分'});
    const blank=list.find(g=>g.values[0]==='（未填）');
-   if(blank)highlights.push({label:key+'未填写组净额（已纳入上述合计）',value:blank.netCents,unit:'分'});
+   if(blank){
+     highlights.push({label:key+'未填写组净额（已纳入上述合计）',value:blank.netCents,unit:'分'});
+     const namedSells=list.filter(g=>g!==blank&&g.netCents<0);
+     if(namedSells.length){
+       const min=namedSells.reduce((min,g)=>Math.min(min,g.netCents),0);
+       highlights.push({label:'具名'+key+'中净卖出最多 · '+namedSells.filter(g=>g.netCents===min).map(g=>g.values[0]).join('、'),value:min,unit:'分'});
+     }
+   }
  }
  if(metric==='net' && !s.plan.groupBy.length && s.completeCoverage){
    const label=totals.netCents<0?'按交易本金净流出（净减持）':totals.netCents>0?'按交易本金净流入（净增持）':'交易买卖本金相抵';

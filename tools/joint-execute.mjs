@@ -3,7 +3,9 @@ import {queryInventory} from './inventory-http.mjs';
 import {answerSourceRows,newInventoryAnswer} from './inventory-store.mjs';
 import {calculateInventory} from './inventory-calculation.mjs';
 import {inventoryProfile} from './inventory-profile.mjs';
-import {memberAnalysis} from './inventory-member-analysis.mjs';
+import {memberAnalysis,heldMemberReport} from './inventory-member-analysis.mjs';
+import {describeHoldingRows} from './inventory-row-report.mjs';
+import {tradeMatrix} from './trade-matrix.mjs';
 import {fullMarketCode} from './inventory-security.mjs';
 import {analysisFieldLabels} from './inventory-analysis.mjs';
 import {accountSql,accountLabel} from './inventory-account.mjs';
@@ -71,11 +73,18 @@ function memberIndex(dimensions,field){
   // A short name displayed beside its actual code is descriptive, not a separate scope.
   return dimensions.every((k,i)=>i===index || ['name','债券简称','原表:债券简称'].includes(k))?index:-1;
 }
-function members(step,selection){
-  const group=table(step,selection.field);
+function members(step,selection,question=''){
+  const coverage=step?.data?.memberCoverage;
+  if(coverage?.complete===false)clarify((coverage.note||coverage.referenceDate+' 的核验资料不完整。')+'无法确定原名单，所问成员的后续持仓不能逐项计算。');
+  const saved=step?.data?.rankedMembers;
+  const group=saved?.field===selection.field&&Array.isArray(saved.names)?
+    {pairs:saved.names.map(n=>[n,null]),count:saved.names.length}:table(step,selection.field);
   if(!group)clarify('请先按'+(fields[selection.field]?.label||'同一字段')+'列出名单，再跨台账查询。');
-  const labels=group.pairs.map(([name])=>name);
-  const complete=group.count<=labels.length || group.limit && group.limit<=labels.length;
+  const rawLabels=group.pairs.map(([name])=>name);
+  const complete=group.count<=rawLabels.length || group.limit && group.limit<=rawLabels.length;
+  const explicitRow=/第\s*[零一二三四五六七八九十\d]+\s*行|未填|空白/.test(question);
+  const namedRank=!explicitRow&&(selection.limit||selection.indices?.length);
+  const labels=namedRank?rawLabels.filter(name=>typeof name==='string'&&name.trim()&&!['（未填）','未填写'].includes(name)):rawLabels;
   let chosen;
   if(selection.indices?.length){
     if(selection.indices.some(i=>!Number.isSafeInteger(i)||i<1||i>labels.length))clarify('所指名次超出上次结果中的名单。');
@@ -84,7 +93,7 @@ function members(step,selection){
     if(!complete && (!selection.limit || selection.limit>labels.length))clarify('上次只展示了部分名单。请指定前几名再跨台账核对。');
     chosen=labels.slice(0,selection.limit??labels.length);
   }
-  if(!chosen.length)clarify('前一步没有查到入选对象，本步没有可核对的名单。');
+  if(!chosen.length)clarify(coverage?.complete?'名单核验日 '+coverage.referenceDate+' 已核实入选 0 只，没有这批券的后续持仓。':'前一步没有查到入选对象，本步没有可核对的名单。');
   if(chosen.length>100 || chosen.some(x=>typeof x!=='string' || !x.trim() || ['（未填）','未填写'].includes(x)))clarify('名单过大或包含未登记的名称，请先限定到最多 100 个已具名的对象。');
   return {field:selection.field,names:[...new Set(chosen)]};
 }
@@ -107,8 +116,26 @@ async function memberSummary({db,bucket},step,ctx,selection){
   const snapshot=ctx.snapshots.find(s=>s.date===step.snapshotDate);
   if(!snapshot || !selection)clarify('请指定已上传的库存日期，并引用原台账名单。');
   const rows=await matchingRows(db,snapshot,selection);
-  return newInventoryAnswer(db,snapshot,{date:snapshot.date,metric:step.metric,group:selection.field,filters:step.filters},bucket,
+  const result=await newInventoryAnswer(db,snapshot,{date:snapshot.date,metric:step.metric,group:selection.field,filters:step.filters},bucket,
     ['按前一步核到的 '+selection.names.length+' 个'+fields[selection.field].label+'逐项汇总，未匹配持仓的成员计零。'],undefined,rows,selection.names);
+  if(step.heldTop!=null && result.resultId)result.ledgerReport=heldMemberReport(result,selection.field,selection.names.length,step.heldTop);
+  return result;
+}
+async function memberShares(resources,step,ctx,selection,source){
+  const snapshot=ctx.snapshots.find(s=>s.date===step.snapshotDate);
+  if(!snapshot||!selection)clarify('请指定原排名与分母的业务日期。');
+  const rankedSource=source?.data;
+  const filters=rankedSource?.snapshot?.id===snapshot.id&&rankedSource.plan?.filters?rankedSource.plan.filters:step.filters;
+  const [part,whole]=await Promise.all([memberSummary(resources,{...step,filters,metric:'principal'},ctx,selection),
+    newInventoryAnswer(resources.db,snapshot,{date:snapshot.date,metric:'principal',group:'none',filters:step.filters},resources.bucket)]);
+  if(!part.resultId||!whole.resultId)clarify('未能核实成员或分母范围。');
+  const byName=new Map(part.groups.map(g=>[g.name,g.cents])),denominator=whole.totalCents;
+  const rows=selection.names.map(name=>{const c=byName.get(name)??0;return {name,principal:c/1e10,base:denominator/1e10,share:denominator>0?100*c/denominator:null};});
+  return {snapshot,overview:[{title:'入选成员',result:part},{title:'分母范围',result:whole}],
+    ledgerReport:{title:'入选成员逐项占比',source:snapshot.date+' · '+snapshot.filename,
+      summary:'沿用排名中的 '+rows.length+' 个成员；各自以同日筛选范围全部本金 '+(denominator/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8})+' 亿元为分母。',
+      note:'保留原名单顺序。明确限定行数时按原表排名显示顺序取值；分母为零时占比待核。',
+      columns:[{key:'name',label:fields[selection.field].label,kind:'category'},...['principal','base','share'].map((key,i)=>({key,label:['成员本金','分母本金','占比'][i],unit:i===2?'%':'亿元',kind:'number'}))],rows}};
 }
 function historyFor(history,source){
   return history.flatMap(({answer})=>(answer?.steps||[]).filter(s=>s.source===source && s.data)).slice(-8);
@@ -128,7 +155,12 @@ async function regroupInventory({db,bucket},step,ctx,source){
   const snapshot=ctx.snapshots.find(s=>s.id===result.snapshot?.id);
   if(!snapshot||step.snapshotDate && step.snapshotDate!==snapshot.date)
     clarify('请沿用这批持仓的原快照，或另行指定日期重新查询。');
-  const rows=await answerSourceRows(db,result.resultId,snapshot.id);
+  let rows=await answerSourceRows(db,result.resultId,snapshot.id);
+  if(prior.rankedMembers){
+    if(!Object.hasOwn(fields,prior.rankedMembers.field))clarify('当前排名维度不能直接沿用为原表行筛选。');
+    const selected=new Set(await matchingRows(db,snapshot,prior.rankedMembers));
+    rows=rows.filter(row=>selected.has(row));
+  }
   const metric={principal:'principalCents',count:'rowCount',securities:'securityCount'}[step.metric];
   const plan={date:snapshot.date,group:'none',metric:step.metric,filters:{},
     analysis:[{op:'group',fields:step.dimensions,metric}]};
@@ -200,7 +232,7 @@ function normalizedFilter(field,value){
 }
 // Grouping/sorting does not change the population. Ranking, selecting rows or
 // unusual predicates do: compare only when the membership predicate is known.
-function scopeKey(step){
+function scopeKey(step,datePredicate){
   const data=step.data,plan=data.plan;
   if(!plan)return null;
   const keys=[];
@@ -222,6 +254,7 @@ function scopeKey(step){
     if(step.appliedSelection)add(step.appliedSelection.field,step.appliedSelection.names);
   }else{
     for(const f of plan.filters||[]){
+      if(f===datePredicate)continue;
       if(!['eq','in'].includes(f.op))return null;
       const field=groupField(f.field)||f.field;
       add(field,f.value);
@@ -246,12 +279,46 @@ export function compareJointSteps(steps,kind){
   const trade=flow?.data,plan=trade?.plan,netCents=trade?.result?.totals.netCents;
   const dayAfter=new Date(Date.parse(a.snapshot.date+'T00:00:00Z')+86400000).toISOString().slice(0,10);
   if(plan && plan.metric!=='net')return {...result,note:'计算差额还需要所选期间的净增持本金。'};
-  if(flow?.source!=='trade'||!Number.isSafeInteger(netCents)||plan?.direction!=='both'||plan.start!==dayAfter||plan.end!==b.snapshot.date||
-     scopeKey(flow)!==key||!covered(trade.sources,plan.start,plan.end))
+  const dateFilters=(plan?.filters||[]).filter(f=>f.field==='交易交割日');
+  const datePredicate=dateFilters[0];
+  const settlementOnly=dateFilters.length===1 && !plan.start&&!plan.end && datePredicate.op==='between' &&
+    Array.isArray(datePredicate.value)&&datePredicate.value[0]===dayAfter&&datePredicate.value[1]===b.snapshot.date;
+  const completeWindow=settlementOnly || !dateFilters.length&&plan?.start===dayAfter&&plan.end===b.snapshot.date;
+  if(flow?.source!=='trade'||!Number.isSafeInteger(netCents)||plan?.direction!=='both'||!completeWindow||
+     scopeKey(flow,settlementOnly?datePredicate:null)!==key||trade.result.completeCoverage===false||!covered(trade.sources,dayAfter,b.snapshot.date))
     return {...result,note:'两期余额已核实。期间净买入须覆盖期初次日至期末的两侧流水，且筛选范围一致，才能计算差额。'};
   const gapCents=changeCents-netCents;
   if(!Number.isSafeInteger(gapCents))return {...result,note:'差额超出可精确统计范围。'};
-  return {...result,netCents,gapCents,note:'差额＝期末余额－期初余额－期间净买入。差额原因需要结合兑付、划转等记录另行核实。'};
+  return {...result,netCents,gapCents,note:'净买入按'+(settlementOnly?'已入账流水的交易交割日':'交易日')+'归期。差额＝期末余额－期初余额－期间净买入。差额原因需要结合兑付、划转等记录另行核实。'};
+}
+function reconciliationReport(steps,comparison){
+  if(!Number.isSafeInteger(comparison?.gapCents))return;
+  const f=n=>(n/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8});
+  const [a,b,flow]=steps, from=a.data.snapshot.date,to=b.data.snapshot.date;
+  const fields=[['期初余额',comparison.openingCents],['期末余额',comparison.closingCents],['余额变动',comparison.changeCents],
+    ['期间净买入',comparison.netCents],['余额变动减净买入',comparison.gapCents]];
+  return {title:'持仓与交易对账',summary:from+' 至 '+to+'，余额变动 '+f(comparison.changeCents)+' 亿元，期间净买入 '+f(comparison.netCents)+
+    ' 亿元，余额变动减净买入为 '+f(comparison.gapCents)+' 亿元。',note:comparison.note,
+    source:[a.data.snapshot.filename,b.data.snapshot.filename,...flow.data.sources.map(v=>v.filename)].filter(Boolean).join(' / '),
+    columns:[{key:'item',label:'核对项目',kind:'category'},{key:'amount',label:'本金',unit:'亿元',kind:'number'}],
+    rows:fields.map(([item,cents])=>({item,amount:cents/1e10}))};
+}
+function previousReconciliation(ctx,steps){
+  if(ctx.comparison!=='reconcile'||!/(原因|归因|为什么|为何|能否.*证实)/.test(ctx.question||''))return;
+  const answer=ctx.history.at(-1)?.answer;
+  const prior=answer?.steps;
+  if(prior?.length!==3||steps.length!==3||!Number.isSafeInteger(answer.comparison?.gapCents))return;
+  if(![0,1].every(i=>ctx.steps[i].snapshotDate===prior[i].data?.snapshot?.date))return;
+  const [oldFlow,newFlow]=[prior[2],steps[2]].map(s=>s.data);
+  if(!oldFlow?.result?.totals||!newFlow?.result?.totals)return;
+  const signature=data=>JSON.stringify([data.plan.direction,data.plan.start??null,data.plan.end??null,
+    data.plan.filters.map(f=>JSON.stringify([f.field,f.op,f.value])).sort(),data.result.totals.netCents]);
+  if(signature(oldFlow)!==signature(newFlow))return;
+  // The new evidence query could not determine a cause. Refer explicitly to the
+  // prior verified comparison without assigning it to the unsuccessful subqueries.
+  const report=reconciliationReport(prior,answer.comparison);
+  return {...report,title:'已核对账差额与原因核查',summary:'上轮已核的原账户及期间：'+report.summary+
+    ' 本次现有余额及买卖原表未能确认差额原因。',note:report.note+' 逐券到期日期或持仓消失，单独不能证明已发生兑付。'};
 }
 function covered(sources,start,end){
   for(let year=+start.slice(0,4);year<=+end.slice(0,4);year++){
@@ -416,14 +483,18 @@ export async function executeJointPlan(resources,input,dependencies={}){
   const scheduled=new Map(),tasks=[];
   for(const step of ctx.steps){
     const ref=step.operation==='regroup'?step.from:step.selection?.from;
-    const linked=typeof ref==='string'&&/^previous\d+$/.test(ref)?prior[Number(ref.slice(8))-1]:scheduled.get(ref);
+    const old=typeof ref==='string'&&/^earlier([2-8])step([1-5])$/.exec(ref);
+    const linked=old?ctx.history.at(-Number(old[1]))?.answer?.steps[Number(old[2])-1]:
+      typeof ref==='string'&&/^previous\d+$/.test(ref)?prior[Number(ref.slice(8))-1]:scheduled.get(ref);
     const task=(async()=>{
       let selection;
       let data;
       try{
         if(step.selection)selection=/^previous(?:Both|LeftOnly|RightOnly|Union)$/.test(step.selection.from)
-          ?previousSetSelection(ctx.history,step.selection):members(await linked,step.selection);
-        if(step.operation==='collectMembers'){
+          ?previousSetSelection(ctx.history,step.selection):members(await linked,step.selection,ctx.question||step.question);
+        if(step.operation==='flowMatrix'){
+          data=await tradeMatrix(resources,step,ctx,dependencies.tradeQuery||runTradeQuery);
+        }else if(step.operation==='collectMembers'){
           data=await collectMembers(resources,step,ctx,dependencies.tradeQuery||runTradeQuery);
         }else if(step.operation==='profile'){
           data=await inventoryProfile(resources,step,ctx);
@@ -431,6 +502,10 @@ export async function executeJointPlan(resources,input,dependencies={}){
           data=await memberAnalysis(resources,step,ctx);
         }else if(step.operation==='calculate'){
           data=await calculateInventory(resources,step,ctx.snapshots);
+        }else if(step.operation==='memberShares'){
+          data=await memberShares(resources,step,ctx,selection,await linked);
+        }else if(step.operation==='holdingRows'){
+          data=await describeHoldingRows(resources.db,await memberSummary(resources,step,ctx,selection));
         }else if(step.operation==='memberSummary'){
           data=await memberSummary(resources,step,ctx,selection);
         }else if(step.operation==='regroup'){
@@ -460,8 +535,9 @@ export async function executeJointPlan(resources,input,dependencies={}){
   }
   explainPortfolioDifferences(steps,prior);
   const comparison=compareJointSteps(steps,ctx.comparison),aligned=balanceGroups(steps,comparison)||alignment(steps);
+  const priorReport=Number.isSafeInteger(comparison?.gapCents)?null:previousReconciliation(ctx,steps);
   const reportStep=steps.find(s=>s.data.ledgerReport);
-  const ledgerReport=reportStep?.data.ledgerReport||partialBalanceReport(steps);
+  const ledgerReport=reportStep?.data.ledgerReport||reconciliationReport(steps,comparison)||priorReport||partialBalanceReport(steps);
   if(reportStep)delete reportStep.data.ledgerReport;
-  return {steps,...(comparison?{comparison}:{}),...(aligned?{alignment:aligned}:{}),...(ledgerReport?{ledgerReport}:{})};
+  return {steps,...(comparison&&!priorReport?{comparison}:{}),...(aligned?{alignment:aligned}:{}),...(ledgerReport?{ledgerReport}:{})};
 }

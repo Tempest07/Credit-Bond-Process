@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildMemberReport} from '../tools/inventory-member-analysis.mjs';
-import {executeJointPlan} from '../tools/joint-execute.mjs';
+import {buildMemberReport,heldMemberReport} from '../tools/inventory-member-analysis.mjs';
+import {compareJointSteps,executeJointPlan} from '../tools/joint-execute.mjs';
 
 const group=(name,cents,securityCount=1,count=1)=>({name,cents,securityCount,count});
 const result=(date,groups)=>({
@@ -26,6 +26,48 @@ test('rank overlap ranks by aggregate principal and distinct security count, wit
   assert.deepEqual(rows.map(x=>[x.name,x.principalRank,x.codeRank]),[['A',1,null],['C',2,2],['D',3,3],['B',null,1]]);
   assert.match(note,/券数榜末位有 3 个成员同值/);
   assert.throws(()=>buildMemberReport({field:'issuer',analysisMode:'rankOverlap',limit:2},[{...r,groupsTruncated:true}]),/完整/);
+});
+test('two independent rankings and tracking opening leaders distinguish a later entrant from a fall in rank',()=>{
+  const spec={field:'issuer',analysisMode:'rankChanges',limit:2};
+  const answer=buildMemberReport(spec,[early,late]);
+  assert.deepEqual(answer.rows.map(r=>[r.name,r.category,r.firstRank,r.lastRank]),[
+    ['A','掉出',1,null],['D','两期在榜',2,1],['B','新进',null,2]]);
+  const tracked=buildMemberReport({...spec,analysisMode:'trackedLeaders'},[early,late]);
+  assert.deepEqual(tracked.rows.map(r=>[r.name,r.last]),[['A',100/1e10],['D',270/1e10]]);
+  const report=heldMemberReport({...late,groups:[...late.groups,group('Z',0,0,0)]},'issuer',5,1);
+  assert.match(report.summary,/4 个仍然在账，1 个没有持仓/);
+  assert.equal(report.rows[0].name,'D');
+});
+test('source category composition preserves missing labels and computes signed amounts against the complete branch totals',()=>{
+  const other=result('2026-11-05',[group('A',20),group('B',40),group('未填写',60)]);
+  const report=buildMemberReport({field:'sourceMarketType',analysisMode:'groupDifferences',limit:0},[late,other]);
+  assert.equal(report.rows[0].name,'D');
+  assert.equal(report.rows.find(r=>r.name==='未填写').lastShare,50);
+  assert.equal(report.rows.find(r=>r.name==='未填写').difference,-60/1e10);
+});
+test('settlement reconciliation requires an exact settlement-only interval and matching non-date filters',()=>{
+  const stock=d=>({source:'inventory',data:{...d,plan:{...d.plan,filters:{account:'AFS'}}}});
+  const dateFilter={field:'交易交割日',op:'between',value:['2026-10-01','2026-11-05']};
+  const data={plan:{direction:'both',metric:'net',filters:[dateFilter,{field:'会计分类',op:'eq',value:'AFS'}]},
+    result:{completeCoverage:true,totals:{netCents:12}},sources:['buy','sell'].map(direction=>({direction,year:2026,asOf:'2026-11-06'}))};
+  const run=()=>compareJointSteps([stock(early),stock(late),{source:'trade',data}],'reconcile');
+  assert.equal(run().gapCents,late.totalCents-early.totalCents-12);
+  data.plan.start='2026-10-01';
+  assert.equal(run().gapCents,undefined);
+  delete data.plan.start;
+  dateFilter.value[0]='2026-10-02';
+  assert.equal(run().gapCents,undefined);
+});
+test('a missing valuation cohort and a verified empty cohort give distinct downstream messages',async()=>{
+  const date='2026-06-30';
+  const spec={metric:'valuationAudit',referenceDate:date};
+  const data={spec,rows:[],memberCoverage:{referenceDate:date,complete:false,note:'本日市场资料未上传。'}};
+  const steps=[{id:'s1',source:'inventory',question:'这批券后来仍有多少',selection:{from:'previous1',field:'code'}}];
+  const ctx={steps,history:[{question:'此前剔除的券',answer:{steps:[{id:'s1',source:'portfolio',question:'此前剔除的券',data}]}}]};
+  const run=async()=>(await executeJointPlan({},ctx)).steps[0].data.clarification;
+  assert.match(await run(),/市场资料未上传.*无法确定原名单/);
+  data.memberCoverage.complete=true;
+  assert.match(await run(),/已核实入选 0 只/);
 });
 test('complete empty inventory for a verified full market code is zero, but a truncated result cannot certify absence',async()=>{
   const frame={id:'v2',date:'2026-11-05'};

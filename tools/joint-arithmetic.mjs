@@ -107,6 +107,16 @@ export function collectMeasures(steps){
           }else if(Number.isFinite(v[field]))add(scope,prefix+label+'本金',v[field]/1e10,'亿元');
         }
         if(rating && Number.isFinite(v.unknown))add(scope,prefix+'评级待核本金',v.unknown/1e10,'亿元');
+        if(d.spec.metric==='modifiedDuration'){
+          if(v.value==null)add(scope,prefix+'仅按已覆盖持仓有效本金加权的修正久期',v.coveredDuration,'年');
+          if(Number.isFinite(v.unknown))add(scope,prefix+'久期或信用事件资料待核本金',v.unknown/1e10,'亿元');
+          if(Number.isSafeInteger(v.coveredCount)&&Number.isSafeInteger(v.unknownCount)&&Number.isSafeInteger(v.excludedCount)){
+            const bonds=v.coveredCount+v.unknownCount+v.excludedCount;
+            add(scope,prefix+'有有效久期的券数',v.coveredCount,'只');add(scope,prefix+'按券码去重的全部在账券数',bonds,'只');
+            if(bonds)add(scope,prefix+'有有效久期券数占全口径券数',100*v.coveredCount/bonds,'%');
+            if(v.gross>0)add(scope,prefix+'有有效久期的本金占全部在账本金',100*v.covered/v.gross,'%');
+          }
+        }
         if(rating && v.value==null)add(scope,prefix+'仅按有效评级本金计算的门槛内占比（每百元有效评级本金所含金额）',v.coveredShare,'%');
         add(scope,prefix+(d.spec.metric==='modifiedDuration'?'以纳入计算的有效名义本金为权重的修正久期':'门槛内评级本金占有效本金'),v.value,d.spec.metric==='modifiedDuration'?'年':'%');
       }
@@ -248,6 +258,7 @@ export async function deriveAnswer({question,steps,history,apiKey,effort,fetchIm
     });
   }
   const input={question,previousQuestion:recent?.question,rendered:renderedEvidence(steps),priorRendered:renderedEvidence(recent?.answer?.steps||[]),
+    differences:'X 跟 Y 的差额优先给 X−Y 的带符号数并在标签写明减数，除非用户明确要绝对值。所问两个账户的覆盖内加权久期可用各自的已覆盖修正久期与实际有效本金，单独解释完整持仓的未知金额。',
     groupedMeasures:'期间排名来自逐期实际数值，标签含从高到低、从低到高或净卖出金额名次。问哪个期间最活跃、哪几个期间最多或最低，直接用对应的 value 并在回答标签点明期间及名次，保留并列。完整分组给出的正负合计及未填写组已经包含所有原始行；核对两类贡献与全范围净额时直接使用这几项并比较，保留净卖出负号。只索求有效评级本金内的百分比或每百元金额时可用该有效子集的已算比例或已核实分子分母，并标明适用范围。',
     scopes:Object.fromEntries(scopes.map((s,i)=>['s'+(i+1),s])),columns:['id','查询范围','服务器已核实的数值指标','单位'],facts:labels};
   let verified;

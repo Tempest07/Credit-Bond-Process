@@ -1,7 +1,7 @@
 import {newInventoryAnswer,readInventoryAnswer} from './inventory-store.mjs';
 import {InventoryError} from './inventory-workbook.mjs';
 
-const names={code:'债券代码',issuer:'发行人',branch:'联动分行',account:'会计科目'};
+const names={code:'债券代码',issuer:'发行人',branch:'联动分行',account:'会计科目',marketType:'标准债券类型',sourceMarketType:'原表债券类型'};
 const category=(key,label)=>({key,label,kind:'category'});
 const number=(key,label,unit)=>({key,label,kind:'number',unit});
 const yi=cents=>cents/1e10;
@@ -13,13 +13,13 @@ function exact(n) {
   if(!Number.isSafeInteger(n))throw new InventoryError('所选范围的本金超出可精确计算的金额范围。',422);
   return n;
 }
-function namedGroups(result) {
+function namedGroups(result,includeMissing=false) {
   if(result.groupsTruncated || !Array.isArray(result.groups) ||
      result.groups.reduce((total,g)=>total+g.count,0)!==result.rowCount) {
     throw new InventoryError('所选范围没有完整的分组明细，无法比较成员。',422);
   }
-  return new Map(result.groups.filter(g=>g.count>0 && g.name?.trim() && !['未填写','（未填）'].includes(g.name))
-    .map(g=>[g.name,g]));
+  return new Map(result.groups.filter(g=>g.count>0 && (includeMissing || g.name?.trim()&&!['未填写','（未填）'].includes(g.name)))
+    .map(g=>[g.name||'未填写',g]));
 }
 function sorted(groups,metric) {
   return [...groups.values()].sort((a,b)=>b[metric]-a[metric]||compareName(a.name,b.name));
@@ -53,7 +53,53 @@ function rankOverlap(spec,left) {
     columns:[category('name',names[spec.field]),category('category','榜单归属'),number('principal','在账本金','亿元'),
       number('codes','不同券数','只'),number('principalRank','本金榜名次','名'),number('codeRank','券数榜名次','名')],rows};
 }
-function compareBalances(spec,left,right,labels) {
+function rankAcrossDates(spec,left,right,labels) {
+  const ordered=[sorted(left,'cents'),sorted(right,'cents')];
+  const [a,b]=ordered.map(groups=>new Map(groups.slice(0,spec.limit).map((g,i)=>[g.name,i+1])));
+  const tracked=spec.analysisMode==='trackedLeaders';
+  const members=tracked?[...a.keys()]:[...new Set([...a.keys(),...b.keys()])];
+  const rows=members.map(name=>({name,category:a.has(name)&&b.has(name)?'两期在榜':a.has(name)?'掉出':'新进',
+    firstRank:a.get(name)??null,first:yi(left.get(name)?.cents??0),lastRank:b.get(name)??null,last:yi(right.get(name)?.cents??0)}));
+  const moved=status=>rows.filter(row=>row.category===status).map(row=>row.name).join('、')||'无';
+  return {title:tracked?'固定首期前 '+spec.limit+' 名的两期本金':'两期各自前 '+spec.limit+' 名的进出榜对照',
+    summary:tracked?'按 '+labels[0]+' 的前 '+a.size+' 名固定成员，逐一对照两期余额。':
+      labels[0]+' 与 '+labels[1]+' 独立排名，新进：'+moved('新进')+'；掉出：'+moved('掉出')+'。',
+    note:['空名次表示未进入该期排名；完整范围内没有持仓时，本金计零。',
+      ...ordered.map((list,i)=>boundaryNote(list,spec.limit,'cents',labels[i]))].filter(Boolean).join(' '),
+    columns:[category('name',names[spec.field]),category('category','榜单归属'),number('firstRank',labels[0]+'榜内名次','名'),
+      number('first',labels[0]+'本金','亿元'),number('lastRank',labels[1]+'榜内名次','名'),number('last',labels[1]+'本金','亿元')],rows};
+}
+export function heldMemberReport(result,field,selectedCount,limit) {
+  const groups=sorted(namedGroups(result),'cents');
+  const chosen=groups.slice(0,limit);
+  return {title:'入选名单在 '+result.snapshot.date+' 的持仓',source:scope(result)+' · '+result.snapshot.filename,
+    summary:'原名单 '+selectedCount+' 个'+names[field]+'，其中 '+groups.length+' 个仍然在账，'+(selectedCount-groups.length)+' 个没有持仓。'+
+      (limit?'按在账本金降序列出前 '+chosen.length+' 名。':''),
+    note:['在账按快照内确有持仓行判定，先核对完整名单，再对有持仓的成员排名。',
+      boundaryNote(groups,limit,'cents','在账榜')].filter(Boolean).join(' '),
+    columns:[number('rank','名次','名'),category('name',names[field]),number('principal','在账本金','亿元'),
+      number('securities','不同券数','只'),number('positions','持仓行数','条')],
+    rows:chosen.map((g,i)=>({rank:i+1,name:g.name,principal:yi(g.cents),securities:g.securityCount,positions:g.count}))};
+}
+function groupDifferences(spec,groups,labels,results) {
+  const units=results.map(r=>r.totalCents);
+  const categories=[...new Set(groups.flatMap(g=>[...g.keys()]))];
+  const entries=categories.map(name=>{
+    const [a,b]=groups.map(g=>g.get(name)?.cents??0);
+    return {name,a,b,difference:exact(a-b)};
+  }).sort((a,b)=>Math.abs(b.difference)-Math.abs(a.difference)||compareName(a.name,b.name));
+  const max=entries.length?Math.abs(entries[0].difference):null;
+  const ties=entries.filter(r=>Math.abs(r.difference)===max);
+  return {title:names[spec.field]+'本金构成与差额',source:labels.join(' / '),
+    summary:labels[0]+' 合计 '+show(units[0])+' 亿元，'+labels[1]+' 合计 '+show(units[1])+' 亿元。'+
+      (ties.length?'按本金差额绝对值最大：'+ties.map(r=>r.name+'（前者减后者 '+show(r.difference)+' 亿元）').join('、')+'。':''),
+    note:'按'+names[spec.field]+'逐组核对，差额按第一范围减第二范围，按差额绝对值降序。占比以各范围全部在账本金为分母。',
+    columns:[category('name',names[spec.field]),number('first',labels[0]+'本金','亿元'),number('firstShare',labels[0]+'占比','%'),
+      number('last',labels[1]+'本金','亿元'),number('lastShare',labels[1]+'占比','%'),number('difference','第一范围减第二范围','亿元')],
+    rows:(spec.limit?entries.slice(0,spec.limit):entries).map(({name,a,b,difference})=>({
+      name,first:yi(a),firstShare:units[0]?100*a/units[0]:null,last:yi(b),lastShare:units[1]?100*b/units[1]:null,difference:yi(difference)}))};
+}
+function compareBalances(spec,left,right,labels,results) {
   const same=[],added=[],exited=[];
   let first=0,last=0,addedCents=0,exitedCents=0;
   function row(name,a,b,category){
@@ -93,16 +139,24 @@ function compareBalances(spec,left,right,labels) {
        '；减少榜：'+(down.slice(0,max).map(r=>r.name+' '+show(delta(r))+' 亿元').join('、')||'无')+'。':''),
       note:['比较仅限两期都有持仓的已具名成员。合计使用全部共同成员，各方向列前 '+max+' 个。',...ties].join(' '),columns,rows};
   }
+  const combined=exact(addedCents-exitedCents+change);
+  const observed=exact(results[1].totalCents-results[0].totalCents);
   return {title:'两份库存的成员与本金对照',
     summary:common+' 两边合并去重 '+(same.length+added.length+exited.length)+' 个；仅前一范围 '+exited.length+
       ' 个（本金 '+show(exitedCents)+' 亿元），仅后一范围 '+added.length+' 个（本金 '+show(addedCents)+' 亿元）。',
     note:'按'+names[spec.field]+'对齐，同一范围同一成员的本金按原行加总。名单仅计已具名成员。仅单边有持仓的成员在另一完整范围列零。'+
-      '仅前一范围对总差额贡献 '+show(-exitedCents)+' 亿元、仅后一范围贡献 '+show(addedCents)+' 亿元、共同成员贡献 '+show(change)+' 亿元。',
+      '仅前一范围对总差额贡献 '+show(-exitedCents)+' 亿元、仅后一范围贡献 '+show(addedCents)+' 亿元、共同成员贡献 '+show(change)+' 亿元。'+
+      '三组贡献合计 '+show(combined)+' 亿元，全范围本金变动 '+show(observed)+' 亿元。'+
+      (observed===combined?'两者一致。':'未填写成员另有 '+show(observed-combined)+' 亿元的变动。'),
     columns,rows:[...same,...exited,...added]};
 }
 export function buildMemberReport(spec,results) {
-  const groups=results.map(namedGroups),labels=results.map(scope);
-  const report=spec.analysisMode==='rankOverlap'?rankOverlap(spec,groups[0]):compareBalances(spec,groups[0],groups[1],labels);
+  const groups=results.map(r=>namedGroups(r,spec.analysisMode==='groupDifferences')),labels=results.map(scope);
+  let report;
+  if(spec.analysisMode==='rankOverlap')report=rankOverlap(spec,groups[0]);
+  else if(spec.analysisMode==='groupDifferences')report=groupDifferences(spec,groups,labels,results);
+  else if(['rankChanges','trackedLeaders'].includes(spec.analysisMode))report=rankAcrossDates(spec,...groups,labels);
+  else report=compareBalances(spec,...groups,labels,results);
   return {...report,source:results.map(r=>scope(r)+' · '+r.snapshot.filename).join(' / ')};
 }
 export async function memberAnalysis({db,bucket},step,ctx) {
