@@ -1,5 +1,6 @@
-import {setupJointInventory,showJointSnapshots,renderInventoryAnswer,renderInventoryIdentity} from "./inventory.js?v=5.5.1";
-import {setupJointTrades,showJointLedgers,renderTradeAnswer} from "./trades.js?v=5.5.1-r2";
+import {setupJointInventory,showJointSnapshots,renderInventoryLedger,renderInventoryIdentity,openInventoryDetail} from "./inventory.js?v=5.5.2";
+import {setupJointTrades,showJointLedgers,renderTradeLedger} from "./trades.js?v=5.5.2";
+import {presentAnswer} from "./answer-presentation.js?v=5.5.2";
 
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -202,7 +203,7 @@ function alignedBlock(a) {
 function stockView(data,title,card,actions,chatId,mayContinue){
   if(data.resultId){
     const target=el("div");card.append(target);
-    renderInventoryAnswer({label:title,data},target,{view:"table",expanded:false,chatId,download:actions});
+    renderInventoryLedger({label:title,data},target,{view:"table",expanded:false,chatId,download:actions});
     return;
   }
   if(data.identity && mayContinue){
@@ -264,9 +265,30 @@ function portfolioView(data,card,stepDownload){
   const exportButton=button("下载完整 Excel",()=>stepDownload(exportButton));
   actions.append(exportButton);card.append(actions);
 }
+function canDownload(steps){
+  return steps.some(s=>s.data && (s.data.result||s.data.resultId||s.data.overview?.some(p=>p.result?.resultId)||s.source==="portfolio"&&s.data.headline));
+}
 function turnView({question,answer},mayContinue){
   const box=el("article",null,"joint-turn");
   box.append(el("h2",question,"user-question"));
+  const steps=answer.steps||[];
+  const panel=presentAnswer(answer,()=>{
+    const controls=[];
+    const step=steps.length===1?steps[0]:null;
+    if(step?.source==="inventory" && step.data?.resultId){
+      controls.push(button("查看匹配明细",()=>openInventoryDetail(step.data,null)));
+    }
+    if(canDownload(steps)){
+      const b=button(step?"下载完整 Excel":"下载完整联合 Excel",()=>download(answer.id,null,b),"secondary");
+      controls.push(b);
+    }
+    return controls;
+  },()=>turnEvidence(question,answer,mayContinue));
+  box.append(panel||turnEvidence(question,answer,mayContinue));
+  return box;
+}
+function turnEvidence(question,answer,mayContinue){
+  const box=el("div");
   if(answer.clarification)box.append(el("p",answer.clarification,"summary"));
   for(const note of answer.methodNotes||[])box.append(el("p",note,"summary"));
   if(answer.arithmetic?.rows?.length || answer.arithmetic?.missing){
@@ -305,8 +327,7 @@ function turnView({question,answer},mayContinue){
   if(answer.comparison)box.append(compareBlock(answer.comparison));
   if(answer.alignment)box.append(alignedBlock(answer.alignment));
   const steps=answer.steps||[];
-  const downloadable=steps.some(s=>s.data && (s.data.result||s.data.resultId||s.data.overview?.some(p=>p.result.resultId)||s.source==="portfolio"&&s.data.headline));
-  if(steps.length>1 && downloadable){
+  if(steps.length>1 && canDownload(steps)){
     const b=button("下载完整联合 Excel",()=>download(answer.id,null,b),"secondary");box.append(b);
   }
   const grid=el("div",null,"joint-steps");
@@ -319,7 +340,7 @@ function turnView({question,answer},mayContinue){
     if(!data)card.append(el("p",step.question));
     else if(step.source==="inventory")stockView(data,subquestion,card,stepDownload,state.chat.id,mayContinue);
     else if(step.source==="portfolio")portfolioView(data,card,stepDownload);
-    else card.append(renderTradeAnswer({question:subquestion,answer:data},stepDownload));
+    else card.append(renderTradeLedger({question:subquestion,answer:data},stepDownload));
     grid.append(card);
   }
   box.append(grid);return box;

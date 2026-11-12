@@ -2,6 +2,7 @@ import {InventoryError, analysisMeasureLabel, parseInventoryWorkbook, inventoryD
 import {attachSourceColumns,readVerifiedRoleWorkbook} from './inventory-source-columns.mjs';
 export {readVerifiedRoleWorkbook};
 import {normalizeAnalysis,runAnalysis} from './inventory-analysis.mjs';
+import {creditSourceTypes,creditScope,isCreditGroup} from './inventory-credit.mjs';
 import {accountLabel,accountSqlFor} from './inventory-account.mjs';
 import {lookupInventorySecurity,ambiguousSecurities,fullMarketCode} from './inventory-security.mjs';
 
@@ -33,8 +34,10 @@ const typeColumn='upper(trim(marketType))';
 const asSqlList=values=>values.map(value=>"'"+value+"'").join(',');
 const classifiedType='(CASE WHEN '+typeColumn+' IN ('+asSqlList(aliasesByType['短期融资券'])+") AND (upper(name) GLOB '*SCP[0-9]*' OR instr(name,'超短期融资券')>0) THEN '超短期融资券' "+
   Object.entries(aliasesByType).map(([type,aliases])=>'WHEN '+typeColumn+' IN ('+asSqlList(aliases)+") THEN '"+type+"'").join(' ')+' ELSE marketType END)';
-const broadCredit=/^(?:信用债(?:券|类)?|信用类(?:债券|债))$/;
-const explainCredit='库存按具体券种记录。请指定要纳入的品种（如中票、短融、超短融、公司债、企业债），或先按债券类型分组查看。金融债和 ABS 如需纳入，请单独说明。';
+const creditTypeSql=typeColumn+' IN ('+asSqlList(creditSourceTypes)+')';
+function filtersCreditGroup(plan){
+  return isCreditGroup(plan.filters.marketType) || plan.analysis?.some(s=>s.op==='filter'&&s.field==='marketType'&&isCreditGroup(s.value));
+}
 export async function initInventory(db){await db.batch(schema.map(sql=>db.prepare(sql)))}
 export async function listInventory(db) {
   const {results}=await db.prepare('SELECT v.* FROM inventory_versions v JOIN inventory_current a ON a.version=v.id ORDER BY v.date DESC').all();
@@ -247,6 +250,7 @@ function where(snapshot,plan,selectedGroup,evidence,options={}) {
     if(k==='guarantor' || k==='attribution')continue;
     if(k==='holdingStatus'){parts.push("cents>0 AND maturity>?");args.push(snapshot.date);continue}
     if(k==='scope'&&v==='委外'){parts.push("scope LIKE '委外%'");continue}
+    if(k==='marketType' && options.creditRules!==false && isCreditGroup(v)){parts.push(creditTypeSql);continue}
     if(k==='marketType'&&typeRules){parts.push(classifiedType+'=?');args.push(v==='未填写'?'':v);continue}
     if(k==='sourceMarketType'){parts.push('marketType=?');args.push(v==='未填写'?'':v);continue}
     if(k==='account'&&accountRules){parts.push(groupLabel(k,options)+'=?');args.push(v);continue}
@@ -366,7 +370,7 @@ async function analyzeRows(db,snapshot,plan,evidence,options) {
   const rows=await loadRows(db,detailQuery(evidence||needsRoles,plan,options),w);
   const extraFields=[...fields].filter(field=>field.startsWith('原表:'));
   if(extraFields.length)await attachSourceColumns(db,snapshot,rows,extraFields,options.bucket);
-  return runAnalysis(rows,plan.analysis,options.accountRules);
+  return runAnalysis(rows,plan.analysis,options.accountRules,options.creditRules);
 }
 function analysisTotals(analysis,snapshot) {
   const groups=analysis.groups.map(({name,labels,principalCents,rowCount,securityCount,value,measureValue})=>
@@ -391,6 +395,7 @@ async function compute(db,snapshot,plan,resultId,evidence,options={},analysisRes
   const analysis=plan.analysis?(analysisResult??await analyzeRows(db,snapshot,plan,evidence,options)):null;
   const {groups,total}=analysis?analysisTotals(analysis,snapshot):await sqlTotals(db,snapshot,plan,evidence,options);
   const warnings=[];
+  if(options.creditRules!==false && filtersCreditGroup(plan))warnings.push(creditScope);
   if(plan.analysis?.some(step=>[step.field,step.measure?.field,...(step.fields??[])].some(field=>field?.startsWith('原表:'))))
     warnings.push('原表扩展列使用该快照记录值，未经市场数据核验。');
   const shortTypes=['短期融资券','超短期融资券'];
@@ -449,9 +454,6 @@ export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixed
     if(hits.length)plan.filters.code=hits[0].code;
     else if(!fullMarketCode(code))return {clarification:'本期库存未查到简称或券码“'+code+'”，请核对完整券名或券码。'};
   }
-  if(broadCredit.test(plan.filters.marketType||'') ||
-     plan.analysis?.some(step=>step.op==='filter'&&step.field==='marketType'&&broadCredit.test(step.value)))
-    return {clarification:explainCredit};
   const issuer=plan.filters.issuer;
   if(issuer&&issuer!=='未填写'){
     const [issuers,branches]=await db.batch([
@@ -480,7 +482,7 @@ export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixed
   const rankReused=Boolean(plan.rank && fixedMembers!==undefined);
   const id=crypto.randomUUID(),result=await compute(db,snapshot,plan,id,evidence,{rankMembers,rankReused,bucket,sourceRows,listedMembers});
   if(trace.length)result.trace=trace;
-  const saved={...plan,typeRules:1,accountRules:2,...(sourceRows!==undefined?{sourceRows}:{}),...(listedMembers?{listedMembers}:{}),...(rankMembers?{rankMembers}:{}),...(rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
+  const saved={...plan,typeRules:1,accountRules:2,...(filtersCreditGroup(plan)?{creditRules:1}:{}),...(sourceRows!==undefined?{sourceRows}:{}),...(listedMembers?{listedMembers}:{}),...(rankMembers?{rankMembers}:{}),...(rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
   await db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(id,snapshot.id,JSON.stringify(saved),new Date().toISOString()).run();
   return result;
 }
@@ -492,7 +494,7 @@ export async function answerContext(db,id){
   const saved=JSON.parse(a.plan);
   const typeRules=saved.typeRules===1;
   const accountRules=[1,2].includes(saved.accountRules)?saved.accountRules:false;
-  return {snapshot,plan:normalizePlan(saved,typeRules,accountRules),evidence:saved.roleEvidence,typeRules,accountRules,trace:saved.trace,
+  return {snapshot,plan:normalizePlan(saved,typeRules,accountRules),evidence:saved.roleEvidence,typeRules,accountRules,creditRules:saved.creditRules===1,trace:saved.trace,
     sourceRows:saved.sourceRows,listedMembers:saved.listedMembers,rankMembers:saved.rankMembers,rankReused:saved.rankReused===true};
 }
 function detailQuery(evidence,plan,{typeRules=true,accountRules=2}){

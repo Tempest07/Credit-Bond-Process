@@ -1,5 +1,7 @@
 "use strict";
 
+import {presentAnswer} from "./answer-presentation.js?v=5.5.2";
+
 const joint = document.body.dataset.workspace === "joint";
 const uploadIds = new Set(["file","upload","upload-form","upload-list","upload-notice"]);
 const byId = id => document.getElementById(joint && uploadIds.has(id) ? "trade-"+id : id);
@@ -117,7 +119,19 @@ function showTurns() {
   });
   controls();
 }
-function renderTurn({question,answer}, downloadOverride) {
+function renderTurn(turn,downloadOverride) {
+  const {question,answer}=turn;
+  const panel=presentAnswer(turn, () => {
+    if (!answer.result) return [];
+    const download=action("下载完整 Excel",()=>downloadOverride ? downloadOverride(download) : downloadAnswer(answer.id,download));
+    return [download];
+  },()=>renderTradeLedger(turn,downloadOverride));
+  if (!panel) return renderTradeLedger(turn,downloadOverride);
+  const article=el("article",null,"answer");
+  article.append(el("p",question,"user-question"),panel);
+  return article;
+}
+function renderTradeLedger({question,answer}, downloadOverride) {
   const article = el("article",null,"answer");
   article.append(el("p",question,"question"));
   if (answer.clarification) article.append(el("p",answer.clarification,"summary"));
@@ -407,7 +421,7 @@ export function showJointLedgers(ledgers) {
   state.books = ledgers;
   renderBooks();
 }
-export {renderTurn as renderTradeAnswer};
+export {renderTurn as renderTradeAnswer,renderTradeLedger};
 
 if (!joint) {
   const url = new URL(location.href);

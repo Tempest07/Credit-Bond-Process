@@ -1,4 +1,5 @@
 import {accountLabel} from './inventory-account.mjs';
+import {isCreditGroup,isCreditSourceType} from './inventory-credit.mjs';
 import {InventoryError} from './inventory-workbook.mjs';
 
 export const analysisFieldLabels = Object.freeze({
@@ -152,7 +153,11 @@ function compare(value,operator,term) {
     case 'contains': return value.toLowerCase().includes(term.toLowerCase());
   }
 }
-function matches(row,step) {
+function matches(row,step,creditRules) {
+  if (creditRules && step.field==='marketType' && isCreditGroup(step.value)) {
+    const member = isCreditSourceType(row.marketType);
+    return step.operator==='neq' ? !member : member;
+  }
   const value = fieldValue(row,step.field);
   if (sourceField(step.field) && !textOps.has(step.operator)) {
     const numericTerm = decimal(step.value);
@@ -248,7 +253,7 @@ function groupRows(rows,fields,measure,denominator) {
 }
 
 /** Source row identities stay inside the authorized snapshot throughout regrouping. */
-export function runAnalysis(rows,steps,accountRules=2) {
+export function runAnalysis(rows,steps,accountRules=2,creditRules=true) {
   const program = normalizeAnalysis(steps,accountRules);
   if(accountRules!==2)rows=rows.map(row=>row.queryAccount===undefined?{...row,queryAccount:accountLabel(row.account||'',accountRules)}:row);
   const sourceRows = new Set();
@@ -270,7 +275,7 @@ export function runAnalysis(rows,steps,accountRules=2) {
   for (const step of program) {
     switch (step.op) {
       case 'filter':
-        selected = selected.filter(row=>matches(row,step));
+        selected = selected.filter(row=>matches(row,step,creditRules));
         break;
       case 'group':
         dimensions = step.fields;

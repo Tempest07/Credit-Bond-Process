@@ -373,8 +373,9 @@ test('total attributed credit and self-issued debt are separate; CP and identifi
   assert.deepEqual(superShort.rows.map(r=>[r.code,r.marketType,r.queryMarketType]),[['S','短期融资券','超短期融资券'],['T','超短融','超短期融资券']]);
   const {result,rows}=await exportData(store.db,total.resultId);const wb=new ExcelJS.Workbook();
   await wb.xlsx.load(await exportInventoryWorkbook(result,rows));assert.equal(wb.worksheets[1].getCell('Q7').value,'超短期融资券');
-  const broad=await newInventoryAnswer(store.db,v,{...base,filters:{attribution:'格力集团',marketType:'信用债'}});
-  assert.match(broad.clarification,/具体券种/);
+  const broad=await newInventoryAnswer(store.db,v,{...base,filters:{attribution:'格力集团',marketType:'信用债'}},store.bucket);
+  assert.equal(broad.totalCents,2600);
+  assert.deepEqual(broad.groups.map(g=>g.name),['中期票据','超短期融资券','短期融资券']);
   const noIssuer=await newInventoryAnswer(store.db,v,{...base,filters:{issuer:'不存在的集团'}});
   assert.match(noIssuer.clarification,/没有匹配/);
   const v2=await ingestInventory(store,await roleFixture([...sample,['2nd',1,'MTN','',other,'北京格力集团有限公司']]),'同名.xlsx',v.id);
@@ -384,6 +385,33 @@ test('total attributed credit and self-issued debt are separate; CP and identifi
   const oldId=crypto.randomUUID();
   await store.db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(oldId,v.id,JSON.stringify({...base,filters:{marketType:'短期融资券'}}),'old').run();
   const old=await exportData(store.db,oldId);assert.equal(old.result.totalCents,500);assert.equal(old.rows.length,2);
+});
+
+test('confirmed credit products reconcile across SQL, analysis, original rows and saved exports',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const products=['中期票据','短期融资券','超短融','定向工具','公司债','企业债','Medium-term Notes','Company Bonds','Corporate Bonds','Commercial Paper','PPN',
+    '信用债','金融债','Commercial Bank Financial Bonds','Non-Bank Financial Bonds','MBS/ABS','资产支持证券','地方政府债',''];
+  const snap=await ingestInventory(store,await roleFixture(products.map((type,i)=>['CODE'+i,1,type,'','','某金融资产管理公司'])),'分类.xlsx');
+  const base={date:snap.date,group:'sourceMarketType',metric:'principal'};
+  const expected=products.slice(0,11),rows=expected.map((_,i)=>i+2);
+  for(const plan of [
+    {...base,filters:{marketType:'非金融企业信用债'}},
+    {...base,filters:{},analysis:[{op:'filter',field:'marketType',operator:'eq',value:'信用债'},{op:'group',fields:['sourceMarketType']}]},
+  ]){
+    const result=await newInventoryAnswer(store.db,snap,plan);
+    assert.equal(result.totalCents,1100);
+    assert.deepEqual(new Set(result.groups.map(g=>g.labels?.[0]??g.name)),new Set(expected));
+    assert.deepEqual(await answerSourceRows(store.db,result.resultId,snap.id),rows);
+    assert.equal((await answerDetails(store.db,result.resultId)).total,11);
+    const saved=await exportData(store.db,result.resultId);
+    assert.deepEqual(saved.rows.map(r=>r.marketType),expected);
+    assert.match(saved.result.warnings.join(''),/不筛发行人行业/);
+  }
+  const literal=await newInventoryAnswer(store.db,snap,{...base,filters:{sourceMarketType:'信用债'}});
+  assert.equal(literal.totalCents,100);
+  const old='before-credit-rule';
+  await store.db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(old,snap.id,JSON.stringify({...base,filters:{marketType:'非金融企业信用债'},typeRules:1}),'old').run();
+  assert.equal((await exportData(store.db,old)).result.rowCount,0);
 });
 
 test('a saved multi-stage program can change cohorts repeatedly and reconcile details and workbook after snapshot replacement',async()=>{

@@ -1,5 +1,7 @@
 "use strict";
 
+import {presentAnswer} from "./answer-presentation.js?v=5.5.2";
+
 const $ = (id) => document.getElementById(id);
 const api = "../api/inventory/";
 const groupNames = { issuer: "发行人", branch: "联动分行", portfolio: "交易组合", scope: "持仓范围", account: "会计科目", marketType: "债券类型", sourceMarketType: "原表债券类型", code: "逐券", none: "全部持仓" };
@@ -358,9 +360,26 @@ function showChart(groups, data) {
 }
 function renderAnswer(current = state.current, target = $("current-answer"), view = state) {
   if (!current) return;
+  const {data, label} = current;
+  const panel = presentAnswer(current, () => {
+    const download = button("下载完整 Excel", () => view.download ? view.download(download) : exportResult(data,download));
+    return [button("查看匹配明细", () => openDetail(data,null)),download];
+  }, () => {
+    const detail = node("div");
+    renderInventoryLedger(current,detail,view);
+    return detail;
+  });
+  if (panel) {
+    const article = node("article",null,"answer");
+    if (label) article.append(node("p",label,"user-question"));
+    article.append(panel);
+    target.replaceChildren(article);
+  } else renderInventoryLedger(current,target,view);
+}
+function renderInventoryLedger(current, target, view) {
   const { data, label, manual } = current;
   const groupCount = data.groupCount ?? data.groups.length;
-  const rerender = () => renderAnswer(current,target,view);
+  const rerender = () => renderInventoryLedger(current,target,view);
   const article = node("article", null, "answer");
   const m = displayMetric(data);
   const metric = node("div", m.display, "metric"); metric.append(node("small", m.unit));
@@ -455,6 +474,10 @@ function archiveTurn(turn) {
       renderAnswer({label,data,manual:action==="manual"&&!identityValue},body,{view:"table",expanded:false});
       return;
     }
+    if (data.overview?.length && !data.identity) {
+      record.append(overviewArticle(data,"",false));
+      return;
+    }
     record.append(node("p",data.clarification));
     appendTrace(record,data.trace);
     if (data.identity) {
@@ -462,12 +485,7 @@ function archiveTurn(turn) {
       if (hints.length) record.append(table(["发行人","券数","本金（亿元）"],hints.map(h=>[h.name,count(h.securityCount),billions(h.totalCents)]),[1,2]));
       const other=data.identity.candidates.filter(name=>!hints.some(h=>h.name===name));
       if (other.length) record.append(node("p",other.join("、")));
-    }
-    for (const {title,result} of data.overview || []) {
-      record.append(node("h3",title));
-      if (!result.resultId) { record.append(node("p",result.clarification || result.summary)); continue; }
-      const body=node("div"); record.append(body);
-      renderAnswer({label:title,data:result},body,{view:"table",expanded:false});
+      if (data.overview?.length) record.append(overviewEvidence(data,false));
     }
   });
   $("history").append(record);
@@ -503,16 +521,26 @@ function rememberTurn(question, data) {
   state.conversation.push(turn);
   if (state.conversation.length > 8) state.conversation.shift();
 }
-function showSubjectOverview(data, label) {
-  state.current = null;
+function overviewArticle(data,label,mayContinue) {
   const article = node("article", null, "answer");
-  article.append(node("p", label, "question"),node("p", data.clarification));
+  if(label) article.append(node("p",label,"user-question"));
+  const evidence=()=>overviewEvidence(data,mayContinue);
+  article.append(presentAnswer(data,()=>[],evidence)||evidence());
+  return article;
+}
+function overviewEvidence(data,mayContinue) {
+  const article=node("div");
+  article.append(node("p", data.clarification));
   appendTrace(article, data.trace);
   for (const {title,result} of data.overview) {
     const section = node("section", null, "source");
     section.append(node("h3",title));
     if (!result.resultId || result.roleEvidence?.kind === "unknown") {
       section.append(node("p", result.clarification || result.summary));
+    } else if (!mayContinue) {
+      const body=node("div");
+      renderInventoryLedger({label:title,data:result},body,{view:"table",expanded:false});
+      section.append(body);
     } else {
       section.append(node("p", result.snapshot.date + " · " + count(result.securityCount) + " 只 · " + billions(result.totalCents) + " 亿元"));
       if(result.groups.length) section.append(node("p",result.groups.slice(0,8).map(groupLabel).join("、") + (result.groups.length>8?" 等":"")));
@@ -525,7 +553,7 @@ function showSubjectOverview(data, label) {
     }
     article.append(section);
   }
-  $("current-answer").replaceChildren(article);
+  return article;
 }
 function showIdentityChoice(data, label, options) {
   if (!options) state.current = null;
@@ -602,7 +630,7 @@ function applyTurn(turn, live) {
       syncAnswerSnapshot(data.resume.snapshotId);
       showIdentityChoice(data,turnLabel);
     } else if (Array.isArray(data.overview)) {
-      showSubjectOverview(data,turnLabel);
+      $("current-answer").replaceChildren(overviewArticle(data,turnLabel,true));
     } else {
       const article = node("article",null,"answer");
       article.append(node("p",turnLabel,"question"),node("p",data.clarification));
@@ -987,7 +1015,7 @@ export function showJointSnapshots(snapshots, selected, onSelect) {
   state.selected = selected;
   showSnapshots(onSelect);
 }
-export {renderAnswer as renderInventoryAnswer,showIdentityChoice as renderInventoryIdentity};
+export {renderAnswer as renderInventoryAnswer,renderInventoryLedger,showIdentityChoice as renderInventoryIdentity,openDetail as openInventoryDetail};
 if (document.body.dataset.workspace !== "joint") {
   bindInventoryPage();
   bindInventoryTools();

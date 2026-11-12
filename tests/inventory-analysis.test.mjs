@@ -24,6 +24,17 @@ test('account aliases work in contains filters without changing old plans or lit
   assert.equal(normalizeAnalysis([filter('原表:会计分类','contains','OCI'),group()])[0].value,'OCI');
 });
 
+test('credit group membership uses the raw product and never changes grouping or literal source comparisons',()=>{
+  const types=['Commercial Paper','定向工具','MBS/ABS','信用债'];
+  const sample=types.map((marketType,i)=>({...rows[i],marketType,queryMarketType:i===0?'其他归集品种':marketType}));
+  const codes=(field,op)=>runAnalysis(sample,[filter(field,op,'信用债'),group()]).rows.map(r=>r.sourceRow).sort();
+  assert.deepEqual(codes('marketType','contains'),[3,5]);
+  assert.deepEqual(codes('marketType','neq'),[4,7]);
+  assert.deepEqual(codes('sourceMarketType','eq'),[4]);
+  const literal=runAnalysis(sample,[filter('marketType','eq','信用债'),group()],2,false);
+  assert.deepEqual(literal.rows.map(r=>r.sourceRow),[4]);
+});
+
 test('selects top issuers, regroups their original rows by two columns and preserves source drilldowns',()=>{
   const result = runAnalysis(rows,[filter('branch','eq','京'),group('issuer'),take(2),expand,group('issuer','account')]);
   assert.deepEqual(result.dimensions,['issuer','account']);
