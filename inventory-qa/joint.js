@@ -1,5 +1,5 @@
 import {setupJointInventory,showJointSnapshots,renderInventoryAnswer,renderInventoryIdentity} from "./inventory.js?v=5.5.1";
-import {setupJointTrades,showJointLedgers,renderTradeAnswer} from "./trades.js?v=5.5.1";
+import {setupJointTrades,showJointLedgers,renderTradeAnswer} from "./trades.js?v=5.5.1-r2";
 
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});

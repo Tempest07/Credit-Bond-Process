@@ -113,6 +113,7 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
       const availableTradeTotals=trade?.completeCoverage===true?['buyCents','sellCents','netCents','rows']
         .filter(k=>Number.isFinite(trade.totals[k])&&(plan.direction==='both'||k==='rows'||k===plan.direction+'Cents')):[];
       return {id:s.id,source:s.source,question:s.question,availableTradeTotals,
+        settlementRange:trade?plan?.filters?.find(f=>f.field==='交易交割日'&&f.op==='between')?.value:undefined,
         groupBy:s.data?.securityMembers?.length?['code']:plan?.groupBy||s.data?.dimensions||plan?.group,
         snapshotDate:s.data?.snapshot?.date||s.snapshotDate,start:plan?.start||s.start,end:plan?.end||s.end,
         ...(s.spec?{spec:s.spec}:{})};
@@ -140,7 +141,7 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
         [{question:history.at(-1).question,answer:{arithmetic:history.at(-1).answer.arithmetic}}]:history});
       result.arithmetic=await calculate(result.steps,plan.previousSteps);
       if(result.arithmetic.missing && !result.steps.some(s=>s.data?.notes?.some(n=>n.includes('没有锁定已核验')))){
-        const next=await planner({...args,apiKey,history:plannerHistory,
+        const next=await planner({...args,apiKey,history:plannerHistory,userQuestion:question,
           question:(question+'\n计算器核对后还缺以下中间结果，请重新规划可完整执行的查询，保持原题条件与分母：'+result.arithmetic.missing).slice(0,1200)});
         if(next.steps?.length||next.previousSteps?.length){
           const revised=await runPlan(next);

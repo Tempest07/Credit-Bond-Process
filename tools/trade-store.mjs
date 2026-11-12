@@ -405,7 +405,12 @@ export async function tradeExportSheets({db,bucket},plan,versionIds,verifiedMemb
    ...(s.plan.share?[totals[shareKey]?g[shareKey]/totals[shareKey]:'']:[]),
    ...(isDateRange?[g.dates?.firstTrade||'',g.dates?.lastTrade||'',g.dates?.firstSettlement||'',g.dates?.lastSettlement||'',g.dates?.missingSettlement||0]:[])];
  const dims=s.plan.groupBy.length?s.plan.groupBy:['范围'];
- function* summary(){yield ['全部匹配',...dims.slice(1).map(()=>''),...summaryNumbers(totals)];for(const g of list)yield [...g.values,...summaryNumbers(g)];}
+ function* summary(){
+   const numbers=summaryNumbers(totals);
+   if(!s.completeCoverage&&!totals.rows)yield ['覆盖不足，无法确认交易本金和笔数',...dims.slice(1).map(()=>''),...numbers.map(()=>'')];
+   else yield ['全部匹配',...dims.slice(1).map(()=>''),...numbers];
+   for(const g of list)yield [...g.values,...summaryNumbers(g)];
+ }
  return [
    {name:'交易汇总',headers:[...dims,'增持本金（元）','减持本金（元）','净增持本金（元）','双向合计（元）','交易笔数','不同券数',
      ...(average?['买入笔数','卖出笔数','每笔买入平均本金（元）','每笔卖出平均本金（元）','全部匹配交易每笔平均本金（元）']:[]),

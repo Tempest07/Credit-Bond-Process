@@ -129,13 +129,36 @@ function renderTurn({question,answer}, downloadOverride) {
   }
   if (!answer.result) return article;
   const {result,plan} = answer;
+  const range = [plan.start || "最早一期", plan.end || "已上传最新一期"].join(" 至 ");
+  const criteria = plan.filters.map(f => f.op==="notEmpty"?f.field+"非空":f.field + "：" + (Array.isArray(f.value) ? f.value.join(f.op==="between"?" 至 ":"、") : f.value));
+  const label = plan.groupBy.length ? "全部匹配交易 · " + metricNames[plan.metric] : metricNames[plan.metric];
+  article.append(el("p",[label,range,...criteria].join(" · "),"meta"));
+  const incomplete = result.completeCoverage === false || (result.completeCoverage == null && result.warnings?.some(w=>/仅覆盖至|尚未导入|尚未覆盖/.test(w)));
+  if (incomplete && result.totals.rows===0) article.append(el("p","覆盖不足，无法确认所问期间的交易本金和笔数。","summary"));
+  else renderFigures(article,plan,result);
+  for (const message of result.warnings || []) article.append(el("p",message,"warning"));
+  const commands = el("div",null,"view-actions");
+  const download = action("下载完整 Excel",() => downloadOverride ? downloadOverride(download) : downloadAnswer(answer.id,download));
+  commands.append(download);
+  article.append(commands);
+  const sources = el("details",null,"source");
+  sources.append(el("summary","口径与来源"));
+  sources.append(el("p","按交易流水名义本金统计。净增持＝增持－减持。"));
+  const sourceList = el("ul",null,"flow-sources");
+  for (const s of answer.sources || []) {
+    const oldVersion = state.books.some(b=>b.year===s.year && b.direction===s.direction && b.id!==s.id);
+    sourceList.append(el("li",s.filename + (s.sheet ? " · " + s.sheet : "") + (s.asOf ? " · 截至 " + s.asOf : "") + (oldVersion ? " · 修订前版本" : "")));
+  }
+  sources.append(sourceList);
+  if ((answer.sources || []).some(s => state.books.some(b => b.year===s.year && b.direction===s.direction && b.id!==s.id)))
+    sources.append(el("p","本段对话沿用首次查询的台账版本。新开对话可使用更新后的台账。"));
+  article.append(sources);
+  return article;
+}
+function renderFigures(article,plan,result) {
   const metric = plan.metric, key = moneyFields[metric] || metric;
   const unit = moneyFields[metric] ? "亿元" : metric === "bonds" ? "只" : "笔";
   const format = metric==="average"?meanAmount:moneyFields[metric] ? amount : integer;
-  const range = [plan.start || "最早一期", plan.end || "已上传最新一期"].join(" 至 ");
-  const criteria = plan.filters.map(f => f.op==="notEmpty"?f.field+"非空":f.field + "：" + (Array.isArray(f.value) ? f.value.join(f.op==="between"?" 至 ":"、") : f.value));
-  const label = plan.groupBy.length ? "全部匹配交易 · " + metricNames[metric] : metricNames[metric];
-  article.append(el("p",[label,range,...criteria].join(" · "),"meta"));
   if(metric!=="dateRange"){
     const headline = el("div",format(result.totals[key]),"metric");headline.append(el("small",unit));article.append(headline);
   }
@@ -157,7 +180,6 @@ function renderTurn({question,answer}, downloadOverride) {
     const value=h.unit==='分'?amount(h.value)+' 亿元':integer(h.value)+' '+h.unit;
     article.append(el("p",h.label+"　"+value,"summary"));
   }
-  for (const message of result.warnings || []) article.append(el("p",message,"warning"));
   if(metric==="dateRange"){
     const tbl=el("table"),head=tbl.createTHead().insertRow(),body=tbl.createTBody();
     const dates=["firstTrade","lastTrade","firstSettlement","lastSettlement"];
@@ -169,23 +191,6 @@ function renderTurn({question,answer}, downloadOverride) {
     const wrap=el("div",null,"flow-scroll");wrap.append(tbl);article.append(wrap);
     article.append(el("p","统计实际交易日期落在所选范围内的流水，交割日取这些流水中已填的日期。","meta"));
   }else if (plan.groupBy.length && result.groups.length) article.append(renderGroups(result,plan));
-  const commands = el("div",null,"view-actions");
-  const download = action("下载完整 Excel",() => downloadOverride ? downloadOverride(download) : downloadAnswer(answer.id,download));
-  commands.append(download);
-  article.append(commands);
-  const sources = el("details",null,"source");
-  sources.append(el("summary","口径与来源"));
-  sources.append(el("p","按交易流水名义本金统计。净增持＝增持－减持。"));
-  const sourceList = el("ul",null,"flow-sources");
-  for (const s of answer.sources || []) {
-    const oldVersion = state.books.some(b=>b.year===s.year && b.direction===s.direction && b.id!==s.id);
-    sourceList.append(el("li",s.filename + (s.sheet ? " · " + s.sheet : "") + (s.asOf ? " · 截至 " + s.asOf : "") + (oldVersion ? " · 修订前版本" : "")));
-  }
-  sources.append(sourceList);
-  if ((answer.sources || []).some(s => state.books.some(b => b.year===s.year && b.direction===s.direction && b.id!==s.id)))
-    sources.append(el("p","本段对话沿用首次查询的台账版本。新开对话可使用更新后的台账。"));
-  article.append(sources);
-  return article;
 }
 function renderGroups(result,plan) {
   const part = el("section"), head = el("div",null,"result-head");

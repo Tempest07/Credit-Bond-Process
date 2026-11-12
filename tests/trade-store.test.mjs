@@ -192,6 +192,17 @@ test('partial annual ledgers cover an earlier settlement month including trades 
  assert.equal(january.totals.sellCents,13000);assert.match(january.warnings.join(''),/按已入账流水的交易交割日/);
  const november=await runTradeQuery(r,byMonth('2024-11'));assert.equal(november.completeCoverage,false);
  assert.match(november.warnings.join(''),/仅覆盖至/);
+ for(const [p,unconfirmed,rows] of [
+   [byMonth('2024-11'),true,0], // Entire settlement month after the uploaded cutoff.
+   [byMonth('2024-02'),false,0], // Covered month with no settlement.
+   [{...byMonth(''),filters:[{field:'交易交割日',op:'between',value:['2024-01-01','2024-11-30']}]},false,5]
+ ]){
+   const x=new ExcelJS.Workbook();await x.xlsx.load(await exportTradeQuery(r,p));
+   const sheet=x.getWorksheet('交易汇总');
+   const count=sheet.getRow(1).values.indexOf('交易笔数');
+   assert.match(sheet.getCell('A2').value,unconfirmed?/覆盖不足/:/全部匹配/);
+   if(unconfirmed)assert.ok([null,''].includes(sheet.getCell(2,count).value));else assert.equal(sheet.getCell(2,count).value,rows);
+ }
  const enumerated=await runTradeQuery(r,{...byMonth('2024-01'),filters:[{field:'交易交割日',op:'in',value:['2024-01-02','2024-01-03']}]});
  assert.equal(enumerated.completeCoverage,true);assert.deepEqual(enumerated.totals,january.totals);
  const bySettlement={...byMonth('2024-01'),filters:[{field:'交易交割日',op:'between',value:['2024-01-02','2024-01-03']}]};

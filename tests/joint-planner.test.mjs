@@ -58,6 +58,30 @@ test('a flow follow-up can reuse verified trade operands when balance snapshots 
   const invalid=await planJointQuestion({...follow,fetchImpl:mock(()=>({kind:'previousCalculation',from:['previous2'],flowVsBalance:false}))});
   assert.match(invalid.clarification,/上轮/);
 });
+test('changing the date basis reuses the measured month, while an independent or explicit date request can move it',async()=>{
+  const history=[{question:'5月全账的买入卖出额？',steps:[step('trade','5月按交易日确认',{start:'2026-05-01',end:'2026-05-31'})]}];
+  const next=q=>({kind:'steps',comparison:'none',steps:[step('trade',q,{})]});
+  let calls=0;
+  const changed=await planJointQuestion({...data,history,question:'本月改按交割发生日期确认，同样三个数字。',fetchImpl:mock(input=>{
+    assert.deepEqual(input.retainedTradeRange,['2026-05-01','2026-05-31']);
+    if(calls++)assert.match(input.correction,/2026-05-01/);
+    return next(calls===1?'按2026年11月1日至30日交割统计':'按交割发生日期统计同一期买卖额');
+  })});
+  assert.equal(calls,2);
+  assert.equal(changed.steps[0].start,null);
+  assert.match(changed.steps[0].question,/2026-05-01 至 2026-05-31/);
+  const reverse=[{question:'五月交割数据？',steps:[step('trade','按交割日',{settlementRange:['2026-05-01','2026-05-31']})]}];
+  await planJointQuestion({...data,history:reverse,question:'改为按交易日期呢？',fetchImpl:mock(input=>{
+    assert.deepEqual(input.retainedTradeRange,['2026-05-01','2026-05-31']);
+    return next('按成交日统计');
+  })});
+  for(const question of ['现在的本月改按交割日期呢？','这个自然月改按交割日','期间改到本月，改按交割日期','改按交割日看六月','今天的交易？','近期各账户净买入？','本月买卖多少？']){
+    await planJointQuestion({...data,history,question,fetchImpl:mock(input=>{
+      assert.equal(input.retainedTradeRange,undefined,question);
+      return next('查询指定期间的买卖');
+    })});
+  }
+});
 test('regroup references an executed inventory question and preserves its date, including follow-ups',async()=>{
   const input={...data,question:'这些主体各自的品种分布和合计呢？',
     history:[{question:'上期头部发行人',steps:[step('inventory','上期头部发行人',{snapshotDate:'2026-10-29',groupBy:['issuer']})]}]};

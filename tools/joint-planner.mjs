@@ -9,6 +9,7 @@ const instructions = `你是 Bond Centre 台账问数的查询编排器。按照
 各步骤自动编号 s1、s2…。对单源复杂提问（例如在一个数据源内先排名再拆会计科目）交给那个数据源自行拆解。对联合问题生成彼此独立可读的单源子问题；每步保留分行、会计科目、主体、品种、分组及指标等范围条件，不能增加事实。问持仓或交易有哪些、简称、归属等交给单源查证，不能在这一级因缺少具体全称就拒绝。用户未指定口径时使用人民币名义本金。净增持等于买入减卖出。用户同时提到“持仓余额与净增持”只需并列时 comparison=none，不能拿截面余额和期间净买入机械相减。
 selectedDate 是界面所选库存快照（可能不是最新），today 是上海自然日。没有换期意图时库存沿用当前选择或前文实际日期。明确问“最新”取 snapshots 中最后一天。“今年、去年、本月、上月”相对 today，若指“该期、当月”则锚定用户或上下文的快照年月。明确指定且未上传的业务日要澄清。问某月末/年末的库存，使用该期内最后一份已导入快照，子问题写明实际快照日期。若明确问最新且是历史追问，按当前可用日期。不要用更晚的日期回答此前的库存。日期不能从数据业务日期代替流水交易日。trade 的 start/end 是交易日闭区间。对单源交易的文件年度、没有指定日期的问题可用 null 并将口径写入 question。用户同时问两源时，按实际问题分别确定时点和期间。
 仅按交割日期归期的流水步骤，start/end 均填 null，在 question 明写交割日的完整闭区间。比较按交易日、按交割日统计的规模或笔数时，用两个独立步骤分别取数，每个 question 只写本步的日期口径和业务条件，最后用 derive 比较。交易日步骤的 start/end 填成交期间。
+若 retainedTradeRange 有值，它是本轮已经确认沿用的上轮流水区间。仅更换原问题的统计口径时，“本月/这个月”指该比较区间，所有交易子问题写明其实际首尾日。若用户另问当前时间、显式换期或指定新日期，按其新要求决定期间。
 问相差、增减多少等余额变化时 comparison=balanceChange，步骤顺序为期初库存、期末库存；两步查同一范围的本金。问“余额变化和净买入对得上吗”“差异多少”时 comparison=reconcile，顺序是期初库存、期末库存、两快照之间同范围的净买入。两个快照必须存在，且期初早于期末。流水取期初次日至期末当天。按库存余额问较年初时，以截止年份上一年12月31日收盘作基期；缺少该快照要明确指出。问自然月变化时用上月末最后可用快照与该月末最后可用快照；实际两期及期间要在子问题中写明。若用户明确要求其他流水范围，保留其原期间，分别列数 comparison=none；不能拿不一致的周期强行对账。缺少期间/范围而又无法从已选日期、数据或上下文合理决定时，clarification 简短说明要补哪一点。
 跨来源引用结果时，第一步按 issuer发行人、code券码、branch联动分行 或 account会计科目进行单维分组/排名，后一步 selection 引用该步真实成员。比如“持仓前五发行人这个月净买多少”，s1 查快照按发行人排名，s2 查当月交易，对 s1 的 issuer 限前5。若问这些主体分别的金额，要在 s2 子问题保留按发行人分组。selection.from 用 s1 等前面步骤，或 previous1、previous2 等上轮实际步骤，从1开始。只有显式所指的排序/名单可跨步骤，按真实排名取整份名单(limit=null,indices=[])、前N(limit=N,indices=[])或第几名(limit=null,indices=[序号])。问到范围外的排名要澄清。后续子问题直接写所求指标、已有业务条件和分组，不写“刚才这些家”或指示另一个引擎去猜名单；执行器会强制加名单筛选。持仓和交易并列看同一分行不需要 selection，每个子问题都写明分行。普通单源追问保留用户语义及已知日期/分行等条件交给现有查询执行器。用户明确更换范围、日期或对象时按新要求。
 库存同一批持仓的追问可直接用 inventory 的 regroup 操作：from 指向一个已完成的库存答案（如 previous1 或本轮的 s1），dimensions 指定要展示的维度，metric 取 principal、count 或 securities。它对该答案实际命中的全部原表行重新分组，自动保留之前的分行、日期、排名和行范围，同时返回各组与整批合计。已经按本金等截取排名，问“这些对象各自按另一维度拆”时，优先用这个操作，把原名单维度和新拆分维度一起写入 dimensions；问“这批按另一维度总共多少”则只写新维度，问整批合计写 []。无需重取名单，不另造合计步骤。它沿用原结果全部行；如果用户要变动日期、行条件、只取部分成员、重排名或计算其他指标，要另用相应查询步骤。问同一主体的发行持仓、增信 ABS、两类重叠或合计，使用一个完整的普通 inventory 问题，原样保留角色与去重要求，库存工具会按同一快照的原表行号核算两类及并集。
@@ -92,12 +93,23 @@ function historyInput(history) {
     steps:(turn.steps||[]).slice(0,5).filter(step=>sources.has(step.source)).map((step,index)=>({
       id:'previous'+(index+1),source:step.source,question:String(step.question||'').slice(0,1200),
       snapshotDate:step.snapshotDate||null,start:step.start||null,end:step.end||null,
+      ...(step.source==='trade'&&step.settlementRange?.length===2&&step.settlementRange.every(isDate)?{settlementRange:step.settlementRange}:{}),
       ...(step.availableTradeTotals?.length?{availableTradeTotals:step.availableTradeTotals.filter(k=>Object.hasOwn({buyCents:1,sellCents:1,netCents:1,rows:1},k))}:{}),
       ...(step.source==='portfolio' && step.spec ? {spec:Object.fromEntries(portfolioKeys.map(k=>[k,step.spec[k]??null]))}:{}),
       ...(step.groupBy ? {groupBy:[].concat(step.groupBy).slice(0,5).map(k=>String(k).slice(0,100))}:{}),
     })),
     ...(turn.clarification?{clarification:String(turn.clarification).slice(0,400)}:{}),
   }));
+}
+function retainedTradeRange(question,previous){
+  // A change of measurement basis can refer to the same period even when the user
+  // calls it "本月". Explicit calendar requests take precedence over that reference.
+  const basisChange=/(?:改|换|调整)[^，。；？?\d]{0,12}(?:成交|交易|交割|结算)(?:发生)?日/u;
+  const newRange=/(?:\d{4}[-/年]|[\d一二三四五六七八九十]+\s*(?:月|季度|号)|今天|今日|现在|当前|目前|眼下|这(?:个|一)?自然月|本自然月|最近|近期|截至|[上下](?:个)?月|下期|去年|今年|明年|本周|本季|本年度|年初|年末|(?:换到|改到|改为|调整为)\s*(?:本月|这个月))/u;
+  if(!basisChange.test(question)||newRange.test(question))return null;
+  const ranges=previous.filter(s=>s.source==='trade').flatMap(s=>[s.settlementRange,[s.start,s.end]])
+    .filter(r=>r?.length===2&&r.every(isDate));
+  return ranges.length && ranges.every(r=>r[0]===ranges[0][0]&&r[1]===ranges[0][1])?ranges[0]:null;
 }
 class InvalidStep extends Error {}
 function check(ok,message) {
@@ -232,6 +244,15 @@ function validateDecision(decision,context) {
       check(context.hasLedgers,'还没有可查询的增减持台账。');
       check([step.start,step.end].every(d=>d===null || isDate(d)) && !(step.start&&step.end&&step.start>step.end),'请提供有效的交易日期范围。');
       s.start=step.start;s.end=step.end;
+      if(context.retainedTradeRange){
+        const [start,end]=context.retainedTradeRange;
+        const statedMonths=[...s.question.matchAll(/(\d{4})[-年/](\d{1,2})(?=[-月/])/g)]
+          .map(m=>m[1]+'-'+m[2].padStart(2,'0'));
+        check((!s.start||s.start===start)&&(!s.end||s.end===end)&&
+          statedMonths.every(m=>m>=start.slice(0,7)&&m<=end.slice(0,7)),
+          '本轮仅改变日期归期口径，请沿用上一轮流水范围 '+start+' 至 '+end+'，各步骤写出这个区间。');
+        s.question+='（本步期间：'+start+' 至 '+end+'）';
+      }
     }
     result.push(s);
   }
@@ -269,7 +290,7 @@ async function callModel(input,{fetchImpl,effort,apiKey,signal}) {
   catch{throw new InventoryError('无法读取本次联合查询计划，请重试。',502);}
 }
 
-export async function planJointQuestion({question,effort='high',apiKey,snapshots=[],ledgers=[],selectedDate,
+export async function planJointQuestion({question,userQuestion=question,effort='high',apiKey,snapshots=[],ledgers=[],selectedDate,
     history=[],today=new Date(Date.now()+8*3600e3).toISOString().slice(0,10),fetchImpl=globalThis.fetch}) {
   if(!validText(question,1200))throw new InventoryError('请输入 1 至 1200 个字符的台账问题。');
   if(!efforts.has(effort))throw new InventoryError('请选择有效的思考强度。');
@@ -277,12 +298,13 @@ export async function planJointQuestion({question,effort='high',apiKey,snapshots
   const dates=[...new Set(snapshots.map(s=>typeof s==='string'?s:s.date).filter(isDate))].sort();
   if(!dates.length&&!ledgers.length)return {clarification:'请先上传余额或增减持台账。'};
   const turns=historyInput(history),previous=turns.at(-1)?.steps||[];
+  const retained=retainedTradeRange(userQuestion,previous);
   const priorDate=previous.map(s=>s.source==='portfolio'?s.spec?.end:s.snapshotDate).filter(d=>dates.includes(d)).at(-1);
   const selected=selectedDate??priorDate??dates.at(-1)??null;
   if(selected && !dates.includes(selected))throw new InventoryError('所选库存日期不在本次对话的数据范围内。',409);
-  const input={today,selectedDate:selected,snapshots:dates,
+  const input={today,selectedDate:selected,snapshots:dates,...(retained?{retainedTradeRange:retained}:{}),
     ledgers:ledgers.map(({year,direction,asOf})=>({year,direction,asOf})),history:turns,question};
-  const context={snapshots:dates,selectedDate:selected,hasLedgers:ledgers.length>0,previous,previousSets:turns.at(-1)?.memberSets,userTerms:[question,...turns.map(t=>t.question)]};
+  const context={snapshots:dates,selectedDate:selected,hasLedgers:ledgers.length>0,previous,previousSets:turns.at(-1)?.memberSets,userTerms:[question,...turns.map(t=>t.question)],retainedTradeRange:retained};
   const options={fetchImpl,effort,apiKey:apiKey.trim(),signal:AbortSignal.timeout(90000)};
   for(let attempt=0;attempt<2;attempt++){
     let decision;
