@@ -59,7 +59,8 @@ export function chooseAnswerView(result, measureKey) {
   const measure = result?.measures?.find(m => m.key === measureKey) ?? result?.measures?.[0];
   if (!measure || result.coverage === "missing" || !result.rows?.some(r => finite(r[measure.key]))) return "missing";
   const { rows, dimensions } = result;
-  if (rows.length === 1 && !usableWhole(result, measure)) return "scalar";
+  const share = !result.preferAmount && usableWhole(result,measure);
+  if (rows.length === 1 && !share) return "scalar";
   if (dimensions.length !== 1) return "table";
   const dim = dimensions[0];
   const labels = rows.map(row => row[dim.key]);
@@ -68,7 +69,7 @@ export function chooseAnswerView(result, measureKey) {
     if (!labels.every(v => finite(dateValue(v)))) return "table";
     return rows.length > 2 || (result.preferTrend && rows.length>=2) ? "trend" : "comparison";
   }
-  if (usableWhole(result, measure)) return "share";
+  if (share) return "share";
   if (measure.signed || rows.some(r => finite(r[measure.key]) && r[measure.key] < 0)) return "diverging";
   if (result.orderedBy?.key === measure.key) return "ranking";
   return rows.length === 2 ? "comparison" : "bars";
@@ -557,7 +558,7 @@ export function createAnswerViews(models) {
             state.metric = i; state.picked = null; state.barPage = 0; draw(key);
           }));
         } else if (kind !== "missing" && !(kind === "scalar" && (lead?.includesScalar || shownScalar))) {
-          tools.append(element("span", "av-measure", unitLabel(measure)));
+          tools.append(element("span", "av-measure", kind==="share" ? measure.label+"占比（%）" : unitLabel(measure)));
         }
         if (tools.childElementCount) content.append(tools);
         if (kind === "missing") {
@@ -572,7 +573,7 @@ export function createAnswerViews(models) {
             }
           }
           else if (kind === "trend") content.append(timeChart(result, measure, items, state, draw));
-          else content.append(barChart(result, measure, items, state, kind, draw));
+          else content.append(barChart(result, measure, items, state, kind, draw, result.preferAmount && measure.key===result.whole?.measureKey));
         }
       }
     }

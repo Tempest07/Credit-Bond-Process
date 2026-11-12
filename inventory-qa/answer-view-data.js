@@ -85,7 +85,7 @@ function ledgerSource(d) {
 function uncertainRole(d) {
   return ['unknown','candidate'].includes(d?.roleEvidence?.kind);
 }
-function inventory(d) {
+function inventory(d,question='') {
   if (!d?.plan || !Array.isArray(d.groups) || uncertainRole(d)) return null;
   const m = inventoryMetric(d);
   if (!m) return null;
@@ -109,6 +109,11 @@ function inventory(d) {
   }
   if (!fields.length || !d.groups.length) return scalar(m.label, text, ledgerSource(d), m, total, extra);
   const measures=[m];
+  const wantsRows=/(?:持仓|记录|原表)行数|多少条持仓|几条持仓/u.test(question);
+  const wantsSecurities=/(?:不同券|持仓券|债券|券码)数|多少只(?:债|券)/u.test(question);
+  for(const key of [wantsRows && 'count',wantsSecurities && 'securities']){
+    if(key && key!==m.key && d.groups.every(g=>inventoryValue(d,ledgerMetrics[key],g)!==null))measures.push(ledgerMetrics[key]);
+  }
   // A bucket's threshold or sort may use another verified aggregate. Expose the
   // number that decided membership beside the requested measure.
   const aggregateKeys={securityCount:'securities',rowCount:'count',principalCents:'principal'};
@@ -141,6 +146,7 @@ function inventory(d) {
       rows.forEach((row,i)=>{row.principal=yi(d.groups[i].cents);});
     }
     extra.whole = {measureKey:'principal', value:yi(d.totalCents), label:'本次查询全部匹配持仓本金'};
+    if(question && !shareOfPrincipal && !/(?:占比|各占|占.{0,8}多少|占.{0,8}比例|比重|份额|构成|饼图|百分比|占全行)/u.test(question))extra.preferAmount=true;
   }
   // Preserve an actual backend order (the SQL and analysis paths can rank by different metrics).
   const sorts = list(d.plan.analysis).filter(s => s.op === 'sort');
@@ -480,10 +486,10 @@ function arithmetic(a, preferred, steps) {
   return sample('计算结果',answer,source,[field('item','计算项'),field('unit','单位')],
     [measure('value','数值','')],computed.map(r=>({item:[r.label,r.flowDirection].filter(Boolean).join(' · '),unit:r.unit,value:r.value})),extra);
 }
-function oneStep(step) {
+function oneStep(step,question) {
   const d=step?.data;
   if(!d)return null;
-  if(step.source==='inventory')return d.overview ? overview(d) : inventory(d);
+  if(step.source==='inventory')return d.overview ? overview(d) : inventory(d,question);
   if(step.source==='portfolio')return portfolio(d);
   if(step.source==='trade')return trade(d);
   return null;
@@ -537,7 +543,7 @@ function modelsFrom(input) {
   if(!a || typeof a!=='object')return [];
   if(!Array.isArray(a.steps)){
     const source=a.spec?'portfolio':a.result?.totals?'trade':a.resultId||a.overview||a.plan?.group?'inventory':null;
-    const model=oneStep({source,data:a});
+    const model=oneStep({source,data:a},input.question||input.label);
     return model?[model]:[];
   }
   const steps=a.steps;
@@ -551,7 +557,18 @@ function modelsFrom(input) {
     }
     return [];
   }
-  const candidate=steps.length===1?oneStep(steps[0]):inventoryPeriods(steps)||weeklyPeriods(steps);
+  const candidate=steps.length===1?oneStep(steps[0],input.question||input.label):inventoryPeriods(steps)||weeklyPeriods(steps);
+  const question=input.question||'';
+  const d=steps.length===1 && steps[0].data, result=candidate?.result;
+  if(steps[0]?.source==='inventory' && d?.resultId && result?.dimensions.length===1 && result.rows.length &&
+      !a.arithmetic && !a.comparison && !a.alignment && !list(a.methodNotes).length && !d.groupsTruncated &&
+      (d.groupCount==null || d.groupCount===result.rows.length) && /哪些.{0,10}(?:会计科目|债券类型|交易组合)|(?:会计科目|债券类型|交易组合).{0,8}有哪些/u.test(question) &&
+      /名单|只列名称/u.test(question) && !/多少|金额|本金|占比|比例/u.test(question)){
+    const column=result.dimensions[0];
+    return [{shortTitle:column.label+'名单',source:candidate.source,answer:result.rows.length+' 个'+column.label,
+      result:{dimensions:[column],measures:[],columns:[column],rows:result.rows.map(r=>({[column.key]:r[column.key]})),
+        coverage:result.coverage,defaultTable:true}},candidate];
+  }
   if(list(a.methodNotes).length){
     // Older saved turns retain the caution as text, without the planner's
     // note type. Only two complete, comparable observations can form this chart.
@@ -954,7 +971,7 @@ export function answerViewModels(input) {
     list(r.inputs).length && r.inputs.every(input=>input?.label && (input.value===null || finite(input.value))));
   if(calculations.length)models[0]={...models[0],calculations};
   const wantsTable=/(?:做成|列成|整理成|做一张|放在一张|给我一张|用)\s*(?:明细|汇总|对照|数据|可排序的)?表(?:格)?|(?:本金|金额|笔数|发行人|券码)(?:明细|汇总|排名)?表(?:格)?(?=[，。？！\s]|$)|打开分析台/u.test(question);
-  const tableEdit=/(?:这张表|分月表|月度表|明细表).{0,24}(?:多一列|加一列|排序|只留|按.+排)|(?:列出|给我看|展开).{0,50}(?:持仓|交易)明细/u.test(question);
+  const tableEdit=/(?:换成|改成|改用|换用|转成|切换到)\s*(?:一[张份个])?\s*(?:明细|汇总|对照|数据)?表(?:格)?|(?:这张表|分月表|月度表|明细表).{0,24}(?:多一列|加一列|排序|只留|按.+排)|(?:列出|给我看|展开).{0,50}(?:持仓|交易)明细/u.test(question);
   if(wantsTable||tableEdit||/(?:给我|做|整理|出)一张[^，。？！]{1,80}的表(?:格)?[，。？！\s]/u.test(question+'。'))
     models[0]={...models[0],result:{...models[0].result,defaultTable:true}};
   if(/(?:表后|表尾|表底|表末|最后一行|最后加|加一行).{0,12}(?:总计|合计)|(?:合计|总计).{0,6}(?:行|放表尾)/u.test(question)){

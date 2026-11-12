@@ -3,6 +3,22 @@ import assert from 'node:assert/strict';
 import {answerViewModels} from '../inventory-qa/answer-view-data.js';
 import {chooseAnswerView} from '../inventory-qa/answer-views.js';
 
+test('requested currency bars, composition and a table follow-up use the same saved holdings',()=>{
+  const data=snapshot('2020-03-03',3e10);
+  data.plan={...data.plan,group:'account',metric:'principal'};
+  data.groups=[{name:'甲',cents:2e10,count:5,securityCount:4},{name:'乙',cents:1e10,count:3,securityCount:3}];
+  data.rowCount=8;data.groupCount=2;
+  const answer={steps:[{source:'inventory',data}]};
+  const view=question=>answerViewModels({question,answer})[0].result;
+  const bars=view('按科目做横向条形图，本金由高到低。');
+  assert.equal(chooseAnswerView(bars),'ranking');
+  assert.equal(chooseAnswerView(view('按科目，各占多少？')),'share');
+  const table=view('保留刚才的顺序，换成一张表给我，列本金和持仓行数，本金换成万元，保留两位小数。');
+  assert.equal(table.defaultTable,true);
+  assert.deepEqual(table.measures.map(m=>[m.key,m.unit,m.digits]),[['principal','万元',2],['count','条',undefined]]);
+  assert.deepEqual(table.rows.map(r=>[r.principal,r.count]),[[20000,5],[10000,3]]);
+});
+
 test('two account lists display verified distinct counts and retain each complete group',()=>{
   const date='2022-07-01';
   const steps=['AFS','Receivable'].map(account=>({source:'inventory',data:{snapshot:{date},plan:{filters:{account}}}}));
