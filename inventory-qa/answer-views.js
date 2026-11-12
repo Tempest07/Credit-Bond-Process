@@ -54,6 +54,7 @@ function usableWhole(result, measure) {
 
 // Only typed result fields and observed values participate in chart selection.
 export function chooseAnswerView(result, measureKey) {
+  if(result?.columns && !result.measures.length && result.rows?.length)return 'table';
   const measure = result?.measures?.find(m => m.key === measureKey) ?? result?.measures?.[0];
   if (!measure || result.coverage === "missing" || !result.rows?.some(r => finite(r[measure.key]))) return "missing";
   const { rows, dimensions } = result;
@@ -128,17 +129,22 @@ function pager(length, size, current, key, update) {
 
 function matrix(result, state, redraw) {
   const box = element("div", "av-matrix");
-  if (!result.rows.length) return box;
-  const fields = [...result.dimensions, ...result.measures];
+  if (!result.rows.length && !result.columns?.length) return box;
+  const dataFields = [...result.dimensions, ...result.measures];
+  const fields = result.columns ? result.columns.map(c=>dataFields.find(f=>f.key===c.key)) : dataFields;
+  const metrics = new Set(result.measures.map(m=>m.key));
   const rows = result.rows.map((row, index) => ({ row, index }));
   if (state.sort != null) {
     const field = fields[state.sort];
     rows.sort((a, b) => {
       const x = a.row[field.key], y = b.row[field.key];
-      if (state.sort >= result.dimensions.length) return numericSort(x, y, state.ascending);
+      if (metrics.has(field.key)) return numericSort(x, y, state.ascending);
       if (x == null || y == null) return Number(x == null) - Number(y == null);
       return String(x).localeCompare(String(y), "zh-CN") * (state.ascending ? 1 : -1);
     });
+  } else if(result.dimensions.length===1 && result.dimensions[0].kind==='date' && !result.orderedBy) {
+    const key=result.dimensions[0].key;
+    if(rows.every(({row})=>finite(dateValue(row[key]))))rows.sort((a,b)=>dateValue(a.row[key])-dateValue(b.row[key]));
   }
   const caps = new Map();
   // Gray cell bars share one zero-based scale. Distinct units, signed values and
@@ -164,7 +170,7 @@ function matrix(result, state, redraw) {
     if (sorted) th.setAttribute("aria-sort", state.ascending ? "ascending" : "descending");
     const key = "sort" + i;
     const b = button(unitLabel(field), key, () => {
-      state.ascending = sorted ? !state.ascending : i < result.dimensions.length;
+      state.ascending = sorted ? !state.ascending : !metrics.has(field.key);
       state.sort = i;
       state.page = 0;
       redraw(key);
@@ -177,7 +183,7 @@ function matrix(result, state, redraw) {
   for (const { row, index } of rows.slice(state.page * pageSize, (state.page + 1) * pageSize)) {
     const tr = body.insertRow();
     fields.forEach((field, i) => {
-      const cell = tr.insertCell(), v = row[field.key], metric = i >= result.dimensions.length;
+      const cell = tr.insertCell(), v = row[field.key], metric = metrics.has(field.key);
       const label = metric ? format(v) : String(v ?? "缺数");
       if (metric) cell.className = "av-number";
       let value;
@@ -321,8 +327,11 @@ function timeChart(result, measure, items, state, redraw) {
   const stamps = items.map(({ row }) => dateValue(row[d]));
   const first = stamps[0], last = stamps.at(-1);
   const values = items.map(it => it.row[measure.key]);
+  const series = result.measures.length <= 4 && result.measures.every(m=>m.unit===measure.unit) ? result.measures : [measure];
   let lo = Infinity, hi = -Infinity;
-  for (const v of values) if (finite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  for (const m of series) for(const {row} of items) if (finite(row[m.key])) {
+    lo = Math.min(lo, row[m.key]); hi = Math.max(hi, row[m.key]);
+  }
   if (hi === lo) {
     const pad = Math.max(1, Math.abs(hi) * 0.05);
     hi += pad; lo -= pad;
@@ -340,17 +349,23 @@ function timeChart(result, measure, items, state, redraw) {
   svg.setAttribute("class", "av-lines");
   svg.setAttribute("viewBox", "0 0 100 100");
   svg.setAttribute("preserveAspectRatio", "none");
-  svg.setAttribute("aria-hidden", "true");
-  const segments = [];
-  for (let i = 1; i < items.length; i++) {
-    if (finite(values[i - 1]) && finite(values[i]) && adjacentDates(items[i - 1].row[d], items[i].row[d], stamps[i - 1], stamps[i], result)) {
-      segments.push("M", x(i - 1), y(values[i - 1]), "L", x(i), y(values[i]));
+  svg.setAttribute("role","img");
+  svg.setAttribute("aria-label",series.map(m=>m.label).join("、")+"随时间变化");
+  const styles=["","6 4","2 3","7 3 2 3"], legend=element("div","av-legend");
+  for(const [j,m] of series.entries()){
+    const segments=[];
+    for (let i=1;i<items.length;i++) {
+      const before=items[i-1].row[m.key],after=items[i].row[m.key];
+      if(finite(before)&&finite(after)&&adjacentDates(items[i-1].row[d],items[i].row[d],stamps[i-1],stamps[i],result))
+        segments.push("M",x(i-1),y(before),"L",x(i),y(after));
     }
+    const path=document.createElementNS(svgNS,"path");
+    path.setAttribute("d",segments.join(" "));path.setAttribute("vector-effect","non-scaling-stroke");
+    if(j)path.setAttribute("stroke-dasharray",styles[j]);
+    const title=document.createElementNS(svgNS,"title");title.textContent=m.label;path.append(title);svg.append(path);
+    if(series.length>1)legend.append(element("span","av-series-"+j,m.label+"（"+["实线","长虚线","点线","点划线"][j]+"）"));
   }
-  const path = document.createElementNS(svgNS, "path");
-  path.setAttribute("d", segments.join(" "));
-  path.setAttribute("vector-effect", "non-scaling-stroke");
-  svg.append(path); plot.append(svg);
+  plot.append(svg);
   const points = items.map((item, i) => ({ item, i })).filter(({ i }) => finite(values[i]));
   const pickedIndex = points.findIndex(({ item }) => item.index === state.picked);
   const current = points[pickedIndex < 0 ? points.length - 1 : pickedIndex].item;
@@ -378,10 +393,16 @@ function timeChart(result, measure, items, state, redraw) {
   });
   [0, Math.floor((items.length - 1) / 2), items.length - 1].forEach((i, j) => {
     const tick = element("time", "av-time-" + j, items[i].row[d]);
-    tick.style.left = x(i) + "%"; plot.append(tick);
+    tick.style.left = x(i) + "%";
+    if(j===1 && (x(i)-x(0)<23 || x(items.length-1)-x(i)<23)){
+      tick.classList.add("av-stagger");
+      tick.style.transform=x(i)>50?"translateX(-100%)":"none";
+    }
+    plot.append(tick);
   });
   box.append(plot);
   const content = element("div", "av-trend");
+  if(legend.childElementCount)content.append(legend);
   content.append(box, readout(result, current, measure));
   return content;
 }
@@ -400,7 +421,7 @@ export function createAnswerViews(models) {
   const root = element("section", "answer-views");
   const list = Array.isArray(models) ? models.filter(isModel) : [];
   if (!list.length) return root;
-  let selected = 0, mode = 0;
+  let selected = 0, mode = list[0].result.defaultTable ? 1 : 0;
   const states = list.map(model => ({
     metric: Math.max(0, model.result.measures.findIndex(m => model.result.rows.some(row => finite(row[m.key])))),
     picked: null, expanded: null, sort: null, ascending: false, page: 0, barPage: 0,
@@ -420,10 +441,11 @@ export function createAnswerViews(models) {
     const scalarValue = kind === "scalar" ? result.rows[0][measure.key] : undefined;
     const lead = model.answer && answerLead(model.answer, measure, scalarValue, result.headline);
     if (lead) content.append(lead.box);
+    for(const line of model.ratingCoverage||[])content.append(element("p","av-caption",line));
     const hasMeasure = result.measures.some(m => result.rows.some(row => finite(row[m.key])));
     if (result.coverage === "missing" || !result.rows.length) {
       if (!model.answer) content.append(element("p", "av-empty", result.note || "当前数据不足以回答这个问题。"));
-      if (result.coverage === "missing" && result.rows.length) content.append(matrix(result, state, draw));
+      if (result.columns?.length || result.coverage === "missing" && result.rows.length) content.append(matrix(result, state, draw));
     } else {
       if (result.coverage === "partial") content.append(element("p", "av-caption", result.note || "当前仅覆盖部分记录。"));
       if (mode === 1 || kind === "table" || !measure) {
@@ -450,7 +472,25 @@ export function createAnswerViews(models) {
         }
       }
     }
+    if(result.columns && result.note) content.append(element("p","av-caption",result.note));
     const parts = toolbar.childElementCount ? [toolbar, content] : [content];
+    if(model.calculations?.length){
+      const details=element("details","av-source");
+      details.open=state.calculationsOpen ?? model.calculations.reduce((n,c)=>n+c.inputs.length,0)<=6;
+      details.append(element("summary","","计算取数"));
+      for(const row of model.calculations){
+        const inputs=row.inputs.map((input,i)=>{
+          const label=input.label.split(" / ").at(-1);
+          const role=row.op==="share" && row.inputs.length===2 ? (i===0?"分子 · ":"分母 · "):"";
+          const value=finite(input.value)?input.value.toLocaleString("zh-CN",{maximumFractionDigits:8}):"待核";
+          return role+label+" "+value+" "+(input.unit||"");
+        });
+        const line=element("p","",row.label+"："+inputs.join("，"));
+        line.title=row.inputs.map(input=>input.label).join("；");details.append(line);
+      }
+      details.addEventListener("toggle",()=>{if(details.isConnected)state.calculationsOpen=details.open;});
+      parts.push(details);
+    }
     if (model.cautions?.length) {
       const cautions = element("details", "av-source");
       cautions.open = Boolean(state.cautionsOpen);
@@ -460,7 +500,7 @@ export function createAnswerViews(models) {
       cautions.addEventListener("toggle", () => { if (cautions.isConnected) state.cautionsOpen = cautions.open; });
       parts.push(cautions);
     }
-    const sourceNote = result.note && result.coverage !== "partial" && result.note !== model.answer;
+    const sourceNote = result.note && !result.columns && result.coverage !== "partial" && result.note !== model.answer;
     if (model.source || sourceNote) {
       const details = element("details", "av-source");
       details.open = Boolean(state.sourceOpen);

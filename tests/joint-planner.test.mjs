@@ -22,6 +22,19 @@ function mock(run){
     return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({decision})}]}]});
   };
 }
+test('a two-period member cohort and a ranked breakdown retain their real scopes',async()=>{
+  const options={...data,question:'比较OCI两期共有的券，核对本金'};
+  const slices=['2026-10-29','2026-10-30'].map(date=>({date,filters:[{field:'account',value:'OCI'}]}));
+  const member={source:'inventory',operation:'memberAnalysis',analysisMode:'commonMovers',field:'code',question:options.question,slices,limit:3};
+  const choose=step=>mock(()=>({kind:'steps',steps:[step],comparison:'none',derive:false}));
+  const result=await planJointQuestion({...options,fetchImpl:choose(member)});
+  assert.equal(result.steps[0].slices[0].date,slices[0].date);
+  assert.equal(result.steps[0].slices[0].filters.account,'AFS');
+  const breakdown={source:'inventory',operation:'profile',question:'前三家发行人按分行拆分',snapshotDate:slices[1].date,filters:[],
+    profile:{type:'groups',stat:'breakdown',by:'issuer',within:'branch',limit:3}};
+  const profile=await planJointQuestion({...options,fetchImpl:choose(breakdown)});
+  assert.deepEqual(profile.steps[0].profile,breakdown.profile);
+});
 test('same question can cross sources using real ranked members and carry into a follow-up',async()=>{
   const question='广州持仓前五大发行人这个月各净增了多少？';
   const result=await planJointQuestion({...data,question,fetchImpl:mock(input=>{

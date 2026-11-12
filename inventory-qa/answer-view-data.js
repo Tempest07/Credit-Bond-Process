@@ -99,12 +99,24 @@ function inventory(d) {
   const extra = {coverage: restricted ? 'partial' : 'complete', note};
   const text = [d.summary || entryText(m,total), d.rowCount>0 && Number.isSafeInteger(d.securityCount) && m.key==='principal'
     ? d.securityCount + ' 只券' : '', restricted ? '主体归属仅覆盖可核实持仓。' : ''].filter(Boolean).join('，');
+  if (fields.length && !d.groups.length && d.rowCount===0 && !restricted) {
+    return sample('按'+dims.map(v=>v.label).join('和')+'查询',
+      '当前条件没有匹配持仓（0 条）。',ledgerSource(d),dims,[m],[],{note});
+  }
   if (!fields.length || !d.groups.length) return scalar(m.label, text, ledgerSource(d), m, total, extra);
+  const measures=[m];
+  // A bucket's threshold or sort may use another verified aggregate. Expose the
+  // number that decided membership beside the requested measure.
+  const aggregateKeys={securityCount:'securities',rowCount:'count',principalCents:'principal'};
+  for(const step of list(d.plan.analysis)){
+    const key=aggregateKeys[step.metric];
+    if(['having','sort'].includes(step.op) && key && !measures.some(x=>x.key===key))measures.push(ledgerMetrics[key]);
+  }
   const rows = [];
   for (const g of d.groups) {
     const names = g.labels ?? (rank ? [g.rankName, g.bucketName] : [g.name]);
     if (!Array.isArray(names) || names.length !== dims.length) return null;
-    const row = {[m.key]:inventoryValue(d,m,g)};
+    const row = Object.fromEntries(measures.map(metric=>[metric.key,inventoryValue(d,metric,g)]));
     dims.forEach((dim,i) => {row[dim.key] = names[i] == null || names[i] === '' ? '未填写' : String(names[i]);});
     rows.push(row);
   }
@@ -112,11 +124,18 @@ function inventory(d) {
   // total are eligible for a whole. An analysis "take" may already have removed
   // rows from totalCents, so it cannot establish the original denominator.
   const narrowed = list(d.plan.analysis).some(s => ['take','having','expand'].includes(s.op));
+  const shareOfPrincipal=d.measure?.fn==='principalShare';
   if (fields.length === 1 && ['account','scope','marketType','sourceMarketType'].includes(fields[0]) &&
-      m.key === 'principal' && !rank && !tail && !narrowed && !restricted && total > 0 &&
+      (m.key === 'principal' || shareOfPrincipal) && !rank && !tail && !narrowed && !restricted && yi(d.totalCents)>0 &&
       d.groups.every(g => Number.isSafeInteger(g.cents) && g.cents >= 0) &&
       d.groups.reduce((n,g) => n + BigInt(g.cents),0n) === BigInt(d.totalCents)) {
-    extra.whole = {measureKey:m.key, value:total, label:'本次查询全部匹配持仓本金'};
+    if(shareOfPrincipal){
+      const principalIndex=measures.findIndex(x=>x.key===principal.key);
+      if(principalIndex>=0)measures.splice(principalIndex,1);
+      measures.unshift(principal);
+      rows.forEach((row,i)=>{row.principal=yi(d.groups[i].cents);});
+    }
+    extra.whole = {measureKey:'principal', value:yi(d.totalCents), label:'本次查询全部匹配持仓本金'};
   }
   // Preserve an actual backend order (the SQL and analysis paths can rank by different metrics).
   const sorts = list(d.plan.analysis).filter(s => s.op === 'sort');
@@ -129,7 +148,7 @@ function inventory(d) {
       extra.orderedBy = {key:m.key,direction};
     }
   }
-  return sample('按' + dims.map(x=>x.label).join('和') + '汇总', text, ledgerSource(d), dims, [m], rows, extra);
+  return sample('按' + dims.map(x=>x.label).join('和') + '汇总', text, ledgerSource(d), dims, measures, rows, extra);
 }
 function overview(d) {
   const parts = list(d.overview);
@@ -366,7 +385,7 @@ function arithmetic(a, preferred, steps) {
     if(r.value===null)return r.label+' 无法计算';
     const short=['亿元','%','个百分点'].includes(r.unit) && Math.abs(r.value)>=0.01;
     const value=short?r.value.toLocaleString('zh-CN',{maximumFractionDigits:2}):shown(r.value);
-    return r.label+' '+value+(r.unit==='%'?'':' ')+r.unit;
+    return [r.label,r.flowDirection].filter(Boolean).join(' · ')+' '+value+(r.unit==='%'?'':' ')+r.unit;
   };
   const derived=computed.filter(r=>r.op!=='value');
   // Preserve both the absolute change and relative change. Intermediate shares
@@ -418,14 +437,15 @@ function arithmetic(a, preferred, steps) {
   const extra={coverage:missing?'partial':'complete',note:missing};
   if(computed.length===1){
     const row=computed[0];
-    return scalar(row.label,answer,source,measure('value',row.label,row.unit),row.value,extra);
+    const label=[row.label,row.flowDirection].filter(Boolean).join(' · ');
+    return scalar(row.label,answer,source,measure('value',label,row.unit),row.value,extra);
   }
   if(units.length===1)return sample('计算结果',answer,source,[field('item','计算项')],
-    [measure('value','计算结果',units[0])],computed.map(r=>({item:r.label,value:r.value})),extra);
+    [measure('value','计算结果',units[0])],computed.map(r=>({item:[r.label,r.flowDirection].filter(Boolean).join(' · '),value:r.value})),extra);
   // Show unlike units in a table. Never put percentages, counts and principal
   // on one axis, or sum operands whose original scopes may overlap.
   return sample('计算结果',answer,source,[field('item','计算项'),field('unit','单位')],
-    [measure('value','数值','')],computed.map(r=>({item:r.label,unit:r.unit,value:r.value})),extra);
+    [measure('value','数值','')],computed.map(r=>({item:[r.label,r.flowDirection].filter(Boolean).join(' · '),unit:r.unit,value:r.value})),extra);
 }
 function oneStep(step) {
   const d=step?.data;
@@ -436,6 +456,24 @@ function oneStep(step) {
   return null;
 }
 
+function weeklyPeriods(steps){
+  if(steps.length<2||steps.some(s=>s.source!=='portfolio'||s.data?.spec?.metric!=='weeklyMean'))return null;
+  const ordered=steps.map(s=>s.data).sort((a,b)=>a.spec.start.localeCompare(b.spec.start));
+  const first=ordered[0].spec;
+  if(ordered.some((d,i)=>d.spec.account!==first.account||d.spec.branch!==first.branch||
+    (i>0&&d.spec.start<=ordered[i-1].spec.end)))return null;
+  const models=ordered.map(portfolio);
+  if(models.some(m=>!m))return null;
+  const rows=models.flatMap(m=>m.result.rows);
+  const absent=rows.filter(r=>r.principal===null).length;
+  const observations=models.map((m,i)=>{
+    const gaps=m.result.rows.filter(r=>r.principal===null).length;
+    return range(ordered[i].spec.start,ordered[i].spec.end)+' 有效 '+(m.result.rows.length-gaps)+' 周，缺台账 '+gaps+' 周';
+  });
+  return sample('各期间周观察值',ordered.map(d=>d.headline).join(' '),models.map(m=>m.source).join('；'),
+    [field('date','观察日期','date')],[principal],rows,{cadence:'weekly',coverage:absent?'partial':'complete',
+      note:observations.join('；')+'。各周按该期间内最后一个可用业务日取值，缺周在图中留空，不进入均值。'});
+}
 function periodCalculations(candidate,calculated,arithmetic) {
   const result=candidate?.result;
   if(!result || result===calculated.result || result.dimensions.length!==1 ||
@@ -478,10 +516,26 @@ function modelsFrom(input) {
     }
     return [];
   }
-  const candidate=steps.length===1?oneStep(steps[0]):inventoryPeriods(steps);
+  const candidate=steps.length===1?oneStep(steps[0]):inventoryPeriods(steps)||weeklyPeriods(steps);
   if(a.arithmetic?.rows?.length){
     const answer=arithmetic(a.arithmetic,candidate,steps);
     if(!answer)return [];
+    if(candidate?.result.whole && steps.length===1 && steps[0].data.measure?.fn==='principalShare' &&
+      a.arithmetic.rows.every(r=>r.op==='share' || r.op==='value') && a.arithmetic.rows.some(r=>r.op==='share')){
+      return [{...candidate,answer:answer.answer},{...answer,shortTitle:'全部计算'}];
+    }
+    const ranked=candidate?.result;
+    if(ranked?.orderedBy && ranked.dimensions.length===1 && ranked.dimensions[0].kind==='category' && !a.arithmetic.missing){
+      const key=ranked.orderedBy.key, unit=ranked.measures.find(m=>m.key===key)?.unit;
+      const matches=input=>input?.unit===unit && finite(input.value) && ranked.rows.some(row=>
+        finite(row[key]) && Math.abs(input.value-row[key])<=8*Number.EPSILON*Math.max(1,Math.abs(row[key])));
+      const differences=a.arithmetic.rows.filter(r=>r.op!=='value');
+      if(differences.length && differences.every(r=>['absoluteDifference','difference'].includes(r.op) &&
+          list(r.inputs).length===2 && r.inputs.every(matches))){
+        const changes=arithmetic({rows:differences},null,steps);
+        if(changes)return [candidate,{...changes,shortTitle:'差额'}];
+      }
+    }
     // The same calculate operation may return several dated slices in a single
     // overview, or separate same-scope steps. Keep the conclusion with its chart.
     return periodCalculations(candidate,answer,a.arithmetic) || [answer];
@@ -498,11 +552,135 @@ function modelsFrom(input) {
   return candidate?[candidate]:[];
 }
 
+// A question may specify display units independently of ledger units. A filter
+// like “超过一万元” is not a unit instruction.
+function outputMoneyUnit(question) {
+  const explicit=String(question||'').match(/(?:单位\s*(?:为|是|用|改为|改成)?|换算(?:成|为)?|换成|改用|请用|以|用)\s*(?:人民币)?(亿元|万元|元)(?=报|为单位|列|填|给|显示|表示|计|呈现|出|写|做|的|[，。！？、,.!?\s]|$)/u);
+  return explicit?.[1];
+}
+const currencyScale={'亿元':100000000,'万元':10000,'元':1};
+function requestedUnitModel(model,unit) {
+  const r=model.result, factors=new Map(), originals=new Map();
+  const record=(original,value)=>{
+    if(!finite(value))return;
+    if(!originals.has(original))originals.set(original,new Set());
+    originals.get(original).add(value);
+  };
+  const measures=r.measures.map(m=>{
+    const match=/^(亿元|万元|元)(\/笔)?$/.exec(m.unit);
+    if(!match || match[1]===unit)return m;
+    factors.set(m.key,currencyScale[match[1]]/currencyScale[unit]);
+    for(const row of r.rows)record(match[1],row[m.key]);
+    for(const ref of [r.whole,r.headline])if(ref?.measureKey===m.key)record(match[1],ref.value);
+    return {...m,unit:unit+(match[2]||'')};
+  });
+  // Mixed computations retain a unit column for each operand.
+  const mixed=r.dimensions.some(d=>d.key==='unit') && r.measures.length===1 && r.measures[0].key==='value' &&
+    !r.measures[0].unit && r.rows.some(row=>Object.hasOwn(currencyScale,row.unit) && row.unit!==unit);
+  if(!factors.size && !mixed)return model;
+  const rows=r.rows.map(row=>{
+    const converted={...row};
+    for(const [key,scale] of factors) if(finite(row[key]))converted[key]=row[key]*scale;
+    if(mixed && Object.hasOwn(currencyScale,row.unit) && row.unit!==unit){
+      record(row.unit,row.value);
+      converted.unit=unit;
+      if(finite(row.value))converted.value=row.value*currencyScale[row.unit]/currencyScale[unit];
+    }
+    return converted;
+  });
+  function scaleRef(ref) {
+    return ref && factors.has(ref.measureKey)?{...ref,value:ref.value*factors.get(ref.measureKey)}:ref;
+  }
+  const result={...r,measures,rows};
+  if(r.whole)result.whole=scaleRef(r.whole);
+  if(r.headline)result.headline=scaleRef(r.headline);
+  const answer=model.answer.replace(/([+\-−]?[\d,]+(?:\.\d+)?)\s*(亿元|万元|元)(?![年月])/g,(raw,num,original)=>{
+    if(original===unit)return raw;
+    const n=Number(num.replaceAll(',','').replace('−','-'));
+    const resolution=10**(-(num.split('.')[1]||'').length);
+    // A unique matching typed observation resolves rounding in prose without
+    // selecting between amounts that share the same displayed value.
+    const candidates=[...(originals.get(original)||[])].filter(x=>
+      Math.abs(n-x)<=resolution/2+Number.EPSILON*Math.abs(n));
+    const exact=candidates.length===1?candidates[0]:n;
+    return shown(exact*currencyScale[original]/currencyScale[unit])+' '+unit;
+  });
+  return {...model,answer,result};
+}
+
+function reportModel(report) {
+  if (!Array.isArray(report?.rows)||!Array.isArray(report.columns)||!report.columns.length)return null;
+  const dims=[],measures=[],keys=new Set();
+  for(const col of report.columns){
+    if (!col || typeof col.key!=='string'||typeof col.label!=='string'||keys.has(col.key))return null;
+    keys.add(col.key);
+    if(col.kind==='number')measures.push(measure(col.key,col.label,col.unit||''));
+    else if(['category','date'].includes(col.kind))dims.push(field(col.key,col.label,col.kind));
+    else return null;
+  }
+  if(report.rows.some(row=>!row||typeof row!=='object'))return null;
+  return {shortTitle:report.title||'核对结果',answer:report.summary||(report.rows.length?'':'当前范围没有匹配记录。'),
+    source:report.source||'',result:{dimensions:dims,measures,rows:report.rows,columns:report.columns,
+      coverage:'complete',note:report.note||'',defaultTable:true}};
+}
+
+function ratingCoverage(data, unit='亿元') {
+  if(data?.spec?.metric!=='impliedRatingShare')return [];
+  const countIndex=Object.fromEntries(['已覆盖','已剔除','待核'].map(label=>
+    [label,list(data.columns).indexOf(label+'券数')]));
+  return list(data.values).flatMap(v=>{
+    const row=list(data.rows).find(r=>Array.isArray(r) && r[0]===v.date);
+    const parts=[['有效评级','已覆盖',v.covered],['缺评级或信用事件资料待核','待核',v.unknown],
+      ['已剔除','已剔除',v.excluded]].flatMap(([title,label,cents])=>{
+      if(!Number.isSafeInteger(cents))return [];
+      const count=row?.[countIndex[label]];
+      return [title+' '+shown(cents/100/currencyScale[unit])+' '+unit+
+        (Number.isSafeInteger(count)?'（'+count+' 只）':'')];
+    });
+    return parts.length?[[v.date,data.spec.account,data.spec.branch].filter(Boolean).join(' ')+'　'+parts.join('，')+'。']:[];
+  });
+}
+
 /** Project saved results into chart inputs. [] keeps the existing full answer visible. */
 export function answerViewModels(input) {
-  const models=modelsFrom(input);
-  if(!models.length)return models;
   const a=input?.answer ?? input?.data ?? input;
+  const question=input?.question || input?.label || '';
+  let models=modelsFrom(input);
+  // A concentration calculation may use the subtotal of a ranked step as
+  // one operand. That operand holds an amount, while its source retains the
+  // members and their values. Keep the verified breakdown available.
+  if(models.length && list(a.arithmetic?.rows).some(row=>row.op==='share')){
+    for(const step of list(a.steps)){
+      if(step.source!=='inventory' || !list(step.data?.plan?.analysis).some(op=>op.op==='take'))continue;
+      const ranking=oneStep(step);
+      if(ranking?.result.orderedBy && ranking.result.rows.length &&
+        !models.some(m=>m.result===ranking.result || m.shortTitle===ranking.shortTitle && m.source===ranking.source)){
+        models.push(ranking);
+      }
+    }
+  }
+  if(models.length && list(a.arithmetic?.rows).length){
+    for(const s of list(a.steps).filter(s=>s.source==='trade'&&s.data?.plan?.groupBy?.length)){
+      const grouped=trade(s.data);
+      if(grouped?.result.rows.length>1 && !models.some(m=>m.source===grouped.source&&
+        m.result.rows.length===grouped.result.rows.length&&m.result.dimensions[0]?.label===grouped.result.dimensions[0]?.label)){
+        models.push(grouped);
+      }
+    }
+  }
+  const report=reportModel(a?.ledgerReport);
+  if(report) models.unshift(report);
+  if(!models.length)return models;
+  const unit=outputMoneyUnit(question);
+  if(unit) models=models.map(model=>requestedUnitModel(model,unit));
+  const indicators=Array.isArray(a.steps)?a.steps.filter(s=>s.source==='portfolio').map(s=>s.data):[a];
+  const coverage=[...new Set(indicators.flatMap(d=>ratingCoverage(d,unit)))];
+  if(coverage.length)models[0]={...models[0],ratingCoverage:coverage};
+  const calculations=list(a.arithmetic?.rows).filter(r=>['sum','share','divide','mean','average','weightedAverage'].includes(r.op) &&
+    list(r.inputs).length && r.inputs.every(input=>input?.label && (input.value===null || finite(input.value))));
+  if(calculations.length)models[0]={...models[0],calculations};
+  const wantsTable=/(?:做成|列成|整理成|做一张|放在一张|给我一张|用)\s*(?:明细|汇总|对照|数据|可排序的)?表(?:格)?|(?:本金|金额|笔数|发行人|券码)(?:明细|汇总|排名)?表(?:格)?(?=[，。？！\s]|$)|打开分析台/u.test(question);
+  if(wantsTable) models[0]={...models[0],result:{...models[0].result,defaultTable:true}};
   const datasets=Array.isArray(a.steps)?a.steps.filter(s=>s.source==='inventory').map(s=>s.data):[a];
   const warnings=new Set();
   const parts=datasets.flatMap(d=>d?.overview?list(d.overview).map(p=>p?.result):[d]);

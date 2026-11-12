@@ -372,6 +372,21 @@ async function aggregate(bucket,s){
  list.sort((a,b)=>Number(a[field]==null)-Number(b[field]==null)||(s.plan.order==='asc'?1:-1)*(a[field]-b[field])||JSON.stringify(a.values).localeCompare(JSON.stringify(b.values),'zh-CN'));
  const highlights=periodHighlights(s,list,field);
  const {limit,metric}=s.plan;
+ if(metric==='net' && s.completeCoverage && s.plan.groupBy.length===1 &&
+    !timeFields.includes(s.plan.groupBy[0]) && !wanted.size && !limit){
+   const key=s.plan.groupBy[0];
+   let bought=0,sold=0;
+   for(const group of list){
+     if(group.netCents>0)bought+=group.netCents;
+     else sold+=group.netCents;
+   }
+   if(![bought,sold,bought+sold].every(Number.isSafeInteger) || bought+sold!==totals.netCents)error('交易分组净额未与全范围合计对齐。');
+   highlights.push({label:'净买入的'+key+'合计贡献',value:bought,unit:'分'},
+     {label:'净卖出的'+key+'合计抵消（有符号）',value:sold,unit:'分'},
+     {label:'两类分组净额合计（含未填写组）',value:bought+sold,unit:'分'});
+   const blank=list.find(g=>g.values[0]==='（未填）');
+   if(blank)highlights.push({label:key+'未填写组净额（已纳入上述合计）',value:blank.netCents,unit:'分'});
+ }
  if(metric==='net' && !s.plan.groupBy.length && s.completeCoverage){
    const label=totals.netCents<0?'按交易本金净流出（净减持）':totals.netCents>0?'按交易本金净流入（净增持）':'交易买卖本金相抵';
    highlights.push({label,value:Math.abs(totals.netCents),unit:'分'});
@@ -388,7 +403,9 @@ async function aggregate(bucket,s){
 export async function runTradeQuery({db,bucket},plan,versionIds,{collectMembers=false,verifiedMembers}={}){
  const s=setup(plan,await docs(db,versionIds),verifiedMembers),{list,totals,highlights}=await aggregate(bucket,s);
  return {plan:s.plan,totals,completeCoverage:s.completeCoverage,
-   ...(collectMembers?{memberNames:list.filter(group=>group.rows>0).map(group=>group.values[0])}:{}),groups:list.slice(0,s.plan.limit??100),groupCount:list.length,versions:s.relevant.map(pub),warnings:s.warnings,highlights};
+   ...(collectMembers?{memberNames:list.filter(group=>group.rows>0).map(group=>group.values[0]),
+     memberAmounts:list.filter(group=>group.rows>0).map(group=>({name:group.values[0],buy:group.buyCents,sell:group.sellCents}))}:{}),
+   groups:list.slice(0,s.plan.limit??100),groupCount:list.length,versions:s.relevant.map(pub),warnings:s.warnings,highlights};
 }
 export async function tradeExportSheets({db,bucket},plan,versionIds,verifiedMembers){
  const s=setup(plan,await docs(db,versionIds),verifiedMembers),{totals,list,highlights}=await aggregate(bucket,s);

@@ -4,6 +4,18 @@ import {collectMeasures,deriveAnswer,evaluateOperations} from '../tools/joint-ar
 import {jointExcel} from '../tools/joint-export.mjs';
 import ExcelJS from 'exceljs';
 
+test('arithmetic labels identify actual tied monthly ranks and retain net-sell signs',()=>{
+  const months=[['2026-01',-15],['2026-02',7],['2026-03',-15],['2026-04',-5]];
+  const data={plan:{direction:'both',metric:'net',groupBy:['交易月份']},result:{completeCoverage:true,totals:{netCents:-28e10},groupCount:4,
+    groups:months.map(([m,n])=>({values:[m],netCents:n*1e10})),highlights:[{label:'净增持最低期间',value:-15e10,unit:'分'}]}};
+  const facts=collectMeasures([{source:'trade',question:'逐月净卖出最多的月份',data}]);
+  assert.deepEqual(facts.filter(r=>r.label.endsWith('（净卖出金额第1）')).map(r=>r.value),[-15,-15]);
+  assert.equal(facts.find(r=>r.label.includes('2026-04')).label,'2026-04 净买入本金（净卖出金额第3）');
+  assert.equal(facts.find(r=>r.label==='净增持最低期间').value,-15);
+  data.result.groupCount=14;
+  assert.equal(collectMeasures([{source:'trade',question:'部分月份',data}]).some(r=>r.label.includes('金额第')),false);
+});
+
 test('export keeps the verified flow direction alongside an unsigned difference',async()=>{
   const rows=evaluateOperations([
     {id:'buy',label:'买入',tradeAmount:'buyCents',cohort:'OCI',unit:'亿元',value:3},

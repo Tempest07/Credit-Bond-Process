@@ -272,7 +272,7 @@ function turnView({question,answer},mayContinue){
   const box=el("article",null,"joint-turn");
   box.append(el("h2",question,"user-question"));
   const steps=answer.steps||[];
-  const panel=presentAnswer(answer,()=>{
+  const panel=presentAnswer({question,answer},()=>{
     const controls=[];
     const step=steps.length===1?steps[0]:null;
     if(step?.source==="inventory" && step.data?.resultId){
@@ -289,6 +289,26 @@ function turnView({question,answer},mayContinue){
 }
 function turnEvidence(question,answer,mayContinue){
   const box=el("div");
+  const report=answer.ledgerReport;
+  if(Array.isArray(report?.columns) && Array.isArray(report.rows)){
+    const section=el("section",null,"joint-summary");
+    section.append(el("h3",report.title||"核对结果"));
+    if(report.summary)section.append(el("p",report.summary));
+    if(report.rows.length){
+      const scroller=el("div",null,"av-scroll");
+      const table=el("table"), header=table.createTHead().insertRow();
+      for(const col of report.columns) header.append(el("th",col.label+(col.unit?"（"+col.unit+"）":"")));
+      const body=table.createTBody();
+      for(const row of report.rows){
+        const tr=body.insertRow();
+        for(const col of report.columns)tr.insertCell().textContent=row[col.key]??"待核";
+      }
+      scroller.append(table);section.append(scroller);
+    }else if(!report.summary)section.append(el("p","当前范围没有匹配记录。"));
+    if(report.source)section.append(el("p",report.source,"meta"));
+    if(report.note)section.append(el("p",report.note,"meta"));
+    box.append(section);
+  }
   if(answer.clarification)box.append(el("p",answer.clarification,"summary"));
   for(const note of answer.methodNotes||[])box.append(el("p",note,"summary"));
   if(answer.arithmetic?.rows?.length || answer.arithmetic?.missing){

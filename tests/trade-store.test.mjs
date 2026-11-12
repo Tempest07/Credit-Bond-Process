@@ -25,6 +25,16 @@ async function sample(side,extra=0,end='2024-12-31'){
  return new Uint8Array(await w.xlsx.writeBuffer());
 }
 const plan={direction:'both',metric:'net',start:'2024-01-01',end:'2024-12-31',groupBy:['发行人全称'],limit:1};
+test('net contribution by category reconciles all positive and negative groups including unnamed rows',async()=>{
+ const r=isolated();await ingestTradeLedger(r,await sample('buy'),buy);
+ const edit=new ExcelJS.Workbook();await edit.xlsx.load(await sample('sell'));
+ edit.worksheets[0].getCell('J3').value=null;
+ await ingestTradeLedger(r,new Uint8Array(await edit.xlsx.writeBuffer()),sell);
+ const full=await runTradeQuery(r,{...plan,groupBy:['联动分行'],limit:null});
+ assert.deepEqual(full.highlights.map(h=>h.value),[12520,-10000,2520,-10000]);
+ const cut=await runTradeQuery(r,{...plan,groupBy:['联动分行'],limit:1});
+ assert.equal(cut.highlights.some(h=>h.label.includes('合计贡献')),false);
+});
 test('account aliases keep the full-share denominator and label the direction of ungrouped net principal',async()=>{
  const r=isolated();
  await ingestTradeLedger(r,await sample('buy'),buy);

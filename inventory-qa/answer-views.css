@@ -67,6 +67,9 @@
 .av-plot time {position: absolute; bottom: -22px; transform: translateX(-50%); font: 11px/1.4 Arial, sans-serif; color: #555; white-space: nowrap}
 .av-plot .av-time-0 {transform: none}
 .av-plot .av-time-2 {transform: translateX(-100%)}
+.av-legend {display:flex; flex-wrap:wrap; column-gap:1em; font-size:.82em}
+.av-plot .av-stagger {bottom:-38px}
+.av-time:has(.av-stagger) {padding-bottom:1.5em}
 .av-scroll {max-width: 100%; overflow: auto}
 .av-scroll table {width: 100%; border-collapse: collapse}
 .av-scroll th, .av-scroll td {font-size: 14px; overflow-wrap: anywhere; white-space: normal}

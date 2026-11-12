@@ -165,6 +165,7 @@ function marketResult(spec, periods, filter, details) {
     for(const period of periods){
       if(period.note)headline+=' '+period.note;
       if(period.unknownCount)headline+=' '+period.date+' 有 '+period.unknownCount+' 只在账券、'+shown(yi(period.unknown))+' 亿元待核。';
+      if(!duration && period.covered>0)headline+=' '+period.date+' 仅按有有效评级的 '+shown(yi(period.covered))+' 亿元核算，门槛内 '+shown(yi(period.target))+' 亿元，占 '+shown(period.value,digits)+'%。';
     }
   } else if (periods.length === 1) {
     headline = periods[0].date + ' ' + filter.label + title + '为 ' + shown(periods[0].value, digits) + unit + '。';
@@ -199,7 +200,9 @@ function marketResult(spec, periods, filter, details) {
       : ['采用隐含评级','评级来源','原始评级','QB接口','采集时间','期后首个中债估值日','期后中债评级（仅复核）']),
     '核对说明','条款及信用事件证据','库存版本'],
     rows: periods.flatMap(p => p.exportRows)}] : null;
-  return {spec,headline,columns,rows,notes,values:periods.map(p=>({date:p.date,gross:p.gross,covered:p.covered,excluded:p.excluded,value:p.unknownCount?null:p.value,target:p.unknownCount?null:p.target})),...(details ? {detailSheets} : {})};
+  return {spec,headline,columns,rows,notes,values:periods.map(p=>({date:p.date,gross:p.gross,covered:p.covered,excluded:p.excluded,
+    value:p.unknownCount?null:p.value,target:p.unknownCount?null:p.target,
+    ...(!duration?{coveredTarget:p.target,coveredShare:p.value,unknown:p.unknown}:{})})),...(details ? {detailSheets} : {})};
 }
 
 async function auditHoldings(resources, spec, snapshots, filter, details) {
@@ -220,10 +223,11 @@ async function auditHoldings(resources, spec, snapshots, filter, details) {
   const anchored=await read(anchor), positions=anchor.id===current.id?anchored:await read(current);
   const membership=new Set(), limit=spec.threshold?ratingOrder.indexOf(ratingLabel(spec.threshold)):-1;
   if(spec.threshold&&limit<0)throw new InventoryError('无法识别评级门槛。',422);
-  let unavailable=0, ratingDenominator=0;
+  let unavailable=0, ratingDenominator=0, excludedPrincipal=0, excludedCount=0;
   for(const {code,amount:principal} of anchored.results){
     const fact=facts.byCode.get(code);
     if(!fact)unavailable++;
+    if(fact?.excluded===true){excludedPrincipal+=principal;excludedCount++;}
     if(fact?.excluded===false && ratingOrder.includes(ratingLabel(fact.rating)))ratingDenominator+=principal;
     if(selectedCode && code!==selectedCode)continue;
     const match=spec.subset==='rated'?fact?.excluded===false && ratingOrder.includes(ratingLabel(fact.rating)):spec.subset==='ratedExact'?fact?.excluded===false && ratingLabel(fact.rating)===spec.threshold:spec.subset==='unknown'?(!fact||!fact.excluded&&!fact.rating):
@@ -237,7 +241,9 @@ async function auditHoldings(resources, spec, snapshots, filter, details) {
     return [r.code,r.name,shown(yi(r.amount)),anchor.date,ratingLabel(f?.rating)||missing,f?.reason||f?.ratingSource||'待核'];
   });
   const label={excluded:'违约或实质展期剔除',csi:'同日中证补缺',cdc:'中债评级',unknown:'核验资料待补',ratedExact:'精确评级',rated:'已核验评级'}[spec.subset];
-  const headline=anchor.date+' '+filter.label+' 的'+label+'名单'+(spec.threshold?'（'+spec.threshold+(spec.subset==='ratedExact'?'）':'及以下）'):'')+'，在 '+current.date+' 持有 '+rows.length+' 只，合计 '+shown(yi(amount))+' 亿元。'+(unavailable?'名单日有 '+unavailable+' 只缺核验资料。':'');
+  let headline=anchor.date+' '+filter.label+' 的'+label+'名单'+(spec.threshold?'（'+spec.threshold+(spec.subset==='ratedExact'?'）':'及以下）'):'')+'，在 '+current.date+' 持有 '+rows.length+' 只，合计 '+shown(yi(amount))+' 亿元。'+(unavailable?'名单日有 '+unavailable+' 只缺核验资料。':'');
+  if(anchor.id===current.id && !selectedCode && !spec.threshold && spec.subset==='rated' && excludedCount)
+    headline+=' 同范围另有 '+excludedCount+' 只、'+shown(yi(cents(excludedPrincipal)))+' 亿元因已确认违约或实质展期剔除。';
   const detailSheets=details?[{name:'名单逐券',headers:['债券代码','债券简称','持仓本金（人民币元）','持仓日','名单核验日','隐含评级','依据'],rows:picked.map((r,i)=>
     [r.code,r.name,r.amount/100,current.date,anchor.date,rows[i][4],rows[i][5]])}]:undefined;
   return {spec,headline,auditCents:unavailable?null:amount,grossCents:cents(positions.results.reduce((sum,r)=>sum+r.amount,0)),ratingCoveredCents:anchor.id===current.id?cents(ratingDenominator):null,columns,rows,notes:['按名单核验日的逐券记录筛选，再按券码匹配持仓日余额。'],...(details?{detailSheets}:{})};

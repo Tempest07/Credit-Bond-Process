@@ -60,6 +60,13 @@ test('unknown eligibility or missing source date never yields a complete portfol
   const out=await portfolioMetrics(resources,{...spec,branch:null,metric:'modifiedDuration'},snapshots,{details:true});
   assert.match(out.headline,/无法/);
   assert.deepEqual(out.rows[1].slice(-2),['2.00',1]);
+  const rating=await portfolioMetrics(resources,{...spec,start:dates[1],branch:null,metric:'impliedRatingShare',threshold:'AA(2)'},snapshots);
+  assert.match(rating.headline,/仅按有有效评级的 4.00 亿元核算，门槛内 3.00 亿元，占 75.00%/);
+  assert.equal(rating.values[0].value,null);
+  assert.equal(rating.values[0].coveredShare,75);
+  assert.equal(rating.values[0].unknown,2*yi);
+  const audited=await portfolioMetrics(resources,{...spec,start:dates[1],metric:'valuationAudit',subset:'rated'},snapshots);
+  assert.match(audited.headline,/另有 1 只、7.00 亿元.*剔除/);
   const noData=await portfolioMetrics(resources,{...spec,metric:'modifiedDuration',start:dates[1],marketPins:{}},snapshots);
   assert.equal(noData.rows[0][1],'—');
   await assert.rejects(()=>portfolioMetrics(resources,{...spec,metric:'modifiedDuration',start:'2025-12-30'},snapshots),/缺少/);

@@ -3,6 +3,8 @@ import {exportData} from './inventory-store.mjs';
 import {tradeExportSheets} from './trade-store.mjs';
 import {exportTradeWorkbook} from './trade-workbook.mjs';
 import {portfolioMetrics} from './portfolio-metrics.mjs';
+import {buildProfile} from './inventory-profile.mjs';
+import {exportMemberReport} from './inventory-member-analysis.mjs';
 
 export async function jointExcel(resources,question,answer,tradeIds,chosen,portfolio={}){
   const toYuan=n=>Number.isSafeInteger(n)?n/100:'';
@@ -10,6 +12,15 @@ export async function jointExcel(resources,question,answer,tradeIds,chosen,portf
   if(!steps?.length)throw new InventoryError('没有可下载的查询步骤。',404);
   const info=[['问题',question],['口径','余额取快照时点持仓，增减持取交易日期间流水。金额单位见各表列名。']];
   const sheets=[{name:'问答口径',headers:['项目','内容'],rows:info}];
+  const reportSheet=report=>({
+    name:'分析核对表',headers:report.columns.map(c=>c.label+(c.unit?'（'+c.unit+'）':'')),
+    rows:report.rows.map(r=>report.columns.map(c=>r[c.key]??'')),
+  });
+  if(!chosen && answer.ledgerReport){
+    const report=answer.ledgerReport;
+    info.push(['分析结果',report.summary],['来源',report.source],['说明',report.note||'']);
+    if(!steps.some(s=>s.data?.profileSpec||s.data?.memberReportSpec))sheets.push(reportSheet(report));
+  }
   if(!chosen){
     for(const note of answer.methodNotes||[])info.push(['指标口径',note]);
     const sets=answer.memberSets;
@@ -63,11 +74,13 @@ export async function jointExcel(resources,question,answer,tradeIds,chosen,portf
       info.push(['组合指标',s.data.headline],...(s.data.notes||[]).map(n=>['计算口径',n]));
       add([{name:'指标汇总',headers:s.data.columns,rows:s.data.rows},...(data.detailSheets||[])]);
     }else if(s.source==='inventory'){
+      if(s.data?.memberReportSpec)add([reportSheet(await exportMemberReport(resources.db,s.data))]);
       const items=s.data?.overview||[{result:s.data}];
       for(const {role,title,result:v} of items){
         if(title)info.push([title,v?.clarification||v?.summary||'']);
         if(!v?.resultId)continue;
         const {result,rows}=await exportData(resources.db,v.resultId);
+        if(v.profileSpec)add([reportSheet(buildProfile(v.profileSpec,rows,result.snapshot))]);
         const section={issuer:'自发债',enhancement:'增信ABS',union:'去重合计'}[role]||
           (title==='自己发行的债券'?'自发债':title==='占用其授信的 ABS'?'增信ABS':'');
         add(inventoryExportSheets(result,rows),section);

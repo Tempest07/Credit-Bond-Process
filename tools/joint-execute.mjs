@@ -2,6 +2,9 @@ import {InventoryError} from './inventory-workbook.mjs';
 import {queryInventory} from './inventory-http.mjs';
 import {answerSourceRows,newInventoryAnswer} from './inventory-store.mjs';
 import {calculateInventory} from './inventory-calculation.mjs';
+import {inventoryProfile} from './inventory-profile.mjs';
+import {memberAnalysis} from './inventory-member-analysis.mjs';
+import {fullMarketCode} from './inventory-security.mjs';
 import {analysisFieldLabels} from './inventory-analysis.mjs';
 import {accountSql,accountLabel} from './inventory-account.mjs';
 import {tradeIssuerCandidates} from './inventory-issuer-hints.mjs';
@@ -257,6 +260,37 @@ function covered(sources,start,end){
   }
   return true;
 }
+function partialBalanceReport(steps){
+  const inventory=steps.filter(s=>s.source==='inventory').flatMap(s=>s.data.overview?
+    s.data.overview.map(item=>({...s,data:item.result})):s);
+  const trades=steps.filter(s=>s.source==='trade');
+  if(inventory.length!==2 || trades.length!==1 || steps.some(s=>!['inventory','trade'].includes(s.source)))return;
+  const [a,b]=inventory,flow=trades[0],trade=flow.data,p=trade.plan;
+  const comparison=compareJointSteps(inventory,'balanceChange');
+  if(!Number.isSafeInteger(comparison?.changeCents)||p?.direction!=='both'||p.metric!=='net'||
+      typeof p.end!=='string'||scopeKey(a)!==scopeKey(flow)||!Number.isSafeInteger(trade.result?.totals?.netCents))return;
+  const dayAfter=s=>new Date(Date.parse(s+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+  const start=dayAfter(a.data.snapshot.date),end=b.data.snapshot.date;
+  if(p.start!==start || p.end>end)return;
+  const reports=(trade.sources||[]).filter(s=>Number(s.year)===Number(end.slice(0,4)));
+  const cutoffs=['buy','sell'].map(dir=>reports.find(v=>v.direction===dir)?.asOf);
+  if(!cutoffs[0]||cutoffs[0]!==cutoffs[1]||cutoffs[0]>=end)return;
+  const cutoff=cutoffs[0];
+  if(cutoff<start || (p.end!==cutoff && p.end!==end) || !covered(trade.sources,start,cutoff))return;
+  const fmt=n=>(n/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8});
+  const sum=trade.result.totals, from=a.data.snapshot.date, scope=Object.values(a.data.plan.filters||{}).join('、')||'全账';
+  return {title:'余额变动与已覆盖的买卖流水',
+    summary:scope+' 在 '+from+' 至 '+end+' 的余额变动为 '+fmt(comparison.changeCents)+' 亿元。'+
+      start+' 至 '+cutoff+' 可核净买入 '+fmt(sum.netCents)+' 亿元。'+
+      dayAfter(cutoff)+' 至 '+end+' 的买卖流水尚未覆盖，完整期间净买入及对账差额待核。',
+    source:scope+' · '+from+' 和 '+end+' 余额台账；'+start+' 至 '+cutoff+' 增减持累计表。',
+    note:'余额变动按期末减期初，已有流水按成交日计算买入减卖出。',columns:[{key:'item',label:'核对项目',kind:'category'},
+      {key:'period',label:'日期范围',kind:'category'},{key:'amount',label:'本金',kind:'number',unit:'亿元'}],
+    rows:[{item:'期初余额',period:from,amount:comparison.openingCents/1e10},{item:'期末余额',period:end,amount:comparison.closingCents/1e10},
+      {item:'余额变动',period:from+' 至 '+end,amount:comparison.changeCents/1e10},
+      {item:'已覆盖的净买入',period:start+' 至 '+cutoff,amount:sum.netCents/1e10},
+      {item:'完整期间对账差额',period:start+' 至 '+end,amount:null}]};
+}
 function balanceGroups(steps,comparison){
   if(!Number.isSafeInteger(comparison?.changeCents))return;
   const inventory=steps.slice(0,2).map(s=>s.data);
@@ -292,6 +326,7 @@ function alignment(steps){
       union.set(normalizedFilter(field,name),Array(steps.length).fill(null));
     }
     const restricted=lists.length>0;
+    let verifiedAbsent=0;
     byStep.forEach((group,i)=>{
       const s=steps[i], data=s.data;
       const tradeLabel=s.source==='trade'?[data.plan.start,data.plan.end].filter(Boolean).join(' 至 ')+' '+({buy:'增持',sell:'减持',net:'净增持',gross:'双向合计'})[data.plan.metric]:null;
@@ -305,10 +340,23 @@ function alignment(steps){
         }
         union.get(label)[i]=cents;
       }
+      // Only an exhaustive grouping over the *same* verified cohort can certify a zero.
+      if(s.source==='inventory' && s.appliedSelection?.field===field && data.resultId &&
+        data.plan.group===field && !data.groupsTruncated && !data.plan.rank && !data.plan.analysis &&
+        group.count===group.pairs.length && data.groups.reduce((n,g)=>n+g.count,0)===data.rowCount){
+        const emptyGroups=new Set(data.groups.filter(g=>g.count===0&&g.cents===0).map(g=>normalizedFilter(field,g.name)));
+        for(const name of s.appliedSelection.names){
+          if(field==='code' && !fullMarketCode(name))continue;
+          const label=normalizedFilter(field,name),values=union.get(label);
+          if(values && (values[i]===null || emptyGroups.has(label))){values[i]=0;verifiedAbsent++;}
+        }
+      }
     });
     if(!union.size)continue;
     return {field:labels.label,columns,rows:[...union].slice(0,100).map(([name,values])=>({name,values})),
-      note:(restricted?'按入选名单顺序对照。':'按各表返回的'+labels.label+'名称对照。')+'空白表示该名单中未列示。'+(union.size>100?'此处显示前 100 个名称。':'')};
+      note:(restricted?'按入选名单顺序对照。':'按各表返回的'+labels.label+'名称对照。')+
+        (verifiedAbsent?'完整库存快照已核实 '+verifiedAbsent+' 个成员在该范围没有持仓，余额列为 0。':'')+
+        '空白表示该名单中未列示。'+(union.size>100?'此处显示前 100 个名称。':'')};
   }
 }
 async function collectMembers(resources,step,ctx,query){
@@ -318,7 +366,7 @@ async function collectMembers(resources,step,ctx,query){
     const hit=await query(resources,plan,ctx.ledgers.map(v=>v.id),{collectMembers:true});
     const {totals,groups,groupCount,warnings,completeCoverage}=hit;
     return {plan:hit.plan,result:{totals,groups,groupCount,warnings,completeCoverage},sources:hit.versions.map(tradeSource),
-      memberNames:completeCoverage?hit.memberNames:undefined};
+      memberNames:completeCoverage?hit.memberNames:undefined,memberAmounts:completeCoverage?hit.memberAmounts:undefined};
   }
   const snapshot=ctx.snapshots.find(s=>s.date===step.snapshotDate);
   if(!snapshot)clarify('所选日期没有库存快照。');
@@ -337,6 +385,31 @@ function compareMembers(steps,field){
   for(const name of right)if(!left.has(name))rightOnly.push(name);
   return {field:fields[field].label,dimension:field,labels,both,leftOnly,rightOnly,total:both.length+leftOnly.length+rightOnly.length};
 }
+function tradeSetReport(steps,sets){
+  if(sets.note||steps.some(s=>s.source!=='trade'||!Array.isArray(s.data.memberAmounts)))return;
+  const [a,b]=steps.map(s=>s.data.plan);
+  const signature=p=>JSON.stringify([p.start,p.end,(p.filters||[]).map(f=>JSON.stringify([f.field,f.op,f.value])).sort()]);
+  if(a.direction===b.direction||[a,b].some(p=>!['buy','sell'].includes(p.direction))||signature(a)!==signature(b))return;
+  const groups=[[new Set(sets.both),'双边都有'],[new Set(sets.leftOnly),a.direction==='buy'?'仅买':'仅卖'],[new Set(sets.rightOnly),b.direction==='buy'?'仅买':'仅卖']];
+  const result=groups.map(([names,label])=>({label,members:names.size,buy:0,sell:0}));
+  const unknown={label:sets.field+'未填写',members:null,buy:0,sell:0};
+  for(const s of steps)for(const item of s.data.memberAmounts){
+    const name=normalizedFilter(sets.dimension,item.name);
+    const index=groups.findIndex(([names])=>names.has(name)),row=result[index]||unknown;
+    row.buy+=item.buy;row.sell+=item.sell;
+  }
+  const total=key=>result.reduce((sum,row)=>sum+row[key],unknown[key]);
+  const buy=total('buy'),sell=total('sell');
+  if(![buy,sell].every(Number.isSafeInteger)||steps.reduce((n,s)=>n+s.data.result.totals.buyCents,0)!==buy||
+     steps.reduce((n,s)=>n+s.data.result.totals.sellCents,0)!==sell)return;
+  const display=n=>(n/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8});
+  return {title:'交易名单与本金核对',source:steps.flatMap(s=>s.data.sources.map(v=>v.filename)).join('、'),
+    summary:a.start+' 至 '+a.end+'，'+result.map(row=>row.label+' '+row.members+' 个'+sets.field).join('，')+'。总买入 '+display(buy)+' 亿元，总卖出 '+display(sell)+' 亿元。',
+    note:'具名成员只归入一个组。缺少'+sets.field+'的交易单列金额，不计具名成员数。三组和未填写行合计与两份流水总额一致。',
+    columns:[{key:'label',label:'类别',kind:'category'},{key:'members',label:'具名成员数',kind:'number',unit:'个'},
+      {key:'buy',label:'买入本金',kind:'number',unit:'亿元'},{key:'sell',label:'卖出本金',kind:'number',unit:'亿元'}],
+    rows:[...result,unknown,{label:'全范围合计',members:sets.total,buy,sell}].map(r=>({...r,buy:r.buy/1e10,sell:r.sell/1e10}))};
+}
 export async function executeJointPlan(resources,input,dependencies={}){
   const ctx={history:[],snapshots:[],ledgers:[],...input};
   const prior=ctx.history.at(-1)?.answer?.steps||[];
@@ -352,6 +425,10 @@ export async function executeJointPlan(resources,input,dependencies={}){
           ?previousSetSelection(ctx.history,step.selection):members(await linked,step.selection);
         if(step.operation==='collectMembers'){
           data=await collectMembers(resources,step,ctx,dependencies.tradeQuery||runTradeQuery);
+        }else if(step.operation==='profile'){
+          data=await inventoryProfile(resources,step,ctx);
+        }else if(step.operation==='memberAnalysis'){
+          data=await memberAnalysis(resources,step,ctx);
         }else if(step.operation==='calculate'){
           data=await calculateInventory(resources,step,ctx.snapshots);
         }else if(step.operation==='memberSummary'){
@@ -377,10 +454,14 @@ export async function executeJointPlan(resources,input,dependencies={}){
   const steps=await Promise.all(tasks);
   if(ctx.comparison==='memberSets'){
     const memberSets=compareMembers(steps,ctx.steps[0].field);
-    for(const step of steps)delete step.data.memberNames;
-    return {steps,memberSets};
+    const ledgerReport=tradeSetReport(steps,memberSets);
+    for(const step of steps){delete step.data.memberNames;delete step.data.memberAmounts;}
+    return {steps,memberSets,...(ledgerReport?{ledgerReport}:{})};
   }
   explainPortfolioDifferences(steps,prior);
   const comparison=compareJointSteps(steps,ctx.comparison),aligned=balanceGroups(steps,comparison)||alignment(steps);
-  return {steps,...(comparison?{comparison}:{}),...(aligned?{alignment:aligned}:{})};
+  const reportStep=steps.find(s=>s.data.ledgerReport);
+  const ledgerReport=reportStep?.data.ledgerReport||partialBalanceReport(steps);
+  if(reportStep)delete reportStep.data.ledgerReport;
+  return {steps,...(comparison?{comparison}:{}),...(aligned?{alignment:aligned}:{}),...(ledgerReport?{ledgerReport}:{})};
 }

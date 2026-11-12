@@ -1,5 +1,22 @@
 const metrics={buyCents:'买入本金',sellCents:'卖出本金',grossCents:'双边成交本金',netCents:'净买入本金',rows:'流水笔数',bonds:'不同券数'};
 const publicGroups=new Set(['债券类型','会计分类','会计科目','联动分行','发行人全称','交易年份','交易月份','交易季度','交易日期','交易交割日','增减方向','债券代码','债券标准代码','券码','表内/委外']);
+function rankedPeriods(data){
+  const {plan,result}=data, groups=result.groups||[];
+  if(plan.groupBy?.length!==1 || !['交易月份','交易季度','交易年份'].includes(plan.groupBy[0]) ||
+     plan.showGroups?.length || groups.length!==result.groupCount || !groups.length)return null;
+  const field=Object.hasOwn(metrics,plan.metric)?plan.metric:plan.metric+'Cents';
+  if(!Object.hasOwn(metrics,field) || !groups.every(row=>Number.isSafeInteger(row[field])))return null;
+  const values=groups.map(row=>row[field]).sort((a,b)=>a-b);
+  const labels=new Map();
+  for(const value of values){
+    if(labels.has(value))continue;
+    const low=values.indexOf(value)+1, high=values.length-values.lastIndexOf(value);
+    let label='从高到低第'+high+'，从低到高第'+low;
+    if(field==='netCents')label=value<0?'净卖出金额第'+low:value>0?'净买入金额第'+high:'买卖相抵';
+    labels.set(value,label);
+  }
+  return {field,labels};
+}
 export function collectMeasures(steps){
   const facts=[];
   function add(scope,label,value,unit,origin){
@@ -49,7 +66,8 @@ export function collectMeasures(steps){
       }
       else inventory(scope,d);
     }else if(step.source==='trade'&&d.result && (d.result.completeCoverage??!d.result.warnings?.some(s=>/仅覆盖至|尚未导入|缺少.*台账|尚未覆盖/.test(s)))){
-      const addTrade=(group,row)=>{
+      const ranks=rankedPeriods(d);
+      const addTrade=(group,row,period=false)=>{
         for(const [k,label] of [['buyRows','买入的流水笔数'],['sellRows','卖出的流水笔数']])add(scope,group+' '+label,row[k],'笔');
         for(const [k,label] of [['averageCents','按全部匹配逐笔计算的均笔本金'],['buyAverageCents','买入的均笔本金'],['sellAverageCents','卖出的均笔本金']]){
           if(Number.isFinite(row[k]))add(scope,group+' '+label,row[k]/1e10,'亿元/笔');
@@ -57,13 +75,18 @@ export function collectMeasures(steps){
         for(const [k,label] of Object.entries(metrics)){
           if(k==='buyCents'&&d.plan.direction==='sell'||k==='sellCents'&&d.plan.direction==='buy')continue;
           if(['grossCents','netCents'].includes(k)&&d.plan.direction!=='both')continue;
-          if(Number.isFinite(row[k]))add(scope,group+' '+label,k.endsWith('Cents')?row[k]/1e10:row[k],k==='rows'?'笔':k==='bonds'?'只':'亿元',
+          const rank=period&&ranks?.field===k?'（'+ranks.labels.get(row[k])+'）':'';
+          if(Number.isFinite(row[k]))add(scope,group+' '+label+rank,k.endsWith('Cents')?row[k]/1e10:row[k],k==='rows'?'笔':k==='bonds'?'只':'亿元',
             k.endsWith('Cents')?{tradeAmount:k,cohort:scope+' / '+group}:undefined);
         }
       };
       addTrade('全部匹配',d.result.totals);
+      for(const h of d.result.highlights||[]){
+        if(h.unit==='分')add(scope,h.label,h.value/1e10,'亿元');
+        else if(h.unit==='笔'||h.unit==='只')add(scope,h.label,h.value,h.unit);
+      }
       if(d.plan.groupBy?.length&&d.plan.groupBy.every(k=>publicGroups.has(k))){
-        for(const row of d.result.groups.filter((r,i)=>i<50||r.values.some(v=>scope.includes(String(v)))))addTrade(row.values.join(' / '),row);
+        for(const row of d.result.groups.filter((r,i)=>i<50||r.values.some(v=>scope.includes(String(v)))))addTrade(row.values.join(' / '),row,true);
       }
     }else if(step.source==='portfolio'){
       add(scope,'周均余额',d.mean,'亿元');
@@ -74,9 +97,17 @@ export function collectMeasures(steps){
       }
       for(const v of d.values||[]){
         const prefix=v.date+' ';
+        const rating=d.spec.metric==='impliedRatingShare', dateScope=JSON.stringify([v.date,d.spec.account||null,d.spec.branch||null]);
         for(const [field,label] of [['gross','全额在账'],['excluded','剔除'],['covered','已核验可纳入指标、用作加权权重的有效名义'],['target','门槛内']]){
-          if(Number.isFinite(v[field]))add(scope,prefix+label+'本金',v[field]/1e10,'亿元');
+          if(rating && (field==='covered'||field==='target')){
+            const n=field==='target'?(v.coveredTarget??v.target):v.covered;
+            const numerator=field==='target';
+            if(Number.isFinite(n))add(scope,prefix+(numerator?'有有效评级的持仓中，门槛档位及以下的本金':'有效评级的全部本金（只含已核验评级的分母）'),n/1e10,'亿元',
+              numerator?{ratingNumerator:dateScope}:{ratingDenominator:dateScope});
+          }else if(Number.isFinite(v[field]))add(scope,prefix+label+'本金',v[field]/1e10,'亿元');
         }
+        if(rating && Number.isFinite(v.unknown))add(scope,prefix+'评级待核本金',v.unknown/1e10,'亿元');
+        if(rating && v.value==null)add(scope,prefix+'仅按有效评级本金计算的门槛内占比（每百元有效评级本金所含金额）',v.coveredShare,'%');
         add(scope,prefix+(d.spec.metric==='modifiedDuration'?'以纳入计算的有效名义本金为权重的修正久期':'门槛内评级本金占有效本金'),v.value,d.spec.metric==='modifiedDuration'?'年':'%');
       }
       const ratingScope=JSON.stringify([d.spec?.end,d.spec?.account||null,d.spec?.branch||null]);
@@ -217,6 +248,7 @@ export async function deriveAnswer({question,steps,history,apiKey,effort,fetchIm
     });
   }
   const input={question,previousQuestion:recent?.question,rendered:renderedEvidence(steps),priorRendered:renderedEvidence(recent?.answer?.steps||[]),
+    groupedMeasures:'期间排名来自逐期实际数值，标签含从高到低、从低到高或净卖出金额名次。问哪个期间最活跃、哪几个期间最多或最低，直接用对应的 value 并在回答标签点明期间及名次，保留并列。完整分组给出的正负合计及未填写组已经包含所有原始行；核对两类贡献与全范围净额时直接使用这几项并比较，保留净卖出负号。只索求有效评级本金内的百分比或每百元金额时可用该有效子集的已算比例或已核实分子分母，并标明适用范围。',
     scopes:Object.fromEntries(scopes.map((s,i)=>['s'+(i+1),s])),columns:['id','查询范围','服务器已核实的数值指标','单位'],facts:labels};
   let verified;
   for(let i=0;i<2;i++){

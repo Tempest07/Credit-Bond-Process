@@ -56,6 +56,19 @@ async function originSeed(resources,origin){
 }
 const publicLedger=({id,year,direction,filename,rowCount,start,end,asOf,totalCents})=>({id,year,direction,filename,rowCount,start,end,asOf,totalCents});
 const inventoryIds=step=>step.source!=='inventory'?[]:[step.data,...(step.data?.overview||[]).map(x=>x.result)].map(t=>t?.resultId).filter(uuid);
+function describeMissingBranches(question,data){
+  if(!/(?:未填|没填|空白|缺失|为空|没有填|空分行)/u.test(question)||!data?.dimensions?.includes('branch')||
+    data.dimensions.length!==2||!Array.isArray(data.groups)||!data.groups.length||data.groupsTruncated)return;
+  if(data.groups.some(g=>!Number.isSafeInteger(g.cents)||!Array.isArray(g.labels))||
+    data.groups.reduce((sum,g)=>sum+g.count,0)!==data.rowCount)return;
+  const branch=data.dimensions.indexOf('branch'),amounts=new Map();
+  for(const g of data.groups){
+    const name=g.labels[1-branch]||'未填写',label=(g.labels[branch]||'').trim();
+    amounts.set(name,(amounts.get(name)||0)+(!label||['未填写','（未填）'].includes(label)?g.cents:0));
+  }
+  if(amounts.size<=15)data.summary=(data.summary||'')+'。未填写联动分行的本金分别为'+[...amounts].map(([name,cents])=>
+    name+' '+(cents/1e10).toLocaleString('zh-CN',{maximumFractionDigits:8})+' 亿元').join('、')+'。';
+}
 
 export async function jointAction(resources,action,{input,params,planner=planJointQuestion,execute=executeJointPlan}={}){
   const {db,owner,apiKey}=resources;if(!owner)fail('请先登录。',401);
@@ -113,6 +126,7 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
       const availableTradeTotals=trade?.completeCoverage===true?['buyCents','sellCents','netCents','rows']
         .filter(k=>Number.isFinite(trade.totals[k])&&(plan.direction==='both'||k==='rows'||k===plan.direction+'Cents')):[];
       return {id:s.id,source:s.source,question:s.question,availableTradeTotals,
+        ...(s.data?.profileSpec?{profileSpec:s.data.profileSpec,filters:plan?.filters}:{}),
         settlementRange:trade?plan?.filters?.find(f=>f.field==='交易交割日'&&f.op==='between')?.value:undefined,
         groupBy:s.data?.securityMembers?.length?['code']:plan?.groupBy||s.data?.dimensions||plan?.group,
         snapshotDate:s.data?.snapshot?.date||s.snapshotDate,start:plan?.start||s.start,end:plan?.end||s.end,
@@ -157,6 +171,7 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
   if(plan.basisNotes?.includes('flowVsBalance')){
     result.methodNotes=['交易对库存的净流入或净流出按期间买入本金减卖出本金计算。实际在账余额的变动需另用期初、期末两期余额台账核对，期间还可能有兑付或划转。'];
   }
+  for(const s of result.steps||[])if(s.source==='inventory')describeMissingBranches(question,s.data);
   const answer={...result,referenceDate:selectedDate||null,id:crypto.randomUUID(),steps:(result.steps||[]).map(s=>({...s,data:s.source==='inventory'?compact(s.data):s.data}))};
   const next=version+1,title=last?.title||Array.from(question).slice(0,55).join(''),updatedAt=new Date().toISOString();
   const [saved]=await db.batch([
