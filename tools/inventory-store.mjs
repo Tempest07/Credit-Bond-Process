@@ -513,6 +513,21 @@ function detailQuery(evidence,plan,{typeRules=true,accountRules=2}){
   return 'SELECT sourceRow,cents,'+fieldNames.join(',')+(evidence?',guarantor,attribution':'')+(includeType?','+classifiedType+' AS queryMarketType':'')+
     (includeAccount?','+accountSqlFor(accountRules)+' AS queryAccount':'')+' FROM '+(evidence?roleRows:'inventory_rows')+' WHERE ';
 }
+function reconcileRows(result,rows){
+  if(rows.length!==result.rowCount||rows.reduce((sum,r)=>sum+r.cents,0)!==result.totalCents)throw Error('export reconciliation failed');
+}
+// A profile needs the source rows immediately. Use the same pinned snapshot,
+// normalized plan, role evidence and source-row selection as its saved answer.
+export async function newInventoryProfileRows(db,snapshot,filters,bucket,sourceRows){
+  const input={date:snapshot.date,metric:'principal',group:'none',filters};
+  const data=await newInventoryAnswer(db,snapshot,input,bucket,[],undefined,sourceRows);
+  if(!data.resultId)return {data};
+  const {plan,roleEvidence}=data, options={sourceRows};
+  const w=where(snapshot,plan,null,roleEvidence,options);
+  const rows=data.rowCount?await loadRows(db,detailQuery(roleEvidence,plan,options),w):[];
+  reconcileRows(data,rows);
+  return {data,rows};
+}
 export async function answerDetails(db,id,{group=null,offset=0,limit=50}={}) {
   const context=await answerContext(db,id),{snapshot,plan,evidence}=context;
   if(plan.analysis){
@@ -561,6 +576,6 @@ export async function exportData(db,id){
     const page=await bind(db,detailQuery(evidence,plan,context)+w.sql+' ORDER BY sourceRow LIMIT 500 OFFSET ?',[...w.args,i]).all();
     rows.push(...page.results);
   }
-  if(rows.length!==result.rowCount||rows.reduce((sum,r)=>sum+r.cents,0)!==result.totalCents)throw Error('export reconciliation failed');
+  reconcileRows(result,rows);
   return {result,rows};
 }

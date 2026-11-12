@@ -1,5 +1,5 @@
 import {accountLabel} from './inventory-account.mjs';
-import {exportData,newInventoryAnswer} from './inventory-store.mjs';
+import {newInventoryProfileRows} from './inventory-store.mjs';
 import {InventoryError} from './inventory-workbook.mjs';
 
 const groupFields={issuer:'发行人',branch:'联动分行',account:'会计科目',portfolio:'交易组合',code:'债券代码',sourceMarketType:'原表债券类型'};
@@ -235,9 +235,8 @@ export async function inventoryProfile({db,bucket},step,ctx){
       .bind(snapshot.id,...args).all();
     sourceRows=hit.results.map(r=>r.sourceRow);
   }
-  const data=await newInventoryAnswer(db,snapshot,{date:snapshot.date,metric:'principal',group:'none',filters},bucket,[],undefined,sourceRows);
+  const {data,rows}=await newInventoryProfileRows(db,snapshot,filters,bucket,sourceRows);
   if(!data.resultId)return data;
-  const {rows}=await exportData(db,data.resultId);
   const full=buildProfile(step.profile,rows,snapshot);
   // Allow large count lists in the matrix while bounding the persisted D1
   // answer payload for unusually large ledgers with very long group labels.

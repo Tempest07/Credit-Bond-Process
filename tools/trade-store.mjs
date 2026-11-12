@@ -2,24 +2,27 @@ import {accountLabel} from './inventory-account.mjs';
 import {InventoryError} from './inventory-workbook.mjs';
 import {parseTradeWorkbook,exportTradeWorkbook,ledgerCategory} from './trade-workbook.mjs';
 import {periodFields as timeFields,periodLabel,periodMatches,tradeCodeLookup,bondCodeFields,groupedTradeCode,validTradeDateRange} from './trade-fields.mjs';
+import {ensureTradeIndexSchema,backfillTradeIndex} from './trade-query-index.mjs';
+import {canUseTradeIndex,readTradeAggregates} from './trade-query-sql.mjs';
 const error=(message,status=400)=>{throw new InventoryError(message,status)};
 const schema=[
  'CREATE TABLE IF NOT EXISTS trade_ledger_versions(id TEXT PRIMARY KEY, doc TEXT NOT NULL)',
  'CREATE TABLE IF NOT EXISTS trade_ledger_current(year INTEGER NOT NULL,direction TEXT NOT NULL,id TEXT NOT NULL REFERENCES trade_ledger_versions(id),PRIMARY KEY(year,direction))'
 ];
 const initialized=new WeakSet();
-async function init(db){if(!initialized.has(db)){await db.batch(schema.map(sql=>db.prepare(sql)));initialized.add(db);}}
-const pub=({blocks,...v})=>v;
+async function init(db){if(!initialized.has(db)){await db.batch(schema.map(sql=>db.prepare(sql)));await ensureTradeIndexSchema(db);initialized.add(db);}}
+const pub=({blocks,queryIndexed,...v})=>v;
 const dirName=d=>d==='buy'?'增持':'减持';
 async function docs(db,ids){
  await init(db);
  if(ids!==undefined && (!Array.isArray(ids)||ids.length>120||ids.some(id=>typeof id!=='string'||id.length>120)))error('流水版本列表无效。');
  if(ids && !ids.length)return [];
- const sql=ids?'SELECT doc FROM trade_ledger_versions WHERE id IN ('+ids.map(()=>'?').join(',')+')':
- 'SELECT v.doc FROM trade_ledger_versions v JOIN trade_ledger_current c ON c.id=v.id ORDER BY c.year,c.direction';
+ const select='SELECT v.doc,ready.version AS indexed FROM trade_ledger_versions v LEFT JOIN trade_query_ready ready ON ready.version=v.id';
+ const sql=ids?select+' WHERE v.id IN ('+ids.map(()=>'?').join(',')+')':
+ select+' JOIN trade_ledger_current c ON c.id=v.id ORDER BY c.year,c.direction';
  const q=db.prepare(sql),r=await (ids?q.bind(...ids):q).all();
  if(ids && r.results.length!==new Set(ids).size)error('找不到当时使用的完整交易台账版本。',409);
- const vs=r.results.map(x=>JSON.parse(x.doc));
+ const vs=r.results.map(x=>({...JSON.parse(x.doc),queryIndexed:!!x.indexed}));
  if(new Set(vs.map(v=>v.year+v.direction)).size!==vs.length)error('同一年度及方向不能同时使用两个版本。');
  return vs.sort((a,b)=>a.year-b.year||a.direction.localeCompare(b.direction));
 }
@@ -34,7 +37,8 @@ async function immutableIO(operation){
  }
 }
 const root=id=>'trade-ledgers/v1/'+id+'/';
-export async function ingestTradeLedger({db,bucket},bytes,filename){
+export async function ingestTradeLedger(resources,bytes,filename){
+ const {db,bucket}=resources;
  if(typeof filename!=='string'||filename.length>220||/[\\/\u0000-\u001f]/.test(filename)||!filename.toLowerCase().endsWith('.xlsx'))error('请上传 .xlsx 交易表。');
  const parsed=parseTradeWorkbook(bytes,filename,{compact:true}),{chunks,...meta}=parsed;
  const {year,direction}=meta;
@@ -65,8 +69,17 @@ export async function ingestTradeLedger({db,bucket},bytes,filename){
    if(switched.meta.changes!==1){
      await db.prepare('DELETE FROM trade_ledger_versions WHERE id=?').bind(id).run();publishAttempted=false;error('另一个上传已先更新该年度及方向，请刷新后重试。',409);
    }
+   // The immutable source is now active. A stopped or failed index build never
+   // changes its availability. Reads can resume from the last complete block.
+   const index=buildIndex(resources,doc);
+   if(resources.waitUntil)resources.waitUntil(index);else await index;
    return {ledger:pub(doc),duplicate:false};
  }catch(e){if(!publishAttempted)await Promise.allSettled(uploaded.map(k=>bucket.delete(k)));throw e;}
+}
+function buildIndex(resources,doc,options){
+ return backfillTradeIndex(resources,doc,options).catch(()=>{
+   console.warn('Trade query index backfill will retry on a later request.');
+ });
 }
 
 const derived=[...timeFields,'会计科目','台账年度','台账类别','增减方向','券码'];
@@ -192,6 +205,30 @@ function getter(v,f){
  if(f==='增减方向')return ()=>dirName(v.direction);
  return f==='名义本金'?r=>r[i]/100:r=>r[i];
 }
+const scheduledIndex=new WeakSet();
+async function queryScope(resources,plan,versions,verifiedMembers){
+ const {db}=resources;
+ const scope=setup(plan,versions,verifiedMembers);
+ const window=scope.plan.filters.find(f=>f.field==='交易交割日'&&f.op==='between');
+ if((window || canUseTradeIndex(scope.plan)) && resources.waitUntil && !scheduledIndex.has(resources)){
+   const missing=scope.relevant.find(v=>!v.queryIndexed);
+   if(missing){
+     scheduledIndex.add(resources);
+     resources.waitUntil(buildIndex(resources,missing,{maxBlocks:3}));
+   }
+ }
+ if(!window)return scope;
+ const ids=scope.relevant.filter(v=>v.queryIndexed).map(v=>v.id);
+ if(!ids.length)return scope;
+ // Only skip blocks proven disjoint on the literal settlement-day predicate.
+ // Older or unclassified blocks still go through the full reader.
+ const {results}=await db.prepare(
+   'SELECT version,block FROM trade_query_block_settlement WHERE version IN (SELECT value FROM json_each(?))'+
+   ' AND (firstDay IS NULL OR lastDay<? OR firstDay>?)'
+ ).bind(JSON.stringify(ids),...window.value).all();
+ scope.excludedBlocks=new Set(results.map(r=>r.version+'/'+r.block));
+ return scope;
+}
 async function* matches(bucket,scope,observed){
  const {start,end,filters}=scope.plan;
  const lookup=scope.codeLookup;
@@ -203,7 +240,7 @@ async function* matches(bucket,scope,observed){
      return r=>test(get(r));
    });
    for(const [i,[min,max]] of v.blocks.entries()){
-     if(start&&max<start||end&&min>end)continue;
+     if(start&&max<start||end&&min>end||scope.excludedBlocks?.has(v.id+'/'+i) && !observed?.size && !lookup)continue;
      const obj=await immutableIO(()=>bucket.get(root(v.id)+'block-'+i+'.json'));if(!obj)error('交易数据块不可用，请稍后重试。',503);
      const rows=await obj.json();if(!Array.isArray(rows))error('交易数据块校验失败。',503);
      const samples=observed?[...observed.entries()].map(([field,set])=>[getter(v,field),set]):[];
@@ -229,10 +266,10 @@ function add(c,v,cents,code,dates,average){
    if(day>bounds['last'+kind])bounds['last'+kind]=day;
  }
 }
-function finish(c,average){const {buyCents,sellCents,rows,codes}=c;const grossCents=buyCents+sellCents;
+function finish(c,average){const {buyCents,sellCents,rows}=c;const grossCents=buyCents+sellCents;
  if(!Number.isSafeInteger(grossCents))error('所选范围的交易金额超过精确统计上限。');
  const buyRows=c.buyRows||0,sellRows=rows-buyRows;
- return {buyCents,sellCents,grossCents,netCents:buyCents-sellCents,rows,bonds:codes.size,...(c.dates?{dates:c.dates}:{}),
+ return {buyCents,sellCents,grossCents,netCents:buyCents-sellCents,rows,bonds:c.codes?.size??c.bonds,...(c.dates?{dates:c.dates}:{}),
    ...(average?{buyRows,sellRows,averageCents:rows?grossCents/rows:null,buyAverageCents:buyRows?buyCents/buyRows:null,sellAverageCents:sellRows?sellCents/sellRows:null}:{})};}
 // Enumerate the requested periods independently of whether the ledger had any trades.
 function calendarGroups(field,start,end,filters){
@@ -357,7 +394,7 @@ function periodHighlights(scope,list,field){
  }
  return results;
 }
-async function aggregate(bucket,s){
+async function scanTradeGroups(bucket,s){
  const t=counter(),groups=new Map(),getters=new Map(s.relevant.map(v=>[v.id,s.plan.groupBy.map(f=>f==='券码'&&s.fixedSecurity?()=>s.fixedSecurity:getter(v,f))]));
  const observed=new Map(s.plan.filters.filter(f=>['表内/委外','会计分类','会计科目','债券类型','交易市场(一级/二级)'].includes(f.field)&&f.op!=='notEmpty').map(f=>[f.field,new Set()]));
  const dayColumns=s.plan.metric==='dateRange'?new Map(s.relevant.map(v=>[v.id,['交易日期','交易交割日'].map(f=>v.headers.indexOf(f))])):null;
@@ -379,6 +416,22 @@ async function aggregate(bucket,s){
    if(!s.completeCoverage)error('已覆盖的交易明细中未见该券码，所问期间流水尚不完整，无法确认全期是否成交。',422);
    s.warnings.push('两个券码列均已检查，所问期间和筛选范围内没有匹配交易。');
  }
+ return {t,groups};
+}
+async function tradeGroups(resources,s){
+ const {db,bucket}=resources;
+ if(s.relevant.length && s.relevant.every(v=>v.queryIndexed) && canUseTradeIndex(s.plan)){
+   const {total,groups}=await readTradeAggregates(db,s,canonical);
+   // Preserve the file reader's list of observed account labels on a miss.
+   if(total.rows || !s.plan.filters.some(f=>['会计科目','会计分类'].includes(f.field))){
+     if(groups.length>100000)error('分组过多，请缩小时间范围或减少分组列。');
+     return {t:total,groups:new Map(groups.map(g=>[JSON.stringify([g.name]),{values:[g.name],c:g}]))};
+   }
+ }
+ return scanTradeGroups(bucket,s);
+}
+async function aggregate(resources,s){
+ const {t,groups}=await tradeGroups(resources,s),average=s.plan.metric==='average';
  addEmptyGroups(s,groups);
  const field=s.plan.metric==='dateRange'?'rows':['bonds','rows'].includes(s.plan.metric)?s.plan.metric:s.plan.metric+'Cents';
  const totals=finish(t,average),groupKey=v=>canonical({field:s.plan.groupBy[0],op:'eq'},v);
@@ -473,17 +526,19 @@ async function codeTradeEvidence(bucket,scope,list,totals){
      (totals.rows>rows.length?'页面仅列前 '+rows.length+' 笔，完整匹配流水可下载。':''),
    source:scope.relevant.map(v=>v.filename).join('、'),columns:evidenceColumns([...originFields,['raw','债券代码'],['standard','债券标准代码'],['principal','名义本金','亿元']]),rows};
 }
-export async function runTradeQuery({db,bucket},plan,versionIds,{collectMembers=false,verifiedMembers}={}){
- const s=setup(plan,await docs(db,versionIds),verifiedMembers),{list,totals,highlights}=await aggregate(bucket,s);
+export async function runTradeQuery(resources,plan,versionIds,{collectMembers=false,verifiedMembers}={}){
+ const {db,bucket}=resources;
+ const s=await queryScope(resources,plan,await docs(db,versionIds),verifiedMembers),{list,totals,highlights}=await aggregate(resources,s);
  const ledgerReport=s.plan.dateExtreme?await dayTradeEvidence(bucket,s,list):s.plan.auditCodeRows?await codeTradeEvidence(bucket,s,list,totals):null;
  return {plan:s.plan,totals,completeCoverage:s.completeCoverage,...(ledgerReport?{ledgerReport}:{}),
    ...(collectMembers?{memberNames:list.filter(group=>group.rows>0).map(group=>group.values[0]),
      memberAmounts:list.filter(group=>group.rows>0).map(group=>({name:group.values[0],buy:group.buyCents,sell:group.sellCents}))}:{}),
    groups:list.slice(0,s.plan.limit??100),groupCount:list.length,versions:s.relevant.map(pub),warnings:s.warnings,highlights};
 }
-export async function tradeDateBridge({db,bucket},start,end,filters,versionIds){
+export async function tradeDateBridge(resources,start,end,filters,versionIds){
+ const {db,bucket}=resources;
  const common={direction:'both',groupBy:[],metric:'net'},versions=await docs(db,versionIds);
- const scopes=[setup({...common,start,end,filters},versions),setup({...common,start:null,end:null,filters:[...filters,{field:'交易交割日',op:'between',value:[start,end]}]},versions)];
+ const scopes=[setup({...common,start,end,filters},versions),await queryScope(resources,{...common,start:null,end:null,filters:[...filters,{field:'交易交割日',op:'between',value:[start,end]}]},versions)];
  const totals=[],rows=[];
  let crossedCents=0;
  for(const [i,s] of scopes.entries()){
@@ -511,8 +566,9 @@ export async function tradeDateBridge({db,bucket},start,end,filters,versionIds){
    source:[...new Set(scopes.flatMap(s=>s.relevant.map(v=>v.filename)))].join('、'),note:'同时计入两侧的交易贡献为零。空交割日保留为待核，不作为已知跨月日期。'+
      (complete?'':scopes.flatMap(s=>s.warnings).join(' '))}};
 }
-export async function tradeExportSheets({db,bucket},plan,versionIds,verifiedMembers){
- const s=setup(plan,await docs(db,versionIds),verifiedMembers),{totals,list,highlights}=await aggregate(bucket,s);
+export async function tradeExportSheets(resources,plan,versionIds,verifiedMembers){
+ const {db,bucket}=resources;
+ const s=await queryScope(resources,plan,await docs(db,versionIds),verifiedMembers),{totals,list,highlights}=await aggregate(resources,s);
  const sourceHeaders=[...new Set(s.relevant.flatMap(v=>v.headers))];
  async function* detail(){
    const cols=new Map(s.relevant.map(v=>[v.id,sourceHeaders.map(h=>v.headers.indexOf(h))])),money=sourceHeaders.indexOf('名义本金');

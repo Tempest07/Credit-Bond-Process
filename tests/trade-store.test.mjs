@@ -25,6 +25,47 @@ async function sample(side,extra=0,end='2024-12-31'){
  return new Uint8Array(await w.xlsx.writeBuffer());
 }
 const plan={direction:'both',metric:'net',start:'2024-01-01',end:'2024-12-31',groupBy:['发行人全称'],limit:1};
+test('a pinned mixed-version query keeps its exact rankings during and after an on-demand index rebuild',async()=>{
+ const r=isolated(),w=new ExcelJS.Workbook();await w.xlsx.load(await sample('buy'));
+ const sheet=w.worksheets[0];
+ sheet.getCell('D2').value='é';sheet.getCell('D3').value='e\u0301';
+ sheet.getCell('J2').value='Ａ区';sheet.getCell('J3').value='Ａ区';
+ const old=(await ingestTradeLedger(r,new Uint8Array(await w.xlsx.writeBuffer()),buy)).ledger;
+ const sale=(await ingestTradeLedger(r,await sample('sell'),sell)).ledger;
+ const ids=[old.id,sale.id];
+ await ingestTradeLedger(r,await sample('buy',50),buy);
+ const questions=[
+   {...plan,limit:null,metric:'gross',filters:[{field:'联动分行',op:'in',value:['a区']}]},
+   {...plan,limit:null,metric:'average',groupBy:['交易季度']},
+   {...plan,limit:null,groupBy:['交易月份'],end:'2024-03-31'},
+ ];
+ const get=r.bucket.get.bind(r.bucket);let reads=0;
+ r.bucket.get=key=>{reads++;return get(key);};
+ const all=()=>Promise.all(questions.map(q=>runTradeQuery(r,q,ids)));
+ const indexed=await all();assert.equal(reads,0);
+ assert.deepEqual(indexed[0].groups.map(g=>g.values[0]),['é','e\u0301']);
+ // This old version now looks exactly like a pre-upgrade import. Any partial
+ // indexes for other books must not be mixed with the complete result.
+ for(const table of ['trade_query_ready','trade_query_progress','trade_query_rows','trade_query_block_settlement'])
+   await r.db.prepare('DELETE FROM '+table+' WHERE version=?').bind(old.id).run();
+ assert.deepEqual(await all(),indexed);assert.ok(reads>=questions.length);
+ const pending=[];
+ assert.deepEqual(await runTradeQuery({...r,waitUntil:task=>pending.push(task)},questions[0],ids),indexed[0]);
+ assert.equal(pending.length,1);await Promise.all(pending);reads=0;
+ assert.deepEqual(await all(),indexed);assert.equal(reads,0);
+});
+test('settlement index skips only known disjoint blocks and preserves account miss diagnostics',async()=>{
+ const r=isolated();
+ for(const side of ['buy','sell'])await ingestTradeLedger(r,await sample(side),side==='buy'?buy:sell);
+ const get=r.bucket.get.bind(r.bucket);let reads=0;r.bucket.get=key=>{reads++;return get(key);};
+ const filter={field:'交易交割日',op:'between',value:['2024-02-01','2024-02-29']};
+ const p={...plan,start:null,end:null,limit:null,groupBy:[],filters:[filter]};
+ const hit=await runTradeQuery(r,p);assert.equal(hit.totals.rows,0);assert.equal(reads,0);
+ await assert.rejects(runTradeQuery(r,{...p,filters:[filter,{field:'会计科目',op:'eq',value:'不存在'}]}),/已见取值包括/);
+ assert.equal(reads,2);
+ reads=0;await r.db.prepare('DELETE FROM trade_query_block_settlement').run();
+ assert.deepEqual(await runTradeQuery(r,p),hit);assert.equal(reads,2);
+});
 test('daily signed net extremes drill through to matching immutable ledger rows, including tied dates',async()=>{
  const r=isolated();await ingestTradeLedger(r,await sample('buy'),buy);
  const w=new ExcelJS.Workbook();await w.xlsx.load(await sample('sell'));

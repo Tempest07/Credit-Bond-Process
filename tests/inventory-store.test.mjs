@@ -8,6 +8,7 @@ import {inventoryHttp,queryInventory} from '../tools/inventory-http.mjs';
 import {executeJointPlan} from '../tools/joint-execute.mjs';
 import {jointExcel} from '../tools/joint-export.mjs';
 import {calculateInventory} from '../tools/inventory-calculation.mjs';
+import {inventoryProfile,buildProfile} from '../tools/inventory-profile.mjs';
 
 // Runs the actual SQLite queries and transactions, without provisioning cloud data for tests.
 function isolatedStore(){
@@ -54,6 +55,27 @@ test('immutable versions, row preservation, distinct codes, confirmation and ful
   assert.equal(wb.getWorksheet('持仓明细').getCell('N3').value,3);
   const inBook=await newInventoryAnswer(storage.db,v2,{...query,filters:{...query.filters,scope:'表内',holdingStatus:'存续'}});
   assert.equal(inBook.rowCount,1);assert.equal(inBook.totalCents,10000);
+});
+test('a profile pages its exact matched rows once and still reproduces the same report from the locked export',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const book=new ExcelJS.Workbook();await book.xlsx.load(await sample());
+  const sheet=book.worksheets[0],template=sheet.getRow(2).values;
+  for(let i=0;i<1000;i++)sheet.addRow(template);
+  const first=await ingestInventory(store,Buffer.from(await book.xlsx.writeBuffer()),'样例旧版.xlsx');
+  const profile={type:'textMatch',field:'issuer',compare:'equals',text:'甲公司',stat:'list'};
+  const step={snapshotDate:first.date,filters:{branch:'广州'},profile};
+  const hit=await inventoryProfile(store,step,{snapshots:[first]});
+  assert.equal(hit.plan.filters.branch,'广州分行');
+  assert.equal(hit.rowCount,1002);assert.equal(hit.totalCents,10041012);
+  assert.equal(hit.ledgerReport.rows[0].count,1002);
+  assert.equal(hit.ledgerReport.rows[0].sourceRows.split('、').length,1002);
+  await ingestInventory(store,await sample(999),'样例新版.xlsx',first.id);
+  const {result,rows}=await exportData(store.db,hit.resultId);
+  assert.equal(result.snapshot.id,first.id);
+  assert.equal(rows.length,hit.rowCount);assert.equal(result.totalCents,hit.totalCents);
+  assert.deepEqual(buildProfile(profile,rows,result.snapshot),hit.ledgerReport);
+  const empty=await inventoryProfile(store,{...step,profile:{...profile,text:'无匹配样例'}},{snapshots:[first]});
+  assert.equal(empty.rowCount,0);assert.deepEqual(empty.ledgerReport.rows,[]);
 });
 test('account aliases find the original ledger rows and old answers keep their saved classification',async()=>{
   const store=isolatedStore();await initInventory(store.db);

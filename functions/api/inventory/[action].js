@@ -19,6 +19,6 @@ export async function onRequest(context) {
       if(await marker?.text()!==identity)throw Error('inventory bucket mismatch');
       if(params.action==='upload')await initInventory(db);
     }
-    return {db,bucket,owner:user.id,apiKey:env.INVENTORY_OPENAI_API_KEY||''};
+    return {db,bucket,owner:user.id,apiKey:env.INVENTORY_OPENAI_API_KEY||'',waitUntil:context.waitUntil?.bind(context)};
   },['https://tempest07.com','https://www.tempest07.com']);
 }
