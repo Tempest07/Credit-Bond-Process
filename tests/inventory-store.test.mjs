@@ -4,7 +4,10 @@ import {DatabaseSync} from 'node:sqlite';
 import ExcelJS from 'exceljs';
 import {initInventory,ingestInventory,listInventory,newInventoryAnswer,answerSourceRows,readInventoryAnswer,answerDetails,exportData} from '../tools/inventory-store.mjs';
 import {exportInventoryWorkbook} from '../tools/inventory-workbook.mjs';
-import {inventoryHttp} from '../tools/inventory-http.mjs';
+import {inventoryHttp,queryInventory} from '../tools/inventory-http.mjs';
+import {executeJointPlan} from '../tools/joint-execute.mjs';
+import {jointExcel} from '../tools/joint-export.mjs';
+import {calculateInventory} from '../tools/inventory-calculation.mjs';
 
 // Runs the actual SQLite queries and transactions, without provisioning cloud data for tests.
 function isolatedStore(){
@@ -52,6 +55,30 @@ test('immutable versions, row preservation, distinct codes, confirmation and ful
   const inBook=await newInventoryAnswer(storage.db,v2,{...query,filters:{...query.filters,scope:'表内',holdingStatus:'存续'}});
   assert.equal(inBook.rowCount,1);assert.equal(inBook.totalCents,10000);
 });
+test('account aliases find the original ledger rows and old answers keep their saved classification',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await sample(),'库存.xlsx');
+  await store.db.prepare("UPDATE inventory_rows SET account='RECEIVABLE' WHERE version=? AND code='123.IB'").bind(snap.id).run();
+  const plan={date:snap.date,group:'account',metric:'principal',filters:{account:'ac'}};
+  const current=await newInventoryAnswer(store.db,snap,plan);
+  assert.equal(current.plan.filters.account,'Receivable');
+  assert.equal(current.totalCents,41012);
+  assert.equal((await answerDetails(store.db,current.resultId)).total,2);
+  const oci=await newInventoryAnswer(store.db,snap,{...plan,filters:{account:'oci'}});
+  assert.equal(oci.rowCount,1);
+  const paired=await newInventoryAnswer(store.db,snap,{...plan,filters:{account:'AC（Receivable）'}});
+  assert.equal(paired.totalCents,current.totalCents);
+  await store.db.prepare("UPDATE inventory_rows SET account='AC（Receivable）' WHERE version=? AND code='123.IB'").bind(snap.id).run();
+  assert.equal((await newInventoryAnswer(store.db,snap,plan)).totalCents,current.totalCents);
+  const previous={...plan,filters:{account:'AC'},accountRules:1,typeRules:1};
+  await store.db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind('legacy-ac',snap.id,JSON.stringify(previous),'2026-11-11').run();
+  assert.equal((await readInventoryAnswer(store.db,'legacy-ac')).rowCount,0);
+  assert.equal((await answerDetails(store.db,'legacy-ac')).total,0);
+  const priorAnalysis={...previous,filters:{},analysis:[{op:'filter',field:'account',operator:'eq',value:'AC'},{op:'group',fields:['account']}]};
+  await store.db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind('legacy-program',snap.id,JSON.stringify(priorAnalysis),'2026-11-11').run();
+  assert.equal((await readInventoryAnswer(store.db,'legacy-program')).rowCount,0);
+});
+
 test('bad workbook and staging failure leave published version effective',async()=>{
   const storage=isolatedStore();await initInventory(storage.db);
   const original=await ingestInventory(storage,await sample(),'库存.xlsx');
@@ -61,6 +88,80 @@ test('bad workbook and staging failure leave published version effective',async(
   await assert.rejects(ingestInventory(storage,await sample(1),'修订.xlsx',original.id));
   assert.equal((await listInventory(storage.db))[0].id,original.id);assert.equal(storage.objects.size,1);
 });
+test('inventory calculations compare real code sets and validate share membership independently of equal totals',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  async function day(date,code){
+    const b=new ExcelJS.Workbook(),s=b.addWorksheet('本期底稿');
+    s.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','数据业务日期']);
+    for(const [branch,c,name] of [['南京分行','Q.IB','第一期'],['杭州分行',code,'25青江SCP001']])
+      s.addRow(['中心',branch,'AFS','甲组合','表内',c,name,100,'甲发行人','短期融资券',date]);
+    return ingestInventory(store,await b.xlsx.writeBuffer(),date+'.xlsx');
+  }
+  const snapshots=[await day('2026-05-07','Z.IB'),await day('2026-05-14','R.IB')];
+  const slices=snapshots.map(s=>({date:s.date,filters:{}}));
+  const compare=(slices,op)=>calculateInventory(store,{slices,metric:'securities',calculations:[{op,left:1,right:2}]},snapshots);
+  const compared=await compare(slices,'codeSets');
+    assert.deepEqual(compared.codeComparisons.map(c=>[c.shared,c.leftOnly,c.rightOnly]),[[1,1,1]]);
+  assert.match(compared.clarification,/共有 1 只，期末新出现 1 只，期末不再持有 1 只/);
+  const [a]=snapshots;
+  await assert.rejects(compare(['南京分行','杭州分行'].map(branch=>({date:a.date,filters:{branch}})),'share'),/分子包含分母以外/);
+  const query=filters=>newInventoryAnswer(store.db,a,{date:a.date,group:'none',metric:'securities',filters},store.bucket);
+  assert.equal((await query({sourceMarketType:'短期融资券'})).securityCount,2);
+  assert.equal((await query({marketType:'短期融资券'})).securityCount,1);
+  const rawGroups=await newInventoryAnswer(store.db,a,{date:a.date,group:'none',metric:'principal',filters:{},
+    analysis:[{op:'group',fields:['sourceMarketType']},{op:'sort',metric:'principalCents',descending:true},{op:'take',limit:1}]},store.bucket);
+  assert.deepEqual(rawGroups.groups.map(g=>[g.labels,g.securityCount]),[[['短期融资券'],2]]);
+});
+
+test('pinned security lookup retains market suffixes and disambiguates identical short names across issuers',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await roleFixture([
+    ['7001.IB',3,'中票','','','甲','短名一'],['7001.SH',5,'中票','','','乙','短名一'],
+    ['7002.IB',2,'中票','','','甲','短名二'],['7002.IB',4,'中票','','','甲','短名二'],
+  ]),'券码.xlsx');
+  const query=code=>newInventoryAnswer(store.db,snap,{date:snap.date,group:'none',metric:'count',filters:{code}},store.bucket);
+  for(const term of ['短名一','7001'])assert.match((await query(term)).clarification,/7001\.IB.*7001\.SH/);
+  const byName=await query('短名二');assert.equal(byName.plan.filters.code,'7002.IB');assert.equal(byName.rowCount,2);
+  assert.equal((await query('7001.sh')).totalCents,500);
+  assert.equal((await query('9000.IB')).rowCount,0);
+});
+
+test('a cross-ledger code/name pair is pinned by actual code; missing members remain zero in exports and history',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await sample(),'库存.xlsx');
+  const previous={source:'trade',id:'s1',question:'按券码列出买入的券',
+    data:{plan:{groupBy:['债券简称','债券代码'],metric:'buy'},result:{groups:[
+      {values:['测试债','456.IB'],buyCents:400},{values:['同名券','789.IB'],buyCents:300}],groupCount:2}}};
+  const step={id:'s1',source:'inventory',question:'这两只的余额',operation:'memberSummary',
+    selection:{from:'previous1',field:'code',limit:null},filters:{},snapshotDate:snap.date,metric:'principal'};
+  const reply=await executeJointPlan(store,{snapshots:[snap],steps:[step],history:[{answer:{steps:[previous]}}]});
+  const result=reply.steps[0].data,groups=[['456.IB',-220,1],['789.IB',0,0]];
+  for(const value of [result,await readInventoryAnswer(store.db,result.resultId),(await exportData(store.db,result.resultId)).result])
+    assert.deepEqual(value.groups.map(g=>[g.name,g.cents,g.securityCount]),groups);
+});
+
+test('multiple security scopes resolve actual names and markets, deduplicate balances, and discover the issuer denominator',async()=>{
+  const store=isolatedStore();await initInventory(store.db);
+  const snap=await ingestInventory(store,await roleFixture([
+    ['0007.IB',10,'中票','','','甲投资有限公司','甲一'],['0007.IB',20,'中票','','','甲投资有限公司','甲一'],
+    ['0007.SH',80,'公司债','','','乙投资有限公司','乙一'],['0008.IB',70,'中票','','','甲投资有限公司','甲二'],
+  ]),'同码.xlsx');
+  const run=(filters,calculations=[])=>calculateInventory(store,{metric:'principal',
+    slices:filters.map(filters=>({date:snap.date,filters})),calculations},[snap]);
+  await assert.rejects(run([{code:'0007'}]),/0007\.IB.*0007\.SH/);
+  const several=await run([{code:'0007',securityMarket:'IB'},{code:'甲一'},{code:'0008.IB'}]);
+  assert.deepEqual(several.securityMembers,[{code:'0007.IB',cents:3000},{code:'0008.IB',cents:7000}]);
+  assert.match(several.clarification,/甲一.*2 条持仓/);
+  assert.equal(several.overview.length,2);
+  assert.match(several.clarification,/去重合计：0\.000001 亿元，3 条持仓/);
+  const fraction=await run([{code:'0007',securityMarket:'IB'},{issuerOfCode:'甲一'}],[{op:'share',left:1,right:2}]);
+  assert.equal(fraction.overview[1].result.plan.filters.issuer,'甲投资有限公司');
+  assert.match(fraction.clarification,/30%/);
+  const previous={source:'inventory',id:'s1',question:'逐只核对',data:several};
+  const step={id:'s1',source:'inventory',question:'沿用券码名单',operation:'memberSummary',selection:{from:'previous1',field:'code',limit:null},filters:{},snapshotDate:snap.date,metric:'principal'};
+  const reply=await executeJointPlan(store,{snapshots:[snap],steps:[step],history:[{answer:{steps:[previous]}}]});
+  assert.equal(reply.steps[0].data.totalCents,10000);
+});
 
 test('rank issuers within the branch first, then split by ledger account, preserving that cohort in detail, Excel and follow-ups',async()=>{
   const {db,bucket}=isolatedStore();
@@ -68,7 +169,7 @@ test('rank issuers within the branch first, then split by ledger account, preser
   const wb=new ExcelJS.Workbook(), sheet=wb.addWorksheet('本期底稿');
   sheet.addRow(['机构名称','联动分行','会计分类','交易组合','表内/委外','债券代码','债券简称','名义本金','发行人全称','债券类型','数据业务日期']);
   for(const [issuer,account,yuan,branch='北京分行'] of [
-    ['A','公募',79.01],['A','委外（公募）',1],['A','Receivable',20],['B','TRADING',91],['C','AFS',90],['C','AFS',999,'广州分行']
+    ['A','公募',79.01],['A','委外（公募）',1],['A','Receivable',20],['B','TRADING',91],['C','AFS',90],['C','AFS',999,'广州分行'],['A','AFS',500,'广州分行']
   ])sheet.addRow(['中心',branch,account,'组合','表内',issuer+'.IB','样例债',yuan,issuer,'中票','2026-10-29']);
   const snap=await ingestInventory({db,bucket},await wb.xlsx.writeBuffer(),'样例.xlsx');
   const plan={date:snap.date,group:'account',rank:{by:'issuer',limit:2},metric:'principal',filters:{branch:'北京分行'}};
@@ -90,6 +191,16 @@ test('rank issuers within the branch first, then split by ledger account, preser
   assert.equal((await readInventoryAnswer(db,filtered.resultId)).rankReused,true);
   const account=await newInventoryAnswer(db,snap,{...plan,rank:null,filters:{branch:'北京分行',account:'委外(公募)'}},bucket);
   assert.equal(account.totalCents,8001);
+  // Reuse the executed result's rows even when a different branch holds a higher-ranked issuer.
+  const ranked=await newInventoryAnswer(db,snap,{...plan,rank:null,group:'none',analysis:[
+    {op:'group',fields:['issuer']},{op:'sort',metric:'principalCents',descending:true},{op:'take',limit:2}]},bucket);
+  const follow=await executeJointPlan({db,bucket},{snapshots:[snap],
+    history:[{question:'此分行排前两家的余额',answer:{steps:[{id:'s1',source:'inventory',question:'已选前二',data:ranked}]}}],
+    steps:[{id:'s1',source:'inventory',operation:'regroup',from:'previous1',dimensions:['issuer','account'],metric:'principal',question:'这些发行人各按科目拆'}]});
+  const split=follow.steps[0].data;
+  assert.equal(split.totalCents,19101);
+  assert.deepEqual(new Map(split.groups.map(g=>[g.labels.join('|'),g.cents])),new Map([['A|委外（公募）',8001],['A|Receivable',2000],['B|Trading',9100]]));
+  assert.deepEqual((await exportData(db,split.resultId)).rows.map(r=>r.sourceRow),[2,3,4,5]);
   const legacy=crypto.randomUUID();
   await db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(legacy,snap.id,JSON.stringify({...plan,rank:null,typeRules:1}),new Date().toISOString()).run();
   const old=await readInventoryAnswer(db,legacy);
@@ -141,6 +252,35 @@ test('full-name misses are dated ledger answers; nearby names, self-issued holdi
   assert.match(unrelated.clarification,/未查到/);
   assert.equal(unrelated.identity,undefined);
   assert.equal(unrelated.resume.snapshotId,snap.id);
+});
+test('cross-role inventory counts the union of source rows and preserves two distinct holdings of one code',async()=>{
+  const store=isolatedStore();
+  await initInventory(store.db);
+  const name='珠海蓝澜集团有限公司',other='清川资产有限公司';
+  const wb=await roleFixture([
+    ['001.IB',100,'中期票据','',name,name],['001.IB',20,'中期票据','',name,name],
+    ['002.IB',40,'资产支持证券','',name,name],['003.IB',10,'资产支持证券','',name,other],
+    ['004.IB',80,'公司债','',name,other],
+  ]);
+  const snap=await ingestInventory(store,wb,'角色重叠.xlsx');
+  const query={field:'overviewSubject',identityValue:'蓝澜集团',group:'code'};
+  const answer=await queryInventory(query,'manual',store,snap,{snapshots:[snap]});
+  const [issued,enhanced,union]=answer.overview.map(i=>i.result);
+  assert.deepEqual([issued,enhanced,union].map(r=>[r.rowCount,r.securityCount,r.totalCents]),[[3,2,16000],[2,2,5000],[4,3,17000]]);
+  assert.match(answer.clarification,/重叠 1 条持仓/);
+  const exported=await exportData(store.db,union.resultId);
+  assert.deepEqual(exported.rows.map(r=>r.sourceRow),[2,3,4,5]);
+  assert.equal((await readInventoryAnswer(store.db,union.resultId)).totalCents,17000);
+  const xlsx=await jointExcel(store,'核对两类和重叠持仓',{steps:[{id:'s1',source:'inventory',question:'分别核对',data:answer}]},[],'s1');
+  const book=new ExcelJS.Workbook();await book.xlsx.load(xlsx);
+  const sheetNames=book.worksheets.map(s=>s.name);
+  assert.equal(new Set(sheetNames).size,sheetNames.length);
+  assert(sheetNames.every(n=>n.length<=31));
+  assert.deepEqual(book.worksheets.filter(s=>s.name.includes('持仓明细')).map(s=>[s.name,s.rowCount-1]),[
+    ['1-2 自发债 持仓明细',3],['1-5 增信ABS 持仓明细',2],['1-8 去重合计 持仓明细',4]]);
+  const missing=await ingestInventory(store,await roleFixture([['004.IB',80,'公司债','','',name]],false),'缺归属列.xlsx',snap.id);
+  const unknown=await queryInventory(query,'manual',store,missing,{snapshots:[missing]});
+  assert.equal(unknown.overview.find(i=>i.role==='union'),undefined);
 });
 test('ABS enhancement uses only attributed exposure, handles incomplete coverage, and pins detail and export to the imported source',async()=>{
   const store=isolatedStore();await initInventory(store.db);

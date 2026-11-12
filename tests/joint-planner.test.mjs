@@ -6,6 +6,13 @@ const data={apiKey:'test',today:'2026-11-09',selectedDate:'2026-10-30',
   snapshots:['2026-09-24','2026-10-29','2026-10-30','2026-11-05'].map(date=>({date})),
   ledgers:[{year:2026,direction:'buy',asOf:'2026-10-31'},{year:2026,direction:'sell',asOf:'2026-10-31'}]};
 const step=(source,question,props)=>({source,question,snapshotDate:null,start:null,end:null,selection:null,...props});
+test('a truncated provider reply is retried once before running any ledger query',async()=>{
+  let requests=0;
+  const valid=mock(()=>({kind:'steps',comparison:'none',steps:[step('inventory','查本金',{})]}));
+  const fetchImpl=(...args)=>++requests===1?new Response('{'):valid(...args);
+  const result=await planJointQuestion({...data,question:'查本金',fetchImpl});
+  assert.equal(requests,2);assert.equal(result.steps.length,1);
+});
 function mock(run){
   let i=0;
   return async(url,options)=>{
@@ -34,6 +41,31 @@ test('same question can cross sources using real ranked members and carry into a
       {selection:{from:'previous1',field:'issuer',limit:null,indices:[2]}})]};
   })});
   assert.deepEqual(follow.steps[0].selection.indices,[2]);
+});
+
+test('a flow follow-up can reuse verified trade operands when balance snapshots do not cover its period',async()=>{
+  const follow={...data,question:'那段时间对库存是净流入还是净流出？',history:[{question:'2024年四至六月买卖多少？',
+    steps:[{source:'trade',question:'同一期间的买卖',start:'2024-04-01',end:'2024-06-30',
+      availableTradeTotals:['buyCents','sellCents','netCents','rows']}]}]};
+  let calls=0;
+  const result=await planJointQuestion({...follow,fetchImpl:mock(input=>{
+    assert.deepEqual(input.history[0].steps[0].availableTradeTotals,['buyCents','sellCents','netCents','rows']);
+    return ++calls===1?{kind:'clarification',clarification:'缺少当年的快照'}:
+      {kind:'previousCalculation',from:['previous1'],flowVsBalance:true};
+  })});
+  assert.equal(calls,2);
+  assert.deepEqual(result,{previousSteps:[0],derive:true,basisNotes:['flowVsBalance']});
+  const invalid=await planJointQuestion({...follow,fetchImpl:mock(()=>({kind:'previousCalculation',from:['previous2'],flowVsBalance:false}))});
+  assert.match(invalid.clarification,/上轮/);
+});
+test('regroup references an executed inventory question and preserves its date, including follow-ups',async()=>{
+  const input={...data,question:'这些主体各自的品种分布和合计呢？',
+    history:[{question:'上期头部发行人',steps:[step('inventory','上期头部发行人',{snapshotDate:'2026-10-29',groupBy:['issuer']})]}]};
+  const next={source:'inventory',operation:'regroup',from:'previous1',question:input.question,dimensions:['issuer','marketType'],metric:'principal'};
+  const plan=step=>planJointQuestion({...input,fetchImpl:mock(()=>({kind:'steps',comparison:'none',steps:[step]}))});
+  assert.equal((await plan(next)).steps[0].snapshotDate,'2026-10-29');
+  assert.match((await plan({...next,from:'s1'})).clarification,/已查到/);
+  assert.match((await plan({...next,filters:{issuer:'甲'}})).clarification,/新筛选/);
 });
 test('balance reconciliation validates real snapshot dates and the exclusive opening boundary',async()=>{
   function plan(start){return {kind:'steps',comparison:'reconcile',steps:[
@@ -96,4 +128,14 @@ test('portfolio validation refuses absent dates, unknown restrictions and reusin
   const rank=await planJointQuestion({...dated,question:'用之前的名单查快照',fetchImpl:mock(()=>decision([
     portfolio('weeklyMean'),step('inventory','查这些券',{selection:{from:'s1',field:'code',limit:null,indices:[]}})]))});
   assert.match(rank.clarification,/组合指标.*名单/);
+});
+
+test('separate dated scopes can be compared for shared issuers without first guessing issuer names',async()=>{
+ const result=await planJointQuestion({...data,question:'广州哪些发行人既买过又还持有？',fetchImpl:mock(()=>({
+    kind:'memberSets',field:'issuer',
+    left:{source:'trade',question:'广州十月买过的发行人',direction:'buy',start:'2026-10-01',end:'2026-10-31',filters:[{field:'联动分行',value:'广州分行'}]},
+    right:{source:'inventory',question:'广州现有持仓发行人',snapshotDate:null,filters:[{field:'branch',value:'广州分行'}]},
+ }))});
+ assert.equal(result.comparison,'memberSets');assert.equal(result.steps[1].snapshotDate,data.selectedDate);
+ assert.deepEqual(result.steps[0].filters,[{field:'联动分行',op:'eq',value:'广州分行'}]);
 });

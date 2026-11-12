@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f6fb">
-  <meta name="application-version" content="5.5.0">
-  <meta name="application-build-version" content="5.5.0">
-  <meta name="application-build" content="20261106inventory542">
-  <title>Bond Centre 5.5.0 - Tempest07</title>
+  <meta name="application-version" content="5.5.1">
+  <meta name="application-build-version" content="5.5.1">
+  <meta name="application-build" content="20261112v551">
+  <title>Bond Centre 5.5.1 - Tempest07</title>
   <link rel="icon" href="./favicon.ico?v=20260907" sizes="16x16 32x32 48x48">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=20260907">
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg?v=20260907">
@@ -60,13 +60,13 @@
         </details>
       </nav>
       <div class="header-tools">
-      <span class="header-version" aria-label="当前版本 5.5.0">v5.5.0</span>
+      <span class="header-version" aria-label="当前版本 5.5.1">v5.5.1</span>
       <button type="button" class="queue-launcher" id="releaseNotesButton" aria-haspopup="dialog" aria-controls="releaseNotesDialog">更新日志</button>
       <button type="button" class="queue-launcher" id="issuanceQueueToggle" aria-controls="issuanceQueuePanel" aria-expanded="false">识别队列 <span class="queue-launcher-count" id="issuanceQueueCount" hidden>0</span></button>
       <details class="workspace-tools" id="workspaceTools">
         <summary>工作区 <svg class="workspace-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
         <div class="workspace-tools-panel">
-          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.5.0 · 2026-11-10">v5.5.0</span></div>
+          <div class="workspace-tools-title"><h2>资料与工具</h2><span class="brand-version" title="内部构建 5.5.1 · 2026-11-12">v5.5.1</span></div>
           <section class="data-source-control" id="dataSourceControl" aria-label="市场数据来源" aria-busy="true">
             <div class="data-source-control-head"><strong id="dataSourceControlLabel">数据源</strong><span data-source-status role="status" aria-live="polite">正在载入…</span></div>
             <div class="data-source-segments" role="group" aria-labelledby="dataSourceControlLabel">
@@ -1704,6 +1704,13 @@
   <dialog class="release-notes-dialog" id="releaseNotesDialog" aria-labelledby="releaseNotesTitle">
     <header class="release-notes-head"><h2 id="releaseNotesTitle">更新日志</h2><button type="button" data-close-release-notes aria-label="关闭更新日志" autofocus>×</button></header>
     <div class="release-notes-body">
+      <div class="release-notes-version"><strong>5.5.1</strong><time datetime="2026-11-12">2026 / 11 / 12</time></div>
+      <section><h3>问数助手 Beta</h3><ul>
+        <li>可比较 OCI（AFS）和 AC（Receivable）的期初与期末持仓，分别查看本金差额、增减幅和两类账户之间的占比变化。</li>
+        <li>按券码查询会同时核对债券代码和标准代码。可沿用上一问选出的券、发行人或持仓，继续查询其他日期的库存和买卖流水。</li>
+        <li>可查询名单的交集与差集，计算占比、均笔金额和加权值，并在页面和下载文件中核对计算依据。</li>
+        <li>分月买卖流水同时列出本金和笔数。查询净流向时显示方向和金额，查询评级占比时可核对有效评级本金分母。</li>
+      </ul></section>
       <div class="release-notes-version"><strong>5.5.0</strong><time datetime="2026-11-10">2026 / 11 / 10</time></div>
       <section><h3>统一台账问数 Beta</h3><ul>
         <li>同一段对话可查余额、增减持、组合修正久期、隐含评级占比和周均规模。可下载逐券或逐周 Excel 核对结果。</li>
@@ -2021,7 +2028,7 @@
   </div>
   <script src="./ui-mode.js?v=20261028v540"></script>
   <script type="module" src="./vendor/search-border-beam.js?v=20261028v540"></script>
-  <script type="module" src="./app.js?v=20261106inventory542"></script>
+  <script type="module" src="./app.js?v=20261112v551"></script>
   <script type="module" src="./todo-fluid.js?v=20261028v540"></script>
   <script type="module" src="./release-notes.js?v=20261028v540"></script>
 </body>

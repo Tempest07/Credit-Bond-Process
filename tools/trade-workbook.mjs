@@ -5,6 +5,11 @@ import {InventoryError,relationships,workbookInfo,sharedStrings,readPart,dateOf,
 const fail=msg=>{throw new InventoryError(msg)};
 const baseHeaders=['交易日期','交易交割日','名义本金','债券代码','发行人全称','债券简称','合同号'];
 const txt=v=>String(v??'').trim();
+// An upload may name the population of the book; individual rows can have many bond types.
+export function ledgerCategory(filename){
+  const title=String(filename||'').normalize('NFKC').replace(/\s/g,'');
+  return /^(?:\d{2,4}年?)?(信用债|利率债)[增减]持/.exec(title)?.[1]||'未标明';
+}
 export function parseTradeWorkbook(bytes,filename,{compact=false}={}){
   const tag=/([增减])持.*?(\d{2}|20\d{2})(01)\s*[-~至－—]\s*(\d{2}|20\d{2})(0[1-9]|1[0-2])(?:[^\d]|$)/u.exec(filename);
   if(!tag || tag[2].slice(-2)!==tag[4].slice(-2))fail('文件名应标明增持或减持，以及同一年度从 01 月开始的累计范围，例如“信用债增持台账报表2601-2610.xlsx”。');

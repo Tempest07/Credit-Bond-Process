@@ -338,7 +338,7 @@ function writeSheet(zip,index,{headers,widths,formats=[],rows,total,filter=false
   chunk+='</sheetData>'+(filter?'<autoFilter ref="A1:'+lastColumn+number+'"/>':'')+'</worksheet>';
   entry.push(encode.encode(chunk),true);
 }
-export const inventoryDimensions=Object.freeze({issuer:'发行人',branch:'联动分行',portfolio:'交易组合',account:'会计科目',scope:'表内/委外',marketType:'债券类型',code:'券码',none:'合计'});
+export const inventoryDimensions=Object.freeze({issuer:'发行人',branch:'联动分行',portfolio:'交易组合',account:'会计科目',scope:'表内/委外',marketType:'债券类型',sourceMarketType:'原表债券类型',code:'券码',none:'合计'});
 const columnLabel=field=>inventoryDimensions[field]??columns[field]??(field==='cents'?'名义本金（人民币分）':field?.replace(/^原表:/,''));
 export function analysisMeasureLabel(measure) {
   if(measure.fn==='principalShare')return '名义本金占比（%）';

@@ -2,8 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const api = "../api/inventory/";
-const groupNames = { issuer: "发行人", branch: "联动分行", portfolio: "交易组合", scope: "持仓范围", account: "会计科目", marketType: "债券类型", code: "逐券", none: "全部持仓" };
-const filterNames = { ...groupNames, code: "券码", holdingStatus: "台账状态", guarantor: "查询担保人", attribution: "损益还原客户" };
+const groupNames = { issuer: "发行人", branch: "联动分行", portfolio: "交易组合", scope: "持仓范围", account: "会计科目", marketType: "债券类型", sourceMarketType: "原表债券类型", code: "逐券", none: "全部持仓" };
+const filterNames = { ...groupNames, code: "券码", sourceMarketType: "原表债券类型", holdingStatus: "台账状态", guarantor: "查询担保人", attribution: "损益还原客户" };
 const evidenceLabels = { enhancement: "增信占用 · 按损益还原客户统计", candidate: "待核实 · 损益还原客户匹配", unknown: "台账信息不足", ledger: "台账列明的担保人", attribution: "客户占用 · 按损益还原客户统计" };
 const number = new Intl.NumberFormat("zh-CN");
 const decimal = new Intl.NumberFormat("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

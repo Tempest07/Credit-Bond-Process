@@ -6,9 +6,11 @@ const byId = id => document.getElementById(joint && uploadIds.has(id) ? "trade-"
 const nf = new Intl.NumberFormat("zh-CN");
 const formatter = new Intl.NumberFormat("zh-CN", {minimumFractionDigits:2, maximumFractionDigits:2});
 const amount = cents => Number.isSafeInteger(cents) ? formatter.format(cents/1e10) : "—";
+const meanFormatter=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:6,maximumFractionDigits:6});
+const meanAmount=cents=>Number.isFinite(cents)?meanFormatter.format(cents/1e10):"—";
 const integer = n => Number.isSafeInteger(n) ? nf.format(n) : "—";
-const metricNames = {buy:"增持", sell:"减持", net:"净增持", gross:"增减持合计", rows:"交易笔数", bonds:"不同券数"};
-const moneyFields = {buy:"buyCents", sell:"sellCents", net:"netCents", gross:"grossCents"};
+const metricNames = {buy:"增持", sell:"减持", net:"净增持", gross:"增减持合计", rows:"交易笔数", bonds:"不同券数",dateRange:"实际交易与交割日期",average:"单笔平均本金"};
+const moneyFields = {buy:"buyCents", sell:"sellCents", net:"netCents", gross:"grossCents",average:"averageCents"};
 const excelType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const state = {books:[], configured:false, loading:true, asking:false, uploading:false, files:[], turns:[], chat:null, retry:null, cursor:null};
 const chatKey = "bond-centre.trade.last-chat";
@@ -129,21 +131,44 @@ function renderTurn({question,answer}, downloadOverride) {
   const {result,plan} = answer;
   const metric = plan.metric, key = moneyFields[metric] || metric;
   const unit = moneyFields[metric] ? "亿元" : metric === "bonds" ? "只" : "笔";
-  const format = moneyFields[metric] ? amount : integer;
+  const format = metric==="average"?meanAmount:moneyFields[metric] ? amount : integer;
   const range = [plan.start || "最早一期", plan.end || "已上传最新一期"].join(" 至 ");
-  const criteria = plan.filters.map(f => f.field + "：" + (Array.isArray(f.value) ? f.value.join("、") : f.value));
+  const criteria = plan.filters.map(f => f.op==="notEmpty"?f.field+"非空":f.field + "：" + (Array.isArray(f.value) ? f.value.join(f.op==="between"?" 至 ":"、") : f.value));
   const label = plan.groupBy.length ? "全部匹配交易 · " + metricNames[metric] : metricNames[metric];
   article.append(el("p",[label,range,...criteria].join(" · "),"meta"));
-  const headline = el("div",format(result.totals[key]),"metric"); headline.append(el("small",unit));article.append(headline);
+  if(metric!=="dateRange"){
+    const headline = el("div",format(result.totals[key]),"metric");headline.append(el("small",unit));article.append(headline);
+  }
   const totals = el("p",null,"tagline flow-totals");
-  const included = plan.direction === "both" ? ["buy","sell","net","rows","bonds"] : [plan.direction,"rows","bonds"];
+  const included = metric==="dateRange"?["rows","bonds"]:plan.direction === "both" ? ["buy","sell","net","rows","bonds"] : [plan.direction,"rows","bonds"];
   for (const m of included.filter(m => m !== metric)) {
     const txt = moneyFields[m] ? amount(result.totals[moneyFields[m]])+" 亿元" : integer(result.totals[m])+(m==="rows"?" 笔":" 只");
     totals.append(el("span",metricNames[m] + " " + txt));
   }
   article.append(totals);
+  if(metric==="average"&&plan.direction==="both"){
+    for(const [side,label] of [["buy","买入"],["sell","卖出"]]){
+      article.append(el("p",label+"每笔平均 "+meanAmount(result.totals[side+"AverageCents"])+" 亿元（"+integer(result.totals[side+"Rows"])+" 笔）","summary"));
+    }
+    article.append(el("p","两边合并单笔平均按全部匹配交易的名义本金之和除以总笔数。","meta"));
+  }
+  if(plan.share)article.append(el("p","占比分母为该查询范围全部匹配交易的"+metricNames[metric]+"，合计 "+format(result.totals[key])+" "+unit+"。","meta"));
+  for(const h of result.highlights || []){
+    const value=h.unit==='分'?amount(h.value)+' 亿元':integer(h.value)+' '+h.unit;
+    article.append(el("p",h.label+"　"+value,"summary"));
+  }
   for (const message of result.warnings || []) article.append(el("p",message,"warning"));
-  if (plan.groupBy.length && result.groups.length) article.append(renderGroups(result,plan));
+  if(metric==="dateRange"){
+    const tbl=el("table"),head=tbl.createTHead().insertRow(),body=tbl.createTBody();
+    const dates=["firstTrade","lastTrade","firstSettlement","lastSettlement"];
+    for(const h of [...plan.groupBy,"首个交易日","最后交易日","首个交割日","最后交割日","缺失交割日笔数"])head.append(el("th",h));
+    for(const group of result.groups){
+      const tr=body.insertRow();
+      for(const x of [...group.values,...dates.map(k=>group.dates?.[k]||"—"),group.dates?.missingSettlement||0])tr.append(el("td",x));
+    }
+    const wrap=el("div",null,"flow-scroll");wrap.append(tbl);article.append(wrap);
+    article.append(el("p","统计实际交易日期落在所选范围内的流水，交割日取这些流水中已填的日期。","meta"));
+  }else if (plan.groupBy.length && result.groups.length) article.append(renderGroups(result,plan));
   const commands = el("div",null,"view-actions");
   const download = action("下载完整 Excel",() => downloadOverride ? downloadOverride(download) : downloadAnswer(answer.id,download));
   commands.append(download);
@@ -184,13 +209,16 @@ function renderGroups(result,plan) {
 }
 function groupTable(groups,plan) {
   const tbl = el("table"), header = tbl.createTHead().insertRow(), body = tbl.createTBody();
-  const cols = [...new Set([plan.metric, ...(plan.direction==="both" ? ["buy","sell","net"] : []),"rows"])];
+  const amounts = plan.direction==="both" ? ["buy","sell","net"] : [plan.direction];
+  const cols = [...new Set([plan.metric,...amounts,"rows"])];
   for (const field of plan.groupBy) header.append(el("th",field));
   for (const m of cols) header.append(el("th",metricNames[m] + (moneyFields[m] ? "（亿元）" : ""),"num"));
+  if(plan.share)header.append(el("th","占比","num"));
   for (const group of groups) {
     const row = body.insertRow();
     for (const label of group.values) row.append(el("td",label || "未填写"));
-    for (const m of cols) row.append(el("td",moneyFields[m] ? amount(group[moneyFields[m]]) : integer(group[m]),"num"));
+    for (const m of cols) row.append(el("td",m==="average"?meanAmount(group.averageCents):moneyFields[m] ? amount(group[moneyFields[m]]) : integer(group[m]),"num"));
+    if(plan.share)row.append(el("td",group.share==null?"—":formatter.format(100*group.share)+"%","num"));
   }
   return tbl;
 }
@@ -205,7 +233,7 @@ function groupChart(groups,metric) {
     fill.style.left = 100*(Math.min(0,v)-min)/range + "%";
     fill.style.width = 100*Math.abs(v)/range + "%";
     track.setAttribute("aria-hidden","true");track.append(fill);
-    row.append(el("span",group.values.map(s=>s||"未填写").join(" / ")),track,el("span",moneyFields[metric] ? amount(v)+" 亿元" : integer(v)+(metric==="rows"?" 笔":" 只"),"num"));
+    row.append(el("span",group.values.map(s=>s||"未填写").join(" / ")),track,el("span",metric==="average"?meanAmount(v)+" 亿元":moneyFields[metric] ? amount(v)+" 亿元" : integer(v)+(metric==="rows"?" 笔":" 只"),"num"));
     chart.append(row);
   }
   return chart;

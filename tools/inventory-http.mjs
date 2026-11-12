@@ -150,8 +150,23 @@ async function executeInventoryPlan({db,bucket}, snapshot, plan, subject, sugges
         return identityReply(subject,'overviewSubject',filters,[issued.plan.filters.issuer,enhanced.roleEvidence.entity]);
       const missingRole=(result,source)=>exact && result.identity
         ? {clarification:'本期“'+source+'”未匹配该主体全称。'} : result;
-      return {clarification:'按“'+subject+'”分别查看自发债和增信 ABS。',overview:[
-        {title:'自己发行的债券',result:missingRole(issued,'发行人全称')},{title:'占用其授信的 ABS',result:missingRole(enhanced,'资产端损益还原客户名称')}]};
+      const overview=[{role:'issuer',title:'自己发行的债券',result:missingRole(issued,'发行人全称')},
+        {role:'enhancement',title:'占用其授信的 ABS',result:missingRole(enhanced,'资产端损益还原客户名称')}];
+      let clarification='按“'+subject+'”分别查看自发债和增信 ABS。';
+      if(issued.resultId && enhanced.resultId && enhanced.roleEvidence?.kind==='enhancement' &&
+          issued.plan.filters.issuer===enhanced.roleEvidence.entity){
+        const [issuedRows,enhancedRows]=await Promise.all([issued,enhanced].map(r=>answerSourceRows(db,r.resultId,snapshot.id)));
+        const unique=[...new Set([...issuedRows,...enhancedRows])];
+        const overlap=issuedRows.length+enhancedRows.length-unique.length;
+        const traceUnion='发行人与 ABS 增信占用分别核对，再按同一快照的原表行号去重；两类共有 '+overlap+' 条重叠持仓。';
+        const union=await newInventoryAnswer(db,snapshot,{date:snapshot.date,group:'none',metric:'principal',filters:{}},
+          bucket,[...trace,traceUnion],undefined,unique);
+        overview.push({role:'union',title:'两类已匹配持仓去重合计',result:union});
+        const exactYi=cents=>(cents/1e10).toLocaleString('zh-CN',{maximumFractionDigits:10});
+        clarification='按“'+issued.plan.filters.issuer+'”核对，自发债 '+exactYi(issued.totalCents)+' 亿元，增信 ABS '+
+          exactYi(enhanced.totalCents)+' 亿元。两类重叠 '+overlap+' 条持仓，按原表行号去重后合计 '+exactYi(union.totalCents)+' 亿元。';
+      }
+      return {clarification,overview};
   }
   const field=['guarantor','attribution','issuer'].find(key=>plan.filters[key]);
   if(suggested.length && field){

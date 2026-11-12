@@ -46,6 +46,23 @@ test('reverse linkage reads only the source rows belonging to a verified prior t
  ctx.steps[0].selection.indices=[2];ctx.steps[0].selection.limit=null;
  const invalid=await executeJointPlan({db},ctx,deps);assert.match(invalid.steps[0].data.clarification,/名次/);assert.equal(invoked,1);
 });
+test('a rewritten raw-code column cannot veto a bound code cohort; an explicit user raw-column predicate remains scoped',async()=>{
+ const names=['1234.IB','5678.SH'];
+ const stock={snapshot:{date:days[1]},plan:{group:'code',metric:'principal'},groups:names.map(name=>({name,cents:10})),groupCount:2};
+ const raw={field:'债券标准代码',op:'eq',value:'1234'};
+ for(const [question,expected] of [
+   ['查这两只券的交易',[{field:'券码',op:'in',value:names}]],
+   ['查这两只券，原表债券标准代码列等于 1234 的交易',[raw,{field:'券码',op:'in',value:names}]],
+ ]){
+   const output=await executeJointPlan({}, {question,snapshots,ledgers,steps:[
+     part('inventory','s1',{snapshotDate:days[1]}),
+     part('trade','s2',{question:'按债券标准代码列逐只核对',selection:{from:'s1',field:'code',indices:[1,2]}}),
+   ]},{queryInventory:async()=>stock,tradePlanner:async({originalQuestion,selectedCodes})=>{
+     assert.equal(originalQuestion,question);assert.deepEqual(selectedCodes,names);return {plan:{...flowPlan,groupBy:[],filters:[raw]}};
+   },tradeQuery:async(_,plan)=>({plan,versions:ledgers,groups:[],groupCount:0,totals:{netCents:0},warnings:[]})});
+   assert.deepEqual(output.steps[1].data.plan.filters,expected);
+ }
+});
 test('reconciles actual dates, identical business scope and both cumulative coverage periods before calculating any gap',()=>{
  const first=part('inventory','s1',{data:stockData(days[0],200)});
  const last=part('inventory','s2',{data:stockData(days[1],260)});
@@ -70,4 +87,18 @@ test('non-monetary inventory rank still supplies a trading cohort without a misl
     return {plan,versions:ledgers,groups:[],totals:{netCents:0},groupCount:0};
   }});
   assert.equal(result.alignment,undefined);
+});
+
+test('saved set partitions bind the subsequent trade query; an empty partition cannot broaden it',async()=>{
+ const calls=[];
+ const deps={tradePlanner:async()=>({plan:flowPlan}),tradeQuery:async(resources,plan)=>{
+   calls.push(plan);return {plan,groups:[],groupCount:0,versions:ledgers,totals:{rows:0},warnings:[]};
+ }};
+ const memberSets={field:'发行人',dimension:'issuer',both:['甲'],leftOnly:['乙'],rightOnly:[]};
+ const follow=from=>executeJointPlan({}, {ledgers,snapshots,history:[{answer:{memberSets}}],steps:[
+   part('trade','s1',{selection:{from,field:'issuer',limit:null}})]},deps);
+ await follow('previousLeftOnly');assert.deepEqual(calls[0].filters.at(-1).value,['乙']);
+ await follow('previousUnion');assert.deepEqual(calls[1].filters.at(-1).value,['甲','乙']);
+ const empty=await follow('previousRightOnly');assert.match(empty.steps[0].data.clarification,/集合为空/);
+ assert.equal(calls.length,2);
 });

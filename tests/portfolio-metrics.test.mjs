@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {portfolioMetrics} from '../tools/portfolio-metrics.mjs';
+import {portfolioMetrics,explainPortfolioDifferences} from '../tools/portfolio-metrics.mjs';
 import {factsDigest, factsObjectKey} from '../tools/portfolio-facts.mjs';
 
 const dates=['2025-12-31','2026-01-16'];
@@ -71,9 +71,26 @@ test('weekly mean picks each last available snapshot before cutoff, crosses year
   const spec={metric:'weeklyMean',start:'2025-12-31',end:'2026-01-20'};
   const out=await portfolioMetrics({},spec,all,{details:true});
   assert.match(out.headline,/3\.00 亿元（3 个/);
+  assert.match(out.headline,/2026-01-05 至 2026-01-11/);
   assert.deepEqual(out.rows.map(r=>r[1]),['2026-01-02','缺台账','2026-01-16','2026-01-19']);
   assert.equal(out.detailSheets[0].rows[1][3],'');
   const db=ledger([['2026-01-02','公募','广州','A',1],['2026-01-16','委外(公募)','广州','A',5],['2026-01-19','AFS','广州','A',9]]);
   const split=await portfolioMetrics({db},{...spec,account:'委外（公募）',branch:'广州'},all);
   assert.match(split.headline,/2\.00 亿元/);
+});
+
+test('anchored excluded securities are valued at the requested holdings date',async()=>{
+  const {resources,spec}=await setup();
+  const result=await portfolioMetrics(resources,{...spec,start:dates[0],end:dates[0],referenceDate:dates[1],
+    metric:'valuationAudit',subset:'excluded'},snapshots);
+  assert.deepEqual(result.rows.map(r=>r.slice(0,4)),[['X','X','9.00',dates[1]]]);
+  const unavailable=await portfolioMetrics(resources,{...spec,marketPins:{},referenceDate:dates[0],
+    metric:'valuationAudit',subset:'excluded'},snapshots);
+  assert.match(unavailable.headline,/没有锁定/);
+});
+test('weekly comparisons use the calculated mean prior to display rounding',()=>{
+  const step=(start,end,mean)=>({source:'portfolio',spec:{metric:'weeklyMean',start,end},data:{headline:'计算结果。',mean}});
+  const a=step('2026-01-01','2026-03-31',30.0049),b=step('2026-04-01','2026-06-30',20.0052);
+  explainPortfolioDifferences([a,b]);
+  assert.match(b.data.headline,/-10.00 亿元/);
 });

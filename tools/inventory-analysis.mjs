@@ -3,7 +3,7 @@ import {InventoryError} from './inventory-workbook.mjs';
 
 export const analysisFieldLabels = Object.freeze({
   institution:'机构名称', branch:'联动分行', portfolio:'交易组合', account:'会计科目', scope:'表内/委外',
-  issuer:'发行人', code:'债券代码', name:'债券简称', marketType:'债券类型', maturity:'到期日期',
+  issuer:'发行人', code:'债券代码', name:'债券简称', marketType:'归集品种', sourceMarketType:'原表债券类型', maturity:'到期日期',
   expected:'ABS预计到期日', legal:'法定到期日', attribution:'资产端损益还原客户名称',
   guarantor:'台账列明担保人', cents:'名义本金（人民币分）',
 });
@@ -53,7 +53,7 @@ function integer(value) {
   if (!Number.isSafeInteger(number)) throw invalid('数字超过精确统计范围。');
   return number;
 }
-function filterStep({field,operator,value}) {
+function filterStep({field,operator,value},accountRules) {
   if (!allowedField(field)) throw invalid('台账未开放该筛选列。');
   if (sourceField(field)) {
     if ((typeof value!=='string' && !Number.isFinite(value)) || !String(value).trim() || String(value).length>256 ||
@@ -79,12 +79,12 @@ function filterStep({field,operator,value}) {
       throw invalid('日期比较需要有效的 YYYY-MM-DD。');
     }
   }
-  if (field === 'account' && operator !== 'contains') term = accountLabel(term);
+  if (field === 'account' && (operator !== 'contains' || accountRules===2)) term = accountLabel(term,accountRules);
   return {op:'filter',field,operator,value:term};
 }
 
 /** Compile a bounded, read-only program and check the row/group type at each stage. */
-export function normalizeAnalysis(steps) {
+export function normalizeAnalysis(steps,accountRules=2) {
   if (!Array.isArray(steps) || steps.length<1 || steps.length>32) throw invalid('请使用 1 至 32 个步骤。');
   let grouped = false, measure = null;
   const result = steps.map(step => {
@@ -95,7 +95,7 @@ export function normalizeAnalysis(steps) {
     switch (op) {
       case 'filter':
         if (grouped) throw invalid('筛选明细前须先展开分组。');
-        return filterStep(step);
+        return filterStep(step,accountRules);
       case 'group': {
         if (grouped || !Array.isArray(fields) || fields.length>3 || new Set(fields).size!==fields.length ||
             fields.some(field=>!allowedField(field) || field==='cents')) {
@@ -134,6 +134,7 @@ function fieldValue(row,field) {
   if (field==='cents') return row.cents;
   if (sourceField(field)) return String(row[field] ?? '').trim() || '未填写';
   if (field==='marketType') return (row.queryMarketType ?? row.marketType) || '未填写';
+  if (field==='sourceMarketType') return row.marketType || '未填写';
   if (field==='account') return (row.queryAccount ?? accountLabel(row.account || '')) || '未填写';
   if ((field==='guarantor' || field==='attribution') && !Object.hasOwn(row,field)) {
     throw new InventoryError('本期查询未载入'+analysisFieldLabels[field]+'。',422);
@@ -247,8 +248,9 @@ function groupRows(rows,fields,measure,denominator) {
 }
 
 /** Source row identities stay inside the authorized snapshot throughout regrouping. */
-export function runAnalysis(rows,steps) {
-  const program = normalizeAnalysis(steps);
+export function runAnalysis(rows,steps,accountRules=2) {
+  const program = normalizeAnalysis(steps,accountRules);
+  if(accountRules!==2)rows=rows.map(row=>row.queryAccount===undefined?{...row,queryAccount:accountLabel(row.account||'',accountRules)}:row);
   const sourceRows = new Set();
   for (const row of rows) {
     if (!Number.isSafeInteger(row.sourceRow) || row.sourceRow<1 || sourceRows.has(row.sourceRow) ||

@@ -2,10 +2,11 @@ import {InventoryError, analysisMeasureLabel, parseInventoryWorkbook, inventoryD
 import {attachSourceColumns,readVerifiedRoleWorkbook} from './inventory-source-columns.mjs';
 export {readVerifiedRoleWorkbook};
 import {normalizeAnalysis,runAnalysis} from './inventory-analysis.mjs';
-import {accountLabel,accountSql} from './inventory-account.mjs';
+import {accountLabel,accountSqlFor} from './inventory-account.mjs';
+import {lookupInventorySecurity,ambiguousSecurities,fullMarketCode} from './inventory-security.mjs';
 
 const fieldNames=['institution','branch','portfolio','account','scope','issuer','code','name','marketType','maturity','expected','legal'];
-const filterNames=['branch','issuer','portfolio','account','scope','code','marketType','holdingStatus','guarantor','attribution'];
+const filterNames=['branch','issuer','portfolio','account','scope','code','marketType','sourceMarketType','holdingStatus','guarantor','attribution'];
 const schema=[
   'CREATE TABLE IF NOT EXISTS inventory_versions(id TEXT PRIMARY KEY,date TEXT NOT NULL,filename TEXT NOT NULL,sheet TEXT NOT NULL,rowCount INTEGER NOT NULL,totalCents INTEGER NOT NULL,sha TEXT NOT NULL,createdAt TEXT NOT NULL)',
   'CREATE TABLE IF NOT EXISTS inventory_current(date TEXT PRIMARY KEY, version TEXT NOT NULL REFERENCES inventory_versions(id))',
@@ -208,7 +209,7 @@ export async function ingestInventory({db,bucket}, bytes,filename,replaceId,expe
     throw error;
   }
 }
-export function normalizePlan(input,normalizeTypes=true,accountRules=true) {
+export function normalizePlan(input,normalizeTypes=true,accountRules=2) {
   if(!input || !Object.hasOwn(dimensions,input.group)||!['principal','count','securities'].includes(input.metric)||
       !/^\d{4}-\d{2}-\d{2}$/.test(input.date)||!input.filters||typeof input.filters!=='object'||Array.isArray(input.filters))throw message('查询口径不受支持，请选择日期、指标和分组。',400);
   if(Object.keys(input.filters).some(k=>!filterNames.includes(k)))throw message('含不支持的筛选字段。',400);
@@ -218,7 +219,7 @@ export function normalizePlan(input,normalizeTypes=true,accountRules=true) {
     if(value==null||value==='')continue;
     if(typeof value!=='string'||value.length>180||(k==='holdingStatus'&&value!=='存续'))throw message('筛选值无效。',400);
     if(k==='marketType'&&normalizeTypes){filters[k]=typeAliases.get(value.trim().toUpperCase())||value.trim();continue}
-    if(k==='account'&&accountRules){filters[k]=accountLabel(value.trim());continue}
+    if(k==='account'&&accountRules){filters[k]=accountLabel(value.trim(),accountRules);continue}
     filters[k]=value.trim();
   }
   const rank=input.rank;
@@ -226,17 +227,17 @@ export function normalizePlan(input,normalizeTypes=true,accountRules=true) {
       rank.by===input.group || !Number.isSafeInteger(rank.limit) || rank.limit<1 || rank.limit>50))
     throw message('请选择有效的排名维度、分组及前 1 至 50 名。',400);
   if(input.analysis!=null && !Array.isArray(input.analysis))throw message('查询步骤格式无效。',400);
-  const analysis=input.analysis?.length ? normalizeAnalysis(input.analysis) : undefined;
+  const analysis=input.analysis?.length ? normalizeAnalysis(input.analysis,accountRules) : undefined;
   if(analysis && rank)throw message('组合查询须在步骤中排序和选取名单。',400);
   return {date:input.date,group:input.group,metric:input.metric,filters,...(analysis?{analysis}:{}),...(rank?{rank:{by:rank.by,limit:rank.limit}}:{})};
 }
-function groupLabel(field,{typeRules=true,accountRules=true}={}) {
+function groupLabel(field,{typeRules=true,accountRules=2}={}) {
   if(field==='none')return "'全部'";
-  const expression=field==='marketType'&&typeRules?classifiedType:field==='account'&&accountRules?accountSql:field;
+  const expression=field==='sourceMarketType'?'marketType':field==='marketType'&&typeRules?classifiedType:field==='account'&&accountRules?accountSqlFor(accountRules):field;
   return "coalesce(nullif("+expression+",''),'未填写')";
 }
 function where(snapshot,plan,selectedGroup,evidence,options={}) {
-  const {typeRules=true,accountRules=true,rankMembers}=options;
+  const {typeRules=true,accountRules=2,rankMembers}=options;
   const args=[snapshot.id],parts=['version=?'];
   if(options.sourceRows!==undefined){
     parts.push('sourceRow IN (SELECT value FROM json_each(?))');
@@ -247,6 +248,7 @@ function where(snapshot,plan,selectedGroup,evidence,options={}) {
     if(k==='holdingStatus'){parts.push("cents>0 AND maturity>?");args.push(snapshot.date);continue}
     if(k==='scope'&&v==='委外'){parts.push("scope LIKE '委外%'");continue}
     if(k==='marketType'&&typeRules){parts.push(classifiedType+'=?');args.push(v==='未填写'?'':v);continue}
+    if(k==='sourceMarketType'){parts.push('marketType=?');args.push(v==='未填写'?'':v);continue}
     if(k==='account'&&accountRules){parts.push(groupLabel(k,options)+'=?');args.push(v);continue}
     if(k==='marketType'&&v==='资产支持证券'){parts.push("marketType IN ('资产支持证券','ABS')");continue}
     parts.push(k+'=?');args.push(v==='未填写'?'':v);
@@ -336,6 +338,10 @@ async function sqlTotals(db,snapshot,plan,evidence,options) {
     ? {name:JSON.stringify([g.rankName,label]),bucketName:label,rankPosition:rankMembers.indexOf(g.rankName)+1,...g}
     : {name:label,...g});
   if(plan.rank)groups.sort((a,b)=>a.rankPosition-b.rankPosition);
+  if(options.listedMembers){
+    const byName=new Map(groups.map(g=>[g.name,g]));
+    return {total,groups:options.listedMembers.map(name=>byName.get(name)??{name,cents:0,count:0,securityCount:0})};
+  }
   return {total,groups};
 }
 async function loadRows(db,select,w) {
@@ -360,7 +366,7 @@ async function analyzeRows(db,snapshot,plan,evidence,options) {
   const rows=await loadRows(db,detailQuery(evidence||needsRoles,plan,options),w);
   const extraFields=[...fields].filter(field=>field.startsWith('原表:'));
   if(extraFields.length)await attachSourceColumns(db,snapshot,rows,extraFields,options.bucket);
-  return runAnalysis(rows,plan.analysis);
+  return runAnalysis(rows,plan.analysis,options.accountRules);
 }
 function analysisTotals(analysis,snapshot) {
   const groups=analysis.groups.map(({name,labels,principalCents,rowCount,securityCount,value,measureValue})=>
@@ -426,12 +432,23 @@ async function compute(db,snapshot,plan,resultId,evidence,options={},analysisRes
     ...(options.sourceRows!==undefined?{scopedToPrevious:true}:{}),...(analysis?{dimensions:analysis.dimensions,analysisMetric:analysis.metric}:{}),
     ...(analysis?.measure?{measure:analysis.measure,measureTotal:analysis.measureTotal}:{}),...(options.rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{})};
 }
-export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixedMembers,sourceRows){
+export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixedMembers,sourceRows,listedMembers){
   if(sourceRows!==undefined && (!Array.isArray(sourceRows)||sourceRows.length>30000||
      sourceRows.some(row=>!Number.isSafeInteger(row)||row<1)||new Set(sourceRows).size!==sourceRows.length))
     throw message('上次结果的持仓范围无效，请重新查询。',409);
   const plan=normalizePlan(input);
+  if(listedMembers!==undefined && (!Array.isArray(sourceRows)||plan.rank||plan.analysis||plan.group==='none'||
+      !Array.isArray(listedMembers)||!listedMembers.length||listedMembers.length>5000||
+      listedMembers.some(name=>typeof name!=='string'||!name.trim())||new Set(listedMembers).size!==listedMembers.length))
+    throw message('用于分组的台账名单无效，请重新取名单。',409);
   if(!snapshot||snapshot.date!==plan.date)throw message('指定日期没有可用库存快照。',404);
+  const code=plan.filters.code;
+  if(code && code!=='未填写'){
+    const hits=await lookupInventorySecurity(db,snapshot,code);
+    if(hits.length>1)return {clarification:ambiguousSecurities(code,hits)};
+    if(hits.length)plan.filters.code=hits[0].code;
+    else if(!fullMarketCode(code))return {clarification:'本期库存未查到简称或券码“'+code+'”，请核对完整券名或券码。'};
+  }
   if(broadCredit.test(plan.filters.marketType||'') ||
      plan.analysis?.some(step=>step.op==='filter'&&step.field==='marketType'&&broadCredit.test(step.value)))
     return {clarification:explainCredit};
@@ -461,9 +478,9 @@ export async function newInventoryAnswer(db,snapshot,input,bucket,trace=[],fixed
     }
   }
   const rankReused=Boolean(plan.rank && fixedMembers!==undefined);
-  const id=crypto.randomUUID(),result=await compute(db,snapshot,plan,id,evidence,{rankMembers,rankReused,bucket,sourceRows});
+  const id=crypto.randomUUID(),result=await compute(db,snapshot,plan,id,evidence,{rankMembers,rankReused,bucket,sourceRows,listedMembers});
   if(trace.length)result.trace=trace;
-  const saved={...plan,typeRules:1,accountRules:1,...(sourceRows!==undefined?{sourceRows}:{}),...(rankMembers?{rankMembers}:{}),...(rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
+  const saved={...plan,typeRules:1,accountRules:2,...(sourceRows!==undefined?{sourceRows}:{}),...(listedMembers?{listedMembers}:{}),...(rankMembers?{rankMembers}:{}),...(rankReused?{rankReused:true}:{}),...(evidence?{roleEvidence:evidence}:{}),...(trace.length?{trace}:{})};
   await db.prepare('INSERT INTO inventory_answers VALUES(?,?,?,?)').bind(id,snapshot.id,JSON.stringify(saved),new Date().toISOString()).run();
   return result;
 }
@@ -474,15 +491,15 @@ export async function answerContext(db,id){
   const snapshot=await db.prepare('SELECT * FROM inventory_versions WHERE id=?').bind(a.version).first();
   const saved=JSON.parse(a.plan);
   const typeRules=saved.typeRules===1;
-  const accountRules=saved.accountRules===1;
+  const accountRules=[1,2].includes(saved.accountRules)?saved.accountRules:false;
   return {snapshot,plan:normalizePlan(saved,typeRules,accountRules),evidence:saved.roleEvidence,typeRules,accountRules,trace:saved.trace,
-    sourceRows:saved.sourceRows,rankMembers:saved.rankMembers,rankReused:saved.rankReused===true};
+    sourceRows:saved.sourceRows,listedMembers:saved.listedMembers,rankMembers:saved.rankMembers,rankReused:saved.rankReused===true};
 }
-function detailQuery(evidence,plan,{typeRules=true,accountRules=true}){
+function detailQuery(evidence,plan,{typeRules=true,accountRules=2}){
   const includeType=typeRules&&(plan.analysis||plan.group==='marketType'||plan.rank?.by==='marketType'||plan.filters.marketType);
   const includeAccount=accountRules&&(plan.analysis||plan.group==='account'||plan.rank?.by==='account'||plan.filters.account);
   return 'SELECT sourceRow,cents,'+fieldNames.join(',')+(evidence?',guarantor,attribution':'')+(includeType?','+classifiedType+' AS queryMarketType':'')+
-    (includeAccount?','+accountSql+' AS queryAccount':'')+' FROM '+(evidence?roleRows:'inventory_rows')+' WHERE ';
+    (includeAccount?','+accountSqlFor(accountRules)+' AS queryAccount':'')+' FROM '+(evidence?roleRows:'inventory_rows')+' WHERE ';
 }
 export async function answerDetails(db,id,{group=null,offset=0,limit=50}={}) {
   const context=await answerContext(db,id),{snapshot,plan,evidence}=context;

@@ -1,4 +1,5 @@
 import { issuanceStem } from './inventory-issuer-hints.mjs';
+import {lookupInventorySecurity} from './inventory-security.mjs';
 import { ledgerGuarantors, readVerifiedRoleWorkbook } from './inventory-store.mjs';
 
 const fields = {
@@ -102,5 +103,5 @@ export async function readInventoryEvidence({db, bucket}, snapshot, {term, field
   }
   const matches = [...best.values()].sort((a,b) => strength[b.basis] - strength[a.basis] ||
     a.name.localeCompare(b.name, 'zh-CN') || a.role.localeCompare(b.role));
-  return {matches: matches.slice(0,8)};
+  return {matches:matches.slice(0,8),...(field==='code'?{securities:await lookupInventorySecurity(db,snapshot,key)}:{})};
 }

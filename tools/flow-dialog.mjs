@@ -51,7 +51,7 @@ async function ask(resources,input,planner){
   else{
     const hit=await runQuery(outcome.plan);
     answer.plan=hit.plan??outcome.plan;
-    answer.result={groups:hit.groups.slice(0,100),groupCount:hit.groupCount,totals:hit.totals,warnings:hit.warnings||[]};
+    answer.result={groups:hit.groups.slice(0,100),groupCount:hit.groupCount,totals:hit.totals,completeCoverage:hit.completeCoverage,warnings:[...(hit.warnings||[]),...(outcome.evidence||[])],highlights:hit.highlights||[]};
     answer.sources=hit.versions.map(source);
   }
   if(outcome.trace?.length)answer.trace=outcome.trace;

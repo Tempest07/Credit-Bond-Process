@@ -17,6 +17,13 @@ const sort = (metric,descending=true)=>({op:'sort',metric,descending});
 const take = limit=>({op:'take',limit});
 const expand = {op:'expand'};
 
+test('account aliases work in contains filters without changing old plans or literal source fields',()=>{
+  assert.equal(normalizeAnalysis([filter('account','contains','OCI'),group()])[0].value,'AFS');
+  assert.equal(normalizeAnalysis([filter('account','contains','ac'),group()])[0].value,'Receivable');
+  assert.equal(normalizeAnalysis([filter('account','contains','OCI'),group()],1)[0].value,'OCI');
+  assert.equal(normalizeAnalysis([filter('原表:会计分类','contains','OCI'),group()])[0].value,'OCI');
+});
+
 test('selects top issuers, regroups their original rows by two columns and preserves source drilldowns',()=>{
   const result = runAnalysis(rows,[filter('branch','eq','京'),group('issuer'),take(2),expand,group('issuer','account')]);
   assert.deepEqual(result.dimensions,['issuer','account']);

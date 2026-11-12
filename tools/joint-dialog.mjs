@@ -1,3 +1,4 @@
+import {deriveAnswer} from './joint-arithmetic.mjs';
 import {InventoryError} from './inventory-workbook.mjs';
 import {listInventory,initInventory} from './inventory-store.mjs';
 import {listTradeLedgers,loadTradeLedgers} from './trade-store.mjs';
@@ -99,15 +100,62 @@ export async function jointAction(resources,action,{input,params,planner=planJoi
   if(!snapshots.length&&!ledgers.length)fail('请先上传余额台账或增减持台账。',409);
   const prior=(await db.prepare('SELECT question,answer FROM joint_turns WHERE owner=? AND chat=? ORDER BY version DESC LIMIT 8').bind(owner,chatId).all()).results.reverse().map(r=>({question:r.question,answer:JSON.parse(r.answer)}));
   const history=[...(pins.seed||[]),...prior].slice(-8);
-  const recentDate=history.map(t=>t.answer?.steps?.map(s=>s.data?.snapshot?.date||s.spec?.end).filter(Boolean).at(-1)||t.answer?.referenceDate).filter(Boolean).at(-1);
+  const recentDate=history.map(t=>t.answer?.steps?.map(s=>s.data?.snapshot?.date||s.spec?.end).filter(d=>snapshots.some(s=>s.date===d)).at(-1)||t.answer?.referenceDate).filter(Boolean).at(-1);
   const selected=snapshots.find(s=>s.id===snapshotId);
   if(snapshotId&&!selected)fail('该快照不在本对话锁定的版本中，请新建对话查询修订后的台账。',409);
   const selectedDate=selected?.date||recentDate||snapshots.find(s=>s.id===pins.selectedId)?.date||snapshots[0]?.date;
   const args={question,effort,snapshots,ledgers,selectedDate};
-  const plan=await planner({...args,apiKey,history:history.map(t=>({question:t.question,steps:(t.answer?.steps||[]).map(s=>({id:s.id,source:s.source,question:s.question,groupBy:s.data?.plan?.groupBy||s.data?.dimensions||s.data?.plan?.group,snapshotDate:s.data?.snapshot?.date||s.snapshotDate,start:s.data?.plan?.start||s.start,end:s.data?.plan?.end||s.end,...(s.spec?{spec:s.spec}:{})})),clarification:t.answer?.clarification}))});
-  const pinMarket= !pins.marketPins && plan.steps?.some(s=>s.source==='portfolio'&&s.spec?.metric!=='weeklyMean');
-  if(pinMarket)pins.marketPins=await getPortfolioMarketPins(resources,snapshots);
-  const result=plan.clarification?{clarification:plan.clarification,steps:[]}:await execute(resources,{...args,history,marketPins:pins.marketPins||{},steps:plan.steps,comparison:plan.comparison});
+  const plannerHistory=history.map(t=>({
+    question:t.question,
+    memberSets:t.answer?.memberSets?.dimension?{field:t.answer.memberSets.dimension,labels:t.answer.memberSets.labels}:undefined,
+    steps:(t.answer?.steps||[]).map(s=>{
+      const plan=s.data?.plan,trade=s.source==='trade'&&s.data?.result;
+      const availableTradeTotals=trade?.completeCoverage===true?['buyCents','sellCents','netCents','rows']
+        .filter(k=>Number.isFinite(trade.totals[k])&&(plan.direction==='both'||k==='rows'||k===plan.direction+'Cents')):[];
+      return {id:s.id,source:s.source,question:s.question,availableTradeTotals,
+        groupBy:s.data?.securityMembers?.length?['code']:plan?.groupBy||s.data?.dimensions||plan?.group,
+        snapshotDate:s.data?.snapshot?.date||s.snapshotDate,start:plan?.start||s.start,end:plan?.end||s.end,
+        ...(s.spec?{spec:s.spec}:{})};
+    }),
+    clarification:t.answer?.clarification,
+  }));
+  const plan=await planner({...args,apiKey,history:plannerHistory});
+  let pinMarket=false;
+  async function runPlan(planned){
+    if(planned.clarification)return {clarification:planned.clarification,steps:[]};
+    if(planned.previousSteps){
+      const prior=history.at(-1).answer.steps;
+      return {steps:planned.previousSteps.map((index,i)=>({...prior[index],id:'s'+(i+1)}))};
+    }
+    if(!pins.marketPins && planned.steps?.some(s=>s.source==='portfolio'&&s.spec?.metric!=='weeklyMean')){
+      pins.marketPins=await getPortfolioMarketPins(resources,snapshots);
+      pinMarket=true;
+    }
+    return execute(resources,{...args,history,marketPins:pins.marketPins||{},steps:planned.steps,comparison:planned.comparison});
+  }
+  let result=await runPlan(plan);
+  if(plan.derive && result.steps?.length){
+    try{
+      const calculate=(steps,reused)=>deriveAnswer({question,steps,apiKey,effort,history:reused?
+        [{question:history.at(-1).question,answer:{arithmetic:history.at(-1).answer.arithmetic}}]:history});
+      result.arithmetic=await calculate(result.steps,plan.previousSteps);
+      if(result.arithmetic.missing && !result.steps.some(s=>s.data?.notes?.some(n=>n.includes('没有锁定已核验')))){
+        const next=await planner({...args,apiKey,history:plannerHistory,
+          question:(question+'\n计算器核对后还缺以下中间结果，请重新规划可完整执行的查询，保持原题条件与分母：'+result.arithmetic.missing).slice(0,1200)});
+        if(next.steps?.length||next.previousSteps?.length){
+          const revised=await runPlan(next);
+          const arithmetic=await calculate(revised.steps,next.previousSteps);
+          if(arithmetic.rows.length && (!arithmetic.missing||arithmetic.rows.length>result.arithmetic.rows.length))result={...revised,arithmetic};
+        }
+      }
+    }catch{result.arithmetic??={rows:[],missing:'派生指标暂未算出，可保留本轮已查到的数据重试。'};}
+  }
+  if(plan.basisNotes?.includes('investmentReturn')){
+    result.methodNotes=['净买入按买卖名义本金计算，余额变化按两期在账名义本金相减，单凭这两个数不能确定投资收益。核算期间投资收益还需要期初、期末估值或公允价值，逐笔买卖价款、应计利息、付息与还本现金流及相关费用；发生划转时也要核对划转记录。'];
+  }
+  if(plan.basisNotes?.includes('flowVsBalance')){
+    result.methodNotes=['交易对库存的净流入或净流出按期间买入本金减卖出本金计算。实际在账余额的变动需另用期初、期末两期余额台账核对，期间还可能有兑付或划转。'];
+  }
   const answer={...result,referenceDate:selectedDate||null,id:crypto.randomUUID(),steps:(result.steps||[]).map(s=>({...s,data:s.source==='inventory'?compact(s.data):s.data}))};
   const next=version+1,title=last?.title||Array.from(question).slice(0,55).join(''),updatedAt=new Date().toISOString();
   const [saved]=await db.batch([

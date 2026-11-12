@@ -80,3 +80,27 @@ export async function issuerHints(db, snapshot, query, filters = {}, candidates 
       source:evidence.source,primary:name===primaryName};
   });
 }
+
+// Used as evidence for a trade question when the issuer did not trade in the
+// requested period. Match the user's literal clue across every in-scope issuer.
+export async function tradeIssuerCandidates(db,snapshot,alias) {
+  if(!snapshot?.id || typeof alias!=='string' || alias.length<2 || alias.length>80 || genericWords.has(alias))return [];
+  const {results}=await db.prepare("SELECT DISTINCT issuer,name FROM inventory_rows WHERE version=? AND issuer<>''").bind(snapshot.id).all();
+  const collation=s=>s.normalize('NFKC').trim().toLowerCase();
+  const word=collation(alias),ranks=new Map();
+  for(const row of results){
+    const issuer=collation(row.issuer),core=issuer.replace(/(?:股份有限公司|有限责任公司|有限公司)$/,''),stem=collation(issuanceStem(row.name||''));
+    let rank=0;
+    if(issuer===word)rank=4;
+    else if(stem===word)rank=3;
+    else if(issuer.includes(word))rank=2;
+    else if(word.length>=3 && core.startsWith(word[0]) && core.endsWith(word.at(-1))){
+      let index=0;
+      for(const char of core)if(char===word[index])index++;
+      if(index===word.length)rank=1;
+    }
+    if(rank)ranks.set(row.issuer,Math.max(rank,ranks.get(row.issuer)||0));
+  }
+  const highest=Math.max(0,...ranks.values());
+  return [...ranks].filter(([,rank])=>rank===highest).map(([name])=>name).sort();
+}

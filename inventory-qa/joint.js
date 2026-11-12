@@ -1,5 +1,5 @@
-import {setupJointInventory,showJointSnapshots,renderInventoryAnswer,renderInventoryIdentity} from "./inventory.js?v=joint1";
-import {setupJointTrades,showJointLedgers,renderTradeAnswer} from "./trades.js?v=joint1";
+import {setupJointInventory,showJointSnapshots,renderInventoryAnswer,renderInventoryIdentity} from "./inventory.js?v=5.5.1";
+import {setupJointTrades,showJointLedgers,renderTradeAnswer} from "./trades.js?v=5.5.1";
 
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -213,7 +213,7 @@ function stockView(data,title,card,actions,chatId,mayContinue){
     });
     return;
   }
-  if(data.clarification)card.append(el("p",data.clarification));
+  if(data.clarification)for(const line of data.clarification.split("\n"))card.append(el("p",line));
   if(data.identity?.candidates?.length)card.append(el("p",data.identity.candidates.join("、"),"meta"));
   for(const item of data.overview||[]){
     const sub=el("section");sub.append(el("h3",item.title));stockView(item.result,item.title,sub,actions,chatId,mayContinue);card.append(sub);
@@ -268,6 +268,40 @@ function turnView({question,answer},mayContinue){
   const box=el("article",null,"joint-turn");
   box.append(el("h2",question,"user-question"));
   if(answer.clarification)box.append(el("p",answer.clarification,"summary"));
+  for(const note of answer.methodNotes||[])box.append(el("p",note,"summary"));
+  if(answer.arithmetic){
+    const section=el("section",null,"joint-summary");section.append(el("h3","计算结果"));
+    for(const row of answer.arithmetic.rows){
+      const value=row.value===null?"无法计算（分母为零或上一步无有效值）":row.value.toLocaleString("zh-CN",{maximumFractionDigits:6})+" "+row.unit;
+      section.append(el("p",row.label+"："+value,"summary"));
+      if(row.flowDirection && row.value!==null){
+        section.append(el("p",row.value===0?row.flowDirection:row.flowDirection+" "+Math.abs(row.value).toLocaleString("zh-CN",{maximumFractionDigits:6})+" "+row.unit,"meta"));
+      }else if(["difference","absoluteDifference"].includes(row.op)&&row.inputs.length===2&&row.value!==null){
+        const [first,second]=row.inputs;
+        section.append(el("p",row.value===0?"两项相同。":"较高项："+(first.value>second.value?first.label:second.label),"meta"));
+      }
+      const details=el("details");details.append(el("summary","计算依据"));
+      for(const a of row.inputs)details.append(el("p",a.label+"："+(a.value??"无有效值")+" "+a.unit));
+      section.append(details);
+    }
+    if(answer.arithmetic.missing)section.append(el("p",answer.arithmetic.missing,"meta"));
+    box.append(section);
+  }
+  if(answer.memberSets){
+    const sets=answer.memberSets,section=el("section",null,"joint-summary");
+    section.append(el("h3",sets.field+"名单对照"));
+    sets.labels.forEach((label,i)=>section.append(el("p","范围 "+(i+1)+"："+label,"meta")));
+    if(sets.note)section.append(el("p",sets.note));
+    else{
+      for(const [label,names] of [["两边都有",sets.both],["仅范围 1",sets.leftOnly],["仅范围 2",sets.rightOnly]]){
+        const details=el("details");
+        details.append(el("summary",label+"："+names.length),el("p",names.join("、")||"无"));
+        section.append(details);
+      }
+      section.append(el("p","两边合并去重（并集）："+sets.total,"summary"));
+    }
+    box.append(section);
+  }
   if(answer.comparison)box.append(compareBlock(answer.comparison));
   if(answer.alignment)box.append(alignedBlock(answer.alignment));
   const steps=answer.steps||[];
